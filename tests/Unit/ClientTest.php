@@ -31,3 +31,13 @@ it('has one user relationship', function () {
         ->toBeInstanceOf(User::class)
         ->and($client->user->id)->toBe($user->id);
 });
+
+it('has an fqdn as a url string when the base_url attribute is accessed', function () {
+   $client = Client::factory()->create(['base_url' => 'us5']);
+   expect($client->base_url)->toBe('https://us5.api.central.arubanetworks.com/');
+});
+
+it('has a current attribute that is a boolean and is false by default', function () {
+    $client = Client::factory()->create();
+    expect($client->current)->toBeFalse();
+});

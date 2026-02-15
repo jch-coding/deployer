@@ -15,8 +15,8 @@ class ClientController extends Controller
      */
     public function index(Request $request)
     {
-        $clients = $request->user()->clients()->paginate(10);
-        return Inertia::render('Client/Index', ['clients' => $clients]);
+        $clients = $request->user()->clients()->paginate(15);
+        return Inertia::render('Client/Index', ['clients' => $clients, 'base_urls' => BaseURL::cases()]);
     }
 
     /**
@@ -71,15 +71,29 @@ class ClientController extends Controller
         }
 
         $validated = $request->validate([
-            'name' => 'string|min:3|max:255',
-            'client_id' => 'string|min:12|max:255',
-            'client_secret' => 'string|min:12|max:255',
-            'customer_id' => 'string|min:12|max:255',
-            'base_url' => 'string|URL',
+            'name' => 'nullable|string|min:3|max:255',
+            'client_id' => 'nullable|string|min:12|max:255',
+            'client_secret' => 'nullable|string|min:12|max:255',
+            'customer_id' => 'nullable|string|min:12|max:255',
+            'base_url' => 'string',
         ]);
 
         $client->update($validated);
         Inertia::flash('success', 'Client updated successfully.');
+        return to_route('clients.index');
+    }
+
+    /**
+     * Updates the client to be the current client
+     */
+    public function updateCurrent(Request $request, Client $client)
+    {
+        if($request->user()->cannot('update', $client)) {
+            abort(403);
+        }
+        $request->user()->clients()->update(['current' => false]);
+        $client->update(['current' => true]);
+        Inertia::share('currentClient', $client);
         return to_route('clients.index');
     }
 

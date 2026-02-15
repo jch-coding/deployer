@@ -51,3 +51,30 @@ test('a user can edit client details with valid data', function () {
          ->assertRedirect(route('clients.index'));
     $this->assertDatabaseHas('clients', ['name' => 'New Name']);
 });
+
+test('only one client can be set as current for a user', function () {
+    $this->withoutExceptionHandling();
+   $user = User::factory()
+               ->has(Client::factory()->count(2))
+               ->create();
+   $this->actingAs($user);
+   $this->put(route('clients.edit.current', $user->clients->first()));
+   $current_client = $user->refresh()->currentClient();
+   expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe(1);
+   expect($user->clients->where('current', true))->toHaveCount(1);
+   $this->put(route('clients.edit.current', $user->clients->last()));
+   $current_client = $user->refresh()->currentClient();
+   expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe(2);
+   expect($user->clients->where('current', true))->toHaveCount(1);
+});
+
+test('a user can set a client as current', function () {
+    $user = User::factory()
+                ->has(Client::factory()->count(1))
+                ->create();
+    $this->actingAs($user);
+    $client = $user->clients->first();
+    $this->put(route('clients.edit.current', $client));
+    $current_client = $user->refresh()->currentClient();
+    expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe($client->id);
+});
