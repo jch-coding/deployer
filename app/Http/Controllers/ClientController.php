@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\BaseURL;
+use App\Http\Resources\ClientResource;
 use App\Models\Client;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -15,7 +16,7 @@ class ClientController extends Controller
      */
     public function index(Request $request)
     {
-        $clients = $request->user()->clients()->paginate(15);
+        $clients = ClientResource::collection($request->user()->clients()->paginate(15));
         return Inertia::render('Client/Index', ['clients' => $clients, 'base_urls' => BaseURL::cases()]);
     }
 
@@ -70,13 +71,17 @@ class ClientController extends Controller
             abort(403);
         }
 
-        $validated = $request->validate([
-            'name' => 'nullable|string|min:3|max:255',
-            'client_id' => 'nullable|string|min:12|max:255',
-            'client_secret' => 'nullable|string|min:12|max:255',
-            'customer_id' => 'nullable|string|min:12|max:255',
-            'base_url' => 'string',
-        ]);
+        $validated = [];
+        if($request->has('name'))
+            $validated = array_merge($validated, $request->validate(['name' => 'string|min:3|max:255']));
+        if($request->has('client_id'))
+            $validated = array_merge($validated, $request->validate(['client_id' => 'string|min:12|max:255']));
+        if($request->has('client_secret'))
+            $validated = array_merge($validated, $request->validate(['client_secret' => 'string|min:12|max:255']));
+        if($request->has('customer_id'))
+            $validated = array_merge($validated, $request->validate(['customer_id' => 'string|min:12|max:255']));
+        if($request->has('base_url'))
+            $validated = array_merge($validated, $request->validate(['base_url' => 'string']));
 
         $client->update($validated);
         Inertia::flash('success', 'Client updated successfully.');

@@ -1,9 +1,9 @@
-import { Form } from '@inertiajs/react';
+import { Form  } from '@inertiajs/react';
 import { toast } from 'sonner';
+import { update } from '@/actions/App/Http/Controllers/ClientController';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Field, FieldGroup } from '@/components/ui/field';
-import { edit } from '@/routes/clients';
 import { type Client } from '@/types/clients/client';
 
 export default function CreateClientModal( { client, errors, base_urls }: { client: Client, errors: Record<string, string>, base_urls: string[] }) {
@@ -26,8 +26,8 @@ export default function CreateClientModal( { client, errors, base_urls }: { clie
                     </DialogDescription>
                 </DialogHeader>
                 <Form
-                    action={ edit.url(client.id) }
-                    method='POST'
+                    action={ update(client.id) }
+                    method='PUT'
                     transform={ data => Object.fromEntries(Object.entries(data).filter(([, v]) => v != "")) }
                     onSuccess={ () => toast.success('Client edited successfully')}
                     className="block space-y-4">

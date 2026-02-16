@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import DeleteModal from '@/components/ui/DeleteModal';
 import EditClientModal from '@/components/ui/EditClientModal';
-import { current } from '@/routes/clients/edit';
+import { current } from '@/routes/clients';
 import { type Client } from '@/types/clients/client';
 
 export default function ClientCard({ client, errors, base_urls, isCurrentClient } : { client: Client, errors: Record<string, string>, base_urls: string[], isCurrentClient: boolean }) {

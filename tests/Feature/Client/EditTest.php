@@ -2,6 +2,7 @@
 
 use App\Models\Client;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\Sequence;
 
 test('a user cannot edit another user\'s client', function () {
     $user1 = User::factory()
@@ -13,37 +14,87 @@ test('a user cannot edit another user\'s client', function () {
          ->assertForbidden();
 });
 
-test('a user cannot edit client details with invalid data', function ($value) {
+test('a user cannot edit client details with invalid name data', function ($value) {
     $user = User::factory()
-                ->has(Client::factory()->count(1))
+                ->has(Client::factory()->count(1)->state(fn () => ['current' => true]))
                 ->create();
     $this->actingAs($user);
     $client = $user->clients->first();
     $this->put(route('clients.edit', $client), $value)
-         ->assertSessionHas('errors');
+          ->assertSessionHasErrors(['name']);
     $this->assertDatabaseHas('clients', [
         'name' => $client->name,
-        'client_secret' => $client->client_secret,
         'client_id' => $client->client_id,
-        'customer_id' => $client->customer_id
+        'customer_id' => $client->customer_id,
     ]);
 })->with([
     fn() => ['name' => ''],
     fn() => ['name' => null],
     fn() => ['name' => str_repeat('a', 256)],
-    fn() => ['client_secret' => ''],
-    fn() => ['client_secret' => null],
+]);
+
+test('a user cannot edit client details with invalid client_id data', function ($value) {
+    $user = User::factory()
+        ->has(Client::factory()->count(1)->state(fn () => ['current' => true]))
+        ->create();
+    $this->actingAs($user);
+    $client = $user->clients->first();
+    $this->put(route('clients.edit', $client), $value)
+        ->assertSessionHasErrors(['client_id']);
+    $this->assertDatabaseHas('clients', [
+        'client_id' => $client->client_id,
+    ]);
+})->with([
     fn() => ['client_id' => ''],
     fn() => ['client_id' => null],
+]);
+
+test('a user cannot edit client details with invalid client_secret data', function ($value) {
+    $user = User::factory()
+        ->has(Client::factory()->count(1)->state(fn () => ['current' => true]))
+        ->create();
+    $this->actingAs($user);
+    $client = $user->clients->first();
+    $this->put(route('clients.edit', $client), $value)
+        ->assertSessionHasErrors(['client_secret']);
+})->with([
+    fn() => ['client_secret' => ''],
+    fn() => ['client_secret' => null],
+]);
+
+test('a user cannot edit client details with invalid customer_id data', function ($value) {
+    $user = User::factory()
+        ->has(Client::factory()->count(1)->state(fn () => ['current' => true]))
+        ->create();
+    $this->actingAs($user);
+    $client = $user->clients->first();
+    $this->put(route('clients.edit', $client), $value)
+        ->assertSessionHasErrors(['customer_id']);
+    $this->assertDatabaseHas('clients', [
+        'customer_id' => $client->customer_id,
+    ]);
+})->with([
     fn() => ['customer_id' => ''],
     fn() => ['customer_id' => null],
+]);
+
+test('a user cannot edit client details with invalid base_url data', function ($value) {
+    $user = User::factory()
+        ->has(Client::factory()->count(1)->state(fn () => ['current' => true]))
+        ->create();
+    $this->actingAs($user);
+    $client = $user->clients->first();
+    $this->put(route('clients.edit', $client), $value)
+        ->assertSessionHasErrors(['base_url']);
+})->with([
     fn() => ['base_url' => ''],
     fn() => ['base_url' => null],
 ]);
 
 test('a user can edit client details with valid data', function () {
+    $this->withoutExceptionHandling();
     $user = User::factory()
-                ->has(Client::factory()->count(1))
+                ->has(Client::factory()->count(1)->state(fn () => ['current' => true]))
                 ->create();
     $this->actingAs($user);
     $client = $user->clients->first();
@@ -55,14 +106,16 @@ test('a user can edit client details with valid data', function () {
 test('only one client can be set as current for a user', function () {
     $this->withoutExceptionHandling();
    $user = User::factory()
-               ->has(Client::factory()->count(2))
+               ->has(Client::factory(2)->state(['current' => false]))
                ->create();
    $this->actingAs($user);
-   $this->put(route('clients.edit.current', $user->clients->first()));
+   $this->put(route('clients.current', $user->clients->first()));
+   dd(Client::all());
    $current_client = $user->refresh()->currentClient();
+
    expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe(1);
    expect($user->clients->where('current', true))->toHaveCount(1);
-   $this->put(route('clients.edit.current', $user->clients->last()));
+   $this->put(route('clients.current', $user->clients->last()));
    $current_client = $user->refresh()->currentClient();
    expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe(2);
    expect($user->clients->where('current', true))->toHaveCount(1);
@@ -74,7 +127,7 @@ test('a user can set a client as current', function () {
                 ->create();
     $this->actingAs($user);
     $client = $user->clients->first();
-    $this->put(route('clients.edit.current', $client));
+    $this->put(route('clients.current', $client));
     $current_client = $user->refresh()->currentClient();
     expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe($client->id);
 });

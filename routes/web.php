@@ -17,8 +17,8 @@ Route::get('dashboard', function () {
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/clients', [ClientController::class, 'index'])->name('clients.index');
-    Route::put('/clients/{client}/current', [ClientController::class, 'updateCurrent'])->name('clients.edit.current');
-    Route::put('/clients/{client}', [ClientController::class, 'update'])->name('clients.edit');
+    Route::put('/clients/edit/{client}', [ClientController::class, 'update'])->name('clients.edit');
+    Route::put('/clients/current/{client}', [ClientController::class, 'updateCurrent'])->name('clients.current');
     Route::post('/clients', [ClientController::class, 'store'])->name('clients.store');
     Route::delete('/clients/{client}', [ClientController::class, 'destroy'])->name('clients.destroy');
 });
