@@ -3,12 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\BaseURL;
+use App\Http\Controllers\CentralController;
 use App\Http\Resources\ClientResource;
 use App\Models\Client;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
-
 class ClientController extends Controller
 {
     /**
@@ -29,6 +29,31 @@ class ClientController extends Controller
     }
 
     /**
+     * Test central credentials endpoint
+     */
+    public function testCentralCreds(Request $request, Client $client)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|min:3|max:255',
+            'client_id' => 'required|string|min:12|max:255',
+            'client_secret' => 'required|string|min:12|max:255',
+            'customer_id' => 'required|string|min:12|max:255',
+            'base_url' => ['required', Rule::enum(BaseURL::class)],
+        ]);
+
+        $access_token = CentralController::getAccessToken($data['client_id'], $data['client_secret']);
+
+        if($access_token === 'failed_to_get_token') {
+            Inertia::flash('error', 'Failed to get access token from central.');
+            return back();
+        }
+
+        array_merge($data, ['bearer_token' => $access_token]);
+        Inertia::flash('success', 'Successfully got access token from central. Client created successfully.');
+        return to_route('clients.index');
+    }
+
+    /**
      * Store a newly created resource in storage.
      */
     public function store(Request $request)
@@ -41,9 +66,19 @@ class ClientController extends Controller
             'base_url' => ['required', Rule::enum(BaseURL::class)],
         ]);
 
-        $request->user()->clients()->create($data);
-        Inertia::flash('success', 'Client created successfully.');
-        return back();
+        $access_token = CentralController::getAccessToken($data['client_id'], $data['client_secret']);
+
+        if($access_token === 'failed_to_get_token') {
+            return back()->withErrors(['failed_to_get_token' => 'Failed to get access token from central.']);
+        }
+
+        else {
+            $data = array_merge($data, ['bearer_token' => $access_token]);
+
+            $request->user()->clients()->create($data);
+            Inertia::flash('success', 'Client created successfully.');
+            return back();
+        }
     }
 
     /**
@@ -96,7 +131,10 @@ class ClientController extends Controller
         if($request->user()->cannot('update', $client)) {
             abort(403);
         }
-        $request->user()->clients()->update(['current' => false]);
+        $oldCurrentClient = $request->user()->clients()->where('current', true)->first();
+        if($oldCurrentClient) {
+            $oldCurrentClient->update(['current' => false]);
+        }
         $client->update(['current' => true]);
         Inertia::share('currentClient', $client);
         return to_route('clients.index');

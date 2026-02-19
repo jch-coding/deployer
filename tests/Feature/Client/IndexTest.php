@@ -13,7 +13,7 @@ it('returns a list of clients', function () {
     $user = User::factory()
             ->has(Client::factory()->count(2))
             ->create();
-
+    $user->refresh();
     $this->actingAs($user)->get(route('clients.index'))
          ->assertOk()
          ->assertSeeHtml([

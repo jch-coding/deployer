@@ -2,6 +2,7 @@
 
 use App\Models\Client;
 use App\Models\User;
+use Illuminate\Support\Facades\Http;
 
 it('has a name', function () {
     $this->withoutExceptionHandling();

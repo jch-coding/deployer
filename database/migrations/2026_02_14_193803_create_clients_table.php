@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('client_id');
             $table->text('client_secret');
+            $table->text('bearer_token');
             $table->string('customer_id');
             $table->enum('base_url', BaseURL::cases());
             $table->boolean('current')->default(false);

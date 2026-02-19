@@ -23,6 +23,7 @@ class ClientFactory extends Factory
             'client_id' => fake()->uuid(),
             'client_secret' => fake()->password(),
             'customer_id' => fake()->uuid(),
+            'bearer_token' => fake()->uuid(),
             'user_id' => User::factory(),
             'current' => false,
             'base_url' => fake()->randomElement(BaseURL::cases()),

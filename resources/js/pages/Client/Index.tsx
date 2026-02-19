@@ -53,6 +53,7 @@ export default function Index() {
                                 client={ client }
                                 errors={ errors }
                                 base_urls={ base_urls }
+                                index={ client.client_id }
                                 isCurrentClient={client.id === current_client?.id}
                             />
                                 )

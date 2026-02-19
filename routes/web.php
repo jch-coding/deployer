@@ -20,7 +20,9 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/clients/edit/{client}', [ClientController::class, 'update'])->name('clients.edit');
     Route::put('/clients/current/{client}', [ClientController::class, 'updateCurrent'])->name('clients.current');
     Route::post('/clients', [ClientController::class, 'store'])->name('clients.store');
+    Route::post('/clients/test_central_creds/{client}', [ClientController::class, 'testCentralCreds'])->name('clients.test_central_creds');
     Route::delete('/clients/{client}', [ClientController::class, 'destroy'])->name('clients.destroy');
+
 });
 
 require __DIR__.'/settings.php';

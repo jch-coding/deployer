@@ -56,7 +56,7 @@ export default function CreateClientModal( { client, errors, base_urls }: { clie
                             <label htmlFor="base_url" className="font-bold">Base URL</label>
                             <select name="base_url" id="base_url">
                                 { base_urls.map((url) =>
-                                    <option key={url} value={url} selected={url === client.base_url}>{url}</option>)
+                                    <option key={url} value={url} selected={`https://${url}.api.central.arubanetworks.com/` == client.base_url}>{url}</option>)
                                 }
                             </select>
                         </Field>

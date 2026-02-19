@@ -1,4 +1,5 @@
-import { Form } from '@inertiajs/react';
+import { Form  } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -6,11 +7,19 @@ import { Field, FieldGroup } from '@/components/ui/field';
 import { store } from '@/routes/clients';
 
 export default function CreateClientModal( {  errors, base_urls }: { errors: Record<string, string>, base_urls: string[] } ) {
+    const dialogCloseRef = useRef<HTMLButtonElement>(null);
+    const [ saveSuccess, setSaveSuccess ] = useState(false);
+    useEffect(
+        () => {
+            if (saveSuccess) {
+                dialogCloseRef.current?.click();
+            }
+    });
     return (
         <Dialog>
             <DialogTrigger asChild>
                 <Button
-                    variant="outline"
+                    className="absolute top-3 right-3 hover:bg-slate-300"
                 >
                     Add Client
                 </Button>
@@ -27,9 +36,16 @@ export default function CreateClientModal( {  errors, base_urls }: { errors: Rec
                 <Form
                     action={ store.url() }
                     method='POST'
-                    onSuccess={ () => toast.success('Client saved successfully')}
+                    onSuccess={ () => {
+                        toast.success('Client saved successfully');
+                        setSaveSuccess(true);
+                        }
+                    }
                     className="block space-y-4">
                     <FieldGroup>
+                        {
+                            errors.failed_to_get_token && <p className="text-red-500 text-xs">{ errors.failed_to_get_token }</p>
+                        }
                         <Field>
                             <label htmlFor="name" className="font-bold">Name</label>
                             <input name="name" required />
@@ -61,7 +77,7 @@ export default function CreateClientModal( {  errors, base_urls }: { errors: Rec
                     </FieldGroup>
                     <DialogFooter>
                         <DialogClose asChild>
-                            <Button variant="secondary">Cancel</Button>
+                            <Button ref={dialogCloseRef} variant="secondary">Cancel</Button>
                         </DialogClose>
                         <Button type="submit">
                             Add Client

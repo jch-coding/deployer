@@ -4,6 +4,8 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -57,8 +59,13 @@ class User extends Authenticatable
         return $this->hasMany(Client::class);
     }
 
-    public function currentClient() : Client
+    public function tasks() : BelongsToMany
     {
-        return $this->clients()->where('current', true)->firstOrFail();
+        return $this->belongsToMany(Task::class)->withPivot('status')->withTimestamps();
+    }
+
+    public function currentClient()
+    {
+        return $this->clients()->where('current', true)->first();
     }
 }

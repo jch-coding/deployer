@@ -36,6 +36,9 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $current_client = null;
+        if($request->user())
+            $current_client = $request->user()->currentClient()?->only(['id', 'name']);
         return [
             ...parent::share($request),
             'name' => config('app.name'),
@@ -43,7 +46,7 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user()?->only(['id', 'name', 'email']),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
-            'current_client' => $request->user()?->currentClient()->only(['id', 'name'])
+            'current_client' => $current_client
         ];
     }
 }
