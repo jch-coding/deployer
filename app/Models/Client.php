@@ -28,6 +28,11 @@ class Client extends Model
         return $this->hasMany(Device::class);
     }
 
+    public function deployments() : HasMany
+    {
+        return $this->hasMany(Deployment::class);
+    }
+
     protected function casts() : array
     {
         return [
@@ -40,11 +45,6 @@ class Client extends Model
         return Attribute::make(
             get: fn (string $value) => "https://{$value}.api.central.arubanetworks.com/",
         );
-    }
-
-    public function test()
-    {
-        echo 'test';
     }
 
     public function handleBearerTokenAuth()

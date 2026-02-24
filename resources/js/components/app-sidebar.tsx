@@ -1,7 +1,6 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import {
-    AntennaIcon,
-    ArmchairIcon,
+    ActivityIcon,
     BookOpen,
     BuildingIcon,
     Folder,
@@ -20,9 +19,9 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
-import { index } from '@/routes/clients'
+import { index as client_index } from '@/routes/clients'
+import { index as deployment_index } from '@/routes/deployments'
 import type { NavItem } from '@/types';
-import AppLogo from './app-logo';
 
 const mainNavItems: NavItem[] = [
     {
@@ -32,8 +31,13 @@ const mainNavItems: NavItem[] = [
     },
     {
         title: 'Clients',
-        href: index(),
+        href: client_index(),
         icon: BuildingIcon,
+    },
+    {
+        title: 'Deployments',
+        href: deployment_index(),
+        icon: ActivityIcon,
     },
 ];
 
@@ -51,15 +55,15 @@ const footerNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
+    const current_client = usePage().props.current_client;
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={dashboard()} prefetch>
-                                {/*<AppLogo />*/}
-                                Client Name
+                            <Link href={dashboard()} className="text-slate-800 font-bold" prefetch>
+                                {current_client ? current_client.name : 'Client Not Set'}
                             </Link>
                         </SidebarMenuButton>
                     </SidebarMenuItem>

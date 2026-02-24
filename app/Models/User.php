@@ -64,6 +64,11 @@ class User extends Authenticatable
         return $this->belongsToMany(Task::class)->withPivot('status')->withTimestamps();
     }
 
+    public function deployments() : HasMany
+    {
+        return $this->hasMany(Deployment::class);
+    }
+
     public function currentClient()
     {
         return $this->clients()->where('current', true)->first();

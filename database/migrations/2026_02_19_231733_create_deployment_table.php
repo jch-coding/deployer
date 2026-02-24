@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\Client;
-use App\Models\Deployment;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,16 +12,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('devices', function (Blueprint $table) {
+        Schema::create('deployments', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('scope_id');
-            $table->string('serial');
-            $table->string('device_function');
+            $table->text('description')->nullable();
             $table->foreignIdFor(Client::class)->constrained()->cascadeOnDelete();
             $table->timestamps();
         });
-
     }
 
     /**
@@ -30,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('devices');
+        Schema::dropIfExists('deployments');
     }
 };
