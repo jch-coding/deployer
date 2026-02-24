@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,15 @@ class Device extends Model
 {
     /** @use HasFactory<\Database\Factories\DeviceFactory> */
     use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'device_id',
+        'client_id',
+        'deployment_id',
+        'serial',
+        'device_function'
+    ];
 
     public function client() : BelongsTo
     {

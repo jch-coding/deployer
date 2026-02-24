@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
+use App\Http\Controllers\DeviceController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -31,6 +32,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/deployments', 'store')->name('deployments.store');
         Route::delete('/deployments/{deployment}', 'destroy')->name('deployments.destroy');
         Route::get('/deployments/{deployment}', 'show')->name('deployments.show');
+    });
+
+    Route::controller(DeviceController::class)->group(function () {
+        Route::post('/devices/{deployment}', 'store')->name('devices.store');
+        Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
     });
 });
 

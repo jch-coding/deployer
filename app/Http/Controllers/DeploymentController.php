@@ -38,19 +38,18 @@ class DeploymentController extends Controller
         $data = $request->validate([
             'name' => 'required|string|min:3|max:255',
             'description' => 'nullable|string|max:255',
-            'client_id' => 'required',
         ]);
 
         if (Deployment::where('name', $data['name'])->exists()) {
             return redirect()->back()->withErrors(['name' => 'Deployment with this name already exists']);
         }
 
-        $client_id = (int) $data['client_id'];
-        if($request->user()->clients->where('id', $client_id)->count() == 0) {
-            return redirect()->back()->withErrors(['client_id' => 'Invalid client id']);
-        }
+        $client_id = $request->user()->currentClient()->id;
 
-        Deployment::create($data);
+        Deployment::create([
+            ...$data,
+            'client_id' => $client_id
+        ]);
 
         return redirect()->route('deployments.index');
     }

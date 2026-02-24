@@ -1,6 +1,10 @@
+import { Field } from '@headlessui/react';
 import { Form, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { type SharedData } from '@/types';
+import { useEffect, useRef, useState } from 'react';
+import { store } from '@/actions/App/Http/Controllers/DeploymentController';
+import { Button } from '@/components/ui/button';
+import { columns } from '@/components/ui/columns';
+import { DataTable } from '@/components/ui/data-table';
 import {
     Dialog,
     DialogClose,
@@ -10,16 +14,13 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { store } from '@/actions/App/Http/Controllers/DeploymentController';
-import { useEffect, useRef, useState } from 'react';
 import { FieldGroup } from '@/components/ui/field';
-import { Field } from '@headlessui/react';
-import { columns } from '@/components/ui/columns';
-import { DataTable } from '@/components/ui/data-table';
+import { Input } from '@/components/ui/input';
+import AppLayout from '@/layouts/app-layout';
+import { type SharedData } from '@/types';
 
 type Deployment = {
+    id: number;
     name: string;
     devices: number;
 }

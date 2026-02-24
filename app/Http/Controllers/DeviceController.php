@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\DeviceFunction;
+use App\Models\Deployment;
 use App\Models\Device;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class DeviceController extends Controller
 {
@@ -26,9 +29,35 @@ class DeviceController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request, Deployment $deployment)
     {
-        //
+        $data = $request->validate([
+            'name' => 'required|string|min:3|max:255',
+            'serial' => 'required|string|min:12',
+            'device_function' => [
+                'required',
+                Rule::in(DeviceFunction::cases())
+            ]
+        ]);
+
+        if($request->user()->currentClient()->id !== $deployment->client_id)
+            return redirect()->route('deployments.show', $deployment)->with('error', 'Device cannot be created for this deployment');
+
+        if(Device::where('serial', $data['serial'])->exists()) {
+            $device = Device::where('serial', $data['serial'])->first();
+            $device->update([
+                ...$data,
+                    'client_id' => $request->user()->currentClient()->id,
+                    'deployment_id' => $deployment->id,
+            ]);
+            return redirect()->route('deployments.show', $deployment)->with('success', 'Device updated successfully');
+        }
+        Device::create([
+            ...$data,
+            'client_id' => $request->user()->currentClient()->id,
+            'deployment_id' => $deployment->id,
+        ]);
+        return redirect()->route('deployments.show', $deployment)->with('success', 'Device created successfully');
     }
 
     /**
@@ -52,7 +81,26 @@ class DeviceController extends Controller
      */
     public function update(Request $request, Device $device)
     {
-        //
+        $data = [];
+        if ($request->has('name')) {
+            array_merge($data, ['name' => $request->validate(['name' => 'string|min:3|max:255'])]);
+        }
+        if ($request->has('serial')) {
+            array_merge($data, ['serial' => $request->validate(['serial' => 'string|min:12'])]);
+        }
+        if ($request->has('device_function')) {
+            array_merge($data, ['device_function' => $request->validate(['device_function' => Rule::in(DeviceFunction::cases())])]);
+        }
+        if ($request->has('deployment_id')) {
+            $client = $device->client;
+            $deployment = $client->deployments()->find($request->deployment_id);
+            if (!$deployment) {
+                return back()->withErrors('Deployment does not belong to current client.', 'deployment_id');
+            }
+            array_merge($data, ['deployment_id' => $deployment->id]);
+        }
+        $device->update($data);
+        return back()->with('success', 'Device updated successfully');
     }
 
     /**

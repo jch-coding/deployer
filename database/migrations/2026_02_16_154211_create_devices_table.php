@@ -1,5 +1,6 @@
 <?php
 
+use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use Illuminate\Database\Migrations\Migration;
@@ -16,13 +17,12 @@ return new class extends Migration
         Schema::create('devices', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('scope_id');
-            $table->string('serial');
-            $table->string('device_function');
+            $table->string('scope_id')->nullable();
+            $table->string('serial')->unique();
+            $table->enum('device_function', DeviceFunction::cases());
             $table->foreignIdFor(Client::class)->constrained()->cascadeOnDelete();
             $table->timestamps();
         });
-
     }
 
     /**

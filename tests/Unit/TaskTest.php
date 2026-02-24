@@ -30,4 +30,3 @@ it('has a default status of in progress', function () {
     $user->tasks()->attach($task);
     expect($user->tasks()->first()->pivot->status)->toBe("IN_PROGRESS");
 });
-

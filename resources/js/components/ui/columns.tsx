@@ -10,7 +10,8 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-// import { put, delete } from '@/routes/deployments';
+import { destroy } from '@/routes/deployments';
+import { router } from '@inertiajs/react';
 
 type DeploymentDef = {
     id: number;
@@ -19,6 +20,10 @@ type DeploymentDef = {
 }
 
 export const columns: ColumnDef<DeploymentDef>[] = [
+    {
+      accessorKey: 'id',
+      header: 'ID',
+    },
     {
         accessorKey: 'name',
         header: 'Name',
@@ -33,7 +38,11 @@ export const columns: ColumnDef<DeploymentDef>[] = [
         cell: ({ row }) => (
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 p-0">
+                    <Button
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        data-test="actions-open"
+                    >
                         <span className="sr-only">Open menu</span>
                         <MoreHorizontal className="h-5 w-5" />
                     </Button>
@@ -46,7 +55,9 @@ export const columns: ColumnDef<DeploymentDef>[] = [
                         Edit
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                        data-test="delete"
                         onClick={() => {
+                            router.delete(destroy(row.getValue('id')))
                         }}
                         >
                         Delete

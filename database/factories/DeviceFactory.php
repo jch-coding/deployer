@@ -23,7 +23,7 @@ class DeviceFactory extends Factory
             'scope_id' => fake()->uuid(),
             'serial' => fake()->uuid(),
             'client_id' => Client::factory(),
-            'device_function' => fake()->randomElement(DeviceFunction::cases()),
+            'device_function' => fake()->randomElement(DeviceFunction::cases())->name,
         ];
     }
 }
