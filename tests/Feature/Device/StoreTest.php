@@ -5,6 +5,8 @@ use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 
 test('must be authenticated to store a device', function () {
     $deployment = Deployment::factory()->create();
@@ -80,4 +82,45 @@ test('adding a device already in the database will update the device', function 
     $this->post(route('devices.store', $deployment), $device->toArray())
        ->assertSessionHasNoErrors();
     $this->assertDatabaseCount('devices', 1);
+});
+
+it('can add a list of devices to a deployment from a csv file upload', function () {
+    Storage::fake('devices');
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+    $uploadedFile = UploadedFile::fake()
+        ->createWithContent('devices.csv',
+            'name,serial,device_function' . PHP_EOL . 'Test Device 1,SN0000000001,CAMPUS_AP' . PHP_EOL . 'Test Device 2,SN0000000002,CAMPUS_AP' . PHP_EOL
+            );
+    $this->post(route('devices.store-many', $deployment), [
+        'devices' => $uploadedFile
+    ])
+        ->assertRedirect(route('deployments.show', $deployment));
+    $this->assertDatabaseCount('devices', 2);
+});
+
+it('selectively saves only required fields when adding a list of devices from a csv file upload', function () {
+    $this->withoutExceptionHandling();
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+    $uploadedFile = UploadedFile::fake()
+        ->createWithContent('devices.csv',
+            'name,serial,device_function,site,description' . PHP_EOL . 'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device' . PHP_EOL . 'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2' . PHP_EOL
+        );
+    $this->post(route('devices.store-many', $deployment), [
+        'devices' => $uploadedFile
+    ]);
+    $this->assertDatabaseCount('devices', 2);
+    $this->assertDatabaseHas('devices', ['name' => 'Test Device 1', 'serial' => 'SN0000000001', 'device_function' => DeviceFunction::CAMPUS_AP]);
+    $this->assertDatabaseHas('devices', ['name' => 'Test Device 2', 'serial' => 'SN0000000002', 'device_function' => DeviceFunction::CAMPUS_AP]);
 });

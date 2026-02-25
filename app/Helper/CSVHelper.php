@@ -21,7 +21,7 @@ class CSVHelper
 
     public static function createDeviceArrays($CSVData)
     {
-        if(empty($CSVData)) return [];
+        if(empty($CSVData) || count($CSVData) == 1) return [];
         $headers = $CSVData[0];
         $deviceArrays = [];
         foreach (array_slice($CSVData, 1) as $row) {

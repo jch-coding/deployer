@@ -35,6 +35,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::controller(DeviceController::class)->group(function () {
+        Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
     });
