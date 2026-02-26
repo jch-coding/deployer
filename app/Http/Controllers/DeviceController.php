@@ -70,8 +70,8 @@ class DeviceController extends Controller
             return back()->withErrors('No file uploaded');
 
         $file = $request->file('devices');
-        $path = 'storage/app/private/' . $file->store('devices');
-        $csvData = CSVHelper::processCSVFile($path);
+//        $path = 'storage/app/private/' . $file->store('devices');
+        $csvData = CSVHelper::processCSVFile($file->getPathname());
         $devices = CSVHelper::createDeviceArrays($csvData);
 
         if(count($devices) === 0)
@@ -91,9 +91,9 @@ class DeviceController extends Controller
             $devices
         );
 
-        $savedDevices = $request->user()->currentClient()->devices()->createMany($withDeployment);
+        $savedDevices = $request->user()->currentClient()->devices()->upsert($withDeployment, ['serial'], ['name', 'device_function', 'deployment_id']);
 
-        if(count($savedDevices) !== count($devices))
+        if($savedDevices !== count($devices))
             return back()->withErrors('Some devices were not saved');
 
         return redirect()->route('deployments.show', $deployment)->with('success', 'Devices created successfully');

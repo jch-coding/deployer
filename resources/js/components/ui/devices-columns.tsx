@@ -6,32 +6,27 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuLabel,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-import { destroy } from '@/routes/deployments';
-import { router } from '@inertiajs/react';
-
-type DeploymentDef = {
-    id: number;
+type DeviceDef = {
     name: string;
-    devices_count: number;
+    serial: number;
+    device_function: string;
 }
 
-export const columns: ColumnDef<DeploymentDef>[] = [
+export const columns: ColumnDef<DeviceDef>[] = [
     {
-      accessorKey: 'id',
-      header: 'ID',
+      accessorKey: 'name',
+      header: 'Name',
     },
     {
-        accessorKey: 'name',
-        header: 'Name',
+        accessorKey: 'serial',
+        header: 'Serial',
     },
     {
-        accessorKey: 'devices_count',
-        header: () => <div className="text-right">Devices</div>,
-        cell: ({ row }) => <div className="text-right">{row.getValue('devices_count')}</div>
+        accessorKey: 'device_function',
+        header: 'Device Function',
     },
     {
         id: "actions",
@@ -57,7 +52,6 @@ export const columns: ColumnDef<DeploymentDef>[] = [
                     <DropdownMenuItem
                         data-test="delete"
                         onClick={() => {
-                            router.delete(destroy(row.getValue('id')))
                         }}
                         >
                         Delete

@@ -17,7 +17,7 @@ class DeploymentController extends Controller
             return to_route('clients.index');
         }
 
-        $deployments = $currentClient->deployments;
+        $deployments = $currentClient->deployments()->withCount('devices')->get();
 
         return Inertia::render('Deployment/Index', [
             'deployments' => $deployments,
@@ -26,10 +26,9 @@ class DeploymentController extends Controller
 
     public function show(Request $request, Deployment $deployment)
     {
-        $devices = $deployment->devices;
+        $deployment->load('devices');
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
-            'devices' => $devices,
         ]);
     }
 

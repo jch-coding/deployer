@@ -124,3 +124,33 @@ it('selectively saves only required fields when adding a list of devices from a 
     $this->assertDatabaseHas('devices', ['name' => 'Test Device 1', 'serial' => 'SN0000000001', 'device_function' => DeviceFunction::CAMPUS_AP]);
     $this->assertDatabaseHas('devices', ['name' => 'Test Device 2', 'serial' => 'SN0000000002', 'device_function' => DeviceFunction::CAMPUS_AP]);
 });
+
+it('uploading an existing device with different information will update it in the database', function () {
+    $this->withoutExceptionHandling();
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    Device::factory()
+        ->recycle($client)
+        ->recycle($deployment)
+        ->create([
+            'name' => 'Test Device Original',
+            'serial' => 'SN0000000001',
+            'device_function' => DeviceFunction::CAMPUS_AP,
+            'deployment_id' => $deployment->id,
+        ]);
+    $this->actingAs($user);
+    $uploadedFile = UploadedFile::fake()
+        ->createWithContent('devices.csv',
+            'name,serial,device_function,site,description' . PHP_EOL . 'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device' . PHP_EOL . 'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2' . PHP_EOL
+        );
+    $this->post(route('devices.store-many', $deployment), [
+        'devices' => $uploadedFile
+    ]);
+    $this->assertDatabaseCount('devices', 2);
+    $this->assertDatabaseHas('devices', ['name' => 'Test Device 1', 'serial' => 'SN0000000001', 'device_function' => DeviceFunction::CAMPUS_AP]);
+    $this->assertDatabaseHas('devices', ['name' => 'Test Device 2', 'serial' => 'SN0000000002', 'device_function' => DeviceFunction::CAMPUS_AP]);
+});

@@ -10,7 +10,7 @@ test('index page returns a list of deployments for an authenticated user', funct
     $deployments = Deployment::factory(2)->for($user)->create();
     $this->get(route('deployments.index'))
         ->assertOk()
-        ->assertSeeHtml($deployments->first()->name)
+    ->assertSeeHtml($deployments->first()->name)
         ->assertSeeHtml($deployments->last()->name);
 });
 
