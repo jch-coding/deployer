@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\DeviceFunction;
 use App\Models\Client;
+use App\Models\Deployment;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,11 +19,14 @@ class DeviceFactory extends Factory
      */
     public function definition(): array
     {
+        $client = Client::factory()->create();
+        $deployment = Deployment::factory()->for($client)->create();
         return [
             'name' => fake()->name(),
             'scope_id' => fake()->uuid(),
             'serial' => fake()->uuid(),
-            'client_id' => Client::factory(),
+            'client_id' => $client,
+            'deployment_id' => $deployment,
             'device_function' => fake()->randomElement(DeviceFunction::cases())->name,
         ];
     }
