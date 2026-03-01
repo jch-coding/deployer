@@ -13,7 +13,7 @@ class DeviceInterface extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name',
+        'interface',
         'description',
         'enable',
         'jumbo_frames',
@@ -21,7 +21,8 @@ class DeviceInterface extends Model
         'vrf_forwarding',
         'device_id',
         'lacp_profile_id',
-        'switchport_profile_id'
+        'switch_port_id',
+        'stp_profile_id'
     ];
 
     protected $casts = [
@@ -33,13 +34,18 @@ class DeviceInterface extends Model
         return $this->belongsTo(Device::class);
     }
 
-    public function switchports() : BelongsToMany
+    public function switchport() : BelongsTo
     {
-        return $this->belongsToMany(SwitchPort::class);
+        return $this->belongsTo(SwitchPort::class);
     }
 
     public function lacpProfile() : BelongsTo
     {
         return $this->belongsTo(LacpProfile::class);
+    }
+
+    public function stpProfile() : BelongsTo
+    {
+        return $this->belongsTo(StpProfile::class);
     }
 }

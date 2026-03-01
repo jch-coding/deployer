@@ -1,0 +1,5 @@
+name,serial,device_function,interface,interface_mode,access_vlan,native_vlan,trunk_vlan_all,admin_edge_port,admin_edge_port_trunk,bpdu_guard,loop_guard
+CO-IDF1-SW1,SN0000000001,ACCESS_SWITCH,1/1/1,ACCESS,10,,,true,,true,true
+CO-IDF1-SW1,SN0000000001,ACCESS_SWITCH,1/1/2,TRUNK,,10,true,,true,,
+CO-IDF2-SW1,SN0000000002,ACCESS_SWITCH,1/1/1,ACCESS,8,,,true,,true,true
+CO-IDF2-SW1,SN0000000002,ACCESS_SWITCH,1/1/2,TRUNK,,8,true,,true,,

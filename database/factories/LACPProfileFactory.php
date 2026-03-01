@@ -17,7 +17,9 @@ class LACPProfileFactory extends Factory
     public function definition(): array
     {
         return [
+            'mode' => fake()->randomElement(['ACTIVE', 'PASSIVE']),
             'port_id' => random_int(1, 256),
+            'rate' => fake()->randomElement(['SLOW', 'FAST']),
         ];
     }
 }

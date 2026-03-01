@@ -1,7 +1,5 @@
 <?php
 
-use App\Models\DeviceInterface;
-use App\Models\SwitchPort;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('device_interface_switch_port', function (Blueprint $table) {
+        Schema::create('stp_profiles', function (Blueprint $table) {
             $table->id();
-            $table->foreignIdFor(DeviceInterface::class)->constrained()->cascadeOnDelete();
-            $table->foreignIdFor(SwitchPort::class)->constrained()->cascadeOnDelete();
+            $table->boolean('admin_edge_port')->nullable()->default(false);
+            $table->boolean('admin_edge_port_trunk')->nullable()->default(false);
+            $table->boolean('bpdu_guard')->nullable()->default(false);
+            $table->boolean('loop_guard')->nullable()->default(false);
             $table->timestamps();
         });
     }
@@ -26,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('device_interface_switch_port');
+        Schema::dropIfExists('stp_profiles');
     }
 };

@@ -154,3 +154,105 @@ it('uploading an existing device with different information will update it in th
     $this->assertDatabaseHas('devices', ['name' => 'Test Device 1', 'serial' => 'SN0000000001', 'device_function' => DeviceFunction::CAMPUS_AP]);
     $this->assertDatabaseHas('devices', ['name' => 'Test Device 2', 'serial' => 'SN0000000002', 'device_function' => DeviceFunction::CAMPUS_AP]);
 });
+
+test('uploading interface information for a new device will populate the device interfaces table', function () {
+    $this->withoutExceptionHandling();
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+    $uploadedFile = UploadedFile::fake()
+        ->createWithContent('devices.csv',
+            'name,serial,device_function,interface,access-vlan,interface-mode,native-vlan,trunk-vlan-all,interface_description'
+            . PHP_EOL .
+            'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/1,30,ACCESS,,,to AP'
+            . PHP_EOL .
+            'CO-IDF-SW2,SN0000000002,ACCESS_SWITCH,1/1/2,30,ACCESS,,,to AP'
+            . PHP_EOL
+        );
+    $this->post(route('devices.store-many', $deployment), [
+        'devices' => $uploadedFile
+    ]);
+    $this->assertDatabaseCount('devices', 2);
+    $this->assertDatabaseHas('device_interfaces', ['device_id' => 1, 'switch_port_id' => 1, 'name' => '1/1/1']);
+    $this->assertDatabaseHas('device_interfaces', ['device_id' => 2, 'switch_port_id' => 1, 'name' => '1/1/2']);
+    $this->assertDatabaseHas('switch_ports', [
+        'access_vlan' => 30,
+        'interface_mode' => 'ACCESS',
+        'native_vlan' => null,
+        'trunk_vlan_all' => null,
+        'description' => 'CO IDF Stack 1'
+    ]);
+});
+
+test('interface ranges create the set of switch ports indicated in the range', function () {
+    $this->withoutExceptionHandling();
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+    $uploadedFile = UploadedFile::fake()
+        ->createWithContent('devices.csv',
+            'name,serial,device_function,interface,access-vlan,interface-mode,native-vlan,trunk-vlan-all,interface_description'
+            . PHP_EOL .
+            'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/1-1/1/8&2/1/1-2/1/8,30,ACCESS,,,to AP'
+            . PHP_EOL .
+            'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/9-1/1/48&2/1/9-2/1/48,,TRUNK,8,true,voice and data'
+            . PHP_EOL
+        );
+    $this->post(route('devices.store-many', $deployment), [
+        'devices' => $uploadedFile
+    ]);
+    $this->assertDatabaseCount('devices', 1);
+    $this->assertDatabaseCount('device_interfaces', 96);
+    $this->assertDatabaseCount('switch_ports', 2);
+    $this->assertDatabaseHas('switch_ports', [
+        'access_vlan' => 30,
+        'interface_mode' => 'ACCESS',
+        'native_vlan' => null,
+        'trunk_vlan_all' => false,
+        'description' => 'CO IDF Stack 1'
+    ]);
+    $this->assertDatabaseHas('switch_ports', [
+        'access_vlan' => null,
+        'interface_mode' => 'TRUNK',
+        'native_vlan' => 8,
+        'trunk_vlan_all' => true,
+        'description' => 'CO IDF Stack 1'
+    ]);
+});
+
+test('a device can have a lag interface', function () {
+    $this->withoutExceptionHandling();
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+    $uploadedFile = UploadedFile::fake()
+        ->createWithContent('devices.csv',
+            'name,serial,device_function,interface,access-vlan,interface-mode,native-vlan,trunk-vlan-all,interface_description,lag_id'
+            . PHP_EOL .
+            'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/51&2/1/51&3/1/52&4/1/52,,TRUNK,8,true,LAG to Core,11'
+            . PHP_EOL .
+            'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/9-1/1/48&2/1/9-2/1/48,,TRUNK,8,true,voice and data'
+            . PHP_EOL
+        );
+    $this->post(route('devices.store-many', $deployment), [
+        'devices' => $uploadedFile
+    ]);
+
+    $this->assertDatabaseCount('devices', 1);
+    $this->assertDatabaseCount('device_interfaces', 44);
+    $this->assertDatabaseCount('switch_ports', 2);
+    $this->assertDatabaseCount('lacp_profiles', 1);
+    $this->assertDatabaseHas('lacp_profiles', ['port_id' => 11, 'mode' => 'ACTIVE', 'timeout' => 'SHORT']);
+});

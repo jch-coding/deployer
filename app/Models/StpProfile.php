@@ -4,27 +4,27 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class SwitchPort extends Model
+class StpProfile extends Model
 {
-    /** @use HasFactory<\Database\Factories\SwitchPortFactory> */
+    /** @use HasFactory<\Database\Factories\StpProfileFactory> */
     use HasFactory;
 
     protected $fillable = [
-        'access_vlan',
-        'interface_mode',
-        'is_profile',
-        'native_vlan',
-        'trunk_vlan_all',
-        'trunk_vlan_ranges'
+        'admin_edge_port',
+        'admin_edge_port_trunk',
+        'bpdu_guard',
+        'loop_guard'
     ];
 
     protected $casts = [
-        'trunk_vlan_all' => 'boolean',
-        'is_profile' => 'boolean',
+        'admin_edge_port' => 'boolean',
+        'admin_edge_port_trunk' => 'boolean',
+        'bpdu_guard' => 'boolean',
+        'loop_guard' => 'boolean',
     ];
+
     public function interfaces() : HasMany
     {
         return $this->HasMany(DeviceInterface::class);

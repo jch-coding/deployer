@@ -17,7 +17,7 @@ return new class extends Migration
             $table->enum('interface_mode', ['ACCESS', 'TRUNK'])->default('ACCESS');
             $table->boolean('is_profile')->default(false);
             $table->integer('native_vlan')->nullable()->unsigned();
-            $table->boolean('trunk_vlan_all')->default(false);
+            $table->boolean('trunk_vlan_all')->nullable()->default(false);
             $table->string('trunk_vlan_ranges')->nullable();
             $table->timestamps();
         });
