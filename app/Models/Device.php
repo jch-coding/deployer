@@ -30,7 +30,7 @@ class Device extends Model
 
     public function tasks() : BelongsToMany
     {
-        return $this->belongsToMany(Task::class);
+        return $this->belongsToMany(Task::class)->withPivot('status')->withTimestamps();
     }
 
     public function deployment() : BelongsTo

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\TaskType;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,6 +19,7 @@ class TaskFactory extends Factory
     {
         return [
             'name' => $this->faker->sentence(),
+            'task_type' => fake()->randomElement(TaskType::cases())->name,
         ];
     }
 }

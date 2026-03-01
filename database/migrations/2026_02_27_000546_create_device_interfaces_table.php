@@ -19,6 +19,7 @@ return new class extends Migration
             $table->id();
             $table->string('interface');
             $table->string('description')->nullable();
+            $table->string('ip_address')->nullable();
             $table->boolean('enable')->default(true);
             $table->boolean('jumbo_frames')->default(false);
             $table->boolean('routing')->default(false);

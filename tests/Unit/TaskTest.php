@@ -5,6 +5,7 @@ use App\Models\User;
 use App\Models\Device;
 use App\Models\Task;
 use App\TaskStatus;
+use App\TaskType;
 
 it('can be associated with many users', function () {
     $task = Task::factory()->create();
@@ -29,4 +30,10 @@ it('has a default status of in progress', function () {
     $task = Task::factory()->create();
     $user->tasks()->attach($task);
     expect($user->tasks()->first()->pivot->status)->toBe("IN_PROGRESS");
+});
+
+it('can be assigned to a task type', function () {
+    $task = Task::factory()->make(['task_type' => 'UPDATE_SYSTEM_INFO']);
+    $task->save();
+    expect($task->task_type)->toBeIn(array_map(fn($taskType) => $taskType->name, TaskType::cases()));
 });

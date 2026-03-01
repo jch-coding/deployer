@@ -47,19 +47,21 @@ class Client extends Model
         );
     }
 
-    public function handleBearerTokenAuth()
+    public function handleBearerTokenAuth(bool $force = false)
     {
-        $response = Http::asForm()->post($this->auth_url, [
-            'grant_type' => 'client_credentials',
-            'client_id' => $this->client_id,
-            'client_secret' => $this->client_secret,
-        ]);
+        if ($force || $this->updated_at < now()->subHours(2)) {
+            $response = Http::asForm()->post($this->auth_url, [
+                'grant_type' => 'client_credentials',
+                'client_id' => $this->client_id,
+                'client_secret' => $this->client_secret,
+            ]);
 
-        if($response->ok()) {
-            $this->bearer_token = $response->json('access_token');
-            $this->save();
+            if($response->ok()) {
+                $this->bearer_token = $response->json('access_token');
+                $this->save();
+            }
+            return $response->ok();
         }
-
-        return $response->ok();
+        return true;
     }
 }

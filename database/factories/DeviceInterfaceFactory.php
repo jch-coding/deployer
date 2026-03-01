@@ -19,7 +19,7 @@ class DeviceInterfaceFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => random_int(1,9) . '/1/' . random_int(1,52),
+            'interface' => random_int(1,9) . '/1/' . random_int(1,52),
             'description' => fake()->sentence(),
             'enable' => true,
             'jumbo_frames' => false,

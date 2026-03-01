@@ -10,6 +10,10 @@ class Task extends Model
 {
     /** @use HasFactory<\Database\Factories\TaskFactory> */
     use HasFactory;
+    protected $fillable = [
+        'name',
+        'task_type'
+    ];
 
     public function users() : BelongsToMany
     {
@@ -18,6 +22,6 @@ class Task extends Model
 
     public function devices() : BelongsToMany
     {
-        return $this->belongsToMany(Device::class);
+        return $this->belongsToMany(Device::class)->withPivot('status')->withTimestamps();
     }
 }

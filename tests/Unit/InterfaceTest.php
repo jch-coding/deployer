@@ -17,9 +17,9 @@ it('has a device that it belongs to', function () {
 
 it('has a name that is unique to a device', function () {
    $device = Device::factory()->create();
-   DeviceInterface::factory()->create(['device_id' => $device->id, 'name' => '1/1/1']);
-   $interface2 = DeviceInterface::factory()->make(['device_id' => $device->id, 'name' => '1/1/1']);
-   $this->assertDatabaseHas('device_interfaces', ['name' => '1/1/1', 'device_id' => $device->id]);
+   DeviceInterface::factory()->create(['device_id' => $device->id, 'interface' => '1/1/1']);
+   $interface2 = DeviceInterface::factory()->make(['device_id' => $device->id, 'interface' => '1/1/1']);
+   $this->assertDatabaseHas('device_interfaces', ['interface' => '1/1/1', 'device_id' => $device->id]);
    $interface2->save();
 })->throws(UniqueConstraintViolationException::class);
 
@@ -80,7 +80,7 @@ it('can be associated to a switchport', function () {
 
 it('can be associated to an LACP profile', function () {
     $interface = DeviceInterface::factory()->create();
-    $lacpProfile = LacpProfile::factory()->create(['mode' => 'ACTIVE', 'port_id' => 1, 'timeout' => 'SHORT']);
+    $lacpProfile = LacpProfile::factory()->create(['mode' => 'ACTIVE', 'port_id' => 1, 'rate' => 'FAST']);
     $interface->lacpProfile()->associate($lacpProfile);
     expect($interface->lacpProfile)->toBe($lacpProfile);
 });
@@ -90,4 +90,16 @@ it('can be associated with an stp profile', function () {
     $stpProfile = StpProfile::factory()->create(['admin_edge_port' => true, 'bpdu_guard' => true, 'loop_guard' => true]);
     $interface->stpProfile()->associate($stpProfile);
     expect($interface->stpProfile)->toBe($stpProfile);
+});
+
+it('can be a vlan that has a static address assigned', function () {
+    $interface = DeviceInterface::factory()->create([
+        'interface' => 'vlan30',
+        'ip_address' => '10.10.30.11/24',
+    ]);
+    $this->assertDatabaseHas('device_interfaces', [
+        'interface' => 'vlan30',
+        'ip_address' => '10.10.30.11/24',
+        'enable' => true,
+    ]);
 });
