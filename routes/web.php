@@ -3,6 +3,8 @@
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\DispatchController;
+use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -38,6 +40,14 @@ Route::middleware(['auth'])->group(function () {
         Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
+    });
+
+    Route::controller(DispatchController::class)->group( function () {
+        Route::patch('/dispatcher/dispatch/{task}', 'dispatch')->name('dispatcher.dispatch');
+    });
+
+    Route::controller(TaskController::class)->group( function () {
+        Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
     });
 });
 

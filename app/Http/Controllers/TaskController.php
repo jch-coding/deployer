@@ -5,11 +5,16 @@ namespace App\Http\Controllers;
 use App\Events\DeviceConfigFailedEvent;
 use App\Events\DeviceGetScopeIdEvent;
 use App\Events\DeviceSystemInfoUpdateEvent;
+use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\Task;
+use App\TaskType;
 use Illuminate\Http\Request;
 use App\Events\DeviceConfigEvent;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use App\Helper\CentralAPIHelper;
+use Illuminate\Validation\Rule;
 
 class TaskController extends Controller
 {
@@ -41,5 +46,31 @@ class TaskController extends Controller
         $attached_device->pivot->update(['status' => 'COMPLETED']);
 
         return $response;
+    }
+
+    public static function orderInterfaces(Collection $interfaces)
+    {
+        $portchannels = $interfaces->filter(fn($interface) => str_contains($interface['interface'], 'lag'));
+        $ethernets = $interfaces->filter(fn($interface) => !str_contains($interface['interface'], 'lag'));
+        $ordered_interfaces = $portchannels->merge($ethernets);
+        return $ordered_interfaces;
+    }
+
+    public function store(Request $request, Deployment $deployment)
+    {
+        $validated = $request->validate([
+            'task_type' => ['required', Rule::enum(TaskType::class) ],
+            'devices' => 'required|array',
+        ]);
+
+        $device_collection = Collection::make($validated['devices']);
+        $task = Task::create([
+            'task_type' => $validated['task'],
+            'name' => 'task_for_' . $deployment->name . now(),
+            'deployment_id' => $deployment->id
+        ]);
+
+        $task->devices()->attach($device_collection);
+        return response()->json(['message' => 'Task created successfully']);
     }
 }

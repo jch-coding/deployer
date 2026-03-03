@@ -103,3 +103,9 @@ it('can be a vlan that has a static address assigned', function () {
         'enable' => true,
     ]);
 });
+
+it('can be assigned to a portchannel_lag', function () {
+    $interface = DeviceInterface::factory()->create(['portchannel_lag' => '10']);
+    expect($interface->portchannel_lag)->toBe('10');
+    $this->assertDatabaseHas('device_interfaces', ['portchannel_lag' => '10']);
+});

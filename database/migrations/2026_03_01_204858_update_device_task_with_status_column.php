@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('device_task', function (Blueprint $table) {
-            $table->enum('status', ['PAUSED', 'IN_PROGRESS', 'COMPLETED', 'FAILED','PENDING'])->default('PENDING');
+            $table->enum('status', ['PAUSED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'PENDING'])->default('PENDING');
         });
     }
 

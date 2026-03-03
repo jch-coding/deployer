@@ -13,7 +13,7 @@ return new class extends Migration
         Schema::create('lacp_profiles', function (Blueprint $table) {
             $table->id();
             $table->enum('mode', ['ACTIVE', 'PASSIVE', 'AUTO'])->default('ACTIVE');
-            $table->integer('port_id')->unsigned();
+            $table->integer('port-id')->unsigned();
             $table->enum('rate', ['FAST', 'SLOW'])->default('SLOW');
             $table->timestamps();
         });

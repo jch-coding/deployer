@@ -1,6 +1,5 @@
 <?php
 
-use App\TaskType;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -12,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('tasks', function (Blueprint $table) {
-            $table->enum('task_type', TaskType::cases())->nullable();
+        Schema::table('device_interfaces', function (Blueprint $table) {
+            $table->string('portchannel_lag')->nullable();
         });
     }
 
@@ -22,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('tasks', function (Blueprint $table) {
-            $table->dropColumn('task_type');
+        Schema::table('device_interfaces', function (Blueprint $table) {
+            $table->dropColumn('portchannel_lag');
         });
     }
 };

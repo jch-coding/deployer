@@ -1,6 +1,6 @@
 <?php
 
-use App\TaskType;
+use App\Models\Deployment;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('tasks', function (Blueprint $table) {
-            $table->enum('task_type', TaskType::cases())->nullable();
+            $table->foreignIdFor(Deployment::class)->constrained()->cascadeOnDelete();
         });
     }
 
@@ -23,7 +23,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('tasks', function (Blueprint $table) {
-            $table->dropColumn('task_type');
+            $table->dropColumn('deployment_id');
         });
     }
 };

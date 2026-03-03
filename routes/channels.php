@@ -23,3 +23,11 @@ Broadcast::channel('devices.sys_info_update.{name}', function ($user, $name) {
 Broadcast::channel('devices.config_failed.{name}', function ($user, $name) {
     return isDeviceClientUserClient($user, $name);
 });
+
+Broadcast::channel('devices.config_completed.{name}', function ($user, $name) {
+    return isDeviceClientUserClient($user, $name);
+});
+
+Broadcast::channel('devices.central_api_fail.{name}', function ($user, $name) {
+    return isDeviceClientUserClient($user, $name);
+});

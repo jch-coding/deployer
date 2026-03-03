@@ -18,6 +18,7 @@ test('creating a task with devices stores the task and attaches the devices', fu
     $devices = Device::factory(2)->create(['deployment_id' => $this->deployment->id, 'client_id' => $this->client->id]);
     $this->post(route('tasks.store', $this->deployment), [
         'name' => 'Test Task',
+        'task_type' => 'UPDATE_SYSTEM_INFO',
         'devices' => $devices
     ]);
     $this->assertDatabaseHas('tasks', ['name' => 'Test Task']);

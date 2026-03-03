@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Task extends Model
@@ -23,5 +24,10 @@ class Task extends Model
     public function devices() : BelongsToMany
     {
         return $this->belongsToMany(Device::class)->withPivot('status')->withTimestamps();
+    }
+
+    public function deployment() : BelongsTo
+    {
+        return $this->belongsTo(Deployment::class);
     }
 }

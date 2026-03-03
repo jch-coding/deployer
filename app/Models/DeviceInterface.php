@@ -34,17 +34,17 @@ class DeviceInterface extends Model
         return $this->belongsTo(Device::class);
     }
 
-    public function switchport() : BelongsTo
+    public function switch_port() : BelongsTo
     {
         return $this->belongsTo(SwitchPort::class);
     }
 
-    public function lacpProfile() : BelongsTo
+    public function lacp_profile() : BelongsTo
     {
         return $this->belongsTo(LacpProfile::class);
     }
 
-    public function stpProfile() : BelongsTo
+    public function stp_profile() : BelongsTo
     {
         return $this->belongsTo(StpProfile::class);
     }

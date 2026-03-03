@@ -104,16 +104,19 @@ class DeviceController extends Controller
             $unsaved_devices = array_filter($devices, fn($device) => Device::where('serial', $device['serial'])->doesntExist());
         }
 
-        $interfaces = static::getInterfaces($devices);
+        if(in_array('interface', $headers)) {
 
-        $savedInterfaces = static::saveInterfaces($interfaces);
+            $interfaces = static::getInterfaces($devices);
 
-        if($savedInterfaces !== count($interfaces)) {
-            array_push($errors, ['unsaved_interfaces_error' => 'Only '.($savedInterfaces) .' of '.count($interfaces).' interfaces were saved']);
-            $unsaved_interfaces = array_filter($interfaces,
-                fn($interface) => DeviceInterface::where('interface', $interface['interface'])
-                ->where('device_id', $interface['device_id'])
-                ->doesntExist());
+            $savedInterfaces = static::saveInterfaces($interfaces);
+
+            if($savedInterfaces !== count($interfaces)) {
+                array_push($errors, ['unsaved_interfaces_error' => 'Only '.($savedInterfaces) .' of '.count($interfaces).' interfaces were saved']);
+                $unsaved_interfaces = array_filter($interfaces,
+                    fn($interface) => DeviceInterface::where('interface', $interface['interface'])
+                    ->where('device_id', $interface['device_id'])
+                    ->doesntExist());
+            }
         }
 
         return redirect()->route('deployments.show', $deployment)
