@@ -22,6 +22,7 @@ class CentralAPIHelper
     public array $interfaces = [
         'interface_ethernet' => 'network-config/v1alpha1/ethernet-interfaces/',
         'interface_portchannel' => 'network-config/v1alpha1/portchannels/',
+        'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles/',
     ];
 
     public function __construct(public Client $client) {}
@@ -34,7 +35,7 @@ class CentralAPIHelper
 
         $response = Http::withToken($this->client->bearer_token)
             ->withQueryParameters([
-                'scope-id' => $device->scope_id,
+                'scope-id' => $device->serial,
                 'scope-type' => 'device',
             ])->get($this->client->base_url.$this->scopeManagement['hierarchy']['scope_hierarchy']);
 
@@ -159,6 +160,19 @@ class CentralAPIHelper
                     'device_function' => $deviceInterface->device->device_function,
                 ])->post($this->client->base_url.$this->interfaces['interface_portchannel'].$deviceInterface->interface, $switch_port);
 
+            return $response;
+        }
+    }
+
+    public function get_sw_port_profile()
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'view-type' => 'LIBRARY'
+                ])->get($this->client->base_url.$this->interfaces['switch_port_profile']);
             return $response;
         }
     }

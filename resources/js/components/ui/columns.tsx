@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 import { destroy } from '@/routes/deployments';
-import { router } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 
 type DeploymentDef = {
     id: number;
@@ -27,6 +27,7 @@ export const columns: ColumnDef<DeploymentDef>[] = [
     {
         accessorKey: 'name',
         header: 'Name',
+        cell: ({ row }) => <Link href={`/deployments/${row.getValue('id')}`} className="hover:underline" data-test="deployment-link">{row.getValue('name')}</Link>
     },
     {
         accessorKey: 'devices_count',

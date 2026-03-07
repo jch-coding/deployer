@@ -4,6 +4,7 @@ use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\User;
+use App\TaskType;
 use Illuminate\Http\UploadedFile;
 
 beforeEach(function () {
@@ -31,6 +32,15 @@ it('has an upload devices button', function () {
        ->assertSee('Add Devices')
        ->assertSee('No devices assigned to this deployment');
 });
+
+it('has a set of task types that are available for deployment', function ($task_name) {
+    $this->withoutExceptionHandling();
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $this->actingAs($this->user);
+
+    visit(route('deployments.show', $deployment))
+        ->assertSee($task_name);
+})->with(array_map(fn($t) => $t->name, TaskType::cases()));
 
 it('can add devices to a deployment', function () {
     $deployment = Deployment::factory()->for($this->client)->create();

@@ -8,5 +8,6 @@ enum TaskType
     case UPDATE_SYSTEM_INFO;
     case CONFIGURE_LAG_INTERFACE;
     case CONFIGURE_VLAN_INTERFACE;
+    case CONFIGURE_ALL_INTERFACE;
     case TEST_TASK;
 }

@@ -9,15 +9,17 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Str;
 
-class TestEvent implements ShouldBroadcast
+class DeploymentEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     /**
      * Create a new event instance.
+     * $data = [ 'deployment_name', 'device_name', 'task_type', 'message']
      */
-    public function __construct(public string|array $data)
+    public function __construct(public array $data)
     {
         //
     }
@@ -30,7 +32,7 @@ class TestEvent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel('test.event'),
+            new PrivateChannel('deployments.channel.'. Str::replace(' ', '-', $this->data['deployment_name'])),
         ];
     }
 }

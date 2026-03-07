@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\TestEvent;
 use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Task;
+use Illuminate\Bus\Batch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Bus;
+use Inertia\Inertia;
 
 class DispatchController extends Controller
 {
@@ -28,7 +31,13 @@ class DispatchController extends Controller
         }
         $job_batch = Bus::batch(
             $jobs
-        )->allowFailures()->dispatch();
-        return response()->json(['job_batch_id' => $job_batch->id, 'message' => 'dispatched']);
+        )
+            ->progress(fn(Batch $batch) => TestEvent::dispatch($batch->processedJobs().' jobs'))
+            ->allowFailures()
+            ->finally(fn(Batch $batch) => TestEvent::dispatch('Batch completed with '.$batch->processedJobs().' jobs'))
+            ->dispatch();
+
+        Inertia::share('batch_id', $job_batch->id);
+        return to_route('deployments.show', $task->deployment);
     }
 }

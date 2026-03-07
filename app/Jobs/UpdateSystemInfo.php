@@ -3,14 +3,17 @@
 namespace App\Jobs;
 
 use App\Events\CentralAPIFail;
+use App\Events\DeploymentEvent;
 use App\Events\DeviceConfigFailedEvent;
 use App\Events\DeviceGetScopeIdEvent;
+use App\Events\DeviceSystemInfoUpdateEvent;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 
 class UpdateSystemInfo implements ShouldQueue
 {
@@ -33,25 +36,31 @@ class UpdateSystemInfo implements ShouldQueue
         $pivotForDevice = $this->task->devices()->find($this->device)->pivot;
 
         if(!$this->device->scope_id || $pivotForDevice->status === 'FAILED') {
-            DeviceGetScopeIdEvent::dispatch($this->device);
             $scope_id_response = $centralAPIHelper->getScopeIdFromCentral($this->device);
-            if(!count($scope_id_response) > 0) {
-                CentralAPIFail::dispatch($this->device);
-                $this->release(10);
+            if(array_key_exists('error', $scope_id_response)) {
+                Log::error('Failed to retrieve scope ID for device ' . $this->device->name);
+                $this->fail();
                 return;
             }
-            $this->device->update(['scope_id' => $scope_id_response[0]['scopeId']]);
+            $this->device->scope_id = $scope_id_response[0]['scopeId'];
+            $this->device->save();
         }
 
         $response = $centralAPIHelper->updateSystemInfo($this->device);
+        Log::error($this->device);
         if ($response->status() == 200) {
-
+            DeploymentEvent::dispatch([
+                'deployment_name' => $this->task->deployment->name,
+                'device_id' => $this->device->id,
+                'task_type' => $this->task->task_type,
+                'message' => 'System info for ' . $this->device->name . ' updated'
+            ]);
             $pivotForDevice->update(['status' => 'COMPLETED']);
         }
         else {
-            DeviceConfigFailedEvent::dispatch($this->device);
+            Log::error('Failed to update system info for device ' . $this->device->name);
             $pivotForDevice->update(['status' => 'FAILED']);
-            $this->release(10);
+            $this->fail();
         }
     }
 }

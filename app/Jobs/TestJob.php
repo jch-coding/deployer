@@ -2,11 +2,13 @@
 
 namespace App\Jobs;
 
+use App\Events\DeploymentEvent;
 use App\Events\TestEvent;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 class TestJob implements ShouldQueue
 {
@@ -14,6 +16,7 @@ class TestJob implements ShouldQueue
 
     /**
      * Create a new job instance.
+     * $data = ['deployment_id', 'device_id', 'task_type']
      */
     public function __construct(public string|array $data)
     {
@@ -25,11 +28,13 @@ class TestJob implements ShouldQueue
      */
     public function handle(): void
     {
-        TestEvent::dispatch($this->data);
-        $response = Http::get('https://swapi.info/api/people/1');
-        if(!$response->ok())
-            $this->fail();
-        else
-            TestEvent::dispatch($response->json());
+        sleep(random_int(1,10));
+//        TestEvent::dispatch($this->data);
+        DeploymentEvent::dispatch($this->data);
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        echo $exception;
     }
 }

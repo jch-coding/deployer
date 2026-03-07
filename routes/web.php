@@ -43,11 +43,12 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::controller(DispatchController::class)->group( function () {
-        Route::patch('/dispatcher/dispatch/{task}', 'dispatch')->name('dispatcher.dispatch');
+        Route::get('/dispatcher/dispatch/{task}', 'dispatch')->name('dispatcher.dispatch');
     });
 
     Route::controller(TaskController::class)->group( function () {
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
+        Route::post('/tasks/test', 'test')->name('tasks.test');
     });
 });
 

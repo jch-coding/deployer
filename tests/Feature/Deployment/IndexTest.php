@@ -33,7 +33,8 @@ test('a deployment is created with the current client by default', function () {
 
 test('a user can click on a deployment to view it', function () {
     $user = User::factory()->create();
-    $deployment = Deployment::factory()->for($user)->create();
+    $deployment = Deployment::factory()->recycle($user)->create();
+    $user->clients()->first()->update(['current' => true]);
     $this->actingAs($user);
     visit(route('deployments.index'))
          ->assertSee($deployment->name)

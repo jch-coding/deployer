@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Deployment;
+use App\TaskType;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -29,6 +30,7 @@ class DeploymentController extends Controller
         $deployment->load('devices');
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
+            'tasks' => array_map(fn($task) => $task->name, TaskType::cases()),
         ]);
     }
 

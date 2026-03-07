@@ -23,6 +23,11 @@ class Deployment extends Model
         return $this->belongsTo(Client::class);
     }
 
+    public function tasks() : HasMany
+    {
+        return $this->hasMany(Task::class);
+    }
+
     public function getTasks()
     {
         $devices = $this->devices;
