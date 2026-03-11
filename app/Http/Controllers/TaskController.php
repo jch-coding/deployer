@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DeploymentEvent;
 use App\Events\DeviceConfigFailedEvent;
 use App\Events\DeviceGetScopeIdEvent;
 use App\Events\DeviceSystemInfoUpdateEvent;
@@ -75,11 +76,39 @@ class TaskController extends Controller
         ]);
 
         $device_collection = Collection::make($validated['devices']);
-        $task->devices()->attach($device_collection);
-        $batch = $this->dispatch($task);
-        return back()->with(['job_batch_id' => $batch->id, 'message' => 'dispatched']);
+        $task->devices()->attach($device_collection->pluck('id'));
+        $this->dispatchJob($task);
+        return back();
     }
-    public function dispatch(Task $task)
+
+    public function dispatchTask(Task $task)
+    {
+        switch ($task->task_type) {
+            case 'TEST_TASK' :
+                $task_to_perform = fn ($data) => $this->TestTask($data);
+                break;
+        }
+        $task->devices->each(fn ($device) => $task_to_perform([
+            'device_id' => $device->id,
+            'message' => 'message '.random_int(1,10),
+            'task_type' => $task->task_type,
+            'deployment_name' => $task->deployment->name
+        ]));
+    }
+
+    public function UpdateSystemInfo()
+    {
+
+    }
+
+    public function TestTask(array $data)
+    {
+        TestEvent::dispatch($data);
+        DeploymentEvent::dispatch($data);
+        sleep(random_int(1,5));
+    }
+
+    public function dispatchJob(Task $task)
     {
         $jobs = [];
         switch ($task->task_type) {
@@ -90,10 +119,9 @@ class TaskController extends Controller
                 $jobs = $task->devices->map(fn($device) => new TestJob(['device_id' => $device->id, 'message' => 'message '.random_int(1,10), 'task_type' => $task->task_type, 'deployment_name' => $task->deployment->name]));
                 break;
         }
-        $job_batch = Bus::batch(
+        $job_batch = Bus::chain(
             $jobs
         )
-            ->allowFailures()
             ->dispatch();
 
         return $job_batch;

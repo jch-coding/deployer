@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class CentralAPIHelper
 {
@@ -76,6 +77,35 @@ class CentralAPIHelper
         }
     }
 
+    public static function categorize_device_interfaces(array $deviceInterfaces)
+    {
+        return collect($deviceInterfaces)->groupBy(function ($interface) {
+            return $interface->lacp_profile ? 'portchannel_interfaces' : 'ethernet_interfaces';
+        })->toArray();
+    }
+
+    public static function build_portchannel_from_device_interface(DeviceInterface $deviceInterface)
+    {
+        $lacp_profile = [];
+        $port_list = [];
+        $switch_port_configuration = static::build_switchport_from_device_interface($deviceInterface);
+
+        if ($deviceInterface->lacp_profile !== null)
+        {
+            $port_list = collect(
+                array_map(fn($s) => explode('-', $s),
+                    explode('&', $deviceInterface->lacp_profile->port_list))
+            )->flatten()->toArray();
+            $lacp_profile = [
+                'port-list' => $port_list,
+                'mode' => $deviceInterface->lacp_profile->mode,
+                'rate' => $deviceInterface->lacp_profile->rate
+            ];
+            $switch_port_configuration['trunk-type'] = $deviceInterface->lacp_profile->trunk_type;
+        }
+        return array_merge($switch_port_configuration, ['lacp' => $lacp_profile]);
+    }
+
     public static function build_switchport_from_device_interface(DeviceInterface $deviceInterface)
     {
         $switch_port = [];
@@ -101,7 +131,7 @@ class CentralAPIHelper
         }
 
         $switchport_rest_body = [
-            'interface' => $deviceInterface->interface,
+            'name' => $deviceInterface->interface,
             'switchport' => $switch_port,
             'portchannel-lag' => $deviceInterface->portchannel_lag,
             'stp' => $stp_profile,
@@ -110,7 +140,7 @@ class CentralAPIHelper
         return array_filter($switchport_rest_body, fn ($value) => $value !== []);
     }
 
-    public function patch_ethernet_interface(Device $deviceInterface)
+    public function patch_ethernet_interface(DeviceInterface $deviceInterface)
     {
         $interface_rest_body = static::build_switchport_from_device_interface($deviceInterface);
 
@@ -119,6 +149,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
+                    'view-type' => 'LOCAL',
                     'object-type' => 'LOCAL',
                     'scope-id' => $deviceInterface->device->scope_id,
                     'device_function' => $deviceInterface->device->device_function,
@@ -136,6 +167,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
+                    'view-type' => 'LOCAL',
                     'object-type' => 'LOCAL',
                     'scope-id' => $device->scope_id,
                     'device_function' => $device->device_function,
@@ -147,19 +179,57 @@ class CentralAPIHelper
 
     public function post_interface_portchannel(DeviceInterface $deviceInterface)
     {
-        $switch_port = static::build_switchport_from_device_interface($deviceInterface);
-        $switch_port['trunk-type'] = $deviceInterface->trunk_type;
+        $switch_port = static::build_portchannel_from_device_interface($deviceInterface);
 
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
+                    'view-type' => 'LOCAL',
                     'object-type' => 'LOCAL',
                     'scope-id' => $deviceInterface->device->scope_id,
                     'device_function' => $deviceInterface->device->device_function,
                 ])->post($this->client->base_url.$this->interfaces['interface_portchannel'].$deviceInterface->interface, $switch_port);
 
+            return $response;
+        }
+    }
+
+    public function get_interface_portchannels($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->interfaces['interface_portchannel']);
+
+            return $response;
+        }
+    }
+
+    public function patch_interface_portchannel(DeviceInterface $deviceInterface, $queryParameters = [])
+    {
+        $switch_port = static::build_portchannel_from_device_interface($deviceInterface);
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].$switch_port->name, $switch_port);
+            return $response;
+        }
+    }
+
+    public function delete_interface_portchannel(string $portchannel_name, $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->delete($this->client->base_url.$this->interfaces['interface_portchannel'].$portchannel_name);
             return $response;
         }
     }

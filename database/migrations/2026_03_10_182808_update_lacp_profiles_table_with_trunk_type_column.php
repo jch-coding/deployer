@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Deployment;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -12,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('tasks', function (Blueprint $table) {
-            $table->foreignIdFor(Deployment::class)->constrained()->cascadeOnDelete();
+        Schema::table('lacp_profiles', function (Blueprint $table) {
+            $table->string('trunk_type')->default('LACP');
         });
     }
 
@@ -22,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('tasks', function (Blueprint $table) {
-            $table->dropForeignIdFor(Deployment::class);
+        Schema::table('lacp_profiles', function (Blueprint $table) {
+            $table->dropColumn('trunk_type');
         });
     }
 };

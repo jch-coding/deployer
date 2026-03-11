@@ -39,15 +39,12 @@ class UpdateSystemInfo implements ShouldQueue
             $scope_id_response = $centralAPIHelper->getScopeIdFromCentral($this->device);
             if(array_key_exists('error', $scope_id_response)) {
                 Log::error('Failed to retrieve scope ID for device ' . $this->device->name);
-                $this->fail();
-                return;
             }
             $this->device->scope_id = $scope_id_response[0]['scopeId'];
             $this->device->save();
         }
 
         $response = $centralAPIHelper->updateSystemInfo($this->device);
-        Log::error($this->device);
         if ($response->status() == 200) {
             DeploymentEvent::dispatch([
                 'deployment_name' => $this->task->deployment->name,
@@ -56,11 +53,11 @@ class UpdateSystemInfo implements ShouldQueue
                 'message' => 'System info for ' . $this->device->name . ' updated'
             ]);
             $pivotForDevice->update(['status' => 'COMPLETED']);
+            Log::info('System info for ' . $this->device->name . ' updated successfully');
         }
         else {
             Log::error('Failed to update system info for device ' . $this->device->name);
             $pivotForDevice->update(['status' => 'FAILED']);
-            $this->fail();
         }
     }
 }

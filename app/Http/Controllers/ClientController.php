@@ -73,9 +73,11 @@ class ClientController extends Controller
         }
 
         else {
-            $data = array_merge($data, ['bearer_token' => $access_token]);
-
-            $request->user()->clients()->create($data);
+            $client_data = array_merge($data, ['bearer_token' => $access_token]);
+            $request->user()->clients()->create($client_data);
+            if($request->user()->clients()->count() == 1) {
+                $request->user()->clients()->first()->update(['current' => true]);
+            }
             Inertia::flash('success', 'Client created successfully.');
             return back();
         }
