@@ -63,6 +63,15 @@ class TaskController extends Controller
         return $ordered_interfaces;
     }
 
+    public function show(Task $task)
+    {
+        return Inertia::render('Task/Show', [
+            'task' => $task,
+            'devices' => $task->devices,
+            'deployment' => $task->deployment,
+        ]);
+    }
+
     public function store(Request $request, Deployment $deployment)
     {
         $validated = $request->validate([
@@ -116,7 +125,7 @@ class TaskController extends Controller
                 $jobs = $task->devices->map(fn($device) => new UpdateSystemInfo($device, $task));
                 break;
             case 'TEST_TASK':
-                $jobs = $task->devices->map(fn($device) => new TestJob(['device_id' => $device->id, 'message' => 'message '.random_int(1,10), 'task_type' => $task->task_type, 'deployment_name' => $task->deployment->name]));
+                $jobs = $task->devices->map(fn($device) => new TestJob(['device_id' => $device->id, 'task_id' => $task->id, 'message' => 'message '.random_int(1,10), 'task_type' => $task->task_type, 'deployment_name' => $task->deployment->name]));
                 break;
         }
         $job_batch = Bus::chain(

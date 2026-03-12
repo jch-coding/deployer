@@ -16,13 +16,42 @@ import { columns } from '@/components/ui/devices-columns';
 import { DataTable } from '@/components/ui/data-table';
 import { toast } from 'sonner';
 import TaskCard from '@/components/ui/TaskCard';
+import type { Paginator } from '@/types/deployer';
+import type { Client } from '@/types/clients/client';
+import type { SharedData } from '@/types';
+import LaravelPaginator from '@/components/ui/LaravelPaginator';
+
+type Device = {
+    id: string;
+    name: string;
+}
+
+type Deployment = {
+    id: string;
+    name: string;
+    devices: Device[];
+}
+
+type Task = {
+    id: string;
+    task_type: string;
+}
+
+type DeploymentPageProps = {
+    paginator: Paginator<Device>;
+    base_urls: string[];
+    deployment: Deployment;
+    tasks: Task[];
+} & SharedData;
 export default function Show() {
-    const deployment = usePage().props.deployment;
-    const devices = deployment.devices;
+    const deployment = usePage<DeploymentPageProps>().props.deployment;
+    const devicesPaginator = usePage<DeploymentPageProps>().props.devices as Paginator<Device>;
+    const devices = devicesPaginator.data;
+    const allDevices = deployment.devices
     const { setData, post, progress, errors } = useForm({
         devices: null,
     })
-    const tasks = usePage().props.tasks;
+    const tasks = usePage<DeploymentPageProps>().props.tasks;
     const [submitting, setSubmitting] = useState(false)
     const closeTriggerRef = useRef(null)
 
@@ -42,7 +71,12 @@ export default function Show() {
             <div className="grid grid-cols-2 gap-5 mt-4 p-4">
                 <div>
                     {devices.length > 0 ?
-                        <DataTable data={devices} columns={columns} />
+                        <div>
+                            <DataTable data={devices} columns={columns} />
+                            { devices.length > 0 && devicesPaginator.total > devicesPaginator.per_page &&
+                                <LaravelPaginator TPaginator={devicesPaginator} />
+                            }
+                        </div>
                      :
                         <p>No devices assigned to this deployment</p>
                     }
@@ -50,7 +84,7 @@ export default function Show() {
                 <div className="flex flex-wrap gap-2">
                     {
                         tasks.map((task,index) =>
-                            <TaskCard index={index} task={task} devices={devices} deployment={deployment}/>
+                            <TaskCard index={index} task={task} devices={allDevices} deployment={deployment}/>
                         )
                     }
                 </div>

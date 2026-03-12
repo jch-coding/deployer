@@ -30,6 +30,7 @@ class DeploymentController extends Controller
         $deployment->load('devices');
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
+            'devices' => $deployment->devices()->paginate(10),
             'tasks' => array_map(fn($task) => $task->name, TaskType::cases()),
         ]);
     }

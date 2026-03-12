@@ -80,6 +80,7 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
                         <DialogDescription>
                             Filter devices associated with this task
                         </DialogDescription>
+                            <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4">
                         {
                             devices.length > 0 ?
                                 devices.map((device, index) =>
@@ -94,6 +95,7 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
                                 ) :
                                 <p>Add devices to deployment before adding tasks</p>
                         }
+                            </div>
                     </DialogContent>
                 </Dialog>
                 <Dialog>
@@ -107,19 +109,21 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
                     <DialogContent>
                         <DialogTitle>{task} Progress</DialogTitle>
                         <DialogDescription>
-                            {statusMessage}
+                            {completedDevices.length} / {devices.length} {statusMessage}
                         </DialogDescription>
                         <DialogClose asChild>
                             <Button onClick={() => resetCompletedDevices()}>Close</Button>
                         </DialogClose>
-                        <ul>
-                            {
-                                completedDevices.length > 0 ?
-                                    completedDevices.map((device, index) =>
-                                        <li key={index} className='text-green-500'>{device.name}</li>
-                                    ) : <li>No devices selected for deployment</li>
-                            }
-                        </ul>
+                        <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4">
+                            <ul>
+                                {
+                                    completedDevices.length > 0 ?
+                                        completedDevices.map((device, index) =>
+                                            <li key={index} className='text-green-500'>{device.name}</li>
+                                        ) : <li>Deployment started</li>
+                                }
+                            </ul>
+                        </div>
                     </DialogContent>
                 </Dialog>
             </CardContent>

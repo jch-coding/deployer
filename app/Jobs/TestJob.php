@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Events\DeploymentEvent;
 use App\Events\TestEvent;
+use App\Models\Task;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -19,7 +20,7 @@ class TestJob implements ShouldQueue
 
     /**
      * Create a new job instance.
-     * $data = ['deployment_id', 'device_id', 'task_type', 'retry_until']
+     * $data = ['deployment_id', 'task_id', 'device_id', 'task_type', 'retry_until']
      */
     public function __construct(public string|array $data)
     {
@@ -36,7 +37,9 @@ class TestJob implements ShouldQueue
     {
         TestEvent::dispatch($this->data);
         DeploymentEvent::dispatch($this->data);
-        sleep(random_int(1,5));
+        $task = Task::find($this->data['task_id']);
+        $task->devices()->find($this->data['device_id'])->pivot->update(['status' => 'COMPLETED']);
+        sleep(random_int(1,10));
     }
 
     public function retryUntil(): DateTime
