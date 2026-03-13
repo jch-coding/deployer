@@ -26,6 +26,11 @@ class Task extends Model
         return $this->belongsToMany(Device::class)->withPivot('status')->withTimestamps();
     }
 
+    public function deviceInterfaces() : BelongsToMany
+    {
+        return $this->belongsToMany(DeviceInterface::class)->withPivot('status')->withTimestamps();
+    }
+
     public function deployment() : BelongsTo
     {
         return $this->belongsTo(Deployment::class);

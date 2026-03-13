@@ -10,7 +10,7 @@ import type { BreadcrumbItem } from '@/types';
 import { dashboard } from '@/routes';
 import { index as clientIndex } from '@/routes/clients';
 import  { index as deploymentIndex } from '@/routes/deployments';
-import { show as showTask } from '@/routes/tasks';
+import { showSystemInfo } from '@/routes/tasks';
 
 export default function Show() {
     const task = usePage().props.task
@@ -37,7 +37,7 @@ export default function Show() {
         },
         {
             title: 'Task',
-            href: showTask(task.id).url,
+            href: showSystemInfo(task.id).url,
         },
     ];
 

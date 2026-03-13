@@ -63,11 +63,20 @@ class TaskController extends Controller
         return $ordered_interfaces;
     }
 
-    public function show(Task $task)
+    public function showSystemInfo(Task $task)
     {
-        return Inertia::render('Task/Show', [
+        return Inertia::render('Task/SystemInfo', [
             'task' => $task,
             'devices' => $task->devices,
+            'deployment' => $task->deployment,
+        ]);
+    }
+
+    public function showEthernetInterface(Task $task)
+    {
+        return Inertia::render('Task/EthernetInterface', [
+            'task' => $task,
+            'devices' => $task->devices->load('interfaces'),
             'deployment' => $task->deployment,
         ]);
     }
@@ -87,7 +96,10 @@ class TaskController extends Controller
         $device_collection = Collection::make($validated['devices']);
         $task->devices()->attach($device_collection->pluck('id'));
         $this->dispatchJob($task);
-        return back();
+        return back()->with([
+            'latest_task' => $task,
+            'success' => 'Task is in progress'
+        ]);
     }
 
     public function dispatchTask(Task $task)

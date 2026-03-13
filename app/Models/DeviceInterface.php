@@ -48,4 +48,9 @@ class DeviceInterface extends Model
     {
         return $this->belongsTo(StpProfile::class);
     }
+
+    public function tasks() : BelongsToMany
+    {
+        return $this->belongsToMany(Task::class)->withPivot('status')->withTimestamps();
+    }
 }

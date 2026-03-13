@@ -47,7 +47,8 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::controller(TaskController::class)->group( function () {
-        Route::get('/tasks/{task}', 'show')->name('tasks.show');
+        Route::get('/tasks/update_system_info/{task}', 'showSystemInfo')->name('tasks.show-system-info');
+        Route::get('/tasks/ethernet_interface/{task}', 'showEthernetInterface')->name('tasks.show-ethernet-interface');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/test', 'test')->name('tasks.test');
     });

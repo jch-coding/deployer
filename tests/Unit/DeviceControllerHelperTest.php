@@ -160,6 +160,139 @@ it('gets a list of unique profiles and interfaces separated by devices when getI
    expect($interfaces)->toEqual($expected_result);
 });
 
+test('expand range of interfaces to array of interfaces expands a range correctly', function () {
+   $interface_range = '1/1/1-1/1/2&2/1/1-2/1/2';
+   $expected_result = ['1/1/1', '1/1/2', '2/1/1', '2/1/2'];
+   $actual_result = DeviceController::expandInterfaceRange($interface_range);
+   expect($actual_result)->toEqual($expected_result);
+});
+
+test('get interfaces returns an array of interfaces when an interface range is provided', function () {
+    $interface_range =
+            [
+                'name' => 'CO-IDF1-SW1',
+                'serial' => 'SN0000000001',
+                'device_function' => 'ACCESS_SWITCH',
+                'interface' => '1/1/1-1/1/2&2/1/1-2/1/2',
+                'access_vlan' => '10',
+                'interface_mode' => 'ACCESS',
+                'native_vlan' => null,
+                'trunk_vlan_all' => null,
+                'admin_edge_port' => 'true',
+                'admin_edge_port_trunk' => null,
+                'bpdu_guard' => 'true',
+                'loop_guard' => 'true',
+            ];
+    $expected = [
+        [...$interface_range, 'interface' => '1/1/1'],
+        [...$interface_range, 'interface' => '1/1/2'],
+        [...$interface_range, 'interface' => '2/1/1'],
+        [...$interface_range, 'interface' => '2/1/2'],
+    ];
+    $actual = DeviceController::expandInterfaceRangeConfig($interface_range);
+    $this->assertEquals($expected, $actual);
+});
+
+test('get interfaces deals with interface ranges correctly', function () {
+    $expected_result = [
+        'unique_switchports' => [
+            [
+                'interface_mode' => 'ACCESS',
+                'access_vlan' => '10',
+                'native_vlan' => null,
+                'trunk_vlan_all' => null,
+                'trunk_vlan_ranges' => null,
+            ],
+            [
+                'interface_mode' => 'TRUNK',
+                'access_vlan' => null,
+                'native_vlan' => '10',
+                'trunk_vlan_all' => 'true',
+                'trunk_vlan_ranges' => null,
+            ],
+        ],
+        'unique_stp' => [
+            [
+                'admin_edge_port' => 'true',
+                'admin_edge_port_trunk' => null,
+                'bpdu_guard' => 'true',
+                'loop_guard' => 'true',
+            ],
+            [
+                'admin_edge_port' => null,
+                'admin_edge_port_trunk' => 'true',
+                'bpdu_guard' => null,
+                'loop_guard' => null,
+            ]
+        ],
+        'devices_grouped_config' => [
+            [
+                [
+                    'name' => 'CO-IDF1-SW1',
+                    'serial' => 'SN0000000001',
+                    'device_function' => 'ACCESS_SWITCH',
+                    'interface' => '1/1/1',
+                    'access_vlan' => '10',
+                    'interface_mode' => 'ACCESS',
+                    'native_vlan' => null,
+                    'trunk_vlan_all' => null,
+                    'admin_edge_port' => 'true',
+                    'admin_edge_port_trunk' => null,
+                    'bpdu_guard' => 'true',
+                    'loop_guard' => 'true',
+                ],
+                [
+                    'name' => 'CO-IDF1-SW1',
+                    'serial' => 'SN0000000001',
+                    'device_function' => 'ACCESS_SWITCH',
+                    'interface' => '1/1/2',
+                    'access_vlan' => '10',
+                    'interface_mode' => 'ACCESS',
+                    'native_vlan' => null,
+                    'trunk_vlan_all' => null,
+                    'admin_edge_port' => 'true',
+                    'admin_edge_port_trunk' => null,
+                    'bpdu_guard' => 'true',
+                    'loop_guard' => 'true',
+                ],
+                [
+                    'name' => 'CO-IDF1-SW1',
+                    'serial' => 'SN0000000001',
+                    'device_function' => 'ACCESS_SWITCH',
+                    'interface' => '1/1/3',
+                    'access_vlan' => null,
+                    'interface_mode' => 'TRUNK',
+                    'native_vlan' => '10',
+                    'trunk_vlan_all' => 'true',
+                    'admin_edge_port' => null,
+                    'admin_edge_port_trunk' => 'true',
+                    'bpdu_guard' => null,
+                    'loop_guard' => null,
+                ],
+                [
+                'name' => 'CO-IDF1-SW1',
+                'serial' => 'SN0000000001',
+                'device_function' => 'ACCESS_SWITCH',
+                'interface' => '1/1/4',
+                'access_vlan' => null,
+                'interface_mode' => 'TRUNK',
+                'native_vlan' => '10',
+                'trunk_vlan_all' => 'true',
+                'admin_edge_port' => null,
+                'admin_edge_port_trunk' => 'true',
+                'bpdu_guard' => null,
+                'loop_guard' => null,
+                    ],
+            ],
+        ],
+    'total_interfaces' => 4,
+    ];
+    $csv_raw = CSVHelper::processCSVFile('tests/Unit/testcsvs/device_interface_range.csv');
+    $processed_data = CSVHelper::createDeviceArrays($csv_raw);
+    $interfaces = DeviceController::getInterfaces($processed_data);
+    expect($interfaces)->toEqual($expected_result);
+});
+
 test("save switchports only saves unique switchports to the database", function () {
    $interfaces = DeviceController::getInterfaces($this->processed_data);
    $switchports = $interfaces['unique_switchports'];

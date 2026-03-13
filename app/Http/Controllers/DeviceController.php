@@ -133,6 +133,27 @@ class DeviceController extends Controller
             ]);
     }
 
+    public static function expandInterfaceRange(string $range)
+    {
+        $interface_pairs = array_map(fn ($pair) => explode('-', $pair), explode('&', $range));
+        $expanded_ranges = [];
+        foreach ($interface_pairs as $pair) {
+            $interface_parts = explode('/', $pair[0]);
+            $prefix = $interface_parts[0].'/'.$interface_parts[1].'/';
+            $start = (int) $interface_parts[2];
+            $end = (int) explode('/', $pair[1])[2];
+            $expanded_ranges = array_merge($expanded_ranges, array_map(fn ($i) => $prefix.$i, range($start, $end)));
+        }
+        return $expanded_ranges;
+    }
+
+    public static function expandInterfaceRangeConfig(array $interface_config)
+    {
+        $interface_range = static::expandInterfaceRange($interface_config['interface']);
+        $interface_range_configs = array_map(fn ($range) => array_merge($interface_config, ['interface' => $range]), $interface_range);
+        return $interface_range_configs;
+    }
+
     public static function getInterfaces($devices)
     {
         $unique_devices = array_unique(array_column($devices, 'serial'));
@@ -144,7 +165,7 @@ class DeviceController extends Controller
             if (array_key_exists('interface_mode', $device) && $device['interface_mode'] !== null) {
                 if ($device['interface_mode'] === 'TRUNK') {
                     //parse trunk-vlan-ranges into an array of strings if the value is not null
-                    if ($device['trunk_vlan_ranges'] !== null) {
+                    if (array_key_exists('trunk_vlan_ranges', $device) && $device['trunk_vlan_ranges'] !== null) {
                         $device['trunk_vlan_ranges'] = explode('&', $device['trunk_vlan_ranges']);
                     }
                     $current_switchport = [
@@ -190,7 +211,11 @@ class DeviceController extends Controller
             $unique_devices
         );
 
-        $devices_grouped_config = array_filter($devices_grouped_config_all, fn ($device_group) => count($device_group) > 0);
+        $devices_grouped_config_with_interface_ranges = array_filter($devices_grouped_config_all, fn ($device_group) => count($device_group) > 0);
+        $devices_grouped_config = array_map(fn($device_group) =>
+                                    array_reduce(
+                                       array_map(fn($device) => static::expandInterfaceRangeConfig($device), $device_group), fn($carry, $item) => array_merge($carry, $item), []),
+            $devices_grouped_config_with_interface_ranges);
 
         $total_interfaces = 0;
         array_map(function ($interfaces) use (&$total_interfaces) {
