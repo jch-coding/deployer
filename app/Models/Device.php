@@ -18,9 +18,11 @@ class Device extends Model
         'name',
         'device_id',
         'client_id',
+        'site_id',
         'deployment_id',
         'serial',
-        'device_function'
+        'device_function',
+        'stack_id',
     ];
 
     public function client() : BelongsTo
@@ -36,6 +38,11 @@ class Device extends Model
     public function deployment() : BelongsTo
     {
         return $this->belongsTo(Deployment::class);
+    }
+
+    public function site() : BelongsTo
+    {
+        return $this->belongsTo(Site::class);
     }
 
     public function interfaces() : HasMany

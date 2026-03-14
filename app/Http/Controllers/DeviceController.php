@@ -7,6 +7,7 @@ use App\Helper\CSVHelper;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
 use Illuminate\Http\Request;
@@ -104,10 +105,20 @@ class DeviceController extends Controller
         $errors = [];
         $unsaved_devices = [];
         $unsaved_interfaces = [];
+        $unsaved_sites = [];
 
         if ($savedDevices !== count($devices)) {
             array_push($errors, ['unsaved_devices_error' => 'Only '.($savedDevices).' of '.count($devices).' devices were saved']);
             $unsaved_devices = array_filter($devices, fn ($device) => Device::where('serial', $device['serial'])->doesntExist());
+        }
+
+        if (in_array('site', $headers)) {
+            $sites_with_devices = static::getSitesWithDeviceSerials($devices);
+            $saved_sites = static::saveSitesWithDevices($sites_with_devices);
+            if (count($saved_sites) !== count($sites_with_devices)) {
+                array_push($errors, ['unsaved_sites_error' => 'Only '.(count($saved_sites)).' of '.count($sites_with_devices).' sites were saved']);
+            }
+            $unsaved_sites = array_filter($sites_with_devices, fn ($site) => Site::where('name', $site['name'])->doesntExist());
         }
 
         if (in_array('interface', $headers)) {
@@ -130,6 +141,7 @@ class DeviceController extends Controller
             ->with([
                 'unsaved_devices' => $unsaved_devices,
                 'unsaved_interfaces' => $unsaved_interfaces,
+                'unsaved_sites' => $unsaved_sites,
             ]);
     }
 
@@ -138,11 +150,16 @@ class DeviceController extends Controller
         $interface_pairs = array_map(fn ($pair) => explode('-', $pair), explode('&', $range));
         $expanded_ranges = [];
         foreach ($interface_pairs as $pair) {
-            $interface_parts = explode('/', $pair[0]);
-            $prefix = $interface_parts[0].'/'.$interface_parts[1].'/';
-            $start = (int) $interface_parts[2];
-            $end = (int) explode('/', $pair[1])[2];
-            $expanded_ranges = array_merge($expanded_ranges, array_map(fn ($i) => $prefix.$i, range($start, $end)));
+            if (count($pair) == 2) {
+                $interface_parts = explode('/', $pair[0]);
+                $prefix = $interface_parts[0] . '/' . $interface_parts[1] . '/';
+                $start = (int)$interface_parts[2];
+                $end = (int)explode('/', $pair[1])[2];
+                $expanded_ranges = array_merge($expanded_ranges, array_map(fn($i) => $prefix . $i, range($start, $end)));
+            }
+            else {
+                $expanded_ranges[] = $pair[0];
+            }
         }
         return $expanded_ranges;
     }
@@ -332,6 +349,28 @@ class DeviceController extends Controller
                 StpProfile::create($stp_profile);
             }
         }
+    }
+
+    public static function getSitesWithDeviceSerials(array $deviceArray)
+    {
+        $devices_with_sites = array_filter($deviceArray, fn ($device) => array_key_exists('site', $device) && $device['site'] !== '');
+        $sites = array_unique(array_column($devices_with_sites, 'site'));
+        $sites_with_devices = array_map(fn ($site) => [
+            'name' => $site,
+            'devices' => array_map(fn($device) => $device['serial'], array_filter($devices_with_sites, fn ($device) => $device['site'] === $site)),
+        ], $sites);
+        return $sites_with_devices;
+    }
+
+    public static function saveSitesWithDevices(array $sites_with_devices)
+    {
+        $saved_sites = [];
+        foreach ($sites_with_devices as $site_with_devices) {
+            $site = Site::firstOrCreate(['name' => $site_with_devices['name']]);
+            array_push($saved_sites, $site);
+            array_map(fn($device) => Device::where('serial', $device)->get()->first()->update(['site_id' => $site->id]), $site_with_devices['devices']);
+        }
+        return $saved_sites;
     }
 
     /**

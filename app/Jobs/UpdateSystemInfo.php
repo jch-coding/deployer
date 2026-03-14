@@ -22,7 +22,7 @@ class UpdateSystemInfo implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(public Device $device, public Task $task)
+    public function __construct(public Device $device, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         //
     }
@@ -32,11 +32,10 @@ class UpdateSystemInfo implements ShouldQueue
      */
     public function handle(): void
     {
-        $centralAPIHelper = new CentralAPIHelper($this->device->client);
         $pivotForDevice = $this->task->devices()->find($this->device)->pivot;
 
         if(!$this->device->scope_id || $pivotForDevice->status === 'FAILED') {
-            $scope_id_response = $centralAPIHelper->getScopeIdFromCentral($this->device);
+            $scope_id_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
             if(array_key_exists('error', $scope_id_response)) {
                 Log::error('Failed to retrieve scope ID for device ' . $this->device->name);
             }
@@ -44,7 +43,7 @@ class UpdateSystemInfo implements ShouldQueue
             $this->device->save();
         }
 
-        $response = $centralAPIHelper->updateSystemInfo($this->device);
+        $response = $this->centralAPIHelper->updateSystemInfo($this->device);
         if ($response->status() == 200) {
             DeploymentEvent::dispatch([
                 'deployment_name' => $this->task->deployment->name,

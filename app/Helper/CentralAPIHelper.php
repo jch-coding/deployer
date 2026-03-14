@@ -6,24 +6,37 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Str;
 
 class CentralAPIHelper
 {
     public array $scopeManagement = [
         'hierarchy' => [
-            'scope_hierarchy' => 'network-config/v1alpha1/hierarchy',
+            'scope_hierarchy' => 'network-config/v1/hierarchy',
         ],
+        'sites' => [
+            'sites' => 'network-config/v1/sites',
+        ]
     ];
 
     public array $system = [
         'system_info' => 'network-config/v1alpha1/system-info',
     ];
 
+    public array $configManagement = [
+        'persona_assignment' => 'network-config/v1alpha1/persona-assignment/',
+    ];
+
     public array $interfaces = [
         'interface_ethernet' => 'network-config/v1alpha1/ethernet-interfaces/',
         'interface_portchannel' => 'network-config/v1alpha1/portchannels/',
         'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles/',
+    ];
+
+    public array $switchMonitoring = [
+        'switches' => 'network-monitoring/v1/switches',
     ];
 
     public function __construct(public Client $client) {}
@@ -34,10 +47,28 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         }
 
+        if (str_contains($device->device_function, 'SWITCH')) {
+            $get_switches_response = $this->get_switches();
+            if (! $get_switches_response->ok()) {
+                Log::error('failed to get switches from central. Using switch serial to retrieve scope-id. Will fail if switch is a stack.');
+            }
+            else {
+                $switches = $get_switches_response->json()['items'];
+                $stack_id = static::getStackId($device, $switches);
+                if (array_key_exists('error', $stack_id)) {
+                    return back()->withErrors('switch does not exist in central or the central API has returned an error.');
+                }
+                else {
+                    $device->stack_id = $stack_id['stackId'];
+                    $device->save();
+                }
+            }
+        }
+
         $response = Http::withToken($this->client->bearer_token)
             ->withQueryParameters([
-                'scope-id' => $device->serial,
-                'scope-type' => 'device',
+                'id' => $device->stack_id ?? $device->serial,
+                'type' => 'device',
             ])->get($this->client->base_url.$this->scopeManagement['hierarchy']['scope_hierarchy']);
 
         if (! $response->ok()) {
@@ -59,6 +90,17 @@ class CentralAPIHelper
         }
     }
 
+    public static function getStackId(Device $device, array $switches)
+    {
+        $condutor_serial = $device->serial;
+        $conductor_switch = array_filter($switches, fn ($switch) => $switch['serialNumber'] === $condutor_serial);
+        if (count($conductor_switch) === 0) {
+            return ['error' => 'failed to get stack-id from central.'];
+        } else {
+            return [ 'stackId' => array_shift($conductor_switch)['stackId']];
+        }
+    }
+
     public function updateSystemInfo(Device $device)
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -72,6 +114,27 @@ class CentralAPIHelper
                 ])->withBody(json_encode([
                     'hostname' => $device->name,
                 ]))->patch($this->client->base_url.$this->system['system_info']);
+
+            return $response;
+        }
+    }
+
+    public function assignDeviceFunction(Device $device)
+    {
+        if (! $this->client->handleBearerTokenAuth())
+            {
+            return ['error' => 'failed to get access token from central.'];
+            }
+        else
+        {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->serial,
+                    'device_function' => $device->device_function,
+                ])->withBody(json_encode([
+                    'device-function' => $device->device_function,
+                ]))->patch($this->client->base_url.$this->configManagement['persona_assignment'].$device->device_function);
 
             return $response;
         }
@@ -135,6 +198,7 @@ class CentralAPIHelper
             'switchport' => $switch_port,
             'portchannel-lag' => $deviceInterface->portchannel_lag,
             'stp' => $stp_profile,
+            'sw-profile' => $deviceInterface->sw_profile?->name,
         ];
 
         return array_filter($switchport_rest_body, fn ($value) => $value !== []);
@@ -234,15 +298,62 @@ class CentralAPIHelper
         }
     }
 
-    public function get_sw_port_profile()
+    public function get_sw_port_profile($profile_name = '', $queryParameters = ['view-type' => 'LIBRARY'])
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
-                ->withQueryParameters([
-                    'view-type' => 'LIBRARY'
-                ])->get($this->client->base_url.$this->interfaces['switch_port_profile']);
+                ->withQueryParameters($queryParameters
+                )->get($this->client->base_url.$this->interfaces['switch_port_profile'].$profile_name);
+            return $response;
+        }
+    }
+
+    public function post_sw_port_profile(array $sw_port_profile, array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->interfaces['switch_port_profile'].$sw_port_profile['profile-name'], $sw_port_profile);
+            return $response;
+        }
+    }
+
+    public function patch_sw_port_profile(array $sw_port_profile, array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->patch($this->client->base_url.$this->interfaces['switch_port_profile'].$sw_port_profile['profile-name'], $sw_port_profile);
+            return $response;
+        }
+    }
+
+    /*
+     *  param: $filter = [ 'siteId', 'siteName', 'model', 'status', 'deployment' ]
+     *
+     *  used with eq or in. Ex ['siteName' => ' eq SAC Warehouse'] will translate to 'siteName eq "SAC Warehouse"'
+     */
+    public function get_switches(array $filter = [])
+    {
+        $response = Http::withToken($this->client->bearer_token)
+            ->withQueryParameters($filter)
+            ->get($this->client->base_url.$this->switchMonitoring['switches']);
+        return $response;
+    }
+
+    public function get_sites()
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->get($this->client->base_url.$this->scopeManagement['sites']['sites']);
             return $response;
         }
     }

@@ -24,6 +24,7 @@ return new class extends Migration
             $table->boolean('jumbo_frames')->default(false);
             $table->boolean('routing')->default(false);
             $table->string('vrf_forwarding')->default('default');
+            $table->string('sw_profile')->nullable();
             $table->foreignIdFor(Device::class)->constrained()->cascadeOnDelete();
             $table->foreignIdFor(SwitchPort::class, 'switch_port_id')->nullable()->constrained();
             $table->foreignIdFor(LacpProfile::class, 'lacp_profile_id')->nullable()->constrained();

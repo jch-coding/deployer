@@ -1,6 +1,7 @@
 <?php
 
 use App\Helper\CentralAPIHelper;
+use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\LacpProfile;
 use App\Models\StpProfile;
@@ -104,4 +105,97 @@ test('the categorize_interfaces function takes a list of device interfaces and r
     ];
     $actual = CentralAPIHelper::categorize_device_interfaces([$devInt1, $devInt2]);
     expect($actual)->toEqual($expected);
+});
+
+test('the conductor serial number is used to find the stack_id of a stack in mrt', function () {
+    $response_json = [
+        'items' =>   [
+            [
+            "deployment" => "Stack",
+            "firmwareVersion" => "FL.10.15.1010",
+            "publicIp" => "64.73.160.102",
+            "id" => "SG20KN309L",
+            "stackId" => "41bbc334-749b-4924-bf91-c4377a323536",
+            "stackMemberId" => 2,
+            "switchType" => "cx",
+            "uptimeInMillis" => 27381482771,
+            "lastSeenAt" => 0,
+            "ipv4" => "10.89.52.15",
+            "siteName" => "CDW LAB",
+            "ipv6" => null,
+            "switchRole" => "Standby",
+            "switchTrends" => [
+                [
+                    "cpuUtilization" => 6,
+                    "memoryUtilization" => 11,
+                    "systemTemperature" => 24,
+                    "poeAvailable" => 0,
+                    "poeConsumption" => 0,
+                    "powerConsumption" => 49.330001831055,
+                    "totalPowerConsumption" => 49.33,
+                    "upLinkPorts" => null,
+                    "usage" => 24898.05,
+                ],
+            ],
+            "type" => "network-monitoring/switch-monitoring",
+            "siteId" => "266035542831",
+            "jNumber" => "JL664A",
+            "macAddress" => "0c:97:5f:bd:76:80",
+            "serialNumber" => "SG20KN309L",
+            "model" => "CX-6300M",
+            "deviceName" => "vht2509-as6300m",
+            "status" => "Online",
+        ],
+        [
+            "deployment" => "Stack",
+            "firmwareVersion" => "FL.10.15.1010",
+            "publicIp" => "64.73.160.102",
+            "id" => "SG20KN309V",
+            "stackId" => "41bbc334-749b-4924-bf91-c4377a323536",
+            "stackMemberId" => 1,
+            "switchType" => "cx",
+            "uptimeInMillis" => 27381482771,
+            "lastSeenAt" => 0,
+            "ipv4" => "10.89.52.15",
+            "siteName" => "CDW LAB",
+            "ipv6" => null,
+            "switchRole" => "Conductor",
+            "switchTrends" => [
+                [
+                    "cpuUtilization" => 12,
+                    "memoryUtilization" => 21,
+                    "systemTemperature" => 23.5,
+                    "poeAvailable" => 0,
+                    "poeConsumption" => 0,
+                    "powerConsumption" => 49.029998779297,
+                    "totalPowerConsumption" => 49.03,
+                    "upLinkPorts" => null,
+                    "usage" => 67234.71,
+                ],
+            ],
+            "type" => "network-monitoring/switch-monitoring",
+            "siteId" => "266035542831",
+            "jNumber" => "JL664A",
+            "macAddress" => "0c:97:5f:bd:c4:80",
+            "serialNumber" => "SG20KN309V",
+            "model" => "CX-6300M",
+            "deviceName" => "vht2509-as6300m",
+            "status" => "Online",
+        ],
+            ],
+        'count' => 2,
+        'total' => 2,
+        'next' => null,
+    ];
+
+    $device = Device::factory()->create([
+        'serial' => 'SG20KN309V',
+        'name' => "vht2507-as6300m-stk06",
+        'device_function' => 'ACCESS_SWITCH',
+        'scope_id' => null,
+        'stack_id' => null,
+    ]);
+
+    $stack_id = CentralAPIHelper::getStackId($device, $response_json['items']);
+    expect($stack_id['stackId'])->toEqual('41bbc334-749b-4924-bf91-c4377a323536');
 });

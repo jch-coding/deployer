@@ -475,3 +475,60 @@ test('configure ethernet trunk interfaces configures trunk-vlan-all and trunk-vl
     expect($interfaces['unique_switchports'][0])->toEqual($expected_swp);
     expect($interfaces['unique_switchports'][1])->toEqual($expected_swp2);
 });
+
+test ('get sites returns an array of sites and their associated devices by serial number', function () {
+    $csv_raw = CSVHelper::processCSVFile('tests/Unit/testcsvs/sites.csv');
+    $processed_data = CSVHelper::createDeviceArrays($csv_raw);
+    $sites = DeviceController::getSitesWithDeviceSerials($processed_data);
+    $expected = [
+        [
+            'name' => 'Site A',
+            'devices' => [
+                'SN0000000001',
+                'SN0000000002',
+            ]
+        ],
+        [
+            'name' => 'Site B',
+            'devices' => [
+                'SN0000000003',
+                'SN0000000004',
+            ]
+        ],
+    ];
+    $sites_a_devices = $sites[0]['devices'];
+    $sites_b_devices = $sites[2]['devices'];
+    expect(in_array('SN0000000001', $sites_a_devices))->toBeTrue();
+    expect(in_array('SN0000000002', $sites_a_devices))->toBeTrue();
+    expect(in_array('SN0000000003', $sites_b_devices))->toBeTrue();
+    expect(in_array('SN0000000004', $sites_b_devices))->toBeTrue();
+});
+
+test('save sites saves sites with their devices associated', function () {
+   $devices_site_a = Device::factory()->count(2)->create();
+   $devices_site_b = Device::factory()->count(2)->create();
+   $sites = [
+       [
+           'name' => 'Site A',
+           'devices' => $devices_site_a->pluck('serial')->toArray(),
+       ],
+       [
+           'name' => 'Site B',
+           'devices' => $devices_site_b->pluck('serial')->toArray(),
+       ]
+   ];
+   $saved_sites = DeviceController::saveSitesWithDevices($sites);
+   $collected_saved_sites = collect($saved_sites);
+   $this->assertDatabaseCount('sites', 2);
+   $this->assertDatabaseHas('sites', [
+       'name' => 'Site A',
+   ]);
+    $this->assertDatabaseHas('sites', [
+        'name' => 'Site B',
+    ]);
+
+   $site_a = $collected_saved_sites->first();
+    $site_b = $collected_saved_sites->last();
+    expect($site_a->devices)->toHaveCount(2);
+    expect($site_b->devices)->toHaveCount(2);
+});

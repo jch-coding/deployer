@@ -7,6 +7,7 @@ use App\Events\DeviceConfigFailedEvent;
 use App\Events\DeviceGetScopeIdEvent;
 use App\Events\DeviceSystemInfoUpdateEvent;
 use App\Events\TestEvent;
+use App\Jobs\CreateLocalOverrideForPortProfile;
 use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
@@ -131,10 +132,16 @@ class TaskController extends Controller
 
     public function dispatchJob(Task $task)
     {
+        $centralAPIHelper = new CentralAPIHelper($task->deployment->client);
         $jobs = [];
         switch ($task->task_type) {
             case 'UPDATE_SYSTEM_INFO':
-                $jobs = $task->devices->map(fn($device) => new UpdateSystemInfo($device, $task));
+                $jobs = $task->devices->map(fn($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper));
+                break;
+            case 'CONFIGURE_ETHERNET_INTERFACE':
+                $devices_with_port_profiles = $task->devices->map(fn($device) => [...$device, 'interfaces' => $device->interfaces->filter(fn($interface) => $interface->sw_profile)]);
+                $jobs = $devices_with_port_profiles->map(fn($device_with_port_profile) => new CreateLocalOverrideForPortProfile($device_with_port_profile, $task, $centralAPIHelper));
+//                $jobs = array_merge($jobs, $task->devices->map(fn($device) => $device->interfaces->map(fn($interface) => new ConfigureEthernetInterface($interface, $task)));
                 break;
             case 'TEST_TASK':
                 $jobs = $task->devices->map(fn($device) => new TestJob(['device_id' => $device->id, 'task_id' => $task->id, 'message' => 'message '.random_int(1,10), 'task_type' => $task->task_type, 'deployment_name' => $task->deployment->name]));
