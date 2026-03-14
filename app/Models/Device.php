@@ -22,6 +22,7 @@ class Device extends Model
         'deployment_id',
         'serial',
         'device_function',
+        'scope_id',
         'stack_id',
     ];
 

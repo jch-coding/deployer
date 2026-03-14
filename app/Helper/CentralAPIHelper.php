@@ -56,7 +56,8 @@ class CentralAPIHelper
                 $switches = $get_switches_response->json()['items'];
                 $stack_id = static::getStackId($device, $switches);
                 if (array_key_exists('error', $stack_id)) {
-                    return back()->withErrors('switch does not exist in central or the central API has returned an error.');
+                    Log::error('failed to get stack-id from central. Using switch serial to retrieve scope-id.');
+                    return ['error' => 'switch does not exist in central or the central API has returned an error.'];
                 }
                 else {
                     $device->stack_id = $stack_id['stackId'];
@@ -192,15 +193,19 @@ class CentralAPIHelper
                 )
             );
         }
-
-        $switchport_rest_body = [
-            'name' => $deviceInterface->interface,
-            'switchport' => $switch_port,
-            'portchannel-lag' => $deviceInterface->portchannel_lag,
-            'stp' => $stp_profile,
-            'sw-profile' => $deviceInterface->sw_profile?->name,
-        ];
-
+        $switchport_rest_body = [ 'name' => $deviceInterface->interface ];
+        if ($deviceInterface->sw_profile !== null) {
+            $switchport_rest_body['sw-profile'] = $deviceInterface->sw_profile;
+        }
+        elseif ($deviceInterface->portchannel_lag !== null) {
+            $switchport_rest_body['portchannel-lag'] = $deviceInterface->portchannel_lag;
+        }
+        else {
+            array_merge($switchport_rest_body, [
+                'switchport' => $switch_port,
+                'stp' => $stp_profile,
+            ]);
+        }
         return array_filter($switchport_rest_body, fn ($value) => $value !== []);
     }
 
