@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Deployment;
 use App\TaskType;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -28,10 +29,17 @@ class DeploymentController extends Controller
     public function show(Request $request, Deployment $deployment)
     {
         $deployment->load('devices');
+        $latest_tasks = $deployment->tasks()->withCount('devices')->latest()->take(5)->get()
+            ->map(function ($task) {
+                $task->human_created_at = Carbon::parse($task->created_at)->diffForHumans();
+                $task->human_updated_at = Carbon::parse($task->updated_at)->diffForHumans();
+                return $task;
+            });
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
             'devices' => $deployment->devices()->paginate(10),
             'tasks' => array_map(fn($task) => $task->name, TaskType::cases()),
+            'latest_tasks' => $latest_tasks,
         ]);
     }
 

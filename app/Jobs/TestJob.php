@@ -37,8 +37,8 @@ class TestJob implements ShouldQueue
     {
         TestEvent::dispatch($this->data);
         DeploymentEvent::dispatch($this->data);
-        $task = Task::find($this->data['task_id']);
-        $task->devices()->find($this->data['device_id'])->pivot->update(['status' => 'COMPLETED']);
+//        $task = Task::find($this->data['task_id']);
+//        $task->devices()->find($this->data['device_id'])->pivot->update(['status' => 'COMPLETED']);
         sleep(random_int(1,10));
     }
 

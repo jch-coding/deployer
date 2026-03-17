@@ -47,7 +47,7 @@ class UpdateSystemInfo implements ShouldQueue
         if ($response->status() == 200) {
             DeploymentEvent::dispatch([
                 'deployment_name' => $this->task->deployment->name,
-                'device_id' => $this->device->id,
+                'device_name' => $this->device->id,
                 'task_type' => $this->task->task_type,
                 'message' => 'System info for ' . $this->device->name . ' updated'
             ]);

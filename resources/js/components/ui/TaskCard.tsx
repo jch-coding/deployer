@@ -1,11 +1,14 @@
 import { router } from '@inertiajs/react';
 import { useEcho } from '@laravel/echo-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { store } from '@/routes/tasks';
+import FilterIcon from '@/components/ui/FilterIcon';
+import { AlarmClockIcon,
+    BoltIcon} from 'lucide-react';
 
 type DeviceType = {
     id: number,
@@ -18,11 +21,12 @@ type DeploymentType = {
     name: string,
 }
 
-export default function TaskCard({ task, devices, deployment } : { task: string, devices: DeviceType[], deployment: DeploymentType}) {
+export default function TaskCard({ task, devices, deployment, props } : { task: string, devices: DeviceType[], deployment: DeploymentType, props: any}) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
-    const [statusMessage, setStatusMessage] = useState('')
-    const [newDevice, setNewDevice] = useState('')
+    const [statusMessage, setStatusMessage] = useState()
+    const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
+    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
     const handleCheckboxChange = (deviceId : number, checked : boolean) => {
         const newDevice = devices.find(device => device.id === deviceId)
         if (checked) {
@@ -36,8 +40,8 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
 
     const dispatch_task_with_devices = (task, devices, allDevices = false) => {
         const devices_for_task= allDevices ? devices : devices.filter(device => taskDevices.find(dev => device.id === dev.id) !== undefined)
-        const devices_with_completed_status = devices_for_task.map(device => ({...device, completed: false}))
-        setTaskDevices(devices_with_completed_status)
+        // const devices_with_completed_status = devices_for_task.map(device => ({...device, completed: false}))
+        setTaskDevices(devices_for_task)
         const taskData = {
             task_type: task,
             devices: devices_for_task
@@ -47,23 +51,22 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
 
     const resetCompletedDevices = () => setCompletedDevices([])
 
+    const newItemUpdated = (newItemEvent) => {
+        const newDeviceUpdated = {...devices.find(device => device.id === parseInt(newItemEvent.data.device_name)), completed: true}
+        setCompletedDevices((prevState) => [...prevState, newDeviceUpdated])
+
+        setStatusMessage(newItemEvent.data.message)
+    }
+
     useEcho(
         `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
         'DeploymentEvent',
         (event) => {
-            const updatedDevicesStatus : DeviceType[] = taskDevices.map(device => { device.id == parseInt(event.data.device_id) ? { ...device, completed: true} : device })
-            const newDeviceUpdated = devices.find(device => device.id === parseInt(event.data.device_id))
-            setNewDevice(newDeviceUpdated)
-            setTaskDevices(updatedDevicesStatus)
-            setStatusMessage(event.data.message)
+            newItemUpdated(event)
     })
 
-    useEffect(() => {
-        setCompletedDevices([...completedDevices, newDevice])
-    },[newDevice])
-
     return (
-        <Card>
+        <Card className="min-w-sm" {...props}>
             <CardHeader>
                 <CardTitle>{task}</CardTitle>
                 <CardDescription>
@@ -73,7 +76,43 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
             <CardContent className="flex gap-2">
                 <Dialog>
                     <DialogTrigger asChild>
-                        <Button data-test="associate-devices-with-task">Filter Devices</Button>
+                        <Button data-test="set-deployment-time"><AlarmClockIcon/>Set Duration</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogTitle>Set Deployment Duration</DialogTitle>
+                        <DialogDescription>
+                            Set the duration of the deployment
+                        </DialogDescription>
+                        <div className="flex gap-2">
+                            <label htmlFor="deployment-time-hours" className="self-center">Hours</label>
+                            <input
+                                type="number"
+                                value={deploymentTimeHours}
+                                onChange={(e) => setDeploymentTimeHours(parseInt(e.target.value))}
+                                className="w-1/4 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                            <label htmlFor="deployment-time-minutes" className="self-center">Minutes</label>
+                            <input
+                                type="number"
+                                value={deploymentTimeMinutes}
+                                onChange={(e) => setDeploymentTimeMinutes(parseInt(e.target.value))}
+                                className="w-1/4 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                        </div>
+                        <DialogFooter className="sm:justify-start">
+                            <DialogClose asChild>
+                                <Button className="hover:bg-slate-300">
+                                    Set Duration
+                                </Button>
+                            </DialogClose>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Button data-test="associate-devices-with-task" aria-description="Filter Devices">
+                            <FilterIcon/>
+                            Filter</Button>
                     </DialogTrigger>
                     <DialogContent>
                         <DialogTitle>Associate Devices</DialogTitle>
@@ -102,14 +141,14 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
                     <DialogTrigger asChild>
                         {
                             taskDevices.length > 0 && taskDevices.length < devices.length ?
-                                <Button onClick={() => dispatch_task_with_devices(task, devices)}>Deploy Selected</Button> :
-                                <Button onClick={() => dispatch_task_with_devices(task, devices, true)}>Deploy with All Devices</Button>
+                                <Button onClick={() => dispatch_task_with_devices(task, devices)}><BoltIcon/>Deploy Selected</Button> :
+                                <Button onClick={() => dispatch_task_with_devices(task, devices, true)}><BoltIcon/>Deploy All</Button>
                         }
                     </DialogTrigger>
                     <DialogContent>
                         <DialogTitle>{task} Progress</DialogTitle>
                         <DialogDescription>
-                            {completedDevices.length} / {devices.length} {statusMessage}
+                            {completedDevices.length} / {taskDevices.length} {statusMessage}
                         </DialogDescription>
                         <DialogClose asChild>
                             <Button onClick={() => resetCompletedDevices()}>Close</Button>
@@ -119,7 +158,7 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
                                 {
                                     completedDevices.length > 0 ?
                                         completedDevices.map((device, index) =>
-                                            <li key={index} className='text-green-500'>{device.name}</li>
+                                            <li key={index} className='text-emerald-500'>{ device ? device.name : device }</li>
                                         ) : <li>Deployment started</li>
                                 }
                             </ul>

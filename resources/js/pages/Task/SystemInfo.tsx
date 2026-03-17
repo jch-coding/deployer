@@ -21,7 +21,6 @@ export default function Show() {
         (device) => device.pivot.status === 'COMPLETED',
     );
     const [totalCompletedDevices, setTotalCompletedDevices] = useState(0);
-    const [newCompletedDevice, setNewCompletedDevice] = useState()
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: 'Dashboard',
@@ -45,26 +44,21 @@ export default function Show() {
         `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
         'DeploymentEvent',
         (event) => {
-            const completed_device_id = event.data.device_id
-            const new_completed_device = devices.find(device => device.id === completed_device_id)
-            setNewCompletedDevice({...new_completed_device})
+            const completed_device_name = event.data.device_name
+            const new_completed_device = devices.find(device => device.name === completed_device_name)
+            setTotalCompletedDevices(() => totalCompletedDevices + 1);
+            setCompletedDevices((prevCompletedDevices) => [...prevCompletedDevices, new_completed_device])
         }
     )
-
-    useEffect(() => {
-        setCompletedDevices([...completedDevices, newCompletedDevice])
-        const newTotal = completedDevices.length == 0 ? 0 : totalCompletedDevices + 1;
-        setTotalCompletedDevices(newTotal);
-    },[newCompletedDevice])
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="flex gap-4 max-w-6xl mx-auto">
-                <div className="fixed top-1/2 left-1/6">
+                <div className="fixed top-1/4 left-1/6">
                     <h1 className="text-2xl text-center font-bold">Progress</h1>
                     <div className="mt-4 rounded-full border-4 border-green-500/80 h-36 w-36 flex justify-center items-center">
                         <span className="text-3xl text-slate-500 font-bold p-1">
-                            {totalCompletedDevices + completedDevicesFromBackend.length - 1}
+                            {totalCompletedDevices + completedDevicesFromBackend.length }
                         </span>
                         <ChevronRightCircleIcon/>
                         <span className="text-3xl text-slate-600 font-bold p-1">
@@ -74,7 +68,7 @@ export default function Show() {
                 </div>
                 <div className="flex-1" >
             <h1 className="text-center text-2xl font-bold">
-                {deployment.name} | {task.task_type}
+                Deployment: {deployment.name} : {task.task_type}
             </h1>
             <table className="mt-6 mx-auto min-w-[50dvw] table-auto border border-slate-400">
                 <thead>

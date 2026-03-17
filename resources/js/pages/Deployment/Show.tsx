@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
+import { showSystemInfo, showEthernetInterface } from '@/actions/App/Http/Controllers/TaskController';
 import { useEffect, useState, useRef } from 'react';
 import { columns } from '@/components/ui/devices-columns';
 import { DataTable } from '@/components/ui/data-table';
@@ -20,6 +21,12 @@ import type { Paginator } from '@/types/deployer';
 import type { Client } from '@/types/clients/client';
 import type { SharedData } from '@/types';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardTitle,
+} from '@/components/ui/card';
 
 type Device = {
     id: string;
@@ -33,8 +40,14 @@ type Deployment = {
 }
 
 type Task = {
-    id: string;
+    id: number;
     task_type: string;
+    devices_count: number;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    human_updated_at: string;
+    human_created_at: string;
 }
 
 type DeploymentPageProps = {
@@ -42,6 +55,7 @@ type DeploymentPageProps = {
     base_urls: string[];
     deployment: Deployment;
     tasks: Task[];
+    latest_tasks: Task[];
 } & SharedData;
 export default function Show() {
     const deployment = usePage<DeploymentPageProps>().props.deployment;
@@ -52,18 +66,22 @@ export default function Show() {
         devices: null,
     })
     const tasks = usePage<DeploymentPageProps>().props.tasks;
-    const [submitting, setSubmitting] = useState(false)
-    const closeTriggerRef = useRef(null)
+    const latest_tasks = usePage<DeploymentPageProps>().props.latest_tasks;
+    const [submitting, setSubmitting] = useState(false);
+
+    const taskShow = (task_type: string, task_id: number) => {
+        switch (task_type) {
+            case 'UPDATE_SYSTEM_INFO':
+                return showSystemInfo(task_id).url;
+            case 'UPDATE_ETHERNET_INTERFACE':
+                return showEthernetInterface(task_id).url;
+        }
+    }
 
     function handleSubmit(e ) {
         e.preventDefault()
         post(storeMany(deployment.id).url)
     }
-
-    useEffect(() => {
-        if (!submitting) return;
-        closeTriggerRef.current?.click()
-    })
 
     return (
         <AppLayout>
@@ -81,12 +99,34 @@ export default function Show() {
                         <p>No devices assigned to this deployment</p>
                     }
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div>
+                    <h2 className="text-xl font-semibold text-center">Latest Tasks</h2>
                     {
-                        tasks.map((task,index) =>
-                            <TaskCard index={index} task={task} devices={allDevices} deployment={deployment}/>
-                        )
+                        latest_tasks.length > 0 &&
+                        <div className="flex flex-wrap gap-2 mt-2">
+                            {
+                                latest_tasks.map((task, index) =>
+                                <Card index={index} className="max-w-sm px-2">
+                                    <CardTitle className="text-center text-xs">{task.task_type}</CardTitle>
+                                    <CardDescription className="text-xs text-center">latest updated: {task.human_updated_at}</CardDescription>
+                                    <CardContent className="text-sm">
+                                        <div className="flex justify-between space-x-2">
+                                            <p>Devices: {task.devices_count}</p>
+                                            <p>Status: {task.status}</p>
+                                        </div>
+                                        <a href={taskShow(task.task_type, task.id)} className="text-emerald-500 hover:underline">View Details</a>
+                                    </CardContent>
+                                </Card>)
+                            }
+                        </div>
                     }
+                    <div className="flex flex-wrap gap-2 justify-center mt-6">
+                        {
+                            tasks.map((task,index) =>
+                                <TaskCard index={index} task={task} devices={allDevices} deployment={deployment}/>
+                            )
+                        }
+                    </div>
                 </div>
                 <Dialog>
                     <DialogTrigger asChild>
@@ -121,6 +161,7 @@ export default function Show() {
                                     setData('devices', e.target.files[0])
                                 }
                                 className="block cursor-pointer rounded-lg border border-gray-300 bg-gray-50 p-2 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:placeholder-gray-400"
+                                disabled={submitting}
                             />
                             {errors && (
                                 <p className="text-xs text-red-500">
@@ -137,14 +178,6 @@ export default function Show() {
                                         {progress.percentage}%
                                     </progress>
                                 )}
-                                <DialogClose asChild>
-                                    <Button
-                                        className="hidden"
-                                        ref={closeTriggerRef}
-                                    >
-                                        Close
-                                    </Button>
-                                </DialogClose>
                             </DialogFooter>
                         </Form>
                     </DialogContent>

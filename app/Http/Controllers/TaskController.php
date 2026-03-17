@@ -7,6 +7,8 @@ use App\Events\DeviceConfigFailedEvent;
 use App\Events\DeviceGetScopeIdEvent;
 use App\Events\DeviceSystemInfoUpdateEvent;
 use App\Events\TestEvent;
+use App\Helper\CentralAPIHelper;
+use App\Jobs\ConfigureEthernetInterface;
 use App\Jobs\CreateLocalOverrideForPortProfile;
 use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
@@ -16,11 +18,8 @@ use App\Models\Task;
 use App\TaskType;
 use Illuminate\Bus\Batch;
 use Illuminate\Http\Request;
-use App\Events\DeviceConfigEvent;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Http;
-use App\Helper\CentralAPIHelper;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -29,10 +28,10 @@ class TaskController extends Controller
     public function config_system_info(Device $device)
     {
         $central_api_helper = new CentralAPIHelper($device->client);
-        if(!$device->scope_id) {
+        if (! $device->scope_id) {
             DeviceGetScopeIdEvent::dispatch($device);
             $scope_id_response = $central_api_helper->getScopeIdFromCentral($device);
-            if(!count($scope_id_response) > 0) {
+            if (! count($scope_id_response) > 0) {
                 return response()->json(['error' => ' failed to get scope-id from Central']);
             }
             $device->update(['scope_id' => $scope_id_response[0]['scopeId']]);
@@ -44,9 +43,10 @@ class TaskController extends Controller
 
         $response = $central_api_helper->updateSystemInfo($device);
 
-        if(!$response->ok()) {
+        if (! $response->ok()) {
             DeviceConfigFailedEvent::dispatch($device);
-            return response()->json(['error' => 'code:' . $response->status() .' failed to configure system info from central.']);
+
+            return response()->json(['error' => 'code:'.$response->status().' failed to configure system info from central.']);
         }
 
         DeviceSystemInfoUpdateEvent::dispatch($device);
@@ -58,9 +58,10 @@ class TaskController extends Controller
 
     public static function orderInterfaces(Collection $interfaces)
     {
-        $portchannels = $interfaces->filter(fn($interface) => str_contains($interface['interface'], 'lag'));
-        $ethernets = $interfaces->filter(fn($interface) => !str_contains($interface['interface'], 'lag'));
+        $portchannels = $interfaces->filter(fn ($interface) => str_contains($interface['interface'], 'lag'));
+        $ethernets = $interfaces->filter(fn ($interface) => ! str_contains($interface['interface'], 'lag'));
         $ordered_interfaces = $portchannels->merge($ethernets);
+
         return $ordered_interfaces;
     }
 
@@ -85,49 +86,47 @@ class TaskController extends Controller
     public function store(Request $request, Deployment $deployment)
     {
         $validated = $request->validate([
-            'task_type' => ['required', Rule::in(array_map(fn($task) => $task->name, TaskType::cases()))],
+            'task_type' => ['required', Rule::in(array_map(fn ($task) => $task->name, TaskType::cases()))],
             'devices' => 'required|array',
         ]);
 
         $task = $deployment->tasks()->create([
             'task_type' => $validated['task_type'],
-            'name' => 'task_for_' . $deployment->name . now(),
+            'name' => 'task_for_'.$deployment->name.now(),
         ]);
 
         $device_collection = Collection::make($validated['devices']);
         $task->devices()->attach($device_collection->pluck('id'));
         $this->dispatchJob($task);
+
         return back()->with([
             'latest_task' => $task,
-            'success' => 'Task is in progress'
+            'success' => 'Task is in progress',
         ]);
     }
 
     public function dispatchTask(Task $task)
     {
         switch ($task->task_type) {
-            case 'TEST_TASK' :
+            case 'TEST_TASK':
                 $task_to_perform = fn ($data) => $this->TestTask($data);
                 break;
         }
         $task->devices->each(fn ($device) => $task_to_perform([
             'device_id' => $device->id,
-            'message' => 'message '.random_int(1,10),
+            'message' => 'message '.random_int(1, 10),
             'task_type' => $task->task_type,
-            'deployment_name' => $task->deployment->name
+            'deployment_name' => $task->deployment->name,
         ]));
     }
 
-    public function UpdateSystemInfo()
-    {
-
-    }
+    public function UpdateSystemInfo() {}
 
     public function TestTask(array $data)
     {
         TestEvent::dispatch($data);
         DeploymentEvent::dispatch($data);
-        sleep(random_int(1,5));
+        sleep(random_int(1, 5));
     }
 
     public function dispatchJob(Task $task)
@@ -136,15 +135,29 @@ class TaskController extends Controller
         $jobs = [];
         switch ($task->task_type) {
             case 'UPDATE_SYSTEM_INFO':
-                $jobs = $task->devices->map(fn($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper));
+                $jobs = $task->devices->map(fn ($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper));
                 break;
             case 'CONFIGURE_ETHERNET_INTERFACE':
-                $devices_with_port_profiles = $task->devices->map(fn($device) => [...$device, 'interfaces' => $device->interfaces->filter(fn($interface) => $interface->sw_profile)]);
-                $jobs = $devices_with_port_profiles->map(fn($device_with_port_profile) => new CreateLocalOverrideForPortProfile($device_with_port_profile, $task, $centralAPIHelper));
-//                $jobs = array_merge($jobs, $task->devices->map(fn($device) => $device->interfaces->map(fn($interface) => new ConfigureEthernetInterface($interface, $task)));
+                $devices_with_port_profiles = $task->devices->map(function ($device) {
+                    $device->interfaces = $device->interfaces->filter(fn ($interface) => $interface->sw_profile);
+
+                    return $device;
+                });
+                $unique_interfaces_sw_profiles = static::get_unique_sw_profiles($devices_with_port_profiles);
+                $jobs = $unique_interfaces_sw_profiles->map(fn ($unique_interface_sw_profiles) => new CreateLocalOverrideForPortProfile(
+                    [
+                        'sw_profile' => $unique_interface_sw_profiles->sw_profile,
+                        'device_function' => $unique_interface_sw_profiles->device->device_function,
+                        'site' => $unique_interface_sw_profiles->device->site,
+                    ],
+                    $task,
+                    $centralAPIHelper
+                )
+                );
+                $jobs = array_merge($jobs, $task->devices->map(fn($device) => $device->interfaces->map(fn($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper))));
                 break;
             case 'TEST_TASK':
-                $jobs = $task->devices->map(fn($device) => new TestJob(['device_id' => $device->id, 'task_id' => $task->id, 'message' => 'message '.random_int(1,10), 'task_type' => $task->task_type, 'deployment_name' => $task->deployment->name]));
+                $jobs = $task->devices->map(fn ($device) => new TestJob(['device_name' => $device->id, 'task_id' => $task->id, 'message' => 'message '.random_int(1, 10), 'task_type' => $task->task_type, 'deployment_name' => $task->deployment->name]));
                 break;
         }
         $job_batch = Bus::chain(
@@ -155,10 +168,15 @@ class TaskController extends Controller
         return $job_batch;
     }
 
+    public static function get_unique_sw_profiles(Collection $devices)
+    {
+        return $devices->map(fn ($device) => $device->interfaces->unique('sw_profile'))->collapse()->unique('sw_profile');
+    }
+
     public function test()
     {
         $numJobs = request()->input('numJobs') ?? 20;
-        $batch = Bus::batch(array_map(fn() => new TestJob('test job '. now()), range(1, $numJobs)))
+        $batch = Bus::batch(array_map(fn () => new TestJob('test job '.now()), range(1, $numJobs)))
             ->progress(function (Batch $batch) {
                 TestEvent::dispatch($batch->progress());
             })
@@ -166,6 +184,7 @@ class TaskController extends Controller
                 TestEvent::dispatch($batch->processedJobs().' jobs');
             })
             ->dispatch();
+
         return back()->with(['job_batch_id' => $batch->id, 'message' => 'dispatched']);
     }
 }

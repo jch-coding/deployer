@@ -22,7 +22,8 @@ class DeviceInterface extends Model
         'device_id',
         'lacp_profile_id',
         'switch_port_id',
-        'stp_profile_id'
+        'stp_profile_id',
+        'sw_profile',
     ];
 
     protected $casts = [
