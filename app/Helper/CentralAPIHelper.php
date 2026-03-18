@@ -7,8 +7,6 @@ use App\Models\Device;
 use App\Models\DeviceInterface;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Response;
-use Illuminate\Support\Str;
 
 class CentralAPIHelper
 {
@@ -18,7 +16,7 @@ class CentralAPIHelper
         ],
         'sites' => [
             'sites' => 'network-config/v1/sites',
-        ]
+        ],
     ];
 
     public array $system = [
@@ -51,15 +49,14 @@ class CentralAPIHelper
             $get_switches_response = $this->get_switches();
             if (! $get_switches_response->ok()) {
                 Log::error('failed to get switches from central. Using switch serial to retrieve scope-id. Will fail if switch is a stack.');
-            }
-            else {
+            } else {
                 $switches = $get_switches_response->json()['items'];
                 $stack_id = static::getStackId($device, $switches);
                 if (array_key_exists('error', $stack_id)) {
                     Log::error('failed to get stack-id from central. Using switch serial to retrieve scope-id.');
+
                     return ['error' => 'switch does not exist in central or the central API has returned an error.'];
-                }
-                else {
+                } else {
                     $device->stack_id = $stack_id['stackId'];
                     $device->save();
                 }
@@ -98,7 +95,7 @@ class CentralAPIHelper
         if (count($conductor_switch) === 0) {
             return ['error' => 'failed to get stack-id from central.'];
         } else {
-            return [ 'stackId' => array_shift($conductor_switch)['stackId']];
+            return ['stackId' => array_shift($conductor_switch)['stackId']];
         }
     }
 
@@ -122,12 +119,9 @@ class CentralAPIHelper
 
     public function assignDeviceFunction(Device $device)
     {
-        if (! $this->client->handleBearerTokenAuth())
-            {
+        if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
-            }
-        else
-        {
+        } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
                     'object-type' => 'LOCAL',
@@ -154,19 +148,19 @@ class CentralAPIHelper
         $port_list = [];
         $switch_port_configuration = static::build_switchport_from_device_interface($deviceInterface);
 
-        if ($deviceInterface->lacp_profile !== null)
-        {
+        if ($deviceInterface->lacp_profile !== null) {
             $port_list = collect(
-                array_map(fn($s) => explode('-', $s),
+                array_map(fn ($s) => explode('-', $s),
                     explode('&', $deviceInterface->lacp_profile->port_list))
             )->flatten()->toArray();
             $lacp_profile = [
                 'port-list' => $port_list,
                 'mode' => $deviceInterface->lacp_profile->mode,
-                'rate' => $deviceInterface->lacp_profile->rate
+                'rate' => $deviceInterface->lacp_profile->rate,
             ];
             $switch_port_configuration['trunk-type'] = $deviceInterface->lacp_profile->trunk_type;
         }
+
         return array_merge($switch_port_configuration, ['lacp' => $lacp_profile]);
     }
 
@@ -193,19 +187,18 @@ class CentralAPIHelper
                 )
             );
         }
-        $switchport_rest_body = [ 'name' => $deviceInterface->interface ];
+        $switchport_rest_body = ['name' => $deviceInterface->interface];
         if ($deviceInterface->sw_profile !== null) {
             $switchport_rest_body['sw-profile'] = $deviceInterface->sw_profile;
-        }
-        elseif ($deviceInterface->portchannel_lag !== null) {
+        } elseif ($deviceInterface->portchannel_lag !== null) {
             $switchport_rest_body['portchannel-lag'] = $deviceInterface->portchannel_lag;
-        }
-        else {
+        } else {
             array_merge($switchport_rest_body, [
                 'switchport' => $switch_port,
                 'stp' => $stp_profile,
             ]);
         }
+
         return array_filter($switchport_rest_body, fn ($value) => $value !== []);
     }
 
@@ -287,6 +280,7 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].$switch_port->name, $switch_port);
+
             return $response;
         }
     }
@@ -299,6 +293,7 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->delete($this->client->base_url.$this->interfaces['interface_portchannel'].$portchannel_name);
+
             return $response;
         }
     }
@@ -311,6 +306,7 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters
                 )->get($this->client->base_url.$this->interfaces['switch_port_profile'].$profile_name);
+
             return $response;
         }
     }
@@ -323,6 +319,7 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->post($this->client->base_url.$this->interfaces['switch_port_profile'].$sw_port_profile['profile-name'], $sw_port_profile);
+
             return $response;
         }
     }
@@ -335,6 +332,7 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->patch($this->client->base_url.$this->interfaces['switch_port_profile'].$sw_port_profile['profile-name'], $sw_port_profile);
+
             return $response;
         }
     }
@@ -349,6 +347,7 @@ class CentralAPIHelper
         $response = Http::withToken($this->client->bearer_token)
             ->withQueryParameters($filter)
             ->get($this->client->base_url.$this->switchMonitoring['switches']);
+
         return $response;
     }
 
@@ -359,6 +358,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->get($this->client->base_url.$this->scopeManagement['sites']['sites']);
+
             return $response;
         }
     }

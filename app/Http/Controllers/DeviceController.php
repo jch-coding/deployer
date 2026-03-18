@@ -180,6 +180,9 @@ class DeviceController extends Controller
         $unique_switchports = [];
         foreach ($normalized_devices as $device) {
             if (array_key_exists('interface_mode', $device) && $device['interface_mode'] !== null) {
+                if (array_key_exists('port_profile', $device) && $device['port_profile'] !== null) {
+                    $device['sw_profile'] = $device['port_profile'];
+                }
                 if ($device['interface_mode'] === 'TRUNK') {
                     //parse trunk-vlan-ranges into an array of strings if the value is not null
                     if (array_key_exists('trunk_vlan_ranges', $device) && $device['trunk_vlan_ranges'] !== null) {
@@ -202,7 +205,7 @@ class DeviceController extends Controller
                     ];
                 }
                 if (! in_array($current_switchport, $unique_switchports)) {
-                    array_push($unique_switchports, $current_switchport);
+                    $unique_switchports[] = $current_switchport;
                 }
             }
         }
@@ -218,7 +221,7 @@ class DeviceController extends Controller
                     'loop_guard' => $device['loop_guard'] ?? false,
                 ];
                 if (! in_array($current_stp, $unique_stp)) {
-                    array_push($unique_stp, $current_stp);
+                    $unique_stp[] = $current_stp;
                 }
             }
         }
@@ -290,11 +293,12 @@ class DeviceController extends Controller
                 $device_interface_config = [
                     'device_id' => $device->id,
                     'interface' => $device_interface['interface'],
+                    'sw_profile' => $device_interface['port_profile'] ?? null,
                     'switch_port_id' => $switchport->id ?? null,
                     'stp_profile_id' => $stp_profile->id ?? null,
                 ];
 
-                DeviceInterface::updateOrCreate($device_interface_config);
+                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile','switch_port_id','stp_profile_id']);
                 $saved_interfaces++;
             }
         }
@@ -367,7 +371,7 @@ class DeviceController extends Controller
         $saved_sites = [];
         foreach ($sites_with_devices as $site_with_devices) {
             $site = Site::firstOrCreate(['name' => $site_with_devices['name']]);
-            array_push($saved_sites, $site);
+            $saved_sites[] = $site;
             array_map(fn($device) => Device::where('serial', $device)->get()->first()->update(['site_id' => $site->id]), $site_with_devices['devices']);
         }
         return $saved_sites;

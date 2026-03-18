@@ -13,7 +13,9 @@ class Task extends Model
     use HasFactory;
     protected $fillable = [
         'name',
-        'task_type'
+        'task_type',
+        'deployment_time',
+        'batch_id',
     ];
 
     public function users() : BelongsToMany

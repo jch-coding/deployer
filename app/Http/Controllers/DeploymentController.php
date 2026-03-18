@@ -31,6 +31,13 @@ class DeploymentController extends Controller
         $deployment->load('devices');
         $latest_tasks = $deployment->tasks()->withCount('devices')->latest()->take(5)->get()
             ->map(function ($task) {
+                    if ($task->status !== 'COMPLETED' && count($task->devices->filter(fn($device) => $device->pivot->status === 'COMPLETED')) == $task->devices_count) {
+                        $task->status = 'COMPLETED';
+                        $task->save();
+                    }
+                    return $task;
+            })
+            ->map(function ($task) {
                 $task->human_created_at = Carbon::parse($task->created_at)->diffForHumans();
                 $task->human_updated_at = Carbon::parse($task->updated_at)->diffForHumans();
                 return $task;

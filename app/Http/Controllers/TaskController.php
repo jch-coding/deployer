@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\DeploymentEvent;
 use App\Events\DeviceConfigFailedEvent;
 use App\Events\DeviceGetScopeIdEvent;
 use App\Events\DeviceSystemInfoUpdateEvent;
@@ -19,6 +18,7 @@ use App\TaskType;
 use Illuminate\Bus\Batch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -88,16 +88,20 @@ class TaskController extends Controller
         $validated = $request->validate([
             'task_type' => ['required', Rule::in(array_map(fn ($task) => $task->name, TaskType::cases()))],
             'devices' => 'required|array',
+            'deployment_time' => 'required|integer',
         ]);
 
         $task = $deployment->tasks()->create([
             'task_type' => $validated['task_type'],
             'name' => 'task_for_'.$deployment->name.now(),
+            'deployment_time' => $validated['deployment_time'],
+            'status' => 'IN_PROGRESS',
         ]);
 
         $device_collection = Collection::make($validated['devices']);
         $task->devices()->attach($device_collection->pluck('id'));
-        $this->dispatchJob($task);
+        $batch = $this->dispatchJob($task);
+        $task->update(['batch_id' => $batch]);
 
         return back()->with([
             'latest_task' => $task,
@@ -105,28 +109,22 @@ class TaskController extends Controller
         ]);
     }
 
-    public function dispatchTask(Task $task)
+    public function cancel(Task $task)
     {
-        switch ($task->task_type) {
-            case 'TEST_TASK':
-                $task_to_perform = fn ($data) => $this->TestTask($data);
-                break;
+        $task->update(['status' => 'CANCELLED']);
+        //queue clear is not 100% successful on first try
+        $queue_cleared = false;
+        $tries = 10;
+        while (! $queue_cleared && $tries > 0) {
+            Artisan::call('queue:clear');
+            if (str_contains(Artisan::output(), 'Cleared 0 jobs')) {
+                $queue_cleared = true;
+                $tries -= 1;
+                sleep(random_int(1,6));
+            }
         }
-        $task->devices->each(fn ($device) => $task_to_perform([
-            'device_id' => $device->id,
-            'message' => 'message '.random_int(1, 10),
-            'task_type' => $task->task_type,
-            'deployment_name' => $task->deployment->name,
-        ]));
-    }
 
-    public function UpdateSystemInfo() {}
-
-    public function TestTask(array $data)
-    {
-        TestEvent::dispatch($data);
-        DeploymentEvent::dispatch($data);
-        sleep(random_int(1, 5));
+        return back()->with(['success' => 'Task is cancelled']);
     }
 
     public function dispatchJob(Task $task)
@@ -135,7 +133,7 @@ class TaskController extends Controller
         $jobs = [];
         switch ($task->task_type) {
             case 'UPDATE_SYSTEM_INFO':
-                $jobs = $task->devices->map(fn ($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper));
+                $jobs[] = $task->devices->map(fn ($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 $devices_with_port_profiles = $task->devices->map(function ($device) {
@@ -144,7 +142,7 @@ class TaskController extends Controller
                     return $device;
                 });
                 $unique_interfaces_sw_profiles = static::get_unique_sw_profiles($devices_with_port_profiles);
-                $jobs = $unique_interfaces_sw_profiles->map(fn ($unique_interface_sw_profiles) => new CreateLocalOverrideForPortProfile(
+                $jobs[] = $unique_interfaces_sw_profiles->map(fn ($unique_interface_sw_profiles) => new CreateLocalOverrideForPortProfile(
                     [
                         'sw_profile' => $unique_interface_sw_profiles->sw_profile,
                         'device_function' => $unique_interface_sw_profiles->device->device_function,
@@ -153,19 +151,21 @@ class TaskController extends Controller
                     $task,
                     $centralAPIHelper
                 )
-                );
-                $jobs = array_merge($jobs, $task->devices->map(fn($device) => $device->interfaces->map(fn($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper))));
+                )->toArray();
+                $jobs[] = $task->devices->map(fn ($device) => $device->interfaces->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper)))->toArray();
                 break;
             case 'TEST_TASK':
-                $jobs = $task->devices->map(fn ($device) => new TestJob(['device_name' => $device->id, 'task_id' => $task->id, 'message' => 'message '.random_int(1, 10), 'task_type' => $task->task_type, 'deployment_name' => $task->deployment->name]));
+                $jobs[] = $task->devices->map(fn ($device) => new TestJob([
+                    'device_name' => $device->id,
+                    'task_id' => $task->id,
+                    'message' => 'message '.random_int(1, 10),
+                    'task_type' => $task->task_type,
+                    'deployment_name' => $task->deployment->name,
+                ]))->toArray();
                 break;
         }
-        $job_batch = Bus::chain(
-            $jobs
-        )
-            ->dispatch();
 
-        return $job_batch;
+        return Bus::chain(array_map(fn($j) => Bus::batch($j), $jobs))->dispatch();
     }
 
     public static function get_unique_sw_profiles(Collection $devices)

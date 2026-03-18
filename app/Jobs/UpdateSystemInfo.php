@@ -10,21 +10,25 @@ use App\Events\DeviceSystemInfoUpdateEvent;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
+use DateTime;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class UpdateSystemInfo implements ShouldQueue
 {
     use Queueable, Batchable;
+
+    public $deployment_time;
 
     /**
      * Create a new job instance.
      */
     public function __construct(public Device $device, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        //
+        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 10;
     }
 
     /**
@@ -45,6 +49,7 @@ class UpdateSystemInfo implements ShouldQueue
 
         $response = $this->centralAPIHelper->updateSystemInfo($this->device);
         if ($response->status() == 200) {
+            sleep(random_int(1, 5));
             DeploymentEvent::dispatch([
                 'deployment_name' => $this->task->deployment->name,
                 'device_name' => $this->device->id,
@@ -56,7 +61,19 @@ class UpdateSystemInfo implements ShouldQueue
         }
         else {
             Log::error('Failed to update system info for device ' . $this->device->name);
-            $pivotForDevice->update(['status' => 'FAILED']);
+            sleep(300);
+            $this->release();
         }
+    }
+
+    public function retryUntil(): DateTime
+    {
+        return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        Log::error($exception);
+        $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
     }
 }

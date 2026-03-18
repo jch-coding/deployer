@@ -14,6 +14,9 @@ return new class extends Migration
         Schema::create('tasks', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->integer('deployment_time')->nullable();
+            $table->string('batch_id')->nullable();
+            $table->enum('status', ['IN_PROGRESS', 'CANCELLED', 'COMPLETED'])->default('IN_PROGRESS');
             $table->timestamps();
         });
     }

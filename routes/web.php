@@ -22,7 +22,7 @@ Route::get('dashboard', function () {
 Route::middleware(['auth'])->group(function () {
     Route::controller(ClientController::class)->group(function () {
         Route::get('/clients', 'index')->name('clients.index');
-        Route::put('/clients/edit/{client}',  'update')->name('clients.edit');
+        Route::put('/clients/edit/{client}', 'update')->name('clients.edit');
         Route::put('/clients/current/{client}', 'updateCurrent')->name('clients.current');
         Route::post('/clients', 'store')->name('clients.store');
         Route::post('/clients/test_central_creds/{client}', 'testCentralCreds')->name('clients.test_central_creds');
@@ -42,15 +42,16 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
     });
 
-    Route::controller(DispatchController::class)->group( function () {
+    Route::controller(DispatchController::class)->group(function () {
         Route::get('/dispatcher/dispatch/{task}', 'dispatch')->name('dispatcher.dispatch');
     });
 
-    Route::controller(TaskController::class)->group( function () {
+    Route::controller(TaskController::class)->group(function () {
         Route::get('/tasks/update_system_info/{task}', 'showSystemInfo')->name('tasks.show-system-info');
         Route::get('/tasks/ethernet_interface/{task}', 'showEthernetInterface')->name('tasks.show-ethernet-interface');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/test', 'test')->name('tasks.test');
+        Route::patch('/tasks/{task}', 'cancel')->name('tasks.cancel');
     });
 });
 

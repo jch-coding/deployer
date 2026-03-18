@@ -47,6 +47,7 @@ class ConfigureEthernetInterface implements ShouldQueue
         $statusMessage = 'interface '.$this->deviceInterface->name.' configured';
         if($this->deviceInterface->sw_profile)
             $statusMessage .= ' with '.$this->deviceInterface->sw_profile.' profile';
+        $this->task->devices()->find($device)->pivot->update(['status' => 'COMPLETED']);
         DeploymentEvent::dispatch([
             'deployment_name' => $this->task->deployment->name,
             'device_name' => $this->deviceInterface->name,

@@ -42,9 +42,11 @@ export default function TaskCard({ task, devices, deployment, props } : { task: 
         const devices_for_task= allDevices ? devices : devices.filter(device => taskDevices.find(dev => device.id === dev.id) !== undefined)
         // const devices_with_completed_status = devices_for_task.map(device => ({...device, completed: false}))
         setTaskDevices(devices_for_task)
+        const deploymentTimeTotalMinutes = deploymentTimeHours * 60 + deploymentTimeMinutes
         const taskData = {
             task_type: task,
-            devices: devices_for_task
+            devices: devices_for_task,
+            deployment_time: deploymentTimeTotalMinutes,
         }
         router.post(store(deployment.id).url, taskData)
     }

@@ -2,6 +2,7 @@
 
 use App\Helper\CSVHelper;
 use App\Http\Controllers\DeviceController;
+use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
@@ -531,4 +532,65 @@ test('save sites saves sites with their devices associated', function () {
     $site_b = $collected_saved_sites->last();
     expect($site_a->devices)->toHaveCount(2);
     expect($site_b->devices)->toHaveCount(2);
+});
+
+test('port profiles are saved correctly when the port_profile column is present in the csv file', function () {
+    $csv_raw = CSVHelper::processCSVFile('tests/Unit/testcsvs/port_profiles.csv');
+    $processed_data = CSVHelper::createDeviceArrays($csv_raw);
+    $device_info = $processed_data[0];
+    $deployment = Deployment::factory()->create();
+    Device::factory()->for($deployment)->create([
+        'name' => $device_info['name'],
+        'serial' => $device_info['serial'],
+        'device_function' => $device_info['device_function'],
+    ]);
+    $actual = DeviceController::getInterfaces($processed_data);
+    $expected = [
+        'unique_switchports' => [
+            [
+                'interface_mode' => 'ACCESS',
+                'access_vlan' => '10',
+                'native_vlan' => null,
+                'trunk_vlan_all' => null,
+                'trunk_vlan_ranges' => null,
+            ],
+        ],
+        'unique_stp' => [
+            [
+            'admin_edge_port' => 'true',
+            'admin_edge_port_trunk' => false,
+            'bpdu_guard' => 'true',
+            'loop_guard' => 'true',
+                ]
+        ],
+        'devices_grouped_config' => [
+            [
+                [
+            'name' => 'CO-IDF1-SW1',
+            'serial' => 'SN0000000001',
+            'device_function' => 'ACCESS_SWITCH',
+            'interface' => '1/1/1',
+            'port_profile' => 'portProfile1',
+            'interface_mode' => 'ACCESS',
+            'access_vlan' => '10',
+            'native_vlan' => null,
+            'trunk_vlan_all' => null,
+            'admin_edge_port' => 'true',
+            'admin_edge_port_trunk' => null,
+            'bpdu_guard' => 'true',
+            'loop_guard' => 'true',
+                    ]
+                ]
+        ],
+        'total_interfaces' => 1,
+    ];
+    expect($actual)->toEqual($expected);
+
+    $savedInterfaces = DeviceController::saveInterfaces($actual);
+    $this->assertEquals(1, $savedInterfaces);
+    $this->assertDatabaseCount('device_interfaces', 1);
+    $this->assertDatabaseHas('device_interfaces', [
+        'interface' => '1/1/1',
+        'sw_profile' => 'portProfile1',
+    ]);
 });

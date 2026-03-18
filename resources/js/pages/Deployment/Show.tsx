@@ -85,52 +85,79 @@ export default function Show() {
 
     return (
         <AppLayout>
-            <h1 className="text-3xl font-semibold text-center">{deployment.name}</h1>
-            <div className="grid grid-cols-2 gap-5 mt-4 p-4">
-                <div>
-                    {devices.length > 0 ?
-                        <div>
-                            <DataTable data={devices} columns={columns} />
-                            { devices.length > 0 && devicesPaginator.total > devicesPaginator.per_page &&
-                                <LaravelPaginator TPaginator={devicesPaginator} />
-                            }
-                        </div>
-                     :
-                        <p>No devices assigned to this deployment</p>
-                    }
-                </div>
-                <div>
-                    <h2 className="text-xl font-semibold text-center">Latest Tasks</h2>
-                    {
-                        latest_tasks.length > 0 &&
-                        <div className="flex flex-wrap gap-2 mt-2">
-                            {
-                                latest_tasks.map((task, index) =>
+            <h1 className="text-center text-3xl font-semibold">
+                {deployment.name}
+            </h1>
+            <div className="mt-4 grid grid-cols-2 gap-5 p-4">
+                <div className="col-span-2 mx-auto">
+                    <h2 className="text-center text-xl font-semibold">
+                        Latest Tasks
+                    </h2>
+                    {latest_tasks.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {latest_tasks.map((task, index) => (
                                 <Card index={index} className="max-w-sm px-2">
-                                    <CardTitle className="text-center text-xs">{task.task_type}</CardTitle>
-                                    <CardDescription className="text-xs text-center">latest updated: {task.human_updated_at}</CardDescription>
+                                    <CardTitle className="text-center text-xs">
+                                        {task.task_type}
+                                    </CardTitle>
+                                    <CardDescription className="text-center text-xs">
+                                        latest updated: {task.human_updated_at}
+                                    </CardDescription>
                                     <CardContent className="text-sm">
                                         <div className="flex justify-between space-x-2">
                                             <p>Devices: {task.devices_count}</p>
                                             <p>Status: {task.status}</p>
                                         </div>
-                                        <a href={taskShow(task.task_type, task.id)} className="text-emerald-500 hover:underline">View Details</a>
+                                        {/*<Button onClick={() => router.patch(cancel(task.id).url)}>Cancel Task</Button>*/}
+                                        <a
+                                            href={taskShow(
+                                                task.task_type,
+                                                task.id,
+                                            )}
+                                            className="text-emerald-500 hover:underline"
+                                        >
+                                            View Details
+                                        </a>
                                     </CardContent>
-                                </Card>)
-                            }
+                                </Card>
+                            ))}
                         </div>
-                    }
-                    <div className="flex flex-wrap gap-2 justify-center mt-6">
-                        {
-                            tasks.map((task,index) =>
-                                <TaskCard index={index} task={task} devices={allDevices} deployment={deployment}/>
-                            )
-                        }
+                    )}
+                </div>
+                <div>
+                    {devices.length > 0 ? (
+                        <div className="mt-6">
+                            <DataTable data={devices} columns={columns} />
+                            {devices.length > 0 &&
+                                devicesPaginator.total >
+                                    devicesPaginator.per_page && (
+                                    <LaravelPaginator
+                                        TPaginator={devicesPaginator}
+                                    />
+                                )}
+                        </div>
+                    ) : (
+                        <p>No devices assigned to this deployment</p>
+                    )}
+                </div>
+                <div>
+                    <div className="mt-6 flex flex-wrap justify-center gap-2">
+                        {tasks.map((task, index) => (
+                            <TaskCard
+                                index={index}
+                                task={task}
+                                devices={allDevices}
+                                deployment={deployment}
+                            />
+                        ))}
                     </div>
                 </div>
                 <Dialog>
                     <DialogTrigger asChild>
-                        <Button data-test="add-devices" className="absolute top-4 right-4">
+                        <Button
+                            data-test="add-devices"
+                            className="absolute top-4 right-4"
+                        >
                             Add Devices
                         </Button>
                     </DialogTrigger>
@@ -142,8 +169,14 @@ export default function Show() {
                         <Form
                             action={storeMany(deployment.id).url}
                             method="POST"
-                            onSuccess={() => {toast.success('Devices added successfully'); setSubmitting(false)}}
-                            onError={() => {toast.error('Failed to add devices'); setSubmitting(false)}}
+                            onSuccess={() => {
+                                toast.success('Devices added successfully');
+                                setSubmitting(false);
+                            }}
+                            onError={() => {
+                                toast.error('Failed to add devices');
+                                setSubmitting(false);
+                            }}
                             data-test="add-devices-form"
                             className="flex flex-col gap-4"
                             as="form"
@@ -169,7 +202,12 @@ export default function Show() {
                                 </p>
                             )}
                             <DialogFooter className="mt-4 flex-row-reverse sm:justify-start">
-                                <Button data-test="upload-devices" type="submit">Add Devices</Button>
+                                <Button
+                                    data-test="upload-devices"
+                                    type="submit"
+                                >
+                                    Add Devices
+                                </Button>
                                 {progress && (
                                     <progress
                                         value={progress.percentage}
