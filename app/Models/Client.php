@@ -57,7 +57,7 @@ class Client extends Model
 
     public function handleBearerTokenAuth(bool $force = false)
     {
-        if ($force || $this->updated_at < now()->subHours(2)) {
+        if ($force || $this->updated_at < now()->subHours(1)) {
             $response = Http::asForm()->post($this->auth_url, [
                 'grant_type' => 'client_credentials',
                 'client_id' => $this->client_id,

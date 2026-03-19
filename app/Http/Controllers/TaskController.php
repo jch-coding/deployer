@@ -137,22 +137,24 @@ class TaskController extends Controller
                 break;
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 $devices_with_port_profiles = $task->devices->map(function ($device) {
-                    $device->interfaces = $device->interfaces->filter(fn ($interface) => $interface->sw_profile);
+                    $device->interfaces_sw_profiles = $device->interfaces->filter(fn ($interface) => $interface->sw_profile);
 
                     return $device;
                 });
                 $unique_interfaces_sw_profiles = static::get_unique_sw_profiles($devices_with_port_profiles);
-                $jobs[] = $unique_interfaces_sw_profiles->map(fn ($unique_interface_sw_profiles) => new CreateLocalOverrideForPortProfile(
-                    [
-                        'sw_profile' => $unique_interface_sw_profiles->sw_profile,
-                        'device_function' => $unique_interface_sw_profiles->device->device_function,
-                        'site' => $unique_interface_sw_profiles->device->site,
-                    ],
-                    $task,
-                    $centralAPIHelper
-                )
-                )->toArray();
-                $jobs[] = $task->devices->map(fn ($device) => $device->interfaces->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper)))->toArray();
+                if (count($unique_interfaces_sw_profiles) > 0) {
+                    $jobs[] = $unique_interfaces_sw_profiles->map(fn ($unique_interface_sw_profiles) => new CreateLocalOverrideForPortProfile(
+                            [
+                                'sw_profile' => $unique_interface_sw_profiles->sw_profile,
+                                'device_function' => $unique_interface_sw_profiles->device->device_function,
+                                'site' => $unique_interface_sw_profiles->device->site,
+                            ],
+                            $task,
+                            $centralAPIHelper
+                        )
+                    )->toArray();
+                }
+                $jobs[] = $task->devices->map(fn ($device) => $device->interfaces->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper)))->collapse()->toArray();
                 break;
             case 'TEST_TASK':
                 $jobs[] = $task->devices->map(fn ($device) => new TestJob([
@@ -170,7 +172,7 @@ class TaskController extends Controller
 
     public static function get_unique_sw_profiles(Collection $devices)
     {
-        return $devices->map(fn ($device) => $device->interfaces->unique('sw_profile'))->collapse()->unique('sw_profile');
+        return $devices->map(fn ($device) => $device->interfaces_sw_profiles->unique('sw_profile'))->collapse()->unique('sw_profile');
     }
 
     public function test()

@@ -54,11 +54,15 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
             'scope-id' => $this->portProfileInfo['site']->scope_id,
             'device-function' => $this->portProfileInfo['device_function'],
         ];
+        //check whether the port profile is already an override at the scope
         $response = $this->centralAPIHelper->get_sw_port_profile($this->portProfileInfo['sw_profile']);
         if ($response->status() == 200) {
-            $patch_response = $this->centralAPIHelper->post_sw_port_profile($response->json(), $query_parameters);
-            if (! $patch_response->ok()) {
-                Log::error('failed to override port profile at the site level profile:'.$this->portProfileInfo['sw_profile'].' site:'.$this->portProfileInfo['site']->name);
+            $post_response = $this->centralAPIHelper->post_sw_port_profile($response->json(), $query_parameters);
+            if (! $post_response->ok()) {
+                if (str_contains($post_response->json()['message'], 'Cannot create duplicate config'))
+                    Log::info('Port profile override already exists for '.$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name);
+                else
+                    Log::error('failed to override port profile at the site level profile:'.$this->portProfileInfo['sw_profile'].' site:'.$this->portProfileInfo['site']->name);
             }
         }
         else {

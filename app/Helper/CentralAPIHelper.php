@@ -337,6 +337,19 @@ class CentralAPIHelper
         }
     }
 
+    public function get_sw_port_profiles($profile_name = '', $queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters
+                )->get($this->client->base_url.$this->interfaces['switch_port_profile']);
+
+            return $response;
+        }
+    }
+
     /*
      *  param: $filter = [ 'siteId', 'siteName', 'model', 'status', 'deployment' ]
      *

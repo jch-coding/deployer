@@ -42,11 +42,18 @@ class DeploymentController extends Controller
                 $task->human_updated_at = Carbon::parse($task->updated_at)->diffForHumans();
                 return $task;
             });
+
+        $latest_of_tasks = collect(TaskType::cases())->map(fn($task) => $deployment->tasks()->where('task_type', $task->name)->latest()->first())
+            ->filter(fn($task) => $task !== null);
+        $items = $latest_of_tasks->map(fn ($task) => $task->devices->map(fn ($device) => $device->interfaces)->collapse());
+        $items_obj = collect(array_map(fn ($task, $item) => [ $task['task_type']  => $item], $latest_of_tasks->toArray(), $items->toArray()))->collapse();
+
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
-            'devices' => $deployment->devices()->paginate(10),
+            'devices' => $deployment->devices()->with('interfaces')->paginate(10),
             'tasks' => array_map(fn($task) => $task->name, TaskType::cases()),
             'latest_tasks' => $latest_tasks,
+            'items' => $items_obj,
         ]);
     }
 
