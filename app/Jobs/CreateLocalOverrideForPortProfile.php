@@ -3,12 +3,15 @@
 namespace App\Jobs;
 
 use App\Events\DeploymentEvent;
+use App\Events\FailureEvent;
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
+use DateTime;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class CreateLocalOverrideForPortProfile implements ShouldQueue
 {
@@ -22,9 +25,10 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
      *     'site' => site model with name and possibly scope_id
      * ]
      */
+    public int $deployment_time;
     public function __construct(public array $portProfileInfo, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        //
+        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 10;
     }
 
     /**
@@ -32,11 +36,14 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
      */
     public function handle(): void
     {
+        $statusLog = $this->task->status_log;
         if (! $this->portProfileInfo['site']->scope_id) {
             $sites_response = $this->centralAPIHelper->get_sites();
             if ($sites_response->status() == 200) {
                 $central_site = array_find($sites_response->json()['items'], fn ($item) => $item['scopeName'] === $this->portProfileInfo['site']->name);
                 if (! $central_site) {
+                    $newStatusLog = $statusLog . "\nfailed to retrieve scope ID for site ".$this->portProfileInfo['site']->name."\n";
+                    $this->task->update(['status_log' => $newStatusLog]);
                     Log::error('failed to retrieve scope ID for site '.$this->portProfileInfo['site']->name);
 
                     return;
@@ -44,6 +51,8 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
                 $this->portProfileInfo['site']->scope_id = $central_site['scopeId'];
                 $this->portProfileInfo['site']->save();
             } else {
+                $newStatusLog = $statusLog . "\nfailed to retrieve scope ID for site ".$this->portProfileInfo['site']->name."\n";
+                $this->task->update(['status_log' => $newStatusLog]);
                 Log::error('failed to retrieve scope ID for site '.$this->portProfileInfo['site']->name);
 
                 return;
@@ -61,19 +70,48 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
             if (! $post_response->ok()) {
                 if (str_contains($post_response->json()['message'], 'Cannot create duplicate config'))
                     Log::info('Port profile override already exists for '.$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name);
-                else
-                    Log::error('failed to override port profile at the site level profile:'.$this->portProfileInfo['sw_profile'].' site:'.$this->portProfileInfo['site']->name);
+                else {
+                    $newStatusLog = $statusLog . "\nfailed to override port profile at the site level profile:" . $this->portProfileInfo['sw_profile'] . ' site:' . $this->portProfileInfo['site']->name . "\n";
+                    $this->task->update(['status_log' => $newStatusLog]);
+                    Log::error('failed to override port profile at the site level profile:' . $this->portProfileInfo['sw_profile'] . ' site:' . $this->portProfileInfo['site']->name);
+                }
             }
         }
         else {
+            $newStatusLog = $statusLog . "\nfailed to retrieve port profile: ".$this->portProfileInfo['sw_profile']." from central\n";
+            $this->task->update(['status_log' => $newStatusLog]);
             Log::error('failed to retrieve port profile:'.$this->portProfileInfo['sw_profile'].' from central');
             $this->fail('failed to retrieve port profile:'.$this->portProfileInfo['sw_profile'].' from central');
         }
+        $newStatusLog = $statusLog . "\nPort profile override for ".$this->portProfileInfo['sw_profile']." at site ".$this->portProfileInfo['site']->name." completed\n";
+        $this->task->update(['status_log' => $newStatusLog]);
         DeploymentEvent::dispatch([
             'deployment_name' => $this->task->deployment->name,
-            'device_name' => $this->portProfileInfo['sw_profile'],
+            'item_name' => $this->portProfileInfo['sw_profile'],
             'task_type' => $this->task->task_type,
             'message' => 'Port profile override for '.$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name.' completed',
+            'event_type' => 'deployment_event',
+            'item_type' => 'port_profile'
+        ]);
+    }
+
+    public function retryUntil(): DateTime
+    {
+        return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
+
+    public function failed(?Throwable $exception)
+    {
+        Log::error($exception);
+        $statusLog = $this->task->status_log;
+        $newStatusLog = $statusLog . "\nFailed Configuring Port Profile".$this->portProfileInfo['sw_profile']." at site ".$this->portProfileInfo['site']->name."\n";
+        $this->task->update(['status_log' => $newStatusLog]);
+        FailureEvent::dispatch([
+            'deployment_name' => $this->task->deployment->name,
+            'item_name' => $this->portProfileInfo['sw_profile'],
+            'task_type' => $this->task->task_type,
+            'message' => 'Failed Configuring Port Profile'.$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name,
+            'event_type' => 'failure_event',
         ]);
     }
 }

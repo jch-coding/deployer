@@ -27,6 +27,7 @@ import {
     CardDescription,
     CardTitle,
 } from '@/components/ui/card';
+import TaskItemsCard from '@/components/ui/TaskItemsCard';
 
 type Device = {
     id: string;
@@ -151,6 +152,7 @@ export default function Show() {
                             />
                         ))}
                     </div>
+                    <TaskItemsCard task='CONFIGURE_ETHERNET_INTERFACE' devices={allDevices} deployment={deployment} />
                 </div>
                 <Dialog>
                     <DialogTrigger asChild>

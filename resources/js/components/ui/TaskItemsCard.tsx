@@ -21,14 +21,14 @@ type DeploymentType = {
     name: string,
 }
 
-export default function TaskItemsCard({ task, devices, deployment, props } : { task: string, devices: DeviceType[], deployment: DeploymentType, props: any}) {
+export default function TaskItemsCard({ task, devices, deployment } : { task: string, devices: DeviceType[], deployment: DeploymentType }) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     // const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
     const [completedItems, setCompletedItems] = useState<string[]>([])
     const [statusMessage, setStatusMessage] = useState()
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
-    const items = usePage().props.items[task]
+    const items = task in usePage().props.items ? usePage().props.items[task] : []
     const handleCheckboxChange = (deviceId : number, checked : boolean) => {
         const newDevice = devices.find(device => device.id === deviceId)
         if (checked) {
@@ -56,6 +56,9 @@ export default function TaskItemsCard({ task, devices, deployment, props } : { t
     const resetCompletedItems = () => setCompletedItems([])
 
     const newItemUpdated = (newItemEvent) => {
+        if (newItemEvent.event_type === 'FailureEvent') {
+
+        }
         const newItem = newItemEvent.data.item_name
         setCompletedItems((prevState) => [...prevState, newItem])
         // const newDeviceUpdated = {...devices.find(device => device.id === parseInt(newItemEvent.data.device_name)), completed: true}
@@ -66,13 +69,13 @@ export default function TaskItemsCard({ task, devices, deployment, props } : { t
 
     useEcho(
         `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
-        'DeploymentEvent',
+        ['DeploymentEvent','FailureEvent'],
         (event) => {
             newItemUpdated(event)
     })
 
     return (
-        <Card className="min-w-sm" {...props}>
+        <Card className="min-w-sm">
             <CardHeader>
                 <CardTitle>{task}</CardTitle>
                 <CardDescription>
@@ -164,7 +167,7 @@ export default function TaskItemsCard({ task, devices, deployment, props } : { t
                                 {
                                     completedItems.length > 0 ?
                                         completedItems.map((item, index) =>
-                                            <li key={index} className='text-emerald-500'>{  item.name }</li>
+                                            <li key={index} className='text-emerald-500'>{  item }</li>
                                         ) : <li>Deployment started</li>
                                 }
                             </ul>

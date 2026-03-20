@@ -2,11 +2,8 @@
 
 namespace App\Jobs;
 
-use App\Events\CentralAPIFail;
 use App\Events\DeploymentEvent;
-use App\Events\DeviceConfigFailedEvent;
-use App\Events\DeviceGetScopeIdEvent;
-use App\Events\DeviceSystemInfoUpdateEvent;
+use App\Events\FailureEvent;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
@@ -21,7 +18,7 @@ class UpdateSystemInfo implements ShouldQueue
 {
     use Queueable, Batchable;
 
-    public $deployment_time;
+    public int $deployment_time;
 
     /**
      * Create a new job instance.
@@ -47,19 +44,26 @@ class UpdateSystemInfo implements ShouldQueue
             $this->device->save();
         }
 
+        $statusLog = $this->task->status_log;
+
         $response = $this->centralAPIHelper->updateSystemInfo($this->device);
         if ($response->status() == 200) {
+            $newStatusLog = $statusLog . "\nSystem info for " . $this->device->name . " updated successfully at " . now()->format('Y-m-d H:i:s') . "\n";
+            $this->task->update(['status_log' => $newStatusLog]);
             sleep(random_int(1, 5));
             DeploymentEvent::dispatch([
                 'deployment_name' => $this->task->deployment->name,
-                'device_name' => $this->device->id,
+                'item_name' => $this->device->id,
                 'task_type' => $this->task->task_type,
-                'message' => 'System info for ' . $this->device->name . ' updated'
+                'message' => 'System info for ' . $this->device->name . ' updated',
+                'event_type' => 'deployment_event',
             ]);
             $pivotForDevice->update(['status' => 'COMPLETED']);
             Log::info('System info for ' . $this->device->name . ' updated successfully');
         }
         else {
+            $newStatusLog = $statusLog . "\nFailed to update system infor for device " . $this->device->name;
+            $this->task->update(['status_log' => $newStatusLog]);
             Log::error('Failed to update system info for device ' . $this->device->name);
             sleep(300);
             $this->release();
@@ -75,5 +79,15 @@ class UpdateSystemInfo implements ShouldQueue
     {
         Log::error($exception);
         $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
+        $statusLog = $this->task->status_log;
+        $newStatusLog = $statusLog . "\nFailed updating system info for " . $this->device->name . " at " . now()->format('Y-m-d H:i:s') . "\n";
+        $this->task->update(['status_log' => $newStatusLog]);
+        FailureEvent::dispatch([
+            'deployment_name' => $this->task->deployment->name,
+            'item_name' => $this->device->id,
+            'task_type' => $this->task->task_type,
+            'message' => 'Failed updating system info for ' . $this->device->name,
+            'event_type' => 'failure_event',
+        ]);
     }
 }

@@ -15,9 +15,11 @@ class DeviceInterfaceResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'interface' => $this->interface,
+            'name' => $this->interface,
             'switch_port' => $this->whenLoaded('switch_port', fn() => SwitchPortResource::make($this->switch_port)),
             'stp_profile' => $this->whenLoaded('stp_profile', fn() => StpProfileResource::make($this->stp_profile)),
+            'ip_address' => $this->ip_address,
+            'sw_profile' => $this->sw_profile,
         ];
     }
 }

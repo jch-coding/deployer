@@ -16,6 +16,7 @@ class Task extends Model
         'task_type',
         'deployment_time',
         'batch_id',
+        'status',
     ];
 
     public function users() : BelongsToMany

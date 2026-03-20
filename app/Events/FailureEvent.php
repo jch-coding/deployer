@@ -11,13 +11,14 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Str;
 
-class DeploymentEvent implements ShouldBroadcast
+class FailureEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     /**
      * Create a new event instance.
-     * $data = [ 'deployment_name', 'item_name', 'task_type', 'message']
+     *
+     * $data = ['deployment_name', 'item_name', 'message', 'task_type', 'retry_until']
      */
     public function __construct(public array $data)
     {

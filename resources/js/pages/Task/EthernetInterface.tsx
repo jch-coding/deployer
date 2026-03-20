@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/react';
+import { usePage, usePoll } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { useEffect, useState } from 'react';
 import { useEcho } from '@laravel/echo-react';
@@ -11,18 +11,18 @@ import { dashboard } from '@/routes';
 import { index as clientIndex } from '@/routes/clients';
 import  { index as deploymentIndex } from '@/routes/deployments';
 import { showEthernetInterface } from '@/routes/tasks';
+import { toast } from 'sonner';
 
 export default function Show() {
     const task = usePage().props.task
     const devices = usePage().props.devices
-    const interfaces = devices.map(device => device.interfaces.map(interface => interface)).flat()
+    const interfaces = usePage().props.interfaces
     const deployment = usePage().props.deployment
-    const [completedInterfaces, setCompletedInterfaces] = useState([])
     const completedDeviceInterfaces = interfaces.filter(
-        (interface) => interface.pivot.status === 'COMPLETED',
+        (device_interface) => device_interface.pivot.status === 'COMPLETED',
     );
-    const [totalCompletedInterfaces, setTotalCompletedInterfaces] = useState(0);
-    const [newCompletedInterface, setNewCompletedInterface] = useState()
+    const [statusMessages, setStatusMessages] = useState([])
+
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: 'Dashboard',
@@ -44,74 +44,102 @@ export default function Show() {
 
     useEcho(
         `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
-        'DeploymentEvent',
+        ['DeploymentEvent', 'FailureEvent'],
         (event) => {
-            const completed_interface_id = event.data.device_id
-            const new_completed_interface = interfaces.find(interface=> interface.id === completed_interface_id)
-            setNewCompletedInterface(new_completed_interface)
+            setStatusMessages((prevStatusMessages) => [...prevStatusMessages, event.data.message])
         }
     )
 
-    useEffect(() => {
-        setCompletedInterfaces([...completedInterfaces, newCompletedInterface])
-        const newTotal = completedInterfaces.length == 0 ? 0 : totalCompletedInterfaces + 1;
-        setTotalCompletedInterfaces(newTotal);
-    },[newCompletedInterface])
+    usePoll(4000)
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <div className="flex gap-4 max-w-6xl mx-auto">
-                <div className="fixed top-1/2 left-1/6">
-                    <h1 className="text-2xl text-center font-bold">Progress</h1>
-                    <div className="mt-4 rounded-full border-4 border-green-500/80 h-36 w-36 flex justify-center items-center">
-                        <span className="text-3xl text-slate-500 font-bold p-1">
-                            {totalCompletedInterfaces + completedDeviceInterfaces.length - 1}
+            <div className="mx-auto flex gap-2">
+                <div className="fixed top-1/4 left-1/6">
+                    <h1 className="text-center text-2xl font-bold">Progress</h1>
+                    <div className="mt-4 flex h-36 w-36 items-center justify-center rounded-full border-4 border-emerald-500/80">
+                        <span className="p-1 text-3xl font-bold text-slate-500">
+                            {completedDeviceInterfaces.length}
                         </span>
-                        <ChevronRightCircleIcon/>
-                        <span className="text-3xl text-slate-600 font-bold p-1">
+                        <ChevronRightCircleIcon />
+                        <span className="p-1 text-3xl font-bold text-slate-600">
                             {interfaces.length}
                         </span>
                     </div>
                 </div>
-                <div className="flex-1" >
-            <h1 className="text-center text-2xl font-bold">
-                {deployment.name} | {task.task_type}
-            </h1>
-            <table className="mt-6 mx-auto min-w-[50dvw] table-auto border border-slate-400">
-                <thead>
-                    <tr className="text-left">
-                        <th className="p-2">Device</th>
-                        <th className="p-2">Interface</th>
-                        <th className="p-2">Serial</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {interfaces.length > 0 &&
-                        interfaces.map((interface) => {
-                            const deviceForInterface = devices.find(device => device.id === interface.device_id);
-                            return (
-                            <tr
-                                key={interface.id}
-                                className={cn(
-                                    interface.pivot.status === 'COMPLETED' ||
-                                        completedInterfaces.find(
-                                            (completedInterface) =>
-                                                completedInterface?.id ===
-                                                interface.id,
-                                        )
-                                        ? 'bg-green-100 text-green-500'
-                                        : '',
-                                )}
-                            >
-                                <td className="border border-slate-300 p-2">{deviceForInterface?.name}</td>
-                                <td className="border border-slate-300 p-2">{interface.interface}</td>
-                                <td className="border border-slate-300 p-2">{deviceForInterface?.serial}</td>
+                <div className="col-span-2">
+                    <h1 className="text-center text-2xl font-bold">
+                        {deployment.name} | {task.task_type}
+                    </h1>
+                    <table className="mt-6 min-w-[50dvw] table-auto border border-slate-400">
+                        <thead>
+                            <tr className="text-left">
+                                <th className="p-2">Device</th>
+                                <th className="p-2">Interface</th>
+                                <th className="p-2">Mode</th>
+                                <th className="p-2">Port Profile</th>
+                                <th className="p-2">Status</th>
                             </tr>
-                                )
-                            }
-                        )}
-                </tbody>
-            </table>
+                        </thead>
+                        <tbody>
+                            {interfaces.length > 0 &&
+                                interfaces.map((device_interface, index) => {
+                                    const deviceForInterface = devices.find(
+                                        (device) =>
+                                            device.id ===
+                                            device_interface.device_id,
+                                    );
+                                    return (
+                                        <tr
+                                            key={device_interface.id}
+                                            className={cn(
+                                                device_interface.pivot
+                                                    .status === 'COMPLETED' &&
+                                                    index % 2 === 0
+                                                    ? 'bg-emerald-100 text-emerald-500'
+                                                    : '',
+                                                device_interface.pivot
+                                                    .status === 'COMPLETED' &&
+                                                    index % 2 === 1
+                                                    ? 'bg-emerald-400 text-emerald-100'
+                                                    : '',
+                                            )}
+                                        >
+                                            <td className="border border-slate-300 p-2">
+                                                {deviceForInterface?.name}
+                                            </td>
+                                            <td className="border border-slate-300 p-2">
+                                                {device_interface.interface}
+                                            </td>
+                                            <td className="border border-slate-300 p-2">
+                                                {
+                                                    device_interface.switch_port
+                                                        ?.interface_mode
+                                                }
+                                            </td>
+                                            <td className="border border-slate-300 p-2">
+                                                {device_interface.sw_profile}
+                                            </td>
+                                            <td className="border border-slate-300 p-2">
+                                                {device_interface.pivot.status}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="fixed top-1/4 right-1/50 max-w-[350px]">
+                    <p className="text-bold text-center text-slate-700">
+                        Status Logs
+                    </p>
+                    <div className="mt-2">
+                    {statusMessages.map((message, index) => (
+                        <p key={index} className="text-slate-500 text-xs">
+                            {message}
+                        </p>
+                    ))}
+                    </div>
                 </div>
             </div>
         </AppLayout>

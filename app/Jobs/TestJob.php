@@ -21,7 +21,7 @@ class TestJob implements ShouldQueue
 
     /**
      * Create a new job instance.
-     * $data = ['deployment_name', 'task_id', 'device_id', 'message', 'task_type', 'retry_until']
+     * $data = ['deployment_name', 'task_id', 'item_name', 'message', 'task_type', 'retry_until']
      */
     public function __construct(public string|array $data)
     {

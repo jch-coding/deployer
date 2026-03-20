@@ -31,6 +31,7 @@ class CentralAPIHelper
         'interface_ethernet' => 'network-config/v1alpha1/ethernet-interfaces/',
         'interface_portchannel' => 'network-config/v1alpha1/portchannels/',
         'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles/',
+        'interface_vlan' => 'network-config/v1alpha1/vlan-interfaces/',
     ];
 
     public array $switchMonitoring = [
@@ -295,6 +296,49 @@ class CentralAPIHelper
                 ->delete($this->client->base_url.$this->interfaces['interface_portchannel'].$portchannel_name);
 
             return $response;
+        }
+    }
+
+    public function get_vlan_interfaces(Device $device)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'view-type' => 'LOCAL',
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->scope_id,
+                    'device-function' => $device->device_function,
+                ])
+                ->get($this->client->base_url.$this->interfaces['interface_vlan']);
+
+            return $response;
+        }
+    }
+
+    public function post_vlan_interface(DeviceInterface $deviceInterface)
+    {
+        $vlan_id = $deviceInterface->interface;
+        $interface_vlan_body = [
+            'id' => $vlan_id,
+            'ipv4' => [
+                'address' => $deviceInterface->ip_address,
+            ],
+            'enable' => $deviceInterface->enable,
+            'is-valid' => true,
+        ];
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'view-type' => 'LOCAL',
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $deviceInterface->device->scope_id,
+                    'device-function' => $deviceInterface->device->device_function,
+                ])
+                ->post($this->client->base_url.$this->interfaces['interface_vlan'].$vlan_id, $interface_vlan_body);
         }
     }
 

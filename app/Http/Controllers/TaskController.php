@@ -25,6 +25,10 @@ use Inertia\Inertia;
 
 class TaskController extends Controller
 {
+    public $task_to_action = [
+        'UPDATE_SYSTEM_INFO' => 'show-system-info',
+        'CONFIGURE_ETHERNET_INTERFACE' => 'show-ethernet-interface',
+    ];
     public function config_system_info(Device $device)
     {
         $central_api_helper = new CentralAPIHelper($device->client);
@@ -80,6 +84,7 @@ class TaskController extends Controller
             'task' => $task,
             'devices' => $task->devices->load('interfaces'),
             'deployment' => $task->deployment,
+            'interfaces' => $task->deviceInterfaces()->withPivot('status')->get(),
         ]);
     }
 
@@ -100,13 +105,12 @@ class TaskController extends Controller
 
         $device_collection = Collection::make($validated['devices']);
         $task->devices()->attach($device_collection->pluck('id'));
+        $device_interfaces = $task->devices->map(fn ($device) => $device->interfaces)->collapse()->pluck('id');
+        $task->deviceInterfaces()->attach($device_interfaces);
         $batch = $this->dispatchJob($task);
         $task->update(['batch_id' => $batch]);
 
-        return back()->with([
-            'latest_task' => $task,
-            'success' => 'Task is in progress',
-        ]);
+        return to_route('tasks.'.$this->task_to_action[$validated['task_type']], $task);
     }
 
     public function cancel(Task $task)
@@ -166,7 +170,6 @@ class TaskController extends Controller
                 ]))->toArray();
                 break;
         }
-
         return Bus::chain(array_map(fn($j) => Bus::batch($j), $jobs))->dispatch();
     }
 
