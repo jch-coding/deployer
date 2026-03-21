@@ -42,6 +42,15 @@ class CentralAPIHelper
         'switches' => 'network-monitoring/v1/switches/',
     ];
 
+    public array $classic_monitoring = [
+        'sites' => 'central/v2/sites',
+    ];
+
+    public array $classic_configuration = [
+        'move_devices_to_group' => 'configuration/v1/devices/move',
+        'preprovision_devices_to_group' => 'configuration/v1/preassign',
+    ];
+
     public function __construct(public Client $client) {}
 
     public function getScopeIdFromCentral(Device $device)
@@ -459,4 +468,57 @@ class CentralAPIHelper
             return $response;
         }
     }
+
+    public function classic_get_sites()
+    {
+        if (! $this->client->handleClassicBearerToken())
+            return ['error' => 'failed to get access token from central.'];
+        else {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->get($this->client->classic_base_url.$this->classic_monitoring['sites']);
+
+            return $response;
+        }
+    }
+
+    public function classic_associate_devices_to_site($device_to_site_body)
+    {
+        if (! $this->client->handleClassicBearerToken())
+            return ['error' => 'failed to get access token from central.'];
+        $response = Http::withToken($this->client->classic_access_token)
+            ->post($this->client->classic_base_url.$this->classic_monitoring['sites'].'/associations', $device_to_site_body);
+
+        return $response;
+    }
+
+    public function classic_associate_device_to_site($device_to_site_body)
+    {
+        if (! $this->client->handleClassicBearerToken())
+            return ['error' => 'failed to get access token from central.'];
+        $response = Http::withToken($this->client->classic_access_token)
+            ->post($this->client->classic_base_url.$this->classic_monitoring['sites'].'/associate', $device_to_site_body);
+
+        return $response;
+    }
+
+    public function move_devices_to_group(string $group, array $device_serials)
+    {
+        if (! $this->client->handleClassicBearerToken())
+            return ['error' => 'failed to get access token from central.'];
+        $response = Http::withToken($this->client->classic_access_token)
+            ->post($this->client->classic_base_url.$this->classic_configuration['move_devices_to_group'], ['group' => $group, 'serials' => $device_serials]);
+
+        return $response;
+    }
+
+    public function preprovision_devices_to_group(string $group, array $device_serials)
+    {
+        if (! $this->client->handleClassicBearerToken())
+            return ['error' => 'failed to get access token from central.'];
+        $response = Http::withToken($this->client->classic_access_token)
+            ->post($this->client->classic_base_url.$this->classic_configuration['preprovision_devices_to_group'], ['group_name' => $group, 'device_id' => $device_serials]);
+
+        return $response;
+    }
+
 }

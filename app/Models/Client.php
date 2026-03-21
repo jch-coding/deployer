@@ -72,4 +72,115 @@ class Client extends Model
         }
         return true;
     }
+
+    public function handleClassicBearerToken(bool $force = false)
+    {
+        if (! $this->hasClassicCentralCredentials())
+            return false;
+        else if ($this->classic_refresh_token !== null && now() < $this->classic_expires_in) {
+            return true;
+        }
+        else if ($force || $this->classic_refresh_token !== null && now() > $this->classic_expires_in) {
+            $response = $this->refreshClassicCentralBearerToken();
+            if (! $response->ok())
+                return false;
+            else {
+                $this->classic_access_token = $response->json('access_token');
+                $this->classic_refresh_token = $response->json('refresh_token');
+                $this->classic_expires_in = now()->addSeconds($response->json('expires_in'));
+                $this->save();
+                return true;
+            }
+        }
+        else {
+            $response = $this->authenticateClassicCentral();
+            if (! $response->ok())
+                return false;
+            else {
+                $set_cookie = $response->headers()['Set-Cookie'];
+                $extracted_csrftoken_and_session = $this->extractCSRFTokenAndSession($set_cookie);
+                $response = $this->generateClassicAuthorizationCode($extracted_csrftoken_and_session['csrftoken'], $extracted_csrftoken_and_session['session']);
+                if (! $response->ok())
+                    return false;
+                else {
+                    $authorization_code = $response->json()['auth_code'];
+                    $response = $this->acquireTokens($authorization_code);
+                    if (! $response->ok())
+                        return false;
+                    else {
+                        $this->classic_access_token = $response->json('access_token');
+                        $this->classic_refresh_token = $response->json('refresh_token');
+                        $this->classic_expires_in = now()->addSeconds($response->json('expires_in'));
+                        $this->save();
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    public function hasClassicCentralCredentials() : bool
+    {
+        return $this->classic_client_id !== null && $this->classic_client_secret !== null && $this->classic_username !== null && $this->classic_password !== null;
+    }
+
+    public function refreshClassicCentralBearerToken()
+    {
+        $response = Http::withQueryParameters([
+            'grant_type' => 'refresh_token',
+            'client_id' => $this->classic_client_id,
+            'client_secret' => $this->classic_client_secret,
+            'refresh_token' => $this->classic_refresh_token,
+        ])->post($this->classic_base_url.'oauth2/token/');
+
+        return $response;
+    }
+
+    public function authenticateClassicCentral()
+    {
+        $response = Http::withQueryParameters([
+            'client_id' => $this->classic_client_id
+        ])->post($this->classic_base_url.'oauth2/authorize/central/api/login', [
+            'username' => $this->classic_username,
+            'password' => $this->classic_password
+        ]);
+
+        return $response;
+    }
+
+    public function extractCSRFTokenAndSession(array $set_cookie)
+    {
+        $cookie_contents = array_map(fn($cookie) => explode(';', $cookie)[0], $set_cookie);
+        $content_only = array_map(fn($cookie) => explode('=', $cookie)[1], $cookie_contents);
+        $csrftoken = $content_only[0];
+        $session = $content_only[1];
+        return ['csrftoken' => $csrftoken, 'session' => $session];
+    }
+
+    public function generateClassicAuthorizationCode(string $csrftoken, string $session)
+    {
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/json',
+            'X-CSRF-Token' => $csrftoken,
+            'Cookie' => "session=".$session,
+        ])->withQueryParameters([
+            'client_id' => $this->classic_client_id,
+            'response_type' => 'code',
+            'scope' => 'all'
+        ])->post($this->classic_base_url.'oauth2/authorize/central/api/',['customer_id' => $this->customer_id]);
+
+        return $response;
+    }
+
+    public function acquireTokens(string $auth_code)
+    {
+        $response = Http::post($this->classic_base_url.'oauth2/token/',[
+            'grant_type' => 'authorization_code',
+            'client_id' => $this->classic_client_id,
+            'client_secret' => $this->classic_client_secret,
+            'code' => $auth_code,
+        ]);
+
+        return $response;
+    }
 }
