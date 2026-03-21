@@ -184,10 +184,6 @@ class DeviceController extends Controller
                     $device['sw_profile'] = $device['port_profile'];
                 }
                 if ($device['interface_mode'] === 'TRUNK') {
-                    //parse trunk-vlan-ranges into an array of strings if the value is not null
-                    if (array_key_exists('trunk_vlan_ranges', $device) && $device['trunk_vlan_ranges'] !== null) {
-                        $device['trunk_vlan_ranges'] = explode('&', $device['trunk_vlan_ranges']);
-                    }
                     $current_switchport = [
                         'interface_mode' => $device['interface_mode'],
                         'access_vlan' => null,
@@ -276,7 +272,8 @@ class DeviceController extends Controller
                     $switchport = SwitchPort::where('interface_mode', $device_interface['interface_mode'])
                         ->where('access_vlan', $device_interface['access_vlan'])
                         ->where('native_vlan', $device_interface['native_vlan'])
-                        ->where('trunk_vlan_all', $device_interface['trunk_vlan_all'])
+                        ->where('trunk_vlan_all',(bool) $device_interface['trunk_vlan_all'])
+                        ->where('trunk_vlan_ranges', $device_interface['trunk_vlan_ranges'])
                         ->first();
                 }
 
@@ -329,12 +326,13 @@ class DeviceController extends Controller
                         ]);
                     }
                 }
-                //                else {
-                //                    if(SwitchPort::where('native_vlan', $unique_switchport['native_vlan'])
-                //                        ->where('trunk_vlan_ranges', $unique_switchport['trunk_vlan_ranges'])
-                //                        ->doesntExist()) {
-                //                        SwitchPort::create($unique_switchport);
-                //                    }
+                else {
+                    if(SwitchPort::where('native_vlan', $unique_switchport['native_vlan'])
+                    ->where('trunk_vlan_ranges', $unique_switchport['trunk_vlan_ranges'])
+                    ->doesntExist()) {
+                        SwitchPort::create($unique_switchport);
+                    }
+                }
             }
         }
     }
@@ -426,6 +424,7 @@ class DeviceController extends Controller
      */
     public function destroy(Device $device)
     {
-        //
+        $device->delete();
+        return back()->with('success', 'Device deleted successfully');
     }
 }

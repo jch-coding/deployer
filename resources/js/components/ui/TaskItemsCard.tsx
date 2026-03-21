@@ -9,6 +9,7 @@ import { store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { AlarmClockIcon,
     BoltIcon} from 'lucide-react';
+import { toast } from 'sonner';
 
 type DeviceType = {
     id: number,
@@ -23,12 +24,8 @@ type DeploymentType = {
 
 export default function TaskItemsCard({ task, devices, deployment } : { task: string, devices: DeviceType[], deployment: DeploymentType }) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
-    // const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
-    const [completedItems, setCompletedItems] = useState<string[]>([])
-    const [statusMessage, setStatusMessage] = useState()
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
-    const items = task in usePage().props.items ? usePage().props.items[task] : []
     const handleCheckboxChange = (deviceId : number, checked : boolean) => {
         const newDevice = devices.find(device => device.id === deviceId)
         if (checked) {
@@ -53,18 +50,11 @@ export default function TaskItemsCard({ task, devices, deployment } : { task: st
         router.post(store(deployment.id).url, taskData)
     }
 
-    const resetCompletedItems = () => setCompletedItems([])
 
     const newItemUpdated = (newItemEvent) => {
         if (newItemEvent.event_type === 'FailureEvent') {
-
+            toast.error(newItemEvent.data.message)
         }
-        const newItem = newItemEvent.data.item_name
-        setCompletedItems((prevState) => [...prevState, newItem])
-        // const newDeviceUpdated = {...devices.find(device => device.id === parseInt(newItemEvent.data.device_name)), completed: true}
-        // setCompletedDevices((prevState) => [...prevState, newDeviceUpdated])
-
-        setStatusMessage(newItemEvent.data.message)
     }
 
     useEcho(
@@ -146,34 +136,11 @@ export default function TaskItemsCard({ task, devices, deployment } : { task: st
                             </div>
                     </DialogContent>
                 </Dialog>
-                <Dialog>
-                    <DialogTrigger asChild>
-                        {
-                            taskDevices.length > 0 && taskDevices.length < devices.length ?
-                                <Button onClick={() => dispatch_task_with_devices(task, devices)}><BoltIcon/>Deploy Selected</Button> :
-                                <Button onClick={() => dispatch_task_with_devices(task, devices, true)}><BoltIcon/>Deploy All</Button>
-                        }
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogTitle>{task} Progress</DialogTitle>
-                        <DialogDescription>
-                            {completedItems.length} / {items.length} {statusMessage}
-                        </DialogDescription>
-                        <DialogClose asChild>
-                            <Button onClick={() => resetCompletedItems()}>Close</Button>
-                        </DialogClose>
-                        <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4">
-                            <ul>
-                                {
-                                    completedItems.length > 0 ?
-                                        completedItems.map((item, index) =>
-                                            <li key={index} className='text-emerald-500'>{  item }</li>
-                                        ) : <li>Deployment started</li>
-                                }
-                            </ul>
-                        </div>
-                    </DialogContent>
-                </Dialog>
+                {
+                    taskDevices.length > 0 && taskDevices.length < devices.length ?
+                        <Button onClick={() => dispatch_task_with_devices(task, devices)}><BoltIcon/>Deploy Selected</Button> :
+                        <Button onClick={() => dispatch_task_with_devices(task, devices, true)}><BoltIcon/>Deploy All</Button>
+                }
             </CardContent>
         </Card>
     )

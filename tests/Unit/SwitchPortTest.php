@@ -27,10 +27,14 @@ it('can be an access port', function () {
 });
 
 it('can be a trunk port', function () {
-    $switchport = SwitchPort::factory()->create(['interface_mode' => 'TRUNK', 'native_vlan' => 10, 'trunk_vlan_ranges' => '[10-20]']);
+    $switchport = SwitchPort::factory()->create(['interface_mode' => 'TRUNK', 'native_vlan' => 10, 'access_vlan' => null, 'trunk_vlan_ranges' => '10-20']);
     expect($switchport->native_vlan)->toBe(10);
     expect($switchport->access_vlan)->toBeNull();
-    expect($switchport->trunk_vlan_all)->toBeNull();
-    expect($switchport->trunk_vlan_ranges)->toBeNull();
-    $switchport->update(['trunk_vlan_all' => true]);
+    expect($switchport->trunk_vlan_all)->toBeFalse();
+    expect($switchport->trunk_vlan_ranges)->toBe(['10-20']);
+});
+
+it('retrieves the trunk-vlan-ranges attribute as an array', function () {
+    $switchport = SwitchPort::factory()->create(['trunk_vlan_ranges' => '10&20-25&30']);
+    expect($switchport->trunk_vlan_ranges)->toBe(['10','20-25','30']);
 });

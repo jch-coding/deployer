@@ -74,9 +74,22 @@ export default function Show() {
         switch (task_type) {
             case 'UPDATE_SYSTEM_INFO':
                 return showSystemInfo(task_id).url;
-            case 'UPDATE_ETHERNET_INTERFACE':
+            case 'CONFIGURE_ETHERNET_INTERFACE':
                 return showEthernetInterface(task_id).url;
         }
+    }
+
+    const isDeviceBasedTask = (task_type: string) => {
+        return task_type in ['UPDATE_SYSTEM_INFO']
+    }
+
+    const isInterfaceBasedTask = (task_type: string) => {
+        return task_type in [
+            'CONFIGURE_ETHERNET_INTERFACE',
+            'CONFIGURE_LAG_INTERFACE',
+            'CONFIGURE_VLAN_INTERFACE',
+            'CONFIGURE_ALL_INTERFACE',
+        ]
     }
 
     function handleSubmit(e ) {
@@ -143,16 +156,18 @@ export default function Show() {
                 </div>
                 <div>
                     <div className="mt-6 flex flex-wrap justify-center gap-2">
-                        {tasks.map((task, index) => (
-                            <TaskCard
-                                index={index}
-                                task={task}
-                                devices={allDevices}
-                                deployment={deployment}
-                            />
-                        ))}
+                        {tasks.map((task, index) => {
+                            const TaskComponent = isDeviceBasedTask(task.task_type) ? TaskCard : TaskItemsCard;
+                            return (
+                                <TaskComponent
+                                    index={index}
+                                    task={task}
+                                    devices={allDevices}
+                                    deployment={deployment}
+                                />
+                            );
+                        })}
                     </div>
-                    <TaskItemsCard task='CONFIGURE_ETHERNET_INTERFACE' devices={allDevices} deployment={deployment} />
                 </div>
                 <Dialog>
                     <DialogTrigger asChild>

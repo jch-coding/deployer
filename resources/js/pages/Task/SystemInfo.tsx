@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/react';
+import { usePage, usePoll } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { useEffect, useState } from 'react';
 import { useEcho } from '@laravel/echo-react';
@@ -16,11 +16,9 @@ export default function Show() {
     const task = usePage().props.task
     const devices = usePage().props.devices
     const deployment = usePage().props.deployment
-    const [completedDevices, setCompletedDevices] = useState([])
-    const completedDevicesFromBackend = devices.filter(
+    const completedDevices= devices.filter(
         (device) => device.pivot.status === 'COMPLETED',
     );
-    const [totalCompletedDevices, setTotalCompletedDevices] = useState(0);
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: 'Dashboard',
@@ -44,26 +42,42 @@ export default function Show() {
         `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
         'DeploymentEvent',
         (event) => {
-            const completed_device_name = event.data.device_name
-            const new_completed_device = devices.find(device => device.name === completed_device_name)
-            setTotalCompletedDevices(() => totalCompletedDevices + 1);
-            setCompletedDevices((prevCompletedDevices) => [...prevCompletedDevices, new_completed_device])
         }
     )
+
+    usePoll(2000)
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="flex gap-4 max-w-6xl mx-auto">
-                <div className="fixed top-1/4 left-1/6">
+                <div className="fixed top-1/8 left-1/8">
                     <h1 className="text-2xl text-center font-bold">Progress</h1>
-                    <div className="mt-4 rounded-full border-4 border-green-500/80 h-36 w-36 flex justify-center items-center">
+                    <div className="mt-4 mx-auto rounded-full border-4 border-green-500/80 h-36 w-36 flex justify-center items-center">
                         <span className="text-3xl text-slate-500 font-bold p-1">
-                            {totalCompletedDevices + completedDevicesFromBackend.length }
+                            { completedDevices.length }
                         </span>
                         <ChevronRightCircleIcon/>
                         <span className="text-3xl text-slate-600 font-bold p-1">
                             {devices.length}
                         </span>
+                    </div>
+                    <div className="mt-4 p-4 w-[350px]">
+                        <p className="text-bold text-center text-slate-700">
+                            Status Logs
+                        </p>
+                        <ul className="mt-2">
+                            {task.status_log
+                                .split('\n')
+                                .map((message, index) => (
+                                    <li
+                                        key={index}
+                                    >
+                                        {message}
+                                    </li>
+                                    )
+                                )
+                            }
+                        </ul>
                     </div>
                 </div>
                 <div className="flex-1" >
@@ -80,17 +94,15 @@ export default function Show() {
                 </thead>
                 <tbody>
                     {devices.length > 0 &&
-                        devices.map((device) => (
+                        devices.map((device, index) => (
                             <tr
                                 key={device.id}
                                 className={cn(
-                                    device.pivot.status === 'COMPLETED' ||
-                                        completedDevices.find(
-                                            (completedDevice) =>
-                                                completedDevice?.id ===
-                                                device.id,
-                                        )
-                                        ? 'bg-green-100 text-green-500'
+                                    device.pivot.status === 'COMPLETED' && index % 2 === 0
+                                        ? 'bg-emerald-100 text-emerald-400'
+                                        : '',
+                                    device.pivot.status === 'COMPLETED' && index % 2 === 1
+                                        ? 'bg-emerald-400 text-emerald-100'
                                         : '',
                                 )}
                             >

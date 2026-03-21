@@ -22,6 +22,7 @@ export default function Show() {
         (device_interface) => device_interface.pivot.status === 'COMPLETED',
     );
     const [statusMessages, setStatusMessages] = useState([])
+    const [logs, setLogs] = useState([])
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -55,7 +56,7 @@ export default function Show() {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="mx-auto flex gap-2">
-                <div className="fixed top-1/4 left-1/6">
+                <div className="fixed top-1/8 left-1/6">
                     <h1 className="text-center text-2xl font-bold">Progress</h1>
                     <div className="mt-4 flex h-36 w-36 items-center justify-center rounded-full border-4 border-emerald-500/80">
                         <span className="p-1 text-3xl font-bold text-slate-500">
@@ -65,6 +66,23 @@ export default function Show() {
                         <span className="p-1 text-3xl font-bold text-slate-600">
                             {interfaces.length}
                         </span>
+                    </div>
+                    <div className="mt-4 max-w-[350px]">
+                        <p className="text-bold text-center text-slate-700">
+                            Status Logs
+                        </p>
+                        <ul className="mt-2">
+                            {task.status_log
+                                .split('\n')
+                                .map((message, index) => (
+                                    <li
+                                        key={index}
+                                        className="text-xs text-slate-500"
+                                    >
+                                        {message}
+                                    </li>
+                                ))}
+                        </ul>
                     </div>
                 </div>
                 <div className="col-span-2">
@@ -128,18 +146,6 @@ export default function Show() {
                                 })}
                         </tbody>
                     </table>
-                </div>
-                <div className="fixed top-1/4 right-1/50 max-w-[350px]">
-                    <p className="text-bold text-center text-slate-700">
-                        Status Logs
-                    </p>
-                    <div className="mt-2">
-                    {statusMessages.map((message, index) => (
-                        <p key={index} className="text-slate-500 text-xs">
-                            {message}
-                        </p>
-                    ))}
-                    </div>
                 </div>
             </div>
         </AppLayout>

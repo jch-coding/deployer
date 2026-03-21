@@ -134,7 +134,7 @@ export default function TaskCard({ task, devices, deployment, props } : { task: 
                                         <label htmlFor={`device-${index}`}>{device.name}</label>
                                     </div>
                                 ) :
-                                <p>Add devices to deployment before adding tasks</p>
+                            <p>Add devices to deployment before adding tasks</p>
                         }
                             </div>
                     </DialogContent>

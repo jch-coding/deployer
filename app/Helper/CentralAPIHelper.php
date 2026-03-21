@@ -34,8 +34,12 @@ class CentralAPIHelper
         'interface_vlan' => 'network-config/v1alpha1/vlan-interfaces/',
     ];
 
+    public array $vlans_and_networks = [
+        'l2_vlans' => 'network-config/v1alpha1/layer2-vlan/',
+    ];
+
     public array $switchMonitoring = [
-        'switches' => 'network-monitoring/v1/switches',
+        'switches' => 'network-monitoring/v1/switches/',
     ];
 
     public function __construct(public Client $client) {}
@@ -145,8 +149,6 @@ class CentralAPIHelper
 
     public static function build_portchannel_from_device_interface(DeviceInterface $deviceInterface)
     {
-        $lacp_profile = [];
-        $port_list = [];
         $switch_port_configuration = static::build_switchport_from_device_interface($deviceInterface);
 
         if ($deviceInterface->lacp_profile !== null) {
@@ -339,6 +341,44 @@ class CentralAPIHelper
                     'device-function' => $deviceInterface->device->device_function,
                 ])
                 ->post($this->client->base_url.$this->interfaces['interface_vlan'].$vlan_id, $interface_vlan_body);
+            return $response;
+        }
+    }
+
+    public function get_l2_vlans($query_parameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($query_parameters)
+                ->get($this->client->base_url.$this->vlans_and_networks['l2_vlans']);
+
+            return $response;
+        }
+    }
+
+    /***
+     * @param Device $device
+     * @param array $l2_vlan = ['vlan' => VLAN_ID]
+     * @return \GuzzleHttp\Promise\PromiseInterface|\Illuminate\Http\Client\Promises\LazyPromise|\Illuminate\Http\Client\Response|string[]
+     * @throws \Illuminate\Http\Client\ConnectionException
+     */
+    public function post_l2_vlan(Device $device, array $l2_vlan)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'view-type' => 'LOCAL',
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->scope_id,
+                    'device-function' => $device->device_function,
+                ])
+                ->post($this->client->base_url.$this->vlans_and_networks['l2_vlans'].$l2_vlan['vlan'], $l2_vlan);
+
+            return $response;
         }
     }
 

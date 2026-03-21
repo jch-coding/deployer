@@ -56,12 +56,12 @@ class ConfigureEthernetInterface implements ShouldQueue
         if ($this->deviceInterface->sw_profile) {
             $newStatusLog .= ' with '.$this->deviceInterface->sw_profile.' profile';
         }
+        $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
         $deviceInterfaces = $this->task->deviceInterfaces->filter(fn ($deviceInterface) => $deviceInterface->device_id === $device->id);
         $completedDeviceInterfaces = $deviceInterfaces->filter(fn ($deviceInterface) => $deviceInterface->pivot->status === 'COMPLETED');
         if ($completedDeviceInterfaces->count() === $deviceInterfaces->count()) {
             $this->task->devices()->find($device)->pivot->update(['status' => 'COMPLETED']);
         }
-        $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
         $this->task->update(['status_log' => $newStatusLog]);
         DeploymentEvent::dispatch([
             'deployment_name' => $this->task->deployment->name,

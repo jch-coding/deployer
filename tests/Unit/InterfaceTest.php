@@ -109,3 +109,4 @@ it('can be assigned to a portchannel_lag', function () {
     expect($interface->portchannel_lag)->toBe('10');
     $this->assertDatabaseHas('device_interfaces', ['portchannel_lag' => '10']);
 });
+
