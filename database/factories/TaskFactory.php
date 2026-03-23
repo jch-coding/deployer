@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Deployment;
 use App\TaskType;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -20,6 +21,7 @@ class TaskFactory extends Factory
         return [
             'name' => $this->faker->sentence(),
             'task_type' => fake()->randomElement(TaskType::cases())->name,
+            'deployment_id' => Deployment::factory(),
         ];
     }
 }

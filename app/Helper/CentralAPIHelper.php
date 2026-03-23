@@ -5,6 +5,7 @@ namespace App\Helper;
 use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\Site;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -113,6 +114,24 @@ class CentralAPIHelper
         }
     }
 
+    public function get_site_scope_id(Site $site)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return null;
+        }
+        $response = $this->get_sites();
+        if (! $response->ok()) {
+            return null;
+        }
+        $central_sites = $response->json()['items'];
+        $central_site = array_find($central_sites, fn ($central_site) => $central_site['scopeName'] === $site->name);
+        if (count($central_site) === 0) {
+            return null;
+        }
+
+        return $central_site['scopeId'];
+    }
+
     public function updateSystemInfo(Device $device)
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -131,19 +150,28 @@ class CentralAPIHelper
         }
     }
 
-    public function assignDeviceFunction(Device $device)
+    /***
+     * @param array $devices = ['serial1', 'serial2', ...]
+     * @param string $device_function
+     * @param $queryParameters
+     * @return \GuzzleHttp\Promise\PromiseInterface|\Illuminate\Http\Client\Promises\LazyPromise|\Illuminate\Http\Client\Response|string[]
+     * @throws \Illuminate\Http\Client\ConnectionException
+     */
+    public function assignDeviceFunction(array $devices, string $device_function)
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
+            $body = [
+                'persona-device-list' => [
+                    [
+                        'device-function' => $device_function,
+                        'device-id-list-v2' => array_map(fn ($serial) => ['device-id-v2' => $serial], $devices),
+                    ],
+                ],
+            ];
             $response = Http::withToken($this->client->bearer_token)
-                ->withQueryParameters([
-                    'object-type' => 'LOCAL',
-                    'scope-id' => $device->serial,
-                    'device_function' => $device->device_function,
-                ])->withBody(json_encode([
-                    'device-function' => $device->device_function,
-                ]))->patch($this->client->base_url.$this->configManagement['persona_assignment'].$device->device_function);
+                ->post($this->client->base_url.$this->configManagement['persona_assignment'].$device_function, $body);
 
             return $response;
         }
@@ -161,16 +189,17 @@ class CentralAPIHelper
         $switch_port_configuration = static::build_switchport_from_device_interface($deviceInterface);
 
         if ($deviceInterface->lacp_profile !== null) {
-            $port_list = collect(
-                array_map(fn ($s) => explode('-', $s),
-                    explode('&', $deviceInterface->lacp_profile->port_list))
-            )->flatten()->toArray();
             $lacp_profile = [
-                'port-list' => $port_list,
+                'port-list' => $deviceInterface->lacp_profile->port_list,
                 'mode' => $deviceInterface->lacp_profile->mode,
                 'rate' => $deviceInterface->lacp_profile->rate,
             ];
             $switch_port_configuration['trunk-type'] = $deviceInterface->lacp_profile->trunk_type;
+        }
+        if ($deviceInterface->sw_profile !== null) {
+            $switch_port_configuration['sw-profile'] = $deviceInterface->sw_profile;
+        } elseif ($deviceInterface->stp_profile !== null) {
+            $switch_port_configuration['stp'] = $deviceInterface->stp_profile->filter(fn ($attr) => $attr !== null)->toArray();
         }
 
         return array_merge($switch_port_configuration, ['lacp' => $lacp_profile]);
@@ -205,7 +234,7 @@ class CentralAPIHelper
         } elseif ($deviceInterface->portchannel_lag !== null) {
             $switchport_rest_body['portchannel-lag'] = $deviceInterface->portchannel_lag;
         } else {
-            array_merge($switchport_rest_body, [
+            $switchport_rest_body = array_merge($switchport_rest_body, [
                 'switchport' => $switch_port,
                 'stp' => $stp_profile,
             ]);
@@ -350,6 +379,7 @@ class CentralAPIHelper
                     'device-function' => $deviceInterface->device->device_function,
                 ])
                 ->post($this->client->base_url.$this->interfaces['interface_vlan'].$vlan_id, $interface_vlan_body);
+
             return $response;
         }
     }
@@ -471,9 +501,9 @@ class CentralAPIHelper
 
     public function classic_get_sites()
     {
-        if (! $this->client->handleClassicBearerToken())
+        if (! $this->client->handleClassicBearerToken()) {
             return ['error' => 'failed to get access token from central.'];
-        else {
+        } else {
             $response = Http::withToken($this->client->classic_access_token)
                 ->get($this->client->classic_base_url.$this->classic_monitoring['sites']);
 
@@ -483,8 +513,9 @@ class CentralAPIHelper
 
     public function classic_associate_devices_to_site($device_to_site_body)
     {
-        if (! $this->client->handleClassicBearerToken())
+        if (! $this->client->handleClassicBearerToken()) {
             return ['error' => 'failed to get access token from central.'];
+        }
         $response = Http::withToken($this->client->classic_access_token)
             ->post($this->client->classic_base_url.$this->classic_monitoring['sites'].'/associations', $device_to_site_body);
 
@@ -493,8 +524,9 @@ class CentralAPIHelper
 
     public function classic_associate_device_to_site($device_to_site_body)
     {
-        if (! $this->client->handleClassicBearerToken())
+        if (! $this->client->handleClassicBearerToken()) {
             return ['error' => 'failed to get access token from central.'];
+        }
         $response = Http::withToken($this->client->classic_access_token)
             ->post($this->client->classic_base_url.$this->classic_monitoring['sites'].'/associate', $device_to_site_body);
 
@@ -503,8 +535,9 @@ class CentralAPIHelper
 
     public function move_devices_to_group(string $group, array $device_serials)
     {
-        if (! $this->client->handleClassicBearerToken())
+        if (! $this->client->handleClassicBearerToken()) {
             return ['error' => 'failed to get access token from central.'];
+        }
         $response = Http::withToken($this->client->classic_access_token)
             ->post($this->client->classic_base_url.$this->classic_configuration['move_devices_to_group'], ['group' => $group, 'serials' => $device_serials]);
 
@@ -513,12 +546,12 @@ class CentralAPIHelper
 
     public function preprovision_devices_to_group(string $group, array $device_serials)
     {
-        if (! $this->client->handleClassicBearerToken())
+        if (! $this->client->handleClassicBearerToken()) {
             return ['error' => 'failed to get access token from central.'];
+        }
         $response = Http::withToken($this->client->classic_access_token)
             ->post($this->client->classic_base_url.$this->classic_configuration['preprovision_devices_to_group'], ['group_name' => $group, 'device_id' => $device_serials]);
 
         return $response;
     }
-
 }

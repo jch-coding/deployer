@@ -7,8 +7,11 @@ use App\Events\DeviceGetScopeIdEvent;
 use App\Events\DeviceSystemInfoUpdateEvent;
 use App\Events\TestEvent;
 use App\Helper\CentralAPIHelper;
+use App\Jobs\AssociateDeviceToSiteJob;
 use App\Jobs\ConfigureEthernetInterface;
+use App\Jobs\ConfigureLagInterfaceJob;
 use App\Jobs\CreateLocalOverrideForPortProfile;
+use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
@@ -17,6 +20,7 @@ use App\Models\Task;
 use App\TaskType;
 use Illuminate\Bus\Batch;
 use Illuminate\Http\Request;
+use Illuminate\Queue\Jobs\Job;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
@@ -29,6 +33,7 @@ class TaskController extends Controller
         'UPDATE_SYSTEM_INFO' => 'show-system-info',
         'CONFIGURE_ETHERNET_INTERFACE' => 'show-ethernet-interface',
     ];
+
     public function config_system_info(Device $device)
     {
         $central_api_helper = new CentralAPIHelper($device->client);
@@ -116,7 +121,7 @@ class TaskController extends Controller
     public function cancel(Task $task)
     {
         $task->update(['status' => 'CANCELLED']);
-        //queue clear is not 100% successful on first try
+        // queue clear is not 100% successful on first try
         $queue_cleared = false;
         $tries = 10;
         while (! $queue_cleared && $tries > 0) {
@@ -124,11 +129,28 @@ class TaskController extends Controller
             if (str_contains(Artisan::output(), 'Cleared 0 jobs')) {
                 $queue_cleared = true;
                 $tries -= 1;
-                sleep(random_int(1,6));
+                sleep(random_int(1, 6));
             }
         }
 
         return back()->with(['success' => 'Task is cancelled']);
+    }
+
+    public function chunk_devices(Collection $devices_by_group)
+    {
+        $keys = $devices_by_group->keys()->toArray();
+        $chunked_devices_by_group = $devices_by_group->map(fn ($devices) => $devices->chunk(25));
+        return ['keys' => $keys, 'chunked_devices_by_group' => $chunked_devices_by_group->toArray()];
+    }
+
+    public function create_jobs_by_grouped_chunks(array $chunked_devices_by_group_with_keys, Task $task, CentralAPIHelper $centralAPIHelper, $job_class)
+    {
+        $devices_by_group_jobs = array_map(fn ($chunk, $group) => array_map(fn ($devices) => new $job_class($devices, $group, $task, $centralAPIHelper),
+            $chunk
+        ),
+            $chunked_devices_by_group_with_keys['chunked_devices_by_group'], $chunked_devices_by_group_with_keys['keys']
+        );
+        return array_merge(...$devices_by_group_jobs);
     }
 
     public function dispatchJob(Task $task)
@@ -139,6 +161,21 @@ class TaskController extends Controller
             case 'UPDATE_SYSTEM_INFO':
                 $jobs[] = $task->devices->map(fn ($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper))->toArray();
                 break;
+            case 'PREPROVISION_DEVICE_TO_GROUP':
+                $devices_by_group = $task->devices->groupBy('group');
+                $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
+                $devices_by_group_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, PreprovisionDevicesToGroupJob::class);
+                $jobs = array_merge($jobs, $devices_by_group_jobs);
+                break;
+            case 'ASSIGN_DEVICE_FUNCTION':
+                $devices_by_device_function = $task->devices->groupBy('device_function');
+                $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_device_function);
+                $devices_by_device_function_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, AssociateDeviceToSiteJob::class);
+                $jobs = array_merge($jobs, $devices_by_device_function_jobs);
+                break;
+            case 'ASSIGN_DEVICE_TO_SITE':
+                $jobs[] = $task->devices->map(fn ($device) => new AssociateDeviceToSiteJob($device, $task, $centralAPIHelper))->toArray();
+                break;
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 $devices_with_port_profiles = $task->devices->map(function ($device) {
                     $device->interfaces_sw_profiles = $device->interfaces->filter(fn ($interface) => $interface->sw_profile);
@@ -148,18 +185,25 @@ class TaskController extends Controller
                 $unique_interfaces_sw_profiles = static::get_unique_sw_profiles($devices_with_port_profiles);
                 if (count($unique_interfaces_sw_profiles) > 0) {
                     $jobs[] = $unique_interfaces_sw_profiles->map(fn ($unique_interface_sw_profiles) => new CreateLocalOverrideForPortProfile(
-                            [
-                                'sw_profile' => $unique_interface_sw_profiles->sw_profile,
-                                'device_function' => $unique_interface_sw_profiles->device->device_function,
-                                'site' => $unique_interface_sw_profiles->device->site,
-                            ],
-                            $task,
-                            $centralAPIHelper
-                        )
+                        [
+                            'sw_profile' => $unique_interface_sw_profiles->sw_profile,
+                            'device_function' => $unique_interface_sw_profiles->device->device_function,
+                            'site' => $unique_interface_sw_profiles->device->site,
+                        ],
+                        $task,
+                        $centralAPIHelper
+                    )
                     )->toArray();
                 }
                 $jobs[] = $task->devices->map(fn ($device) => $device->interfaces->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper)))->collapse()->toArray();
                 break;
+            case 'CONFIGURE_VLAN_INTERFACE':
+                $vlan_interfaces = $task->devices->map(fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->ip_address !== null))->collapse();
+                $jobs[] = $vlan_interfaces->map(fn ($vlan_interface) => new ConfigureEthernetInterface($vlan_interface, $task, $centralAPIHelper))->toArray();
+                break;
+            case 'CONFIGURE_LAG_INTERFACE':
+                $lag_interfaces = $task->devices->map(fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->lacp_profile !== null))->collapse();
+                $jobs[] = $lag_interfaces->map(fn ($lag_interface) => new ConfigureLagInterfaceJob($lag_interface, $task, $centralAPIHelper))->toArray();
             case 'TEST_TASK':
                 $jobs[] = $task->devices->map(fn ($device) => new TestJob([
                     'device_name' => $device->id,
@@ -170,7 +214,8 @@ class TaskController extends Controller
                 ]))->toArray();
                 break;
         }
-        return Bus::chain(array_map(fn($j) => Bus::batch($j), $jobs))->dispatch();
+
+        return Bus::chain(array_map(fn ($j) => Bus::batch($j), $jobs))->dispatch();
     }
 
     public static function get_unique_sw_profiles(Collection $devices)

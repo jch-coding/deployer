@@ -19,7 +19,7 @@ class PreprovisionDevicesToGroupJob implements ShouldQueue
      */
     public int $deployment_time;
 
-    public function __construct(public array $device_serials, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
+    public function __construct(public array $devices, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
     }
@@ -29,13 +29,24 @@ class PreprovisionDevicesToGroupJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $response = $this->centralAPIHelper->preprovision_devices_to_group($this->group_name, $this->device_serials);
+        $device_serials = array_map(fn($device) => $device['serial_number'], $this->devices);
+        $this->preprovisionDevices($device_serials);
+    }
+
+    public function preprovisionDevices($devices)
+    {
+        $response = $this->centralAPIHelper->preprovision_devices_to_group($this->group_name, $devices);
+        $status_log = $this->task->status_log;
         if (! $response->status() !== 201) {
             Log::error('Failed to preprovision devices to group');
-            $this->fail();
+            array_reduce($this->devices, function ($carry, $item) {
+                $carry .= "\nFailed Device ".$item.' preprovisioned to group '.$this->group_name;
+
+                return $carry;
+            }, $status_log);
+            $this->task->update(['status_log' => $status_log]);
         } else {
-            $status_log = $this->task->status_log;
-            array_reduce($this->device_serials, function ($carry, $item) {
+            array_reduce($this->devices, function ($carry, $item) {
                 $carry .= "\nDevice ".$item.' preprovisioned to group '.$this->group_name;
 
                 return $carry;

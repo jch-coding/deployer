@@ -7,6 +7,7 @@ use App\Helper\CSVHelper;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\LacpProfile;
 use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
@@ -222,6 +223,22 @@ class DeviceController extends Controller
             }
         }
 
+        $unique_lacp = [];
+        $lacp_keys = ['lacp_mode', 'trunk_type', 'port_list', 'lacp_rate'];
+        foreach ($normalized_devices as $device) {
+            if (array_any($device, fn ($v, $k) => in_array($k, $lacp_keys)) && $device['interface'] !== null) {
+                $current_lacp = [
+                    'mode' => $device['lacp_mode'] ?? 'ACTIVE',
+                    'trunk_type' => $device['trunk_type'] ?? 'LACP',
+                    'port_list' => $device['port_list'] ?? null,
+                    'rate' => $device['lacp_rate'] ?? 'SLOW',
+                ];
+                if (! in_array($current_lacp, $unique_lacp)) {
+                    $unique_lacp[] = $current_lacp;
+                }
+            }
+        }
+
         $devices_grouped_config_all = array_map(
             fn ($serial) => array_filter($normalized_devices, fn ($device) => $device['serial'] === $serial),
             $unique_devices
@@ -241,6 +258,7 @@ class DeviceController extends Controller
         return [
             'unique_switchports' => $unique_switchports,
             'unique_stp' => $unique_stp,
+            'unique_lacp' => $unique_lacp,
             'devices_grouped_config' => $devices_grouped_config,
             'total_interfaces' => $total_interfaces,
         ];
@@ -253,6 +271,7 @@ class DeviceController extends Controller
     {
         $has_switchport = false;
         $has_stp = false;
+        $has_lacp = false;
 
         // start with the switchport configurations, if any
         if (count($interfaces['unique_switchports']) > 0) {
@@ -263,6 +282,11 @@ class DeviceController extends Controller
         if (count($interfaces['unique_stp']) > 0) {
             static::saveStp($interfaces['unique_stp']);
             $has_stp = true;
+        }
+
+        if (count($interfaces['unique_lacp']) > 0) {
+            static::saveLacp($interfaces['unique_lacp']);
+            $has_lacp = true;
         }
 
         $saved_interfaces = 0;
@@ -286,6 +310,14 @@ class DeviceController extends Controller
                         ->first();
                 }
 
+                if ($has_lacp) {
+                    $lacp_profile = LacpProfile::where('mode', $device_interface['lacp_mode'])
+                        ->where('trunk_type', $device_interface['trunk_type'])
+                        ->where('port_list', $device_interface['port_list'])
+                        ->where('rate', $device_interface['lacp_rate'])
+                        ->first();
+                }
+
                 $device = Device::where('serial', $device_interface['serial'])->first();
                 $device_interface_config = [
                     'device_id' => $device->id,
@@ -293,9 +325,10 @@ class DeviceController extends Controller
                     'sw_profile' => $device_interface['port_profile'] ?? null,
                     'switch_port_id' => $switchport->id ?? null,
                     'stp_profile_id' => $stp_profile->id ?? null,
+                    'lacp_profile_id' => $lacp_profile->id ?? null,
                 ];
 
-                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile','switch_port_id','stp_profile_id']);
+                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile','switch_port_id','stp_profile_id', 'lacp_profile_id']);
                 $saved_interfaces++;
             }
         }
@@ -349,6 +382,19 @@ class DeviceController extends Controller
                 ->where('loop_guard', $stp_profile['loop_guard'])
                 ->doesntExist()) {
                 StpProfile::create($stp_profile);
+            }
+        }
+    }
+
+    public static function saveLacp($lacp_profiles)
+    {
+        foreach ($lacp_profiles as $lacp_profile) {
+            if (LacpProfile::where('mode', $lacp_profile['mode'])
+                ->where('trunk_type', $lacp_profile['trunk_type'])
+                ->where('port_list', $lacp_profile['port_list'])
+                ->where('rate', $lacp_profile['rate'])
+                ->doesntExist()) {
+                LacpProfile::create($lacp_profile);
             }
         }
     }

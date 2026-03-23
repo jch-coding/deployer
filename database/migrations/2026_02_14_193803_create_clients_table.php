@@ -21,6 +21,7 @@ return new class extends Migration
             $table->text('bearer_token');
             $table->string('customer_id');
             $table->enum('base_url', BaseURL::cases());
+            $table->string('expires_at')->nullable();
             $table->boolean('current')->default(false);
             $table->foreignIdFor(User::class)->constrained()->cascadeOnDelete();
             $table->timestamps();

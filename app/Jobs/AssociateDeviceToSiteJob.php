@@ -20,7 +20,7 @@ class AssociateDeviceToSiteJob implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(public $device, public Site $site, public Task $task, public CentralAPIHelper $centralAPIHelper)
+    public function __construct(public Device $device, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 10;
     }
@@ -31,8 +31,9 @@ class AssociateDeviceToSiteJob implements ShouldQueue
     public function handle(): void
     {
         $device_type = $this->get_device_type($this->device->device_function);
+        $this->populate_classic_site_id();
         $device_site_association_body = [
-            'site_id' => $this->site->classic_id,
+            'site_id' => $this->device->site->classic_id,
             'device_type' => $device_type,
             'device_id' => $this->device->serial,
         ];
@@ -55,6 +56,27 @@ class AssociateDeviceToSiteJob implements ShouldQueue
                 return 'IAP';
             default: return 'CONTROLLER';
         }
+    }
+
+    public function populate_classic_site_id()
+    {
+        if ($this->device->site->classic_id) {
+            return;
+        }
+        $sites = $this->centralAPIHelper->classic_get_sites();
+        if (! $sites->ok()) {
+            Log::error($sites->json('message'));
+            $this->fail();
+        }
+
+        $site_list = $sites->json('sites');
+        $classic_site = array_find($site_list, fn ($site) => $site['site_name'] == $this->device->site->name);
+        if (! $classic_site) {
+            $error_message = 'Site '.$this->device->site->name.' not found in classic';
+            Log::error($error_message);
+            $this->fail($error_message);
+        }
+        $this->device->site->update(['classic_id' => $classic_site['site_id']]);
     }
 
     public function retryUntil(): DateTime
