@@ -4,6 +4,7 @@ use App\Helper\CSVHelper;
 use App\Http\Controllers\DeviceController;
 use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\DeviceInterface;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
 
@@ -593,4 +594,31 @@ test('port profiles are saved correctly when the port_profile column is present 
         'interface' => '1/1/1',
         'sw_profile' => 'portProfile1',
     ]);
+});
+
+test("it saves portchannel interfaces from a csv", function () {
+    $csv_raw = CSVHelper::processCSVFile('tests/Unit/testcsvs/portchannels.csv');
+    $processed_data = CSVHelper::createDeviceArrays($csv_raw);
+    $device_info = $processed_data[0];
+    $deployment = Deployment::factory()->create();
+    Device::factory()->for($deployment)->create([
+        'name' => $device_info['name'],
+        'serial' => $device_info['serial'],
+        'device_function' => $device_info['device_function'],
+    ]);
+    $actual = DeviceController::getInterfaces($processed_data);
+    $savedInterfaces = DeviceController::saveInterfaces($actual);
+    $this->assertEquals(1, $savedInterfaces);
+    $this->assertDatabaseCount('device_interfaces', 1);
+    $this->assertDatabaseHas('device_interfaces', [
+        'interface' => '5',
+    ]);
+    $this->assertDatabaseHas('lacp_profiles', [
+        'port_list' => '1/1/14-1/1/15'
+    ]);
+    $interface = DeviceInterface::first();
+    $this->assertEquals($interface->lacp_profile->port_list, ['1/1/14','1/1/15']);
+    $this->assertEquals($interface->switch_port->interface_mode, 'TRUNK');
+    $this->assertEquals($interface->switch_port->native_vlan, 10);
+    $this->assertEquals($interface->switch_port->trunk_vlan_all, true);
 });

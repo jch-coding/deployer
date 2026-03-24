@@ -1,0 +1,2 @@
+name,serial,device_function,interface,port_profile,interface_mode,access_vlan,native_vlan,trunk_vlan_all,admin_edge_port,port_list
+CO-IDF1-SW1,SN0000000001,ACCESS_SWITCH,5,,TRUNK,,10,true,true,1/1/14-1/1/15

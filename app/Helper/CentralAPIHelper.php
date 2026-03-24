@@ -141,7 +141,7 @@ class CentralAPIHelper
                 ->withQueryParameters([
                     'object-type' => 'LOCAL',
                     'scope-id' => $device->scope_id,
-                    'device_function' => $device->device_function,
+                    'device-function' => $device->device_function,
                 ])->withBody(json_encode([
                     'hostname' => $device->name,
                 ]))->patch($this->client->base_url.$this->system['system_info']);
@@ -190,11 +190,12 @@ class CentralAPIHelper
 
         if ($deviceInterface->lacp_profile !== null) {
             $lacp_profile = [
-                'port-list' => $deviceInterface->lacp_profile->port_list,
                 'mode' => $deviceInterface->lacp_profile->mode,
                 'rate' => $deviceInterface->lacp_profile->rate,
             ];
             $switch_port_configuration['trunk-type'] = $deviceInterface->lacp_profile->trunk_type;
+            $switch_port_configuration['port-list'] = $deviceInterface->lacp_profile->port_list;
+            $switch_port_configuration['enable'] = $deviceInterface->enable;
         }
         if ($deviceInterface->sw_profile !== null) {
             $switch_port_configuration['sw-profile'] = $deviceInterface->sw_profile;
@@ -218,6 +219,8 @@ class CentralAPIHelper
                     array_values($deviceInterface->switch_port->toArray())
                 )
             );
+            if ($switch_port['trunk-vlan-ranges'] === null) {
+            }
         }
         if ($deviceInterface->stp_profile !== null) {
             $stp_profile = ArrayHelper::take_only_keys(
@@ -255,7 +258,7 @@ class CentralAPIHelper
                     'view-type' => 'LOCAL',
                     'object-type' => 'LOCAL',
                     'scope-id' => $deviceInterface->device->scope_id,
-                    'device_function' => $deviceInterface->device->device_function,
+                    'device-function' => $deviceInterface->device->device_function,
                 ])->withBody(json_encode($interface_rest_body))
                 ->patch($this->client->base_url.$this->interfaces['interface_ethernet'].$deviceInterface->interface);
 
@@ -273,7 +276,7 @@ class CentralAPIHelper
                     'view-type' => 'LOCAL',
                     'object-type' => 'LOCAL',
                     'scope-id' => $device->scope_id,
-                    'device_function' => $device->device_function,
+                    'device-function' => $device->device_function,
                 ])->get($this->client->base_url.$this->interfaces['interface_ethernet'].$deviceInterface->interface);
 
             return $response;
@@ -292,7 +295,7 @@ class CentralAPIHelper
                     'view-type' => 'LOCAL',
                     'object-type' => 'LOCAL',
                     'scope-id' => $deviceInterface->device->scope_id,
-                    'device_function' => $deviceInterface->device->device_function,
+                    'device-function' => $deviceInterface->device->device_function,
                 ])->post($this->client->base_url.$this->interfaces['interface_portchannel'].$deviceInterface->interface, $switch_port);
 
             return $response;

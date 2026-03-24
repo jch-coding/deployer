@@ -50,6 +50,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/tasks/update_system_info/{task}', 'showSystemInfo')->name('tasks.show-system-info');
         Route::get('/tasks/ethernet_interface/{task}', 'showEthernetInterface')->name('tasks.show-ethernet-interface');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
+        Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');
         Route::post('/tasks/test', 'test')->name('tasks.test');
         Route::patch('/tasks/{task}', 'cancel')->name('tasks.cancel');
     });

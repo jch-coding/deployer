@@ -34,7 +34,7 @@ class SwitchPort extends Model
     protected function trunkVlanRanges() : Attribute
     {
         return Attribute::make(
-            get: fn($value) => explode('&',$value),
+            get: function ($value) { $ranges = explode('&',$value); count($ranges) > 1 ? $ranges : null; },
         );
     }
 }

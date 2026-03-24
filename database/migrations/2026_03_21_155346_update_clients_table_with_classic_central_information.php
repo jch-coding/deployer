@@ -15,11 +15,11 @@ return new class extends Migration
         Schema::table('clients', function (Blueprint $table) {
             $table->enum('classic_base_url', ClassicBaseUrl::cases())->default(ClassicBaseUrl::US1);
             $table->string('classic_username')->nullable();
-            $table->string('classic_password')->default('CDWcdw123!');
-            $table->string('classic_client_id')->nullable();
-            $table->string('classic_client_secret')->default('CDWcdw123!');
-            $table->string('classic_access_token')->default('CDWcdw123!');
-            $table->string('classic_refresh_token')->nullable();
+            $table->text('classic_password')->nullable();
+            $table->text('classic_client_id')->nullable();
+            $table->text('classic_client_secret')->nullable();
+            $table->text('classic_access_token')->nullable();
+            $table->text('classic_refresh_token')->nullable();
             $table->integer('classic_expires_in')->nullable();
         });
     }

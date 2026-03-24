@@ -153,15 +153,15 @@ class DeviceController extends Controller
         foreach ($interface_pairs as $pair) {
             if (count($pair) == 2) {
                 $interface_parts = explode('/', $pair[0]);
-                $prefix = $interface_parts[0] . '/' . $interface_parts[1] . '/';
-                $start = (int)$interface_parts[2];
-                $end = (int)explode('/', $pair[1])[2];
-                $expanded_ranges = array_merge($expanded_ranges, array_map(fn($i) => $prefix . $i, range($start, $end)));
-            }
-            else {
+                $prefix = $interface_parts[0].'/'.$interface_parts[1].'/';
+                $start = (int) $interface_parts[2];
+                $end = (int) explode('/', $pair[1])[2];
+                $expanded_ranges = array_merge($expanded_ranges, array_map(fn ($i) => $prefix.$i, range($start, $end)));
+            } else {
                 $expanded_ranges[] = $pair[0];
             }
         }
+
         return $expanded_ranges;
     }
 
@@ -169,6 +169,7 @@ class DeviceController extends Controller
     {
         $interface_range = static::expandInterfaceRange($interface_config['interface']);
         $interface_range_configs = array_map(fn ($range) => array_merge($interface_config, ['interface' => $range]), $interface_range);
+
         return $interface_range_configs;
     }
 
@@ -188,8 +189,8 @@ class DeviceController extends Controller
                     $current_switchport = [
                         'interface_mode' => $device['interface_mode'],
                         'access_vlan' => null,
-                        'native_vlan' => $device['native_vlan'] ?? 1,
-                        'trunk_vlan_all' => $device['trunk_vlan_all'] ?? false,
+                        'native_vlan' => (int) $device['native_vlan'] ?? 1,
+                        'trunk_vlan_all' => (bool) $device['trunk_vlan_all'] ?? false,
                         'trunk_vlan_ranges' => $device['trunk_vlan_ranges'] ?? null,
                     ];
                 } else {
@@ -226,7 +227,7 @@ class DeviceController extends Controller
         $unique_lacp = [];
         $lacp_keys = ['lacp_mode', 'trunk_type', 'port_list', 'lacp_rate'];
         foreach ($normalized_devices as $device) {
-            if (array_any($device, fn ($v, $k) => in_array($k, $lacp_keys)) && $device['interface'] !== null) {
+            if (array_any($device, fn ($v, $k) => in_array($k, $lacp_keys)) && $device['interface'] !== null && $device['port_list'] !== null) {
                 $current_lacp = [
                     'mode' => $device['lacp_mode'] ?? 'ACTIVE',
                     'trunk_type' => $device['trunk_type'] ?? 'LACP',
@@ -245,9 +246,8 @@ class DeviceController extends Controller
         );
 
         $devices_grouped_config_with_interface_ranges = array_filter($devices_grouped_config_all, fn ($device_group) => count($device_group) > 0);
-        $devices_grouped_config = array_map(fn($device_group) =>
-                                    array_reduce(
-                                       array_map(fn($device) => static::expandInterfaceRangeConfig($device), $device_group), fn($carry, $item) => array_merge($carry, $item), []),
+        $devices_grouped_config = array_map(fn ($device_group) => array_reduce(
+            array_map(fn ($device) => static::expandInterfaceRangeConfig($device), $device_group), fn ($carry, $item) => array_merge($carry, $item), []),
             $devices_grouped_config_with_interface_ranges);
 
         $total_interfaces = 0;
@@ -293,28 +293,28 @@ class DeviceController extends Controller
         foreach ($interfaces['devices_grouped_config'] as $device_interfaces) {
             foreach ($device_interfaces as $device_interface) {
                 if ($has_switchport) {
-                    $switchport = SwitchPort::where('interface_mode', $device_interface['interface_mode'])
-                        ->where('access_vlan', $device_interface['access_vlan'])
-                        ->where('native_vlan', $device_interface['native_vlan'])
-                        ->where('trunk_vlan_all',(bool) $device_interface['trunk_vlan_all'])
-                        ->where('trunk_vlan_ranges', $device_interface['trunk_vlan_ranges'])
+                    $switchport = SwitchPort::where('interface_mode', $device_interface['interface_mode'] ?? 'ACCESS')
+                        ->where('access_vlan', $device_interface['access_vlan'] ?? null)
+                        ->where('native_vlan', (int) $device_interface['native_vlan'] ?? null)
+                        ->where('trunk_vlan_all', (bool) $device_interface['trunk_vlan_all'] ?? false)
+                        ->where('trunk_vlan_ranges', $device_interface['trunk_vlan_ranges'] ?? null)
                         ->first();
                 }
 
                 if ($has_stp) {
                     $null_to_false = fn ($v) => $v === null ? false : $v;
-                    $stp_profile = StpProfile::where('admin_edge_port', $null_to_false($device_interface['admin_edge_port']))
-                        ->where('admin_edge_port_trunk', $null_to_false($device_interface['admin_edge_port_trunk']))
-                        ->where('bpdu_guard', $null_to_false($device_interface['bpdu_guard']))
-                        ->where('loop_guard', $null_to_false($device_interface['loop_guard']))
+                    $stp_profile = StpProfile::where('admin_edge_port', $null_to_false($device_interface['admin_edge_port'] ?? null))
+                        ->where('admin_edge_port_trunk', $null_to_false($device_interface['admin_edge_port_trunk'] ?? null))
+                        ->where('bpdu_guard', $null_to_false($device_interface['bpdu_guard'] ?? null))
+                        ->where('loop_guard', $null_to_false($device_interface['loop_guard'] ?? null))
                         ->first();
                 }
 
                 if ($has_lacp) {
-                    $lacp_profile = LacpProfile::where('mode', $device_interface['lacp_mode'])
-                        ->where('trunk_type', $device_interface['trunk_type'])
+                    $lacp_profile = LacpProfile::where('mode', $device_interface['lacp_mode'] ?? 'ACTIVE')
+                        ->where('trunk_type', $device_interface['trunk_type'] ?? 'LACP')
                         ->where('port_list', $device_interface['port_list'])
-                        ->where('rate', $device_interface['lacp_rate'])
+                        ->where('rate', $device_interface['lacp_rate'] ?? 'SLOW')
                         ->first();
                 }
 
@@ -328,7 +328,7 @@ class DeviceController extends Controller
                     'lacp_profile_id' => $lacp_profile->id ?? null,
                 ];
 
-                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile','switch_port_id','stp_profile_id', 'lacp_profile_id']);
+                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id']);
                 $saved_interfaces++;
             }
         }
@@ -352,17 +352,17 @@ class DeviceController extends Controller
                 }
             } else {
                 if ((bool) $unique_switchport['trunk_vlan_all'] === true) {
-                    if (SwitchPort::where('native_vlan', (int) $unique_switchport['native_vlan'])->doesntExist()) {
+                    if (SwitchPort::where('native_vlan', (int) $unique_switchport['native_vlan'])
+                        ->where('trunk_vlan_all', true)->doesntExist()) {
                         SwitchPort::create([
                             ...$unique_switchport,
                             'access_vlan' => null,
                         ]);
                     }
-                }
-                else {
-                    if(SwitchPort::where('native_vlan', $unique_switchport['native_vlan'])
-                    ->where('trunk_vlan_ranges', $unique_switchport['trunk_vlan_ranges'])
-                    ->doesntExist()) {
+                } else {
+                    if (SwitchPort::where('native_vlan', $unique_switchport['native_vlan'])
+                        ->where('trunk_vlan_ranges', $unique_switchport['trunk_vlan_ranges'])
+                        ->doesntExist()) {
                         SwitchPort::create($unique_switchport);
                     }
                 }
@@ -405,8 +405,9 @@ class DeviceController extends Controller
         $sites = array_unique(array_column($devices_with_sites, 'site'));
         $sites_with_devices = array_map(fn ($site) => [
             'name' => $site,
-            'devices' => array_map(fn($device) => $device['serial'], array_filter($devices_with_sites, fn ($device) => $device['site'] === $site)),
+            'devices' => array_map(fn ($device) => $device['serial'], array_filter($devices_with_sites, fn ($device) => $device['site'] === $site)),
         ], $sites);
+
         return $sites_with_devices;
     }
 
@@ -416,8 +417,9 @@ class DeviceController extends Controller
         foreach ($sites_with_devices as $site_with_devices) {
             $site = Site::firstOrCreate(['name' => $site_with_devices['name']]);
             $saved_sites[] = $site;
-            array_map(fn($device) => Device::where('serial', $device)->get()->first()->update(['site_id' => $site->id]), $site_with_devices['devices']);
+            array_map(fn ($device) => Device::where('serial', $device)->get()->first()->update(['site_id' => $site->id]), $site_with_devices['devices']);
         }
+
         return $saved_sites;
     }
 
@@ -471,6 +473,7 @@ class DeviceController extends Controller
     public function destroy(Device $device)
     {
         $device->delete();
+
         return back()->with('success', 'Device deleted successfully');
     }
 }
