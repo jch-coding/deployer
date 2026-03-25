@@ -1,7 +1,5 @@
 import { usePage, usePoll } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import { useEffect, useState } from 'react';
-import { useEcho } from '@laravel/echo-react';
 import { cn } from '@/lib/utils';
 import {
     ChevronRightCircleIcon,
@@ -10,7 +8,7 @@ import type { BreadcrumbItem } from '@/types';
 import { dashboard } from '@/routes';
 import { index as clientIndex } from '@/routes/clients';
 import  { index as deploymentIndex } from '@/routes/deployments';
-import { showEthernetInterface } from '@/routes/tasks';
+import { showVlanInterface } from '@/routes/tasks';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 
@@ -18,12 +16,9 @@ export default function Show() {
     const task = usePage().props.task
     const devices = usePage().props.devices
     const interfaces = usePage().props.interfaces
-    const deployment = usePage().props.deployment
     const completedDeviceInterfaces = interfaces.filter(
         (device_interface) => device_interface.pivot.status === 'COMPLETED',
     );
-    const [statusMessages, setStatusMessages] = useState([])
-    const [logs, setLogs] = useState([])
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -40,19 +35,11 @@ export default function Show() {
         },
         {
             title: 'Task',
-            href: showEthernetInterface(task.id).url,
+            href: showVlanInterface(task.id).url,
         },
     ];
 
-    useEcho(
-        `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
-        ['DeploymentEvent', 'FailureEvent'],
-        (event) => {
-            setStatusMessages((prevStatusMessages) => [...prevStatusMessages, event.data.message])
-        }
-    )
-
-    usePoll(4000)
+    usePoll(2000)
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -89,7 +76,7 @@ export default function Show() {
                                     <div key={device_interface.id} className={cn("flex items-center justify-between mb-2", device_interface.pivot.status === 'COMPLETED' && 'text-green-500')}>
                                         <span>{deviceForInterface.name}</span>
                                         <span className="text-sm">{device_interface.interface}</span>
-                                        <span className="text-sm">{device_interface.sw_profile}</span>
+                                        <span className="text-sm">{device_interface.ip_address}</span>
                                         <span className="text-sm">{device_interface.pivot.status}</span>
                                     </div>
                                 )

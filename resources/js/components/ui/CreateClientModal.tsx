@@ -75,6 +75,24 @@ export default function CreateClientModal( {  errors, base_urls }: { errors: Rec
                             </select>
                         </Field>
                     </FieldGroup>
+                    <FieldGroup>
+                        <Field>
+                            <label htmlFor="classic_client_id" className="font-bold">Classic Client ID</label>
+                            <input name="classic_client_id" id="classic_client_id" type="text" placeholder="optional" className="input input-bordered w-full" />
+                        </Field>
+                        <Field>
+                            <label htmlFor="classic_client_secret" className="font-bold">Classic Client Secret</label>
+                            <input name="classic_client_secret" id="classic_client_secret" type="text" placeholder="optional" className="input input-bordered w-full" />
+                        </Field>
+                        <Field>
+                            <label htmlFor="classic_username" className="font-bold">Classic Username</label>
+                            <input name="classic_username" id="classic_username" type="text" placeholder="optional" className="input input-bordered w-full" />
+                        </Field>
+                        <Field>
+                            <label htmlFor="classic_password" className="font-bold">Classic Password</label>
+                            <input name="classic_password" id="classic_password" type="password" placeholder="optional" className="input input-bordered w-full" />
+                        </Field>
+                    </FieldGroup>
                     <DialogFooter>
                         <DialogClose asChild>
                             <Button ref={dialogCloseRef} variant="secondary">Cancel</Button>

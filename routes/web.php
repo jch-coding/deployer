@@ -40,6 +40,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
+        Route::delete('/devices/{device}', 'destroy')->name('devices.destroy');
     });
 
     Route::controller(DispatchController::class)->group(function () {
@@ -49,6 +50,11 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(TaskController::class)->group(function () {
         Route::get('/tasks/update_system_info/{task}', 'showSystemInfo')->name('tasks.show-system-info');
         Route::get('/tasks/ethernet_interface/{task}', 'showEthernetInterface')->name('tasks.show-ethernet-interface');
+        Route::get('/tasks/lag_interface/{task}', 'showLagInterface')->name('tasks.show-lag-interface');
+        Route::get('/tasks/vlan_interface/{task}', 'showVlanInterface')->name('tasks.show-vlan-interface');
+        Route::get('/tasks/assign_device_function/{task}', 'showAssignDeviceFunction')->name('tasks.show-assign-device-function');
+        Route::get('/tasks/preprovision_device_to_group/{task}', 'showPreprovisionDeviceToGroup')->name('tasks.show-preprovision-device-to-group');
+        Route::get('/tasks/associate_site_and_name/{task}', 'showAssociateSiteAndName')->name('tasks.show-associate-site-and-name');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');
         Route::post('/tasks/test', 'test')->name('tasks.test');

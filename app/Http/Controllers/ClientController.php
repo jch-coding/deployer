@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\BaseURL;
+use App\ClassicBaseUrl;
 use App\Http\Controllers\CentralController;
 use App\Http\Resources\ClientResource;
 use App\Models\Client;
@@ -48,7 +49,7 @@ class ClientController extends Controller
             return back();
         }
 
-        array_merge($data, ['bearer_token' => $access_token]);
+        $data = array_merge($data, ['bearer_token' => $access_token]);
         Inertia::flash('success', 'Successfully got access token from central. Client created successfully.');
         return to_route('clients.index');
     }
@@ -74,12 +75,38 @@ class ClientController extends Controller
 
         else {
             $client_data = array_merge($data, ['bearer_token' => $access_token]);
+
+            if($request->has('classic_client_id')) {
+                $classic_central_data = $request->validate([
+                    'classic_client_id' => 'required|string|min:12|max:255',
+                    'classic_client_secret' => 'required|string|min:12|max:255',
+                    'classic_username' => 'required|string|min:8|max:255',
+                    'classic_password' => 'required|string|min:8|max:255',
+                ]);
+                $classic_base_url = $this->mapClassicBaseUrl($client_data['base_url']);
+                $client_data = array_merge($client_data, $classic_central_data, ['classic_base_url' => $classic_base_url]);
+            }
             $request->user()->clients()->create($client_data);
             if($request->user()->clients()->count() == 1) {
                 $request->user()->clients()->first()->update(['current' => true]);
             }
             Inertia::flash('success', 'Client created successfully.');
             return back();
+        }
+    }
+
+    public function mapClassicBaseUrl(BaseURL $base_url) {
+        switch($base_url) {
+            case BaseURL::US1:
+                return ClassicBaseUrl::US1;
+            case BaseURL::US2:
+                return ClassicBaseUrl::US2;
+            case BaseURL::US4:
+                return ClassicBaseUrl::US_WEST4;
+            case BaseURL::US5:
+                return ClassicBaseUrl::US_WEST5;
+            case BaseURL::CA1:
+                return ClassicBaseUrl::CANADA1;
         }
     }
 

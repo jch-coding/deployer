@@ -35,10 +35,12 @@ class AssignDeviceFunctionJob implements ShouldQueue
             Log::error($response->json('message'));
             $this->fail();
         }
-        array_map(fn ($device) => $this->task->devices()->find($device['id'])->pivot->update(['status' => 'COMPLETED']), $this->devices);
-        $status_log = $this->task->status_log;
-        array_reduce($this->devices, fn ($carry, $device) => $carry."\nDevice ".$device['name'].' assigned to '.$device['device_function'], $status_log);
-        $this->task->update(['status_log' => $status_log]);
+        else {
+            array_map(fn($device) => $this->task->devices()->find($device['id'])->pivot->update(['status' => 'COMPLETED']), $this->devices);
+            $status_log = $this->task->status_log;
+            array_reduce($this->devices, fn($carry, $device) => $carry . "\nDevice " . $device['name'] . ' assigned to ' . $device['device_function'], $status_log);
+            $this->task->update(['status_log' => $status_log]);
+        }
     }
 
     public function retryUntil(): DateTime

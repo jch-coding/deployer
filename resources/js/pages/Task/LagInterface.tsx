@@ -10,7 +10,7 @@ import type { BreadcrumbItem } from '@/types';
 import { dashboard } from '@/routes';
 import { index as clientIndex } from '@/routes/clients';
 import  { index as deploymentIndex } from '@/routes/deployments';
-import { showEthernetInterface } from '@/routes/tasks';
+import { showLagInterface } from '@/routes/tasks';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 
@@ -40,7 +40,7 @@ export default function Show() {
         },
         {
             title: 'Task',
-            href: showEthernetInterface(task.id).url,
+            href: showLagInterface(task.id).url,
         },
     ];
 
@@ -89,7 +89,8 @@ export default function Show() {
                                     <div key={device_interface.id} className={cn("flex items-center justify-between mb-2", device_interface.pivot.status === 'COMPLETED' && 'text-green-500')}>
                                         <span>{deviceForInterface.name}</span>
                                         <span className="text-sm">{device_interface.interface}</span>
-                                        <span className="text-sm">{device_interface.sw_profile}</span>
+                                        <span className="text-sm">{device_interface.interface_mode}</span>
+                                        <span className="text-sm">{device_interface.lacp_profile?.port_list}</span>
                                         <span className="text-sm">{device_interface.pivot.status}</span>
                                     </div>
                                 )

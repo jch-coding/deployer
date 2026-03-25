@@ -7,6 +7,7 @@ use App\Events\DeviceGetScopeIdEvent;
 use App\Events\DeviceSystemInfoUpdateEvent;
 use App\Events\TestEvent;
 use App\Helper\CentralAPIHelper;
+use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssociateDeviceToSiteJob;
 use App\Jobs\AssociateSiteAndNameJob;
 use App\Jobs\ConfigureEthernetInterface;
@@ -24,14 +25,21 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use Throwable;
 
 class TaskController extends Controller
 {
     public $task_to_action = [
         'UPDATE_SYSTEM_INFO' => 'show-system-info',
         'CONFIGURE_ETHERNET_INTERFACE' => 'show-ethernet-interface',
+        'CONFIGURE_VLAN_INTERFACE' => 'show-ethernet-interface',
+        'CONFIGURE_LAG_INTERFACE' => 'show-ethernet-interface',
+        'PREPROVISION_DEVICE_TO_GROUP' => 'show-preprovision-device-to-group',
+        'ASSIGN_DEVICE_FUNCTION' => 'show-assign-device-function',
+        'ASSOCIATE_SITE_AND_NAME' => 'show-associate-site-and-name',
     ];
 
     public function config_system_info(Device $device)
@@ -90,6 +98,53 @@ class TaskController extends Controller
             'devices' => $task->devices->load('interfaces'),
             'deployment' => $task->deployment,
             'interfaces' => $task->deviceInterfaces()->withPivot('status')->get(),
+        ]);
+    }
+
+    public function showLagInterface(Task $task)
+    {
+        return Inertia::render('Task/LagInterface', [
+            'task' => $task,
+            'devices' => $task->devices->load('interfaces'),
+            'deployment' => $task->deployment,
+            'interfaces' => $task->deviceInterfaces()->withPivot('status')->get(),
+        ]);
+    }
+
+    public function showVlanInterface(Task $task)
+    {
+        return Inertia::render('Task/VlanInterface', [
+            'task' => $task,
+            'devices' => $task->devices->load('interfaces'),
+            'deployment' => $task->deployment,
+            'interfaces' => $task->deviceInterfaces()->withPivot('status')->get(),
+        ]);
+    }
+
+    public function showAssignDeviceFunction(Task $task)
+    {
+        return Inertia::render('Task/AssignDeviceFunction', [
+            'task' => $task,
+            'devices' => $task->devices,
+            'deployment' => $task->deployment,
+        ]);
+    }
+
+    public function showPreprovisionDeviceToGroup(Task $task)
+    {
+        return Inertia::render('Task/PreprovisionDeviceToGroup', [
+            'task' => $task,
+            'devices' => $task->devices,
+            'deployment' => $task->deployment,
+        ]);
+    }
+
+    public function showAssociateSiteAndName(Task $task)
+    {
+        return Inertia::render('Task/AssociateSiteAndName', [
+            'task' => $task,
+            'devices' => $task->devices,
+            'deployment' => $task->deployment,
         ]);
     }
 
@@ -187,7 +242,7 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $devices_by_device_function = $in_progress->groupBy('device_function');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_device_function);
-                $devices_by_device_function_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, AssociateDeviceToSiteJob::class);
+                $devices_by_device_function_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, AssignDeviceFunctionJob::class);
                 $jobs = array_merge($jobs, $devices_by_device_function_jobs);
                 break;
             case 'ASSIGN_DEVICE_TO_SITE':
@@ -213,7 +268,7 @@ class TaskController extends Controller
                     )
                     )->toArray();
                 }
-                $task = $this->attach_interfaces($task, $devices_with_port_profiles->map(fn ($device) => $device->interfaces)->collapse());
+                $task = $this->attach_interfaces($task, $devices_with_port_profiles->map(fn ($device) => $device->interfaces->filter(fn ($interface) => str_contains($interface->interface, '/')))->collapse());
                 $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper))->toArray();
                 break;
@@ -227,7 +282,7 @@ class TaskController extends Controller
                 $lag_interfaces = $task->devices->map(fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->lacp_profile !== null))->collapse();
                 $task = $this->attach_interfaces($task, $lag_interfaces);
                 $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
-                $jobs[] = $lag_interfaces->map(fn ($lag_interface) => new ConfigureLagInterfaceJob($in_progress, $task, $centralAPIHelper))->toArray();
+                $jobs[] = $in_progress->map(fn ($lag_interface) => new ConfigureLagInterfaceJob($lag_interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'ASSOCIATE_SITE_AND_NAME':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
@@ -244,7 +299,9 @@ class TaskController extends Controller
                 break;
         }
 
-        return Bus::chain(array_map(fn ($j) => Bus::batch($j), $jobs))->dispatch();
+        return Bus::chain(array_map(fn ($j) => Bus::batch($j)->catch(function (Batch $batch , Throwable $e) {
+            Log::error('Batch failed with error: '.$e->getMessage());
+        }), $jobs))->dispatch();
     }
 
     public static function get_unique_sw_profiles(Collection $devices)

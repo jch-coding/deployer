@@ -29,7 +29,7 @@ class PreprovisionDevicesToGroupJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $device_serials = array_map(fn($device) => $device['serial_number'], $this->devices);
+        $device_serials = array_map(fn($device) => $device['serial'], $this->devices);
         $this->preprovisionDevices($device_serials);
     }
 
@@ -39,14 +39,14 @@ class PreprovisionDevicesToGroupJob implements ShouldQueue
         $status_log = $this->task->status_log;
         if (! $response->status() !== 201) {
             Log::error('Failed to preprovision devices to group');
-            array_reduce($this->devices, function ($carry, $item) {
+            array_reduce($devices, function ($carry, $item) {
                 $carry .= "\nFailed Device ".$item.' preprovisioned to group '.$this->group_name;
 
                 return $carry;
             }, $status_log);
             $this->task->update(['status_log' => $status_log]);
         } else {
-            array_reduce($this->devices, function ($carry, $item) {
+            array_reduce($devices, function ($carry, $item) {
                 $carry .= "\nDevice ".$item.' preprovisioned to group '.$this->group_name;
 
                 return $carry;

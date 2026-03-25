@@ -20,6 +20,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('scope_id')->nullable();
             $table->string('serial')->unique();
+            $table->string('group')->nullable();
             $table->enum('device_function', DeviceFunction::cases());
             $table->foreignIdFor(Client::class)->constrained()->cascadeOnDelete();
             $table->foreignIdFor(Site::class)->nullable();

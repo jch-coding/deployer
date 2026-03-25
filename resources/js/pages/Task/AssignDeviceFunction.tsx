@@ -10,21 +10,16 @@ import type { BreadcrumbItem } from '@/types';
 import { dashboard } from '@/routes';
 import { index as clientIndex } from '@/routes/clients';
 import  { index as deploymentIndex } from '@/routes/deployments';
-import { showEthernetInterface } from '@/routes/tasks';
-import { toast } from 'sonner';
+import { showAssignDeviceFunction } from '@/routes/tasks';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 
 export default function Show() {
     const task = usePage().props.task
     const devices = usePage().props.devices
-    const interfaces = usePage().props.interfaces
     const deployment = usePage().props.deployment
-    const completedDeviceInterfaces = interfaces.filter(
-        (device_interface) => device_interface.pivot.status === 'COMPLETED',
+    const completedDevices= devices.filter(
+        (device) => device.pivot.status === 'COMPLETED',
     );
-    const [statusMessages, setStatusMessages] = useState([])
-    const [logs, setLogs] = useState([])
-
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: 'Dashboard',
@@ -40,30 +35,29 @@ export default function Show() {
         },
         {
             title: 'Task',
-            href: showEthernetInterface(task.id).url,
+            href: showAssignDeviceFunction(task.id).url,
         },
     ];
 
-    useEcho(
-        `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
-        ['DeploymentEvent', 'FailureEvent'],
-        (event) => {
-            setStatusMessages((prevStatusMessages) => [...prevStatusMessages, event.data.message])
-        }
-    )
+    // useEcho(
+    //     `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
+    //     'DeploymentEvent',
+    //     (event) => {
+    //     }
+    // )
 
-    usePoll(4000)
+    usePoll(2000)
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="flex gap-4 min-w-7xl my-6 mx-auto">
                 <div className="max-w-[400px]">
-                    <Card className="h-[75vh] overflow-y-auto">
+                    <Card className="h-1/2 overflow-y-auto">
                         <CardHeader className="font-bold text-center text-2xl">Progress</CardHeader>
                         <CardDescription className="flex justify-center items-center">
-                            <span className="text-3xl font-bold p-1">{completedDeviceInterfaces.length}</span>
+                            <span className="text-3xl font-bold p-1">{completedDevices.length}</span>
                             <ChevronRightCircleIcon/>
-                            <span className="text-3xl font-bold p-1">{interfaces.length}</span>
+                            <span className="text-3xl font-bold p-1">{devices.length}</span>
                         </CardDescription>
                         <CardContent>
                             {task.status_log.split('\\n').map((message, index) => (
@@ -76,24 +70,17 @@ export default function Show() {
                     </Card>
                 </div>
                 <div className="flex-1" >
-                    <Card className="h-[75vh] overflow-y-auto">
+                    <Card>
                         <CardHeader className="font-bold text-center text-2xl">Devices Provisioned</CardHeader>
                         <CardContent>
-                            {interfaces.map((device_interface) => {
-                                const deviceForInterface = devices.find(
-                                    (device) =>
-                                        device.id ===
-                                        device_interface.device_id,
-                                );
-                                return (
-                                    <div key={device_interface.id} className={cn("flex items-center justify-between mb-2", device_interface.pivot.status === 'COMPLETED' && 'text-green-500')}>
-                                        <span>{deviceForInterface.name}</span>
-                                        <span className="text-sm">{device_interface.interface}</span>
-                                        <span className="text-sm">{device_interface.sw_profile}</span>
-                                        <span className="text-sm">{device_interface.pivot.status}</span>
-                                    </div>
-                                )
-                            })}
+                            {devices.map((device) => (
+                                <div key={device.id} className={cn("flex items-center justify-between mb-2", device.pivot.status === 'COMPLETED' && 'text-green-500')}>
+                                    <span>{device.name}</span>
+                                    <span className="text-sm text-gray-500">{device.serial}</span>
+                                    <span className="text-sm text-gray-500">{device.device_function}</span>
+                                    <span className="text-sm text-gray-500">{device.pivot.status}</span>
+                                </div>
+                            ))}
                         </CardContent>
                     </Card>
                 </div>

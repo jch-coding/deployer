@@ -18,16 +18,16 @@ class ConfigureEthernetInterface implements ShouldQueue
 {
     use Batchable, Queueable;
 
-    public $tries = 20;
-
     public int $deployment_time;
+    public int $wait_time;
 
     /**
      * Create a new job instance.
      */
     public function __construct(public DeviceInterface $deviceInterface, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 10;
+        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
+        $this->wait_time = $task->wait_time ?? 3;
     }
 
     /**
@@ -52,25 +52,19 @@ class ConfigureEthernetInterface implements ShouldQueue
             Log::error('Failed to patch ethernet interface: '.$this->deviceInterface->interface.' on device '.$device->name.' with message:'.$interface_response->json()['message']);
             $this->release(random_int(15, 30));
         }
-        $newStatusLog = $statusLog . "\nInterface ".$this->deviceInterface->interface." configured";
-        if ($this->deviceInterface->sw_profile) {
-            $newStatusLog .= ' with '.$this->deviceInterface->sw_profile.' profile';
+        else {
+            $newStatusLog = $statusLog . "\nInterface " . $this->deviceInterface->interface . " configured";
+            if ($this->deviceInterface->sw_profile) {
+                $newStatusLog .= ' with ' . $this->deviceInterface->sw_profile . ' profile';
+            }
+            $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
+            $deviceInterfaces = $this->task->deviceInterfaces->filter(fn($deviceInterface) => $deviceInterface->device_id === $device->id);
+            $completedDeviceInterfaces = $deviceInterfaces->filter(fn($deviceInterface) => $deviceInterface->pivot->status === 'COMPLETED');
+            if ($completedDeviceInterfaces->count() === $deviceInterfaces->count()) {
+                $this->task->devices()->find($device)->pivot->update(['status' => 'COMPLETED']);
+            }
+            $this->task->update(['status_log' => $newStatusLog]);
         }
-        $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
-        $deviceInterfaces = $this->task->deviceInterfaces->filter(fn ($deviceInterface) => $deviceInterface->device_id === $device->id);
-        $completedDeviceInterfaces = $deviceInterfaces->filter(fn ($deviceInterface) => $deviceInterface->pivot->status === 'COMPLETED');
-        if ($completedDeviceInterfaces->count() === $deviceInterfaces->count()) {
-            $this->task->devices()->find($device)->pivot->update(['status' => 'COMPLETED']);
-        }
-        $this->task->update(['status_log' => $newStatusLog]);
-        DeploymentEvent::dispatch([
-            'deployment_name' => $this->task->deployment->name,
-            'item_name' => $this->deviceInterface->name,
-            'task_type' => $this->task->task_type,
-            'message' => $newStatusLog,
-            'event_type' => 'deployment_event',
-            'item_type' => 'interface'
-        ]);
     }
 
     public function retryUntil(): DateTime

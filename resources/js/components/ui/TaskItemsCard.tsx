@@ -68,9 +68,6 @@ export default function TaskItemsCard({ task, devices, deployment } : { task: st
         <Card className="min-w-sm">
             <CardHeader>
                 <CardTitle>{task}</CardTitle>
-                <CardDescription>
-                    {taskDevices.length > 0 && taskDevices.length < devices.length ? `${taskDevices.length} devices selected` : 'All Devices Selected'}
-                </CardDescription>
             </CardHeader>
             <CardContent className="flex gap-2">
                 <Dialog>

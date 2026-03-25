@@ -61,6 +61,24 @@ export default function CreateClientModal( { client, errors, base_urls }: { clie
                             </select>
                         </Field>
                     </FieldGroup>
+                    <FieldGroup>
+                        <Field>
+                            <label htmlFor="classic_client_id" className="font-bold">Classic Client ID</label>
+                            <input name="classic_client_id" id="classic_client_id" type="text" placeholder={client.classic_client_id ? client.classic_client_id : ''} className="input input-bordered w-full" />
+                        </Field>
+                        <Field>
+                            <label htmlFor="classic_client_secret" className="font-bold">Classic Client Secret</label>
+                            <input name="classic_client_secret" id="classic_client_secret" type="text" placeholder={client.classic_client_secret ? client.classic_client_secret : ''} className="input input-bordered w-full" />
+                        </Field>
+                        <Field>
+                            <label htmlFor="classic_username" className="font-bold">Classic Username</label>
+                            <input name="classic_username" id="classic_username" type="text" placeholder={client.classic_username ? client.classic_username : ''} className="input input-bordered w-full" />
+                        </Field>
+                        <Field>
+                            <label htmlFor="classic_password" className="font-bold">Classic Password</label>
+                            <input name="classic_password" id="classic_password" type="password" placeholder={client.classic_password ? client.classic_password : ''} className="input input-bordered w-full" />
+                        </Field>
+                    </FieldGroup>
                     <DialogFooter>
                         <DialogClose asChild>
                             <Button variant="secondary">Cancel</Button>

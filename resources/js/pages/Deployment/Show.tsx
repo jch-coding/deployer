@@ -11,15 +11,13 @@ import {
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
-import { showSystemInfo, showEthernetInterface } from '@/actions/App/Http/Controllers/TaskController';
-import { useEffect, useState, useRef } from 'react';
 import { columns } from '@/components/ui/devices-columns';
 import { DataTable } from '@/components/ui/data-table';
 import { toast } from 'sonner';
 import TaskCard from '@/components/ui/TaskCard';
 import type { Paginator } from '@/types/deployer';
-import type { Client } from '@/types/clients/client';
 import type { SharedData } from '@/types';
+import { useState } from 'react';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import {
     Card,
@@ -28,6 +26,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
+import { showSystemInfo, showEthernetInterface, showLagInterface, showVlanInterface, showAssignDeviceFunction, showPreprovisionDeviceToGroup, showAssociateSiteAndName } from '@/routes/tasks';
 
 type Device = {
     id: string;
@@ -76,11 +75,26 @@ export default function Show() {
                 return showSystemInfo(task_id).url;
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 return showEthernetInterface(task_id).url;
+            case 'CONFIGURE_LAG_INTERFACE':
+                return showLagInterface(task_id).url;
+            case 'CONFIGURE_VLAN_INTERFACE':
+                return showVlanInterface(task_id).url;
+            case 'ASSIGN_DEVICE_FUNCTION':
+                return showAssignDeviceFunction(task_id).url;
+            case 'PREPROVISION_DEVICE_TO_GROUP':
+                return showPreprovisionDeviceToGroup(task_id).url;
+            case 'ASSOCIATE_SITE_AND_NAME':
+                return showAssociateSiteAndName(task_id).url;
         }
     }
 
     const isDeviceBasedTask = (task_type: string) => {
-        return task_type in ['UPDATE_SYSTEM_INFO']
+        return task_type in [
+            'UPDATE_SYSTEM_INFO',
+            'ASSIGN_DEVICE_FUNCTION',
+            'PREPROVISION_DEVICE_TO_GROUP',
+            'ASSOCIATE_SITE_AND_NAME',
+        ]
     }
 
     const isInterfaceBasedTask = (task_type: string) => {

@@ -17,12 +17,14 @@ class AssociateDeviceToSiteJob implements ShouldQueue
     use Queueable, Batchable;
 
     public int $deployment_time;
+    public int $wait_time;
     /**
      * Create a new job instance.
      */
     public function __construct(public Device $device, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 10;
+        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
+        $this->wait_time = $task->wait_time > 0 ? $task->wait_time : 3;
     }
 
     /**
@@ -40,11 +42,13 @@ class AssociateDeviceToSiteJob implements ShouldQueue
         $response = $this->centralAPIHelper->classic_associate_device_to_site($device_site_association_body);
         if (! $response->ok()) {
             Log::error('Failed to associate devices to site');
-            $this->release(random_int(1, 10));
+            $this->release($this->wait_time * 60);
         }
-        $status_log = $this->task->status_log;
-        $new_log = $status_log.'\nDevice '.$this->device->name.' associated to site '.$this->site->name;
-        $this->task->update(['status_log' => $new_log]);
+        else {
+            $status_log = $this->task->status_log;
+            $new_log = $status_log . '\nDevice ' . $this->device->name . ' associated to site ' . $this->site->name;
+            $this->task->update(['status_log' => $new_log]);
+        }
     }
 
     public function get_device_type($device_function)
@@ -69,14 +73,18 @@ class AssociateDeviceToSiteJob implements ShouldQueue
             $this->fail();
         }
 
-        $site_list = $sites->json('sites');
-        $classic_site = array_find($site_list, fn ($site) => $site['site_name'] == $this->device->site->name);
-        if (! $classic_site) {
-            $error_message = 'Site '.$this->device->site->name.' not found in classic';
-            Log::error($error_message);
-            $this->fail($error_message);
+        else {
+            $site_list = $sites->json('sites');
+            $classic_site = array_find($site_list, fn($site) => $site['site_name'] == $this->device->site->name);
+            if (!$classic_site) {
+                $error_message = 'Site ' . $this->device->site->name . ' not found in classic';
+                Log::error($error_message);
+                $this->fail($error_message);
+            }
+            else {
+                $this->device->site->update(['classic_id' => $classic_site['site_id']]);
+            }
         }
-        $this->device->site->update(['classic_id' => $classic_site['site_id']]);
     }
 
     public function retryUntil(): DateTime

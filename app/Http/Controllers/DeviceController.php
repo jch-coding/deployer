@@ -97,11 +97,12 @@ class DeviceController extends Controller
                 'serial' => $arr['serial'],
                 'device_function' => $arr['device_function'],
                 'deployment_id' => $deployment->id,
+                'group' => $arr['group'] ?? null,
             ],
             $devices
         );
 
-        $savedDevices = $request->user()->currentClient()->devices()->upsert($withDeployment, ['serial'], ['name', 'device_function', 'deployment_id']);
+        $savedDevices = $request->user()->currentClient()->devices()->upsert($withDeployment, ['serial'], ['name', 'device_function', 'deployment_id', 'group']);
 
         $errors = [];
         $unsaved_devices = [];
@@ -446,13 +447,20 @@ class DeviceController extends Controller
     {
         $data = [];
         if ($request->has('name')) {
-            array_merge($data, ['name' => $request->validate(['name' => 'string|min:3|max:255'])]);
+            $validated_name = $request->validate(['name' => 'string|min:3|max:255']);
+            $data = array_merge($data, ['name' => $validated_name['name']]);
         }
         if ($request->has('serial')) {
-            array_merge($data, ['serial' => $request->validate(['serial' => 'string|min:12'])]);
+            $validated_serial = $request->validate(['serial' => 'string|min:12']);
+            $data = array_merge($data, ['serial' => $validated_serial['serial']]);
         }
         if ($request->has('device_function')) {
-            array_merge($data, ['device_function' => $request->validate(['device_function' => Rule::in(DeviceFunction::cases())])]);
+            $validated_device_function = $request->validate(['device_function' => Rule::in(DeviceFunction::cases())]);
+            $data = array_merge($data, ['device_function' => $validated_device_function['device_function']]);
+        }
+        if ($request->has('group')) {
+            $validated_group = $request->validate(['group' => 'string|min:3|max:255']);
+            $data = array_merge($data, ['group' => $validated_group['group']]);
         }
         if ($request->has('deployment_id')) {
             $client = $device->client;
@@ -460,7 +468,7 @@ class DeviceController extends Controller
             if (! $deployment) {
                 return back()->withErrors('Deployment does not belong to current client.', 'deployment_id');
             }
-            array_merge($data, ['deployment_id' => $deployment->id]);
+            $data = array_merge($data, ['deployment_id' => $deployment->id]);
         }
         $device->update($data);
 

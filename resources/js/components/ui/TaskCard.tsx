@@ -21,7 +21,7 @@ type DeploymentType = {
     name: string,
 }
 
-export default function TaskCard({ task, devices, deployment, props } : { task: string, devices: DeviceType[], deployment: DeploymentType, props: any}) {
+export default function TaskCard({ task, devices, deployment } : { task: string, devices: DeviceType[], deployment: DeploymentType }) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
     const [statusMessage, setStatusMessage] = useState()
@@ -71,9 +71,6 @@ export default function TaskCard({ task, devices, deployment, props } : { task: 
         <Card className="min-w-sm" {...props}>
             <CardHeader>
                 <CardTitle>{task}</CardTitle>
-                <CardDescription>
-                    {taskDevices.length > 0 && taskDevices.length < devices.length ? `${taskDevices.length} devices selected` : 'All Devices Selected'}
-                </CardDescription>
             </CardHeader>
             <CardContent className="flex gap-2">
                 <Dialog>
