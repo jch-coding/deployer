@@ -12,7 +12,9 @@ use App\Jobs\AssociateDeviceToSiteJob;
 use App\Jobs\AssociateSiteAndNameJob;
 use App\Jobs\ConfigureEthernetInterface;
 use App\Jobs\ConfigureLagInterfaceJob;
+use App\Jobs\ConfigureVlanInterfaceJob;
 use App\Jobs\CreateLocalOverrideForPortProfile;
+use App\Jobs\CreateVSFProfileJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
@@ -25,10 +27,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
-use Throwable;
 
 class TaskController extends Controller
 {
@@ -40,6 +40,7 @@ class TaskController extends Controller
         'PREPROVISION_DEVICE_TO_GROUP' => 'show-preprovision-device-to-group',
         'ASSIGN_DEVICE_FUNCTION' => 'show-assign-device-function',
         'ASSOCIATE_SITE_AND_NAME' => 'show-associate-site-and-name',
+        'CREATE_VSF_PROFILE' => 'show-create-vsf-profile',
     ];
 
     public function config_system_info(Device $device)
@@ -148,6 +149,15 @@ class TaskController extends Controller
         ]);
     }
 
+    public function showCreateVSFProfile(Task $task)
+    {
+        return Inertia::render('Task/CreateVSFProfile', [
+            'task' => $task,
+            'devices' => $task->devices,
+            'deployment' => $task->deployment,
+        ]);
+    }
+
     public function store(Request $request, Deployment $deployment)
     {
         $validated = $request->validate([
@@ -177,6 +187,7 @@ class TaskController extends Controller
         $task->update(['status' => 'IN_PROGRESS']);
         $batch = $this->dispatchJob($task);
         $task->update(['batch_id' => $batch]);
+
         return to_route('tasks.show', $task);
     }
 
@@ -219,6 +230,7 @@ class TaskController extends Controller
     {
         $nonattached_interfaces = $interfaces->filter(fn ($interface) => ! $task->deviceInterfaces()->find($interface->id));
         $task->deviceInterfaces()->attach($nonattached_interfaces->pluck('id'));
+
         return $task->refresh();
     }
 
@@ -249,6 +261,10 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($device) => new AssociateDeviceToSiteJob($device, $task, $centralAPIHelper))->toArray();
                 break;
+            case 'CREATE_VSF_PROFILE':
+                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
+                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new CreateVSFProfileJob($device, $task, $centralAPIHelper))->toArray();
+                break;
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 $devices_with_port_profiles = $task->devices->map(function ($device) {
                     $device->interfaces_sw_profiles = $device->interfaces->filter(fn ($interface) => $interface->sw_profile && str_contains($interface->interface, '/'));
@@ -276,7 +292,7 @@ class TaskController extends Controller
                 $vlan_interfaces = $task->devices->map(fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->ip_address !== null))->collapse();
                 $task = $this->attach_interfaces($task, $vlan_interfaces);
                 $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
-                $jobs[] = $in_progress->map(fn ($vlan_interface) => new ConfigureEthernetInterface($vlan_interface, $task, $centralAPIHelper))->toArray();
+                $jobs[] = $in_progress->map(fn ($vlan_interface) => new ConfigureVlanInterfaceJob($vlan_interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_LAG_INTERFACE':
                 $lag_interfaces = $task->devices->map(fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->lacp_profile !== null))->collapse();
@@ -299,9 +315,7 @@ class TaskController extends Controller
                 break;
         }
 
-        return Bus::chain(array_map(fn ($j) => Bus::batch($j)->catch(function (Batch $batch , Throwable $e) {
-            Log::error('Batch failed with error: '.$e->getMessage());
-        }), $jobs))->dispatch();
+        return Bus::chain(array_map(fn ($j) => Bus::batch($j)->allowFailures(), $jobs))->dispatch();
     }
 
     public static function get_unique_sw_profiles(Collection $devices)

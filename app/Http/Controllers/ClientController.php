@@ -95,18 +95,18 @@ class ClientController extends Controller
         }
     }
 
-    public function mapClassicBaseUrl(BaseURL $base_url) {
+    public function mapClassicBaseUrl(string $base_url) {
         switch($base_url) {
-            case BaseURL::US1:
-                return ClassicBaseUrl::US1;
-            case BaseURL::US2:
-                return ClassicBaseUrl::US2;
-            case BaseURL::US4:
-                return ClassicBaseUrl::US_WEST4;
-            case BaseURL::US5:
-                return ClassicBaseUrl::US_WEST5;
-            case BaseURL::CA1:
-                return ClassicBaseUrl::CANADA1;
+            case BaseURL::US1->value:
+                return ClassicBaseUrl::US1->value;
+            case BaseURL::US2->value:
+                return ClassicBaseUrl::US2->value;
+            case BaseURL::US4->value:
+                return ClassicBaseUrl::US_WEST4->value;
+            case BaseURL::US5->value:
+                return ClassicBaseUrl::US_WEST5->value;
+            case BaseURL::CA1->value:
+                return ClassicBaseUrl::CANADA1->value;
         }
     }
 

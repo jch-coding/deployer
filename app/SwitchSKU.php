@@ -1,0 +1,47 @@
+<?php
+
+namespace App;
+
+enum SwitchSKU
+{
+    case JL658A;
+    case JL659A;
+    case JL660A;
+    case JL661A;
+    case JL662A;
+    case R8S89A;
+    case R8S90A;
+    case R8S91A;
+    case R8S92A;
+    case S0G01A;
+    case JL663A;
+    case JL664A;
+    case JL665A;
+    case JL666A;
+    case JL667A;
+    case JL668A;
+    case S0G03A;
+    case S0G04A;
+    case S0G05A;
+    case S0G06A;
+    case S0F99A;
+    case S0G00A;
+    case S0G95A;
+    case S0G96A;
+    case S0G97A;
+    case S0G98A;
+    case S0E91A;
+    case S0X44A;
+    case S4P41A;
+    case S4P42A;
+    case S4P43A;
+    case S4P44A;
+    case S4P45A;
+    case S4P46A;
+    case S4P47A;
+    case S4P48A;
+    case JL762A;
+    case R9J39A;
+    case R9J40A;
+    case R9J41A;
+}

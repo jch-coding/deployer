@@ -27,6 +27,7 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
     const [statusMessage, setStatusMessage] = useState()
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
+    const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
     const handleCheckboxChange = (deviceId : number, checked : boolean) => {
         const newDevice = devices.find(device => device.id === deviceId)
         if (checked) {
@@ -47,28 +48,29 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
             task_type: task,
             devices: devices_for_task,
             deployment_time: deploymentTimeTotalMinutes,
+            wait_time: waitTimeMinutes,
         }
         router.post(store(deployment.id).url, taskData)
     }
 
     const resetCompletedDevices = () => setCompletedDevices([])
 
-    const newItemUpdated = (newItemEvent) => {
-        const newDeviceUpdated = {...devices.find(device => device.id === parseInt(newItemEvent.data.device_name)), completed: true}
-        setCompletedDevices((prevState) => [...prevState, newDeviceUpdated])
-
-        setStatusMessage(newItemEvent.data.message)
-    }
-
-    useEcho(
-        `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
-        'DeploymentEvent',
-        (event) => {
-            newItemUpdated(event)
-    })
+    // const newItemUpdated = (newItemEvent) => {
+    //     const newDeviceUpdated = {...devices.find(device => device.id === parseInt(newItemEvent.data.device_name)), completed: true}
+    //     setCompletedDevices((prevState) => [...prevState, newDeviceUpdated])
+    //
+    //     setStatusMessage(newItemEvent.data.message)
+    // }
+    //
+    // useEcho(
+    //     `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
+    //     'DeploymentEvent',
+    //     (event) => {
+    //         newItemUpdated(event)
+    // })
 
     return (
-        <Card className="min-w-sm" {...props}>
+        <Card className="min-w-sm">
             <CardHeader>
                 <CardTitle>{task}</CardTitle>
             </CardHeader>
@@ -78,9 +80,9 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
                         <Button data-test="set-deployment-time"><AlarmClockIcon/>Set Duration</Button>
                     </DialogTrigger>
                     <DialogContent>
-                        <DialogTitle>Set Deployment Duration</DialogTitle>
+                        <DialogTitle>Set Task Duration</DialogTitle>
                         <DialogDescription>
-                            Set the duration of the deployment
+                            Set the duration of the task
                         </DialogDescription>
                         <div className="flex gap-2">
                             <label htmlFor="deployment-time-hours" className="self-center">Hours</label>
@@ -97,6 +99,16 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
                                 onChange={(e) => setDeploymentTimeMinutes(parseInt(e.target.value))}
                                 className="w-1/4 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                             />
+                        </div>
+                        <div>
+                            <label htmlFor="wait-time-minutes" className="self-center pr-2">Retry Interval</label>
+                            <input
+                                type="number"
+                                value={waitTimeMinutes}
+                                onChange={(e) => setWaitTimeMinutes(parseInt(e.target.value))}
+                                className="w-1/4 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                            <i className="text-slate-400 pl-2">in minutes</i>
                         </div>
                         <DialogFooter className="sm:justify-start">
                             <DialogClose asChild>

@@ -32,9 +32,12 @@ class DeploymentController extends Controller
         $deployment->load('devices');
         $latest_tasks = $deployment->tasks()->withCount('devices')->latest()->take(5)->get()
             ->map(function ($task) {
-                if ($task->status !== 'COMPLETED' && count($task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED')) == $task->devices_count) {
-                    $task->status = 'COMPLETED';
-                    $task->save();
+                if ($task->status !== 'COMPLETED') {
+                    $task_completed = $task->processTaskStatus();
+                    if ($task_completed) {
+                        $task->status = 'COMPLETED';
+                        $task->save();
+                    }
                 }
 
                 return $task;

@@ -43,6 +43,10 @@ class CentralAPIHelper
         'switches' => 'network-monitoring/v1/switches/',
     ];
 
+    public array $high_availability = [
+        'switch_stack' => 'network-config/v1alpha1/stacks/',
+    ];
+
     public array $classic_monitoring = [
         'sites' => 'central/v2/sites',
     ];
@@ -174,6 +178,92 @@ class CentralAPIHelper
                 ->post($this->client->base_url.$this->configManagement['persona_assignment'].$device_function, $body);
 
             return $response;
+        }
+    }
+
+    public function post_vsf_profile(Device $device, array $vsf_profile = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $stack_name = $device->name.'-STACK';
+
+        $vsf_auto_stack_profile = [
+            'platform' => $this->convert_sku_to_platform($device->sku),
+            'name' => $stack_name,
+            'auto-stack' => true,
+            'members' => [
+                [
+                    'id' => 1,
+                    'sku' => $device->sku,
+                    'serial' => $device->serial,
+                    'use-auto-stacking-ports' => true,
+                ],
+            ],
+        ];
+
+        if (empty($vsf_profile)) {
+            $vsf_profile = $vsf_auto_stack_profile;
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->withQueryParameters([
+                'object-type' => 'LOCAL',
+                'scope-id' => $device->site->scope_id,
+                'device-function' => $device->device_function,
+            ])->post($this->client->base_url.$this->high_availability['switch_stack'].$stack_name, $vsf_profile);
+
+        return $response;
+    }
+
+    public function convert_sku_to_platform(string $sku)
+    {
+        $platform_6300 = [
+            'R8S90A',
+            'R8S89A',
+            'R8S91A',
+            'R8S92A',
+            'JL658A',
+            'JL659A',
+            'JL660A',
+            'JL661A',
+            'JL662A',
+            'JL663A',
+            'JL659A',
+            'JL665A',
+            'JL666A',
+            'JL667A',
+            'JL668A',
+            'R9F63A',
+            'S0G03A',
+            'S0G04A',
+            'S0G05A',
+            'S0G06A',
+            'S0G95A',
+            'S0G96A',
+            'S0G97A',
+            'S0G98A',
+            'S0G02A',
+            'S0X44A',
+            'S4P41A',
+            'S4P42A',
+            'S4P43A',
+            'S4P44A',
+            'S4P45A',
+            'S4P46A',
+            'S4P47A',
+            'S4P48A',
+        ];
+        $platform_6300L = [
+            'JL762A',
+            'S0E91A',
+        ];
+        switch ($sku) {
+            case in_array($sku, $platform_6300):
+                return 'PLATFORM_6300';
+            case in_array($sku, $platform_6300L):
+                return 'PLATFORM_6300L';
         }
     }
 

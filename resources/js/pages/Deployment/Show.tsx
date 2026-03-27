@@ -26,7 +26,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
-import { showSystemInfo, showEthernetInterface, showLagInterface, showVlanInterface, showAssignDeviceFunction, showPreprovisionDeviceToGroup, showAssociateSiteAndName } from '@/routes/tasks';
+import { showSystemInfo, showEthernetInterface, showLagInterface, showVlanInterface, showAssignDeviceFunction, showPreprovisionDeviceToGroup, showAssociateSiteAndName, showCreateVsfProfile } from '@/routes/tasks';
 
 type Device = {
     id: string;
@@ -85,6 +85,8 @@ export default function Show() {
                 return showPreprovisionDeviceToGroup(task_id).url;
             case 'ASSOCIATE_SITE_AND_NAME':
                 return showAssociateSiteAndName(task_id).url;
+            case 'CREATE_VSF_PROFILE':
+                return showCreateVsfProfile(task_id).url;
         }
     }
 
@@ -94,6 +96,7 @@ export default function Show() {
             'ASSIGN_DEVICE_FUNCTION',
             'PREPROVISION_DEVICE_TO_GROUP',
             'ASSOCIATE_SITE_AND_NAME',
+            'CREATE_VSF_PROFILE',
         ]
     }
 

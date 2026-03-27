@@ -91,6 +91,8 @@ class DeviceController extends Controller
             return back()->withErrors('CSV file does not contain required headers. Must include name, serial and device_function');
         }
 
+        $unique_devices = $this->consolidateDataForDevices($devices);
+
         $withDeployment = array_map(
             fn ($arr) => [
                 'name' => $arr['name'],
@@ -98,11 +100,12 @@ class DeviceController extends Controller
                 'device_function' => $arr['device_function'],
                 'deployment_id' => $deployment->id,
                 'group' => $arr['group'] ?? null,
+                'sku' => $arr['sku'] == '' ? null : $arr['sku'],
             ],
-            $devices
+            $unique_devices
         );
 
-        $savedDevices = $request->user()->currentClient()->devices()->upsert($withDeployment, ['serial'], ['name', 'device_function', 'deployment_id', 'group']);
+        $savedDevices = $request->user()->currentClient()->devices()->upsert($withDeployment, ['serial'], ['name', 'device_function', 'deployment_id', 'group', 'sku']);
 
         $errors = [];
         $unsaved_devices = [];
@@ -110,16 +113,11 @@ class DeviceController extends Controller
         $unsaved_sites = [];
 
         if ($savedDevices !== count($devices)) {
-            array_push($errors, ['unsaved_devices_error' => 'Only '.($savedDevices).' of '.count($devices).' devices were saved']);
             $unsaved_devices = array_filter($devices, fn ($device) => Device::where('serial', $device['serial'])->doesntExist());
         }
 
         if (in_array('site', $headers)) {
             $sites_with_devices = static::getSitesWithDeviceSerials($devices);
-            $saved_sites = static::saveSitesWithDevices($sites_with_devices);
-            if (count($saved_sites) !== count($sites_with_devices)) {
-                array_push($errors, ['unsaved_sites_error' => 'Only '.(count($saved_sites)).' of '.count($sites_with_devices).' sites were saved']);
-            }
             $unsaved_sites = array_filter($sites_with_devices, fn ($site) => Site::where('name', $site['name'])->doesntExist());
         }
 
@@ -130,7 +128,6 @@ class DeviceController extends Controller
             $savedInterfaces = static::saveInterfaces($interfaces);
 
             if ($savedInterfaces !== $interfaces['total_interfaces']) {
-                array_push($errors, ['unsaved_interfaces_error' => 'Only '.($savedInterfaces).' of '.count($interfaces).' interfaces were saved']);
                 $unsaved_interfaces = array_filter($interfaces,
                     fn ($interface) => DeviceInterface::where('interface', $interface['interface'])
                         ->where('device_id', $interface['device_id'])
@@ -139,12 +136,33 @@ class DeviceController extends Controller
         }
 
         return redirect()->route('deployments.show', $deployment)
-            ->withErrors($errors)
             ->with([
                 'unsaved_devices' => $unsaved_devices,
                 'unsaved_interfaces' => $unsaved_interfaces,
                 'unsaved_sites' => $unsaved_sites,
             ]);
+    }
+
+    public function consolidateDataForDevices(array $devices)
+    {
+        $grouped_by_serials = collect($devices)->groupBy('serial');
+        $unique_devices = [];
+        foreach ($grouped_by_serials->toArray() as $device) {
+            $empty = [
+                'name' => '',
+                'serial' => '',
+                'device_function' => '',
+                'group' => '',
+                'sku' => '',
+            ];
+            foreach ($device as $device_info) {
+                foreach (array_keys($empty) as $key) {
+                    if ($empty[$key] === '') $empty[$key] = $device_info[$key];
+                }
+            }
+            $unique_devices[] = $empty;
+        }
+        return $unique_devices;
     }
 
     public static function expandInterfaceRange(string $range)
@@ -323,13 +341,15 @@ class DeviceController extends Controller
                 $device_interface_config = [
                     'device_id' => $device->id,
                     'interface' => $device_interface['interface'],
+                    'description' => $device_interface['description'] ?? null,
+                    'ip_address' => $device_interface['ip_address'] ?? null,
                     'sw_profile' => $device_interface['port_profile'] ?? null,
                     'switch_port_id' => $switchport->id ?? null,
                     'stp_profile_id' => $stp_profile->id ?? null,
                     'lacp_profile_id' => $lacp_profile->id ?? null,
                 ];
 
-                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id']);
+                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address']);
                 $saved_interfaces++;
             }
         }

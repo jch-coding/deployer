@@ -97,12 +97,5 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
         $statusLog = $this->task->status_log;
         $newStatusLog = $statusLog."\nFailed Configuring Port Profile".$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name."\n";
         $this->task->update(['status_log' => $newStatusLog]);
-        FailureEvent::dispatch([
-            'deployment_name' => $this->task->deployment->name,
-            'item_name' => $this->portProfileInfo['sw_profile'],
-            'task_type' => $this->task->task_type,
-            'message' => 'Failed Configuring Port Profile'.$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name,
-            'event_type' => 'failure_event',
-        ]);
     }
 }

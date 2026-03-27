@@ -50,7 +50,7 @@ class ConfigureEthernetInterface implements ShouldQueue
             $newStatusLog = $statusLog . "\nFailed to patch ethernet interface: " . $this->deviceInterface->interface . " on device " . $device->name . " with message: " . $interface_response->json()['message'] . "\n";
             $this->task->update(['status_log' => $newStatusLog]);
             Log::error('Failed to patch ethernet interface: '.$this->deviceInterface->interface.' on device '.$device->name.' with message:'.$interface_response->json()['message']);
-            $this->release(random_int(15, 30));
+            $this->release($this->wait_time * 60);
         }
         else {
             $newStatusLog = $statusLog . "\nInterface " . $this->deviceInterface->interface . " configured";
