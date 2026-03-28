@@ -20,7 +20,7 @@ return new class extends Migration
             $table->text('classic_client_secret')->nullable();
             $table->text('classic_access_token')->nullable();
             $table->text('classic_refresh_token')->nullable();
-            $table->integer('classic_expires_in')->nullable();
+            $table->dateTime('classic_expires_in')->nullable();
         });
     }
 

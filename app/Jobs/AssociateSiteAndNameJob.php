@@ -46,8 +46,7 @@ class AssociateSiteAndNameJob implements ShouldQueue
             if (! $found_site) {
                 Log::error('Site '.$this->device->site->name.' not found in classic central');
                 $this->fail();
-            }
-            else {
+            } else {
                 $this->device->site->classic_id = $found_site['site_id'];
                 $this->device->site->save();
             }
@@ -61,43 +60,41 @@ class AssociateSiteAndNameJob implements ShouldQueue
                 'site_id' => $this->device->site->classic_id,
             ];
             $response = $this->centralAPIHelper->classic_associate_device_to_site($device_site_association_body);
-            if (!$response->ok()) {
-                Log::error('Failed to associate device ' . $this->device->name . ' to site');
+            if (! $response->ok()) {
+                Log::error('Failed to associate device '.$this->device->name.' to site');
                 $status_log = $this->task->status_log;
-                $new_log = $status_log . '\nFailed to associate device ' . $this->device->name . ' to site. Next attempt at ' . now()->addMinutes($this->wait_time)->format('Y-m-d H:i:s') . '';
+                $new_log = $status_log.'\nFailed to associate device '.$this->device->name.' to site. Next attempt at '.now()->addMinutes($this->wait_time)->format('Y-m-d H:i:s').'';
                 $this->task->update(['status_log' => $new_log]);
                 $this->release(60 * $this->wait_time);
             } else {
                 $status_log = $this->task->status_log;
-                $new_log = $status_log . '\nAssociated ' . $this->device->name . ' to site ' . $this->device->site->name;
+                $new_log = $status_log.'\nAssociated '.$this->device->name.' to site '.$this->device->site->name;
                 $this->task->update(['status_log' => $new_log]);
                 // now name the device through new Central. Get the device scope id.
                 sleep(5);
             }
             $scope_id_object = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
             if (array_key_exists('error', $scope_id_object)) {
-                Log::error('Failed to get scope id for device ' . $this->device->name);
+                Log::error('Failed to get scope id for device '.$this->device->name);
                 $status_log = $this->task->status_log;
-                $new_log = $status_log . '\nFailed to get scope id for ' . $this->device->name . '.Next attempt at ' . now()->addMinutes($this->wait_time)->format('Y-m-d H:i:s') . '';
+                $new_log = $status_log.'\nFailed to get scope id for '.$this->device->name.'.Next attempt at '.now()->addMinutes($this->wait_time)->format('Y-m-d H:i:s').'';
                 $this->task->update(['status_log' => $new_log]);
                 $this->release(60 * $this->wait_time);
-            }
-            else {
+            } else {
                 $scope_id = $scope_id_object[0]['scopeId'];
                 $this->device->scope_id = $scope_id;
                 $this->device->save();
             }
         }
         // name the device through new Central.
-        $response = $this->centralAPIHelper->updateSystemInfo($this->device);
+        $response = $this->centralAPIHelper->postSystemInfo($this->device);
         if (! $response->ok()) {
             Log::error($response->json('message'));
             $status_log = $this->task->status_log;
-            $new_log = $status_log . '\nFailed to name ' . $this->device->name . '.Next attempt at ' . now()->addMinutes($this->wait_time)->format('Y-m-d H:i:s') . '';
+            $new_log = $status_log.'\nFailed to name '.$this->device->name.'.Next attempt at '.now()->addMinutes($this->wait_time)->format('Y-m-d H:i:s').'';
             $this->task->update(['status_log' => $new_log]);
             $this->release(60 * $this->wait_time);
-        }
-        else {
+        } else {
             $status_log = $this->task->status_log;
             $new_log = $status_log.'\nNamed '.$this->device->serial.' as '.$this->device->name;
             $this->task->update(['status_log' => $new_log]);

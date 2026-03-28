@@ -46,6 +46,19 @@ class CreateVSFProfileJob implements ShouldQueue
             Log::error($error_message);
             $this->fail($error_message);
         } else {
+            if (! $this->device->site->scope_id) {
+                $site_scope_id = $this->centralAPIHelper->get_site_scope_id($this->device->site);
+                if (! $site_scope_id) {
+                    $statusLog = $this->task->status_log;
+                    $newStatusLog = $statusLog."\nfailed to retrieve scope ID for site ".$this->device->site->name."\n";
+                    $this->task->update(['status_log' => $newStatusLog]);
+                    Log::error('failed to retrieve scope ID for site '.$this->device->site->name);
+
+                    return;
+                }
+                $this->device->site->scope_id = $site_scope_id;
+                $this->device->site->save();
+            }
             $response = $this->centralAPIHelper->post_vsf_profile($this->device);
             if (! $response->ok()) {
                 Log::error($response->json('message'));

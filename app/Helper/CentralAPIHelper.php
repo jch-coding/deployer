@@ -40,7 +40,7 @@ class CentralAPIHelper
     ];
 
     public array $switchMonitoring = [
-        'switches' => 'network-monitoring/v1/switches/',
+        'switches' => 'network-monitoring/v1/switches',
     ];
 
     public array $high_availability = [
@@ -154,6 +154,24 @@ class CentralAPIHelper
         }
     }
 
+    public function postSystemInfo(Device $device)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->scope_id,
+                    'device-function' => $device->device_function,
+                ])->withBody(json_encode([
+                    'hostname' => $device->name,
+                ]))->patch($this->client->base_url.$this->system['system_info']);
+
+            return $response;
+        }
+    }
+
     /***
      * @param array $devices = ['serial1', 'serial2', ...]
      * @param string $device_function
@@ -163,6 +181,7 @@ class CentralAPIHelper
      */
     public function assignDeviceFunction(array $devices, string $device_function)
     {
+        $device_id_list_v2_for_switches = array_map(fn ($serial) => ['device-id-v2' => $serial, 'deployment-type' => 'DEPLOYMENT_TYPE_UNKNOWN'], $devices);
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
@@ -170,7 +189,7 @@ class CentralAPIHelper
                 'persona-device-list' => [
                     [
                         'device-function' => $device_function,
-                        'device-id-list-v2' => array_map(fn ($serial) => ['device-id-v2' => $serial], $devices),
+                        'device-id-list-v2' => str_contains($device_function, 'SWITCH') ? $device_id_list_v2_for_switches : array_map(fn ($serial) => ['device-id-v2' => $serial], $devices),
                     ],
                 ],
             ];
@@ -259,11 +278,36 @@ class CentralAPIHelper
             'JL762A',
             'S0E91A',
         ];
+        $platform_6200 = [
+            'R8Q70A',
+            'JL724A',
+            'R8Q72A',
+            'S0M82A',
+            'JL724B',
+            'JL725B',
+            'S0M83A',
+            'JL726B',
+            'R8Q67A',
+            'R8Q68A',
+            'S0M84A',
+            'R8Q69A',
+            'JL727B',
+            'S0M85A',
+            'JL728B',
+            'R8Q71A',
+            'JL728A',
+            'S0M81A',
+            'JL725A',
+            'JL726A',
+            'JL727A',
+        ];
         switch ($sku) {
             case in_array($sku, $platform_6300):
                 return 'PLATFORM_6300';
             case in_array($sku, $platform_6300L):
                 return 'PLATFORM_6300L';
+            case in_array($sku, $platform_6200):
+                return 'PLATFORM_6200';
         }
     }
 
@@ -289,8 +333,6 @@ class CentralAPIHelper
         }
         if ($deviceInterface->sw_profile !== null) {
             $switch_port_configuration['sw-profile'] = $deviceInterface->sw_profile;
-        } elseif ($deviceInterface->stp_profile !== null) {
-            $switch_port_configuration['stp'] = $deviceInterface->stp_profile->filter(fn ($attr) => $attr !== null)->toArray();
         }
 
         return array_merge($switch_port_configuration, ['lacp' => $lacp_profile]);
@@ -477,6 +519,33 @@ class CentralAPIHelper
         }
     }
 
+    public function patch_vlan_interface(DeviceInterface $deviceInterface)
+    {
+        $vlan_id = $deviceInterface->interface;
+        $interface_vlan_body = [
+            'id' => $vlan_id,
+            'ipv4' => [
+                'address' => $deviceInterface->ip_address,
+            ],
+            'enable' => $deviceInterface->enable,
+            'is-valid' => true,
+        ];
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'view-type' => 'LOCAL',
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $deviceInterface->device->scope_id,
+                    'device-function' => $deviceInterface->device->device_function,
+                ])
+                ->patch($this->client->base_url.$this->interfaces['interface_vlan'].$vlan_id, $interface_vlan_body);
+
+            return $response;
+        }
+    }
+
     public function get_l2_vlans($query_parameters = ['view-type' => 'LIBRARY'])
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -509,6 +578,23 @@ class CentralAPIHelper
                     'device-function' => $device->device_function,
                 ])
                 ->post($this->client->base_url.$this->vlans_and_networks['l2_vlans'].$l2_vlan['vlan'], $l2_vlan);
+
+            return $response;
+        }
+    }
+
+    public function delete_l2_vlan(Device $device, string $l2_vlan)
+    {
+        if (! $this->client->handleBearerTokenAuth())
+            return ['error' => 'failed to get access token from central.'];
+        else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->scope_id,
+                    'device-function' => $device->device_function,
+                ])
+                ->delete($this->client->base_url.$this->vlans_and_networks['l2_vlans'].$l2_vlan);
 
             return $response;
         }

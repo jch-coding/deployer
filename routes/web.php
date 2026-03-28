@@ -56,6 +56,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/tasks/preprovision_device_to_group/{task}', 'showPreprovisionDeviceToGroup')->name('tasks.show-preprovision-device-to-group');
         Route::get('/tasks/associate_site_and_name/{task}', 'showAssociateSiteAndName')->name('tasks.show-associate-site-and-name');
         Route::get('/tasks/create_vsf_profile/{task}', 'showCreateVSFProfile')->name('tasks.show-create-vsf-profile');
+        Route::get('/tasks/{task}', 'show')->name('tasks.show');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');
         Route::post('/tasks/test', 'test')->name('tasks.test');

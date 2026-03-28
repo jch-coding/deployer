@@ -43,6 +43,33 @@ class TaskController extends Controller
         'CREATE_VSF_PROFILE' => 'show-create-vsf-profile',
     ];
 
+    public $display_columns = [
+        'UPDATE_SYSTEM_INFO' => [
+            'device_function',
+        ],
+        'CONFIGURE_ETHERNET_INTERFACE' => [
+            'sw_profile',
+        ],
+        'CONFIGURE_VLAN_INTERFACE' => [
+            'ip_address',
+        ],
+        'CONFIGURE_LAG_INTERFACE' => [
+        ],
+        'PREPROVISION_DEVICE_TO_GROUP' => [
+            'group',
+        ],
+        'ASSIGN_DEVICE_FUNCTION' => [
+            'device_function',
+        ],
+        'ASSOCIATE_SITE_AND_NAME' => [
+            'site',
+        ],
+        'CREATE_VSF_PROFILE' => [
+            'sku',
+        ],
+        'TEST_TASK' => [],
+    ];
+
     public function config_system_info(Device $device)
     {
         $central_api_helper = new CentralAPIHelper($device->client);
@@ -81,6 +108,17 @@ class TaskController extends Controller
         $ordered_interfaces = $portchannels->merge($ethernets);
 
         return $ordered_interfaces;
+    }
+
+    public function show(Task $task)
+    {
+        $inertia_component = $task->getTaskCategory($task->task_type) === 'DEVICE' ? 'Task/DeviceTask' : 'Task/InterfaceTask';
+        return Inertia::render($inertia_component, [
+            'task' => $task,
+            'devices' => $task->devices,
+            'deployment' => $task->deployment,
+            'display_columns' => $this->display_columns[$task->task_type],
+        ]);
     }
 
     public function showSystemInfo(Task $task)

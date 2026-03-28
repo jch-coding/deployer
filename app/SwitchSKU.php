@@ -44,4 +44,25 @@ enum SwitchSKU
     case R9J39A;
     case R9J40A;
     case R9J41A;
+    case R8Q70A;
+    case JL724A;
+    case R8Q72A;
+    case S0M82A;
+    case JL724B;
+    case JL725B;
+    case S0M83A;
+    case JL726B;
+    case R8Q67A;
+    case R8Q68A;
+    case S0M84A;
+    case R8169A;
+    case JL727B;
+    case S0M85A;
+    case JL728B;
+    case R8Q71A;
+    case JL728A;
+    case S0M81A;
+    case JL725A;
+    case JL726A;
+    case JL727A;
 }

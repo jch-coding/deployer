@@ -83,6 +83,14 @@ class ConfigureVlanInterfaceJob implements ShouldQueue
                 $info_message = '\nVlan interface '.$this->deviceInterface->interface.' already exists for device';
                 Log::info($info_message);
                 $this->task->update(['status_log' => $this->task->status_log.$info_message]);
+                $patch_vlan_interface_response = $this->centralAPIHelper->patch_vlan_interface($this->deviceInterface);
+                if (! $patch_vlan_interface_response->ok()) {
+                    $error_message = '\nFailed to patch vlan interface.';
+                    Log::error($error_message);
+                    $this->task->update(['status_log' => $this->task->status_log.$error_message]);
+                    $this->release($this->wait_time * 60);
+                    return;
+                }
 
                 return;
             }

@@ -19,10 +19,12 @@ class ConfigureLagInterfaceJob implements ShouldQueue
      * Create a new job instance.
      */
     public $deployment_time;
+    public $wait_time;
 
     public function __construct(public DeviceInterface $device_interface, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
+        $this->wait_time = $task->wait_time ?? 3;
     }
 
     /**
@@ -43,7 +45,7 @@ class ConfigureLagInterfaceJob implements ShouldQueue
         $response = $this->centralAPIHelper->post_interface_portchannel($this->device_interface);
         if (! $response->ok()) {
             Log::error($response->json('message'));
-            $this->release(random_int(1, 10));
+            $this->release($this->wait_time * 60);
         }
         $status_log = $this->task->status_log;
         $new_log = $status_log.'\nConfigured LAG '.$this->device_interface->interface;

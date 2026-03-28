@@ -118,6 +118,7 @@ class DeviceController extends Controller
 
         if (in_array('site', $headers)) {
             $sites_with_devices = static::getSitesWithDeviceSerials($devices);
+            $saved_sites = static::saveSitesWithDevices($sites_with_devices);
             $unsaved_sites = array_filter($sites_with_devices, fn ($site) => Site::where('name', $site['name'])->doesntExist());
         }
 
