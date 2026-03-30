@@ -10,6 +10,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class CreateVSFProfileJob implements ShouldQueue
 {
@@ -44,15 +45,14 @@ class CreateVSFProfileJob implements ShouldQueue
         if (! $this->device->sku) {
             $error_message = 'SKU not found for device: '.$this->device->name;
             Log::error($error_message);
-            $this->fail($error_message);
+            $this->task->processTaskStatusLog($error_message);
         } else {
             if (! $this->device->site->scope_id) {
                 $site_scope_id = $this->centralAPIHelper->get_site_scope_id($this->device->site);
                 if (! $site_scope_id) {
-                    $statusLog = $this->task->status_log;
-                    $newStatusLog = $statusLog."\nfailed to retrieve scope ID for site ".$this->device->site->name."\n";
-                    $this->task->update(['status_log' => $newStatusLog]);
-                    Log::error('failed to retrieve scope ID for site '.$this->device->site->name);
+                    $message = 'failed to retrieve scope ID for site '.$this->device->site->name;
+                    $this->task->processTaskStatusLog($message);
+                    Log::error($message);
 
                     return;
                 }
@@ -61,14 +61,14 @@ class CreateVSFProfileJob implements ShouldQueue
             }
             $response = $this->centralAPIHelper->post_vsf_profile($this->device);
             if (! $response->ok()) {
+                $message = 'VSF Profile Creation Failed.';
                 Log::error($response->json('message'));
-                $this->task->update(['status_log' => $this->task->status_log.'\nVSF Profile Creation Failed. Next attempt at '.now()->addMinutes($this->wait_time)->format('Y-m-d H:i:s').'']);
+                $this->task->processTaskStatusLog($message, true);
                 $this->release($this->wait_time * 60);
             } else {
                 $success_message = '\nVSF profile created for stack: '.$this->device->name.'-STACK';
                 Log::info($success_message);
-                $status_log = $this->task->status_log;
-                $this->task->update(['status_log' => $status_log.$success_message]);
+                $this->task->processTaskStatusLog($success_message);
                 $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
             }
         }
@@ -77,5 +77,11 @@ class CreateVSFProfileJob implements ShouldQueue
     public function retryUntil(): DateTime
     {
         return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
+
+    public function failed(?Throwable $exception)
+    {
+        Log::error($exception);
+        sleep($this->wait_time * 60);
     }
 }

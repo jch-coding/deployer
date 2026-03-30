@@ -76,4 +76,14 @@ class Task extends Model
             return count($completed_devices) == $this->devices()->count();
         }
     }
+
+    public function processTaskStatusLog($message, $withTimeStamp = false)
+    {
+        $status_log = $this->status_log;
+        $new_log = $status_log.'\n'.$message;
+        if ($withTimeStamp) {
+            $new_log = $new_log.'\n'.now()->addMinutes($this->wait_time)->setTimeZone('America/New_York')->format('Y-m-d H:i:s T');
+        }
+        $this->update(['status_log' => $new_log]);
+    }
 }

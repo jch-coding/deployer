@@ -13,7 +13,6 @@ use App\Jobs\AssociateSiteAndNameJob;
 use App\Jobs\ConfigureEthernetInterface;
 use App\Jobs\ConfigureLagInterfaceJob;
 use App\Jobs\ConfigureVlanInterfaceJob;
-use App\Jobs\CreateLocalOverrideForPortProfile;
 use App\Jobs\CreateVSFProfileJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Jobs\TestJob;
@@ -32,17 +31,6 @@ use Inertia\Inertia;
 
 class TaskController extends Controller
 {
-    public $task_to_action = [
-        'UPDATE_SYSTEM_INFO' => 'show-system-info',
-        'CONFIGURE_ETHERNET_INTERFACE' => 'show-ethernet-interface',
-        'CONFIGURE_VLAN_INTERFACE' => 'show-ethernet-interface',
-        'CONFIGURE_LAG_INTERFACE' => 'show-ethernet-interface',
-        'PREPROVISION_DEVICE_TO_GROUP' => 'show-preprovision-device-to-group',
-        'ASSIGN_DEVICE_FUNCTION' => 'show-assign-device-function',
-        'ASSOCIATE_SITE_AND_NAME' => 'show-associate-site-and-name',
-        'CREATE_VSF_PROFILE' => 'show-create-vsf-profile',
-    ];
-
     public $display_columns = [
         'UPDATE_SYSTEM_INFO' => [
             'device_function',
@@ -70,129 +58,17 @@ class TaskController extends Controller
         'TEST_TASK' => [],
     ];
 
-    public function config_system_info(Device $device)
-    {
-        $central_api_helper = new CentralAPIHelper($device->client);
-        if (! $device->scope_id) {
-            DeviceGetScopeIdEvent::dispatch($device);
-            $scope_id_response = $central_api_helper->getScopeIdFromCentral($device);
-            if (! count($scope_id_response) > 0) {
-                return response()->json(['error' => ' failed to get scope-id from Central']);
-            }
-            $device->update(['scope_id' => $scope_id_response[0]['scopeId']]);
-        }
-
-        $this->devices()->attach($device);
-        $attached_device = $this->devices()->find($device);
-        $attached_device->pivot->update(['status' => 'IN_PROGRESS']);
-
-        $response = $central_api_helper->updateSystemInfo($device);
-
-        if (! $response->ok()) {
-            DeviceConfigFailedEvent::dispatch($device);
-
-            return response()->json(['error' => 'code:'.$response->status().' failed to configure system info from central.']);
-        }
-
-        DeviceSystemInfoUpdateEvent::dispatch($device);
-
-        $attached_device->pivot->update(['status' => 'COMPLETED']);
-
-        return $response;
-    }
-
-    public static function orderInterfaces(Collection $interfaces)
-    {
-        $portchannels = $interfaces->filter(fn ($interface) => str_contains($interface['interface'], 'lag'));
-        $ethernets = $interfaces->filter(fn ($interface) => ! str_contains($interface['interface'], 'lag'));
-        $ordered_interfaces = $portchannels->merge($ethernets);
-
-        return $ordered_interfaces;
-    }
-
     public function show(Task $task)
     {
-        $inertia_component = $task->getTaskCategory($task->task_type) === 'DEVICE' ? 'Task/DeviceTask' : 'Task/InterfaceTask';
+        $isDeviceBasedTask = $task->getTaskCategory($task->task_type) === 'DEVICE';
+        $inertia_component = $isDeviceBasedTask ? 'Task/DeviceTask' : 'Task/InterfaceTask';
+
         return Inertia::render($inertia_component, [
             'task' => $task,
             'devices' => $task->devices,
+            'interfaces' => $isDeviceBasedTask ? [] : $task->deviceInterfaces()->withPivot('status')->get(),
             'deployment' => $task->deployment,
             'display_columns' => $this->display_columns[$task->task_type],
-        ]);
-    }
-
-    public function showSystemInfo(Task $task)
-    {
-        return Inertia::render('Task/SystemInfo', [
-            'task' => $task,
-            'devices' => $task->devices,
-            'deployment' => $task->deployment,
-        ]);
-    }
-
-    public function showEthernetInterface(Task $task)
-    {
-        return Inertia::render('Task/EthernetInterface', [
-            'task' => $task,
-            'devices' => $task->devices->load('interfaces'),
-            'deployment' => $task->deployment,
-            'interfaces' => $task->deviceInterfaces()->withPivot('status')->get(),
-        ]);
-    }
-
-    public function showLagInterface(Task $task)
-    {
-        return Inertia::render('Task/LagInterface', [
-            'task' => $task,
-            'devices' => $task->devices->load('interfaces'),
-            'deployment' => $task->deployment,
-            'interfaces' => $task->deviceInterfaces()->withPivot('status')->get(),
-        ]);
-    }
-
-    public function showVlanInterface(Task $task)
-    {
-        return Inertia::render('Task/VlanInterface', [
-            'task' => $task,
-            'devices' => $task->devices->load('interfaces'),
-            'deployment' => $task->deployment,
-            'interfaces' => $task->deviceInterfaces()->withPivot('status')->get(),
-        ]);
-    }
-
-    public function showAssignDeviceFunction(Task $task)
-    {
-        return Inertia::render('Task/AssignDeviceFunction', [
-            'task' => $task,
-            'devices' => $task->devices,
-            'deployment' => $task->deployment,
-        ]);
-    }
-
-    public function showPreprovisionDeviceToGroup(Task $task)
-    {
-        return Inertia::render('Task/PreprovisionDeviceToGroup', [
-            'task' => $task,
-            'devices' => $task->devices,
-            'deployment' => $task->deployment,
-        ]);
-    }
-
-    public function showAssociateSiteAndName(Task $task)
-    {
-        return Inertia::render('Task/AssociateSiteAndName', [
-            'task' => $task,
-            'devices' => $task->devices,
-            'deployment' => $task->deployment,
-        ]);
-    }
-
-    public function showCreateVSFProfile(Task $task)
-    {
-        return Inertia::render('Task/CreateVSFProfile', [
-            'task' => $task,
-            'devices' => $task->devices,
-            'deployment' => $task->deployment,
         ]);
     }
 
@@ -216,7 +92,7 @@ class TaskController extends Controller
         $batch = $this->dispatchJob($task);
         $task->update(['batch_id' => $batch]);
 
-        return to_route('tasks.'.$this->task_to_action[$validated['task_type']], $task);
+        return to_route('tasks.show', $task);
     }
 
     public function force_restart(Task $task)
@@ -234,7 +110,7 @@ class TaskController extends Controller
         $task->update(['status' => 'CANCELLED']);
         // queue clear is not 100% successful on first try
         $queue_cleared = false;
-        $tries = 10;
+        $tries = 3;
         while (! $queue_cleared && $tries > 0) {
             Artisan::call('queue:clear');
             if (str_contains(Artisan::output(), 'Cleared 0 jobs')) {
@@ -309,19 +185,6 @@ class TaskController extends Controller
 
                     return $device;
                 });
-                $unique_interfaces_sw_profiles = static::get_unique_sw_profiles($devices_with_port_profiles);
-                if (count($unique_interfaces_sw_profiles) > 0) {
-                    $jobs[] = $unique_interfaces_sw_profiles->map(fn ($unique_interface_sw_profiles) => new CreateLocalOverrideForPortProfile(
-                        [
-                            'sw_profile' => $unique_interface_sw_profiles->sw_profile,
-                            'device_function' => $unique_interface_sw_profiles->device->device_function,
-                            'site' => $unique_interface_sw_profiles->device->site,
-                        ],
-                        $task,
-                        $centralAPIHelper
-                    )
-                    )->toArray();
-                }
                 $task = $this->attach_interfaces($task, $devices_with_port_profiles->map(fn ($device) => $device->interfaces->filter(fn ($interface) => str_contains($interface->interface, '/')))->collapse());
                 $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper))->toArray();

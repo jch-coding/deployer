@@ -26,7 +26,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
-import { showSystemInfo, showEthernetInterface, showLagInterface, showVlanInterface, showAssignDeviceFunction, showPreprovisionDeviceToGroup, showAssociateSiteAndName, showCreateVsfProfile } from '@/routes/tasks';
+import { show as showTask } from '@/routes/tasks';
 
 type Device = {
     id: string;
@@ -68,27 +68,6 @@ export default function Show() {
     const tasks = usePage<DeploymentPageProps>().props.tasks;
     const latest_tasks = usePage<DeploymentPageProps>().props.latest_tasks;
     const [submitting, setSubmitting] = useState(false);
-
-    const taskShow = (task_type: string, task_id: number) => {
-        switch (task_type) {
-            case 'UPDATE_SYSTEM_INFO':
-                return showSystemInfo(task_id).url;
-            case 'CONFIGURE_ETHERNET_INTERFACE':
-                return showEthernetInterface(task_id).url;
-            case 'CONFIGURE_LAG_INTERFACE':
-                return showLagInterface(task_id).url;
-            case 'CONFIGURE_VLAN_INTERFACE':
-                return showVlanInterface(task_id).url;
-            case 'ASSIGN_DEVICE_FUNCTION':
-                return showAssignDeviceFunction(task_id).url;
-            case 'PREPROVISION_DEVICE_TO_GROUP':
-                return showPreprovisionDeviceToGroup(task_id).url;
-            case 'ASSOCIATE_SITE_AND_NAME':
-                return showAssociateSiteAndName(task_id).url;
-            case 'CREATE_VSF_PROFILE':
-                return showCreateVsfProfile(task_id).url;
-        }
-    }
 
     const isDeviceBasedTask = (task_type: string) => {
         return task_type in [
@@ -141,10 +120,7 @@ export default function Show() {
                                         </div>
                                         {/*<Button onClick={() => router.patch(cancel(task.id).url)}>Cancel Task</Button>*/}
                                         <a
-                                            href={taskShow(
-                                                task.task_type,
-                                                task.id,
-                                            )}
+                                            href={showTask(task.id).url}
                                             className="text-emerald-500 hover:underline"
                                         >
                                             View Details

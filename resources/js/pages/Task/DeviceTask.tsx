@@ -43,9 +43,12 @@ export default function Show() {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <div className="mx-auto my-6 flex min-w-7xl gap-4">
+            <div className="text-center text-2xl font-bold">
+                {task.task_type}
+            </div>
+            <div className="mx-auto my-2 flex min-w-7xl gap-4">
                 <div className="max-w-[400px]">
-                    <Card className="h-1/2 overflow-y-auto">
+                    <Card className="h-[75vh] overflow-y-auto">
                         <CardHeader className="text-center text-2xl font-bold">
                             Progress
                         </CardHeader>
@@ -70,7 +73,7 @@ export default function Show() {
                     </Card>
                 </div>
                 <div className="flex-1">
-                    <Card>
+                    <Card className="h-[75vh] overflow-y-auto">
                         <CardHeader className="text-center text-2xl font-bold">
                             Devices Provisioned
                         </CardHeader>

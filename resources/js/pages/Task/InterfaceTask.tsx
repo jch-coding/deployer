@@ -45,28 +45,40 @@ export default function Show() {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <div className="flex gap-4 min-w-7xl my-6 mx-auto">
+            <div className="text-center text-2xl font-bold">
+                {task.task_type}
+            </div>
+            <div className="mx-auto my-2 flex min-w-7xl gap-4">
                 <div className="max-w-[400px]">
                     <Card className="h-[75vh] overflow-y-auto">
-                        <CardHeader className="font-bold text-center text-2xl">Progress</CardHeader>
-                        <CardDescription className="flex justify-center items-center">
-                            <span className="text-3xl font-bold p-1">{completedDeviceInterfaces.length}</span>
-                            <ChevronRightCircleIcon/>
-                            <span className="text-3xl font-bold p-1">{interfaces.length}</span>
+                        <CardHeader className="text-center text-2xl font-bold">
+                            Progress
+                        </CardHeader>
+                        <CardDescription className="flex items-center justify-center">
+                            <span className="p-1 text-3xl font-bold">
+                                {completedDeviceInterfaces.length}
+                            </span>
+                            <ChevronRightCircleIcon />
+                            <span className="p-1 text-3xl font-bold">
+                                {interfaces.length}
+                            </span>
                         </CardDescription>
                         <CardContent>
-                            {task.status_log.split('\\n').map((message, index) => (
+                            {task.status_log
+                                .split('\\n')
+                                .map((message, index) => (
                                     <div key={index} className="mb-2 text-sm">
                                         {message}
                                     </div>
-                                )
-                            )}
+                                ))}
                         </CardContent>
                     </Card>
                 </div>
-                <div className="flex-1" >
+                <div className="flex-1">
                     <Card className="h-[75vh] overflow-y-auto">
-                        <CardHeader className="font-bold text-center text-2xl">Devices Provisioned</CardHeader>
+                        <CardHeader className="text-center text-2xl font-bold">
+                            Devices Provisioned
+                        </CardHeader>
                         <CardContent>
                             {interfaces.map((device_interface) => {
                                 const deviceForInterface = devices.find(
@@ -75,25 +87,28 @@ export default function Show() {
                                         device_interface.device_id,
                                 );
                                 return (
-                                    <div key={device_interface.id} className={cn("flex items-center justify-between mb-2 text-sm", device_interface.pivot.status === 'COMPLETED' && 'text-green-500')}>
-                                        <span>
-                                            {deviceForInterface.name}
-                                        </span>
+                                    <div
+                                        key={device_interface.id}
+                                        className={cn(
+                                            'mb-2 flex items-center justify-between text-sm',
+                                            device_interface.pivot.status ===
+                                                'COMPLETED' && 'text-green-500',
+                                        )}
+                                    >
+                                        <span>{deviceForInterface.name}</span>
                                         <span>
                                             {device_interface.interface}
                                         </span>
-                                        {
-                                            displayColumns.map((column) => (
-                                                <span key={column}>
-                                                    {device_interface[column]}
-                                                </span>
-                                            ))
-                                        }
+                                        {displayColumns.map((column) => (
+                                            <span key={column}>
+                                                {device_interface[column]}
+                                            </span>
+                                        ))}
                                         <span>
                                             {device_interface.pivot.status}
                                         </span>
                                     </div>
-                                )
+                                );
                             })}
                         </CardContent>
                     </Card>

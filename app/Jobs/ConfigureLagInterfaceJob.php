@@ -10,6 +10,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ConfigureLagInterfaceJob implements ShouldQueue
 {
@@ -36,7 +37,10 @@ class ConfigureLagInterfaceJob implements ShouldQueue
         if (! $device->scope_id) {
             $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($device);
             if (array_key_exists('error', $scopeid_response)) {
-                Log::error('Failed to get scope id for device '.$device->name);
+                $message = 'Failed to get scope id for device '.$device->name;
+                Log::error($message);
+                $this->task->processTaskStatusLog($message, true);
+
                 return;
             }
             $device->scope_id = $scopeid_response[0]['scopeId'];
@@ -45,16 +49,25 @@ class ConfigureLagInterfaceJob implements ShouldQueue
         $response = $this->centralAPIHelper->post_interface_portchannel($this->device_interface);
         if (! $response->ok()) {
             Log::error($response->json('message'));
+            $this->task->processTaskStatusLog($response->json('message'), true);
             $this->release($this->wait_time * 60);
         }
         $status_log = $this->task->status_log;
-        $new_log = $status_log.'\nConfigured LAG '.$this->device_interface->interface;
-        $this->task->update(['status_log' => $new_log]);
+        $message = 'Configured LAG '.$this->device_interface->interface;
+        $this->task->processTaskStatusLog($message);
         $this->task->deviceInterfaces()->find($this->device_interface)->pivot->update(['status' => 'COMPLETED']);
     }
 
     public function retryUntil(): DateTime
     {
         return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
+
+    public function failed(?Throwable $exception)
+    {
+        Log::error($exception);
+        $this->task->deviceInterfaces()->find($this->device_interface)->pivot->update(['status' => 'FAILED']);
+        $this->task->processTaskStatusLog($exception);
+        $this->release($this->wait_time * 60);
     }
 }

@@ -10,6 +10,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ConfigureVlanInterfaceJob implements ShouldQueue
 {
@@ -47,32 +48,37 @@ class ConfigureVlanInterfaceJob implements ShouldQueue
         if (! $l2_vlans_response->ok()) {
             $error_message = '\nFailed to retrieve VLANs from the library... continuing anyways.';
             Log::error($l2_vlans_response->json('message'));
-            $this->task->update(['status_log' => $this->task->status_log.$error_message]);
+            $this->task->processTaskStatusLog($error_message);
         } else {
             $l2_vlans = $l2_vlans_response->json('l2-vlan');
             $found_vlan = array_find($l2_vlans, fn ($vlan) => $vlan['vlan'] === (int) $this->deviceInterface->interface);
             if (! $found_vlan) {
                 $error_message = '\nVLAN not found in library. Aborting...';
                 Log::error($error_message);
-                $this->task->update(['status_log' => $this->task->status_log.$error_message]);
-                $this->fail($error_message);
+                $this->task->processTaskStatusLog($error_message);
+
+                return;
             } else {
                 // do a device level override of the vlan
                 $override_response = $this->centralAPIHelper->post_l2_vlan($device, ['vlan' => $this->deviceInterface->interface]);
                 if (! $override_response->ok()) {
                     // check if there is already a local override of the vlan
                     if (str_contains($override_response->json()['message'], 'Cannot create duplicate config')) {
-                        Log::info('VLAN already assigned to device scope for '.$device->name);
+                        $message = '\nVLAN already assigned to device scope for '.$device->name;
+                        Log::info($message);
+                        $this->task->processTaskStatusLog($message);
+
                     } else {
                         $error_message = '\nFailed to override VLAN. Aborting...';
                         Log::error($error_message);
-                        $this->fail($error_message);
-                        $this->task->update(['status_log' => $this->task->status_log.$error_message]);
+                        $this->task->processTaskStatusLog($error_message);
+
+                        return;
                     }
                 } else {
                     $success_message = '\nVLAN overridden successfully for '.$this->deviceInterface->interface;
                     Log::info($success_message);
-                    $this->task->update(['status_log' => $this->task->status_log.$success_message]);
+                    $this->task->processTaskStatusLog($success_message);
                 }
             }
         }
@@ -82,12 +88,12 @@ class ConfigureVlanInterfaceJob implements ShouldQueue
             if (str_contains($vlan_interface_response->json()['message'], 'Cannot create duplicate config')) {
                 $info_message = '\nVlan interface '.$this->deviceInterface->interface.' already exists for device';
                 Log::info($info_message);
-                $this->task->update(['status_log' => $this->task->status_log.$info_message]);
+                $this->task->processTaskStatusLog($info_message);
                 $patch_vlan_interface_response = $this->centralAPIHelper->patch_vlan_interface($this->deviceInterface);
                 if (! $patch_vlan_interface_response->ok()) {
                     $error_message = '\nFailed to patch vlan interface.';
                     Log::error($error_message);
-                    $this->task->update(['status_log' => $this->task->status_log.$error_message]);
+                    $this->task->processTaskStatusLog($error_message, true);
                     $this->release($this->wait_time * 60);
                     return;
                 }
@@ -96,12 +102,12 @@ class ConfigureVlanInterfaceJob implements ShouldQueue
             }
             $error_message = '\nFailed to post vlan interface.';
             Log::error($error_message);
-            $this->task->update(['status_log' => $this->task->status_log.$error_message]);
+            $this->task->processTaskStatusLog($error_message, true);
             $this->release($this->wait_time * 60);
         } else {
             $success_message = '\nVLAN interface posted successfully for VLAN '.$this->deviceInterface->interface;
             Log::info($success_message);
-            $this->task->update(['status_log' => $this->task->status_log.$success_message]);
+            $this->task->processTaskStatusLog($success_message);
             $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
         }
     }
@@ -109,5 +115,12 @@ class ConfigureVlanInterfaceJob implements ShouldQueue
     public function retryUntil(): DateTime
     {
         return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        Log::error($exception);
+        $this->task->deviceInterfaces()->find($this->deviceInterface)?->pivot->update(['status' => 'FAILED']);
+        $this->release($this->wait_time * 60);
     }
 }

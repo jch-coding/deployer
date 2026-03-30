@@ -18,6 +18,12 @@ class CentralAPIHelper
         'sites' => [
             'sites' => 'network-config/v1/sites',
         ],
+        'site_collections' => [
+            'site_collections' => 'network-config/v1/site-collections',
+        ],
+        'device_groups' => [
+            'device_groups' => 'network-config/v1/device-groups',
+        ],
     ];
 
     public array $system = [
@@ -54,6 +60,7 @@ class CentralAPIHelper
     public array $classic_configuration = [
         'move_devices_to_group' => 'configuration/v1/devices/move',
         'preprovision_devices_to_group' => 'configuration/v1/preassign',
+        'groups' => 'configuration/v2/groups',
     ];
 
     public function __construct(public Client $client) {}
@@ -415,6 +422,23 @@ class CentralAPIHelper
         }
     }
 
+    public function get_ethernet_interfaces(Device $device)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'view-type' => 'LOCAL',
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->scope_id,
+                    'device-function' => $device->device_function,
+                ])->get($this->client->base_url.$this->interfaces['interface_ethernet']);
+
+            return $response;
+        }
+    }
+
     public function post_interface_portchannel(DeviceInterface $deviceInterface)
     {
         $switch_port = static::build_portchannel_from_device_interface($deviceInterface);
@@ -678,6 +702,30 @@ class CentralAPIHelper
         }
     }
 
+    public function get_device_groups()
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->get($this->client->base_url.$this->scopeManagement['device_groups']['device_groups']);
+
+            return $response;
+        }
+    }
+
+    public function get_site_collections()
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->get($this->client->base_url.$this->scopeManagement['site_collections']['site_collections']);
+
+            return $response;
+        }
+    }
+
     public function classic_get_sites()
     {
         if (! $this->client->handleClassicBearerToken()) {
@@ -710,6 +758,18 @@ class CentralAPIHelper
             ->post($this->client->classic_base_url.$this->classic_monitoring['sites'].'/associate', $device_to_site_body);
 
         return $response;
+    }
+
+    public function classic_get_groups()
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->withQueryParameters(['limit' => 20, 'offset' => 0])
+                ->get($this->client->classic_base_url.$this->classic_configuration['groups']);
+            return $response;
+        }
     }
 
     public function move_devices_to_group(string $group, array $device_serials)

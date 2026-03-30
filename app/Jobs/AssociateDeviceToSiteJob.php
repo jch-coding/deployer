@@ -4,27 +4,29 @@ namespace App\Jobs;
 
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
-use App\Models\Site;
 use App\Models\Task;
 use DateTime;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class AssociateDeviceToSiteJob implements ShouldQueue
 {
-    use Queueable, Batchable;
+    use Batchable, Queueable;
 
     public int $deployment_time;
+
     public int $wait_time;
+
     /**
      * Create a new job instance.
      */
     public function __construct(public Device $device, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
-        $this->wait_time = $task->wait_time > 0 ? $task->wait_time : 3;
+        $this->wait_time = $task->wait_time > 0 ? $task->wait_time : 1;
     }
 
     /**
@@ -43,10 +45,9 @@ class AssociateDeviceToSiteJob implements ShouldQueue
         if (! $response->ok()) {
             Log::error('Failed to associate devices to site');
             $this->release($this->wait_time * 60);
-        }
-        else {
+        } else {
             $status_log = $this->task->status_log;
-            $new_log = $status_log . '\nDevice ' . $this->device->name . ' associated to site ' . $this->site->name;
+            $new_log = $status_log.'\nDevice '.$this->device->name.' associated to site '.$this->site->name;
             $this->task->update(['status_log' => $new_log]);
         }
     }
@@ -71,17 +72,14 @@ class AssociateDeviceToSiteJob implements ShouldQueue
         if (! $sites->ok()) {
             Log::error($sites->json('message'));
             $this->fail();
-        }
-
-        else {
+        } else {
             $site_list = $sites->json('sites');
-            $classic_site = array_find($site_list, fn($site) => $site['site_name'] == $this->device->site->name);
-            if (!$classic_site) {
-                $error_message = 'Site ' . $this->device->site->name . ' not found in classic';
+            $classic_site = array_find($site_list, fn ($site) => $site['site_name'] == $this->device->site->name);
+            if (! $classic_site) {
+                $error_message = 'Site '.$this->device->site->name.' not found in classic';
                 Log::error($error_message);
                 $this->fail($error_message);
-            }
-            else {
+            } else {
                 $this->device->site->update(['classic_id' => $classic_site['site_id']]);
             }
         }
@@ -90,5 +88,13 @@ class AssociateDeviceToSiteJob implements ShouldQueue
     public function retryUntil(): DateTime
     {
         return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
+
+    public function failed(?Throwable $exception)
+    {
+        Log::error($exception);
+        $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
+        $this->task->update(['status_log' => $this->task->status_log.$exception]);
+        sleep($this->wait_time * 60);
     }
 }

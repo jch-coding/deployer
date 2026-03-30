@@ -9,6 +9,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class AssignDeviceFunctionJob implements ShouldQueue
 {
@@ -18,10 +19,12 @@ class AssignDeviceFunctionJob implements ShouldQueue
      * Create a new job instance.
      */
     public int $deployment_time;
+    public int $wait_time;
 
     public function __construct(public array $devices, public string $device_function, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
+        $this->wait_time = $task->wait_time ?? 1;
     }
 
     /**
@@ -46,5 +49,12 @@ class AssignDeviceFunctionJob implements ShouldQueue
     public function retryUntil(): DateTime
     {
         return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
+
+    public function failed(?Throwable $exception)
+    {
+        Log::error($exception);
+        $this->task->devices()->find($this->devices[0]['id'])->pivot->update(['status' => 'FAILED']);
+        $this->release($this->wait_time * 60);
     }
 }

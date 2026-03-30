@@ -8,6 +8,7 @@ use App\Models\Task;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -18,6 +19,7 @@ class TestJob implements ShouldQueue
     use Queueable, Batchable;
 
     private $deployment_time;
+    private $wait_time;
 
     /**
      * Create a new job instance.
@@ -28,7 +30,8 @@ class TestJob implements ShouldQueue
         if (is_array($data) && array_key_exists('deployment_time', $data)) {
             $this->deployment_time = $data['retry_until'];
         }
-        $this->deployment_time= $this->deployment_time > 0 ? $this->deployment_time : 10;
+        $this->deployment_time= $this->deployment_time > 0 ? $this->deployment_time : 3;
+        $this->wait_time = $data['wait_time'] ?? 2;
     }
 
     /**
@@ -36,11 +39,8 @@ class TestJob implements ShouldQueue
      */
     public function handle(): void
     {
-        TestEvent::dispatch($this->data);
         sleep(random_int(1,10));
-        DeploymentEvent::dispatch($this->data);
-        $task = Task::find($this->data['task_id']);
-        $task->devices()->find($this->data['device_name'])->pivot->update(['status' => 'COMPLETED']);
+        $this->fail();
     }
 
     public function retryUntil(): DateTime
@@ -51,5 +51,6 @@ class TestJob implements ShouldQueue
     public function failed(?Throwable $exception): void
     {
         echo $exception;
+        Artisan::call('queue:clear');
     }
 }

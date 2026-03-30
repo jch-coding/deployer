@@ -13,7 +13,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class CreateLocalOverrideForPortProfile implements ShouldQueue
+class CreateLocalOverrideForPortProfileGeneral implements ShouldQueue
 {
     use Batchable, Queueable;
 
@@ -22,7 +22,8 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
      * $portProfileInfo = [
      *     'sw_profile' => string (port profile name as it is in Central),
      *     'device_function' => string
-     *     'site' => site model with name and possibly scope_id
+     *     'container' => site/device group/collection model with name and possibly scope_id
+     *     'container_type' => string
      * ]
      */
     public int $deployment_time;
@@ -31,7 +32,7 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
     public function __construct(public array $portProfileInfo, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
-        $this->wait_time = $task->wait_time ?? 1;
+        $this->wait_time = $task->wait_time ?? 3;
     }
 
     /**
@@ -39,22 +40,34 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
      */
     public function handle(): void
     {
+        $container_to_url = [
+            'site_collection' => fn () => $this->centralAPIHelper->get_site_collections(),
+            'site' => fn () => $this->centralAPIHelper->get_sites(),
+            'device_group' => fn () => $this->centralAPIHelper->get_device_groups(),
+        ];
         $statusLog = $this->task->status_log;
-        if (! $this->portProfileInfo['site']->scope_id) {
-            $site_scope_id = $this->centralAPIHelper->get_site_scope_id($this->portProfileInfo['site']);
-            if (! $site_scope_id) {
-                $newStatusLog = $statusLog."\nfailed to retrieve scope ID for site ".$this->portProfileInfo['site']->name."\n";
+        if (! $this->portProfileInfo['container']['scope_id']) {
+            $container_response = $container_to_url[$this->portProfileInfo['container_type']]();
+            if (! $container_response->ok()) {
+                $newStatusLog = $statusLog."\nfailed to retrieve container: ".$this->portProfileInfo['container']['name']." from central\n";
                 $this->task->update(['status_log' => $newStatusLog]);
-                Log::error('failed to retrieve scope ID for site '.$this->portProfileInfo['site']->name);
-
-                return;
+                Log::error('failed to retrieve container:'.$this->portProfileInfo['container']['name'].' from central');
+                $this->release($this->wait_time * 60);
+            } else {
+                $container_item = collect($container_response->json('items'))->filter(fn ($item) => $item['scopeName'] === $this->portProfileInfo['container']['name']);
+                if ($container_item->isEmpty()) {
+                    $newStatusLog = $statusLog."\nfailed to retrieve container: ".$this->portProfileInfo['container']['name']." from central\n";
+                    $this->task->update(['status_log' => $newStatusLog]);
+                    Log::error('failed to retrieve container:'.$this->portProfileInfo['container']['name'].' from central');
+                    $this->release($this->wait_time * 60);
+                } else {
+                    $this->portProfileInfo['container']['scope_id'] = $container_item->first()['scopeId'];
+                }
             }
-            $this->portProfileInfo['site']->scope_id = $site_scope_id;
-            $this->portProfileInfo['site']->save();
         }
         $query_parameters = [
             'object-type' => 'LOCAL',
-            'scope-id' => $this->portProfileInfo['site']->scope_id,
+            'scope-id' => $this->portProfileInfo['container']['scope_id'],
             'device-function' => $this->portProfileInfo['device_function'],
         ];
         // check whether the port profile is already an override at the scope
@@ -64,18 +77,17 @@ class CreateLocalOverrideForPortProfile implements ShouldQueue
             if (! $post_response->ok()) {
                 if (str_contains($post_response->json()['message'], 'Cannot create duplicate config')) {
                     Log::info('Port profile override already exists for '.$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name);
+
+                    return;
                 } else {
                     $newStatusLog = $statusLog."\nfailed to override port profile at the site level profile:".$this->portProfileInfo['sw_profile'].' site:'.$this->portProfileInfo['site']->name."\n";
                     $this->task->update(['status_log' => $newStatusLog]);
                     Log::error('failed to override port profile at the site level profile:'.$this->portProfileInfo['sw_profile'].' site:'.$this->portProfileInfo['site']->name);
+                    $this->release($this->wait_time * 60);
                 }
             }
         } else {
-            $newStatusLog = $statusLog."\nfailed to retrieve port profile: ".$this->portProfileInfo['sw_profile']." from central\n";
-            $this->task->update(['status_log' => $newStatusLog]);
-            Log::error('failed to retrieve port profile:'.$this->portProfileInfo['sw_profile'].' from central');
-
-            return;
+            $this->fail();
         }
         $newStatusLog = $statusLog."\nPort profile override for ".$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name." completed\n";
         $this->task->update(['status_log' => $newStatusLog]);
