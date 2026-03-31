@@ -22,7 +22,7 @@ type DeploymentType = {
     name: string,
 }
 
-export default function TaskItemsCard({ task, devices, deployment } : { task: string, devices: DeviceType[], deployment: DeploymentType }) {
+export default function TaskItemsCard({ task, task_friendly_name, task_friendly_description, devices, deployment } : { task: string, task_friendly_name: string, task_friendly_description: string, devices: DeviceType[], deployment: DeploymentType }) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
@@ -52,24 +52,11 @@ export default function TaskItemsCard({ task, devices, deployment } : { task: st
         router.post(store(deployment.id).url, taskData)
     }
 
-
-    // const newItemUpdated = (newItemEvent) => {
-    //     if (newItemEvent.event_type === 'FailureEvent') {
-    //         toast.error(newItemEvent.data.message)
-    //     }
-    // }
-    //
-    // useEcho(
-    //     `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
-    //     ['DeploymentEvent','FailureEvent'],
-    //     (event) => {
-    //         newItemUpdated(event)
-    // })
-
     return (
-        <Card className="min-w-sm">
+        <Card className="min-w-sm max-w-md">
             <CardHeader>
-                <CardTitle>{task}</CardTitle>
+                <CardTitle>{task_friendly_name}</CardTitle>
+                <CardDescription>{task_friendly_description}</CardDescription>
             </CardHeader>
             <CardContent className="flex gap-2">
                 <Dialog>

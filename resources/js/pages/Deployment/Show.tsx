@@ -48,6 +48,8 @@ type Task = {
     updated_at: string;
     human_updated_at: string;
     human_created_at: string;
+    friendly_name: string;
+    friendly_description: string;
 }
 
 type DeploymentPageProps = {
@@ -154,7 +156,9 @@ export default function Show() {
                             return (
                                 <TaskComponent
                                     index={index}
-                                    task={task}
+                                    task={task.task_type}
+                                    task_friendly_name={task.friendly_name}
+                                    task_friendly_description={task.friendly_description}
                                     devices={allDevices}
                                     deployment={deployment}
                                 />

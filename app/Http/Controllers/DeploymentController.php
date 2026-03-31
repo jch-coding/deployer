@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Deployment;
+use App\Models\Task;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -53,12 +54,13 @@ class DeploymentController extends Controller
             ->filter(fn ($task) => $task !== null);
         $items = $latest_of_tasks->map(fn ($task) => $task->devices->map(fn ($device) => $device->interfaces)->collapse());
         $items_obj = collect(array_map(fn ($task, $item) => [$task['task_type'] => $item], $latest_of_tasks->toArray(), $items->toArray()))->collapse();
-        $items_with_names = $items_obj->map(fn($group) => array_map(fn($member) => [...$member, 'name' => $member['interface']], $group));
+        $items_with_names = $items_obj->map(fn ($group) => array_map(fn ($member) => [...$member, 'name' => $member['interface']], $group));
 
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
             'devices' => $deployment->devices()->with('interfaces')->paginate(10),
-            'tasks' => array_map(fn ($task) => $task->name, TaskType::cases()),
+            'tasks' => array_map(fn ($task) => ['task_type' => $task->name, 'friendly_name' => Task::getTaskFriendlyName($task->name), 'friendly_description' => Task::getTaskFriendlyDescription($task->name)],
+                TaskType::cases()),
             'latest_tasks' => $latest_tasks,
             'items' => $items_with_names,
         ]);

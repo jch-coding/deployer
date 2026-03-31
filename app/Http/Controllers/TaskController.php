@@ -2,9 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\DeviceConfigFailedEvent;
-use App\Events\DeviceGetScopeIdEvent;
-use App\Events\DeviceSystemInfoUpdateEvent;
 use App\Events\TestEvent;
 use App\Helper\CentralAPIHelper;
 use App\Jobs\AssignDeviceFunctionJob;
@@ -14,11 +11,11 @@ use App\Jobs\ConfigureEthernetInterface;
 use App\Jobs\ConfigureLagInterfaceJob;
 use App\Jobs\ConfigureVlanInterfaceJob;
 use App\Jobs\CreateVSFProfileJob;
+use App\Jobs\MoveDevicesToGroupJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
-use App\Models\Device;
 use App\Models\Task;
 use App\TaskType;
 use Illuminate\Bus\Batch;
@@ -55,6 +52,9 @@ class TaskController extends Controller
         'CREATE_VSF_PROFILE' => [
             'sku',
         ],
+        'MOVE_DEVICE_TO_GROUP' => [
+            'group',
+        ],
         'TEST_TASK' => [],
     ];
 
@@ -65,6 +65,8 @@ class TaskController extends Controller
 
         return Inertia::render($inertia_component, [
             'task' => $task,
+            'task_friendly_name' => Task::getTaskFriendlyName($task->task_type),
+            'task_friendly_description' => Task::getTaskFriendlyDescription($task->task_type),
             'devices' => $task->devices,
             'interfaces' => $isDeviceBasedTask ? [] : $task->deviceInterfaces()->withPivot('status')->get(),
             'deployment' => $task->deployment,
@@ -162,6 +164,13 @@ class TaskController extends Controller
                 $devices_by_group = $in_progress->groupBy('group');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
                 $devices_by_group_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, PreprovisionDevicesToGroupJob::class);
+                $jobs = array_merge($jobs, $devices_by_group_jobs);
+                break;
+            case 'MOVE_DEVICE_TO_GROUP':
+                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+                $devices_by_group = $in_progress->groupBy('group');
+                $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
+                $devices_by_group_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, MoveDevicesToGroupJob::class);
                 $jobs = array_merge($jobs, $devices_by_group_jobs);
                 break;
             case 'ASSIGN_DEVICE_FUNCTION':

@@ -56,6 +56,7 @@ class Task extends Model
             'ASSOCIATE_SITE_AND_NAME',
             'CREATE_VSF_PROFILE',
             'UPDATE_SYSTEM_INFO',
+            'MOVE_DEVICE_TO_GROUP',
         ];
 
         switch ($task_type) {
@@ -66,13 +67,79 @@ class Task extends Model
         }
     }
 
+    public static function getTaskFriendlyName($task_type): string
+    {
+        switch ($task_type) {
+            case 'UPDATE_SYSTEM_INFO':
+                return 'Name Devices';
+            case 'CONFIGURE_ETHERNET_INTERFACE':
+                return 'Configure Ethernet Interfaces';
+            case 'CONFIGURE_LAG_INTERFACE':
+                return 'Configure Portchannel/LAG interface';
+            case 'CONFIGURE_VLAN_INTERFACE':
+                return 'Configure SVI';
+            case 'CONFIGURE_ALL_INTERFACE':
+                return 'Configure all interfaces';
+            case 'CREATE_VSF_PROFILE':
+                return 'Create VSF Profile';
+            case 'ASSOCIATE_DEVICE_TO_SITE':
+                return 'Associate Devices to Site';
+            case 'ASSOCIATE_SITE_AND_NAME':
+                return 'Associate Devices to Site and Name';
+            case 'PREPROVISION_DEVICE_TO_GROUP':
+                return 'Preprovision Devices to Group';
+            case 'MOVE_DEVICE_TO_GROUP':
+                return 'Move Devices to Device Group';
+            case 'ASSIGN_DEVICE_FUNCTION':
+                return 'Assign Device Function to Devices';
+            case 'TEST_TASK':
+                return 'Test Task';
+            default:
+                return 'Unknown Task';
+        }
+    }
+
+    public static function getTaskFriendlyDescription($task_type): string
+    {
+        switch ($task_type) {
+            case 'UPDATE_SYSTEM_INFO':
+                return 'Name or rename devices';
+            case 'CONFIGURE_ETHERNET_INTERFACE':
+                return 'Configure physical interfaces';
+            case 'CONFIGURE_LAG_INTERFACE':
+                return 'Configure aggregate interfaces';
+            case 'CONFIGURE_VLAN_INTERFACE':
+                return 'Configure L3 VLAN interfaces';
+            case 'CONFIGURE_ALL_INTERFACE':
+                return 'Configure ethernet, SVI and LAG interfaces';
+            case 'ASSOCIATE_DEVICE_TO_SITE':
+                return 'Associate devices to a site';
+            case 'ASSOCIATE_SITE_AND_NAME':
+                return 'Associate devices to sites and name them';
+            case 'PREPROVISION_DEVICE_TO_GROUP':
+                return 'Preprovision devices to a group';
+            case 'CREATE_VSF_PROFILE':
+                return 'Create autostack VSF Profile';
+            case 'MOVE_DEVICE_TO_GROUP':
+                return 'Move devices to a device group';
+            case 'ASSIGN_DEVICE_FUNCTION':
+                return 'Assign device function to devices';
+            case 'TEST_TASK':
+                return 'Test Task';
+            default:
+                return 'Unknown Task';
+        }
+    }
+
     public function processTaskStatus()
     {
         if ($this->getTaskCategory($this->task_type) == 'INTERFACE') {
             $completed_interfaces = $this->deviceInterfaces()->where('status', 'COMPLETED')->get();
+
             return count($completed_interfaces) == $this->deviceInterfaces()->count();
         } elseif ($this->getTaskCategory($this->task_type) == 'DEVICE') {
             $completed_devices = $this->devices()->where('status', 'COMPLETED')->get();
+
             return count($completed_devices) == $this->devices()->count();
         }
     }

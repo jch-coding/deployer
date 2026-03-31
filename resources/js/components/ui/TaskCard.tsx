@@ -1,5 +1,4 @@
 import { router } from '@inertiajs/react';
-import { useEcho } from '@laravel/echo-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,13 +20,14 @@ type DeploymentType = {
     name: string,
 }
 
-export default function TaskCard({ task, devices, deployment } : { task: string, devices: DeviceType[], deployment: DeploymentType }) {
+export default function TaskCard({ task, task_friendly_name, task_friendly_description, devices, deployment } : { task: string, task_friendly_name: string, task_friendly_description: string, devices: DeviceType[], deployment: DeploymentType }) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
     const [statusMessage, setStatusMessage] = useState()
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
+
     const handleCheckboxChange = (deviceId : number, checked : boolean) => {
         const newDevice = devices.find(device => device.id === deviceId)
         if (checked) {
@@ -55,24 +55,11 @@ export default function TaskCard({ task, devices, deployment } : { task: string,
 
     const resetCompletedDevices = () => setCompletedDevices([])
 
-    // const newItemUpdated = (newItemEvent) => {
-    //     const newDeviceUpdated = {...devices.find(device => device.id === parseInt(newItemEvent.data.device_name)), completed: true}
-    //     setCompletedDevices((prevState) => [...prevState, newDeviceUpdated])
-    //
-    //     setStatusMessage(newItemEvent.data.message)
-    // }
-    //
-    // useEcho(
-    //     `deployments.channel.${deployment.name.replaceAll(' ', '-')}`,
-    //     'DeploymentEvent',
-    //     (event) => {
-    //         newItemUpdated(event)
-    // })
-
     return (
-        <Card className="min-w-sm">
+        <Card className="max-w-sm">
             <CardHeader>
-                <CardTitle>{task}</CardTitle>
+                <CardTitle>{task_friendly_name}</CardTitle>
+                <CardDescription>{task_friendly_description}</CardDescription>
             </CardHeader>
             <CardContent className="flex gap-2">
                 <Dialog>
