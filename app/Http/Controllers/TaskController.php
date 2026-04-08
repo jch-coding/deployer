@@ -121,6 +121,8 @@ class TaskController extends Controller
                 sleep(random_int(1, 6));
             }
         }
+        Inertia::flash('success', 'Task cancelled successfully.');
+        return back();
     }
 
     public function chunk_devices(Collection $devices_by_group)

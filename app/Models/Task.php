@@ -78,8 +78,6 @@ class Task extends Model
                 return 'Configure Portchannel/LAG interface';
             case 'CONFIGURE_VLAN_INTERFACE':
                 return 'Configure SVI';
-            case 'CONFIGURE_ALL_INTERFACE':
-                return 'Configure all interfaces';
             case 'CREATE_VSF_PROFILE':
                 return 'Create VSF Profile';
             case 'ASSOCIATE_DEVICE_TO_SITE':
@@ -110,8 +108,6 @@ class Task extends Model
                 return 'Configure aggregate interfaces';
             case 'CONFIGURE_VLAN_INTERFACE':
                 return 'Configure L3 VLAN interfaces';
-            case 'CONFIGURE_ALL_INTERFACE':
-                return 'Configure ethernet, SVI and LAG interfaces';
             case 'ASSOCIATE_DEVICE_TO_SITE':
                 return 'Associate devices to a site';
             case 'ASSOCIATE_SITE_AND_NAME':

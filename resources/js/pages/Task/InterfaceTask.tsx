@@ -1,19 +1,21 @@
-import { usePage, usePoll } from '@inertiajs/react';
+import { router, usePage, usePoll } from '@inertiajs/react';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import {
-    ChevronRightCircleIcon,
+    ChevronRightCircleIcon, PowerOffIcon,
 } from 'lucide-react';
 import { dashboard } from '@/routes';
 import { index as clientIndex } from '@/routes/clients';
-import  { show as showDeployment } from '@/routes/deployments';
-import { show as showTask} from '@/routes/tasks';
+import { show as showDeployment } from '@/routes/deployments';
+import { cancel, show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem } from '@/types';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 
 export default function Show() {
     const task = usePage().props.task
+    const task_friendly_name = usePage().props.task_friendly_name
     const devices = usePage().props.devices
     const interfaces = usePage().props.interfaces
     const deployment = usePage().props.deployment
@@ -45,8 +47,13 @@ export default function Show() {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
+            <div className="absolute top-4 right-4">
+                <Button variant="destructive" onClick={() => router.patch(cancel(task.id).url)}>
+                    <PowerOffIcon /> Cancel Task
+                </Button>
+            </div>
             <div className="text-center text-2xl font-bold">
-                {task.task_type}
+                {task_friendly_name}
             </div>
             <div className="mx-auto my-2 flex min-w-7xl gap-4">
                 <div className="max-w-[400px]">

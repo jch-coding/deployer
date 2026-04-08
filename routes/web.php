@@ -48,14 +48,6 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::controller(TaskController::class)->group(function () {
-//        Route::get('/tasks/update_system_info/{task}', 'showSystemInfo')->name('tasks.show-system-info');
-//        Route::get('/tasks/ethernet_interface/{task}', 'showEthernetInterface')->name('tasks.show-ethernet-interface');
-//        Route::get('/tasks/lag_interface/{task}', 'showLagInterface')->name('tasks.show-lag-interface');
-//        Route::get('/tasks/vlan_interface/{task}', 'showVlanInterface')->name('tasks.show-vlan-interface');
-//        Route::get('/tasks/assign_device_function/{task}', 'showAssignDeviceFunction')->name('tasks.show-assign-device-function');
-//        Route::get('/tasks/preprovision_device_to_group/{task}', 'showPreprovisionDeviceToGroup')->name('tasks.show-preprovision-device-to-group');
-//        Route::get('/tasks/associate_site_and_name/{task}', 'showAssociateSiteAndName')->name('tasks.show-associate-site-and-name');
-//        Route::get('/tasks/create_vsf_profile/{task}', 'showCreateVSFProfile')->name('tasks.show-create-vsf-profile');
         Route::get('/tasks/{task}', 'show')->name('tasks.show');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');

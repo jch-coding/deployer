@@ -46,12 +46,14 @@ class DeploymentController extends Controller
             ->map(function ($task) {
                 $task->human_created_at = Carbon::parse($task->created_at)->diffForHumans();
                 $task->human_updated_at = Carbon::parse($task->updated_at)->diffForHumans();
+                $task->friendly_name = Task::getTaskFriendlyName($task->task_type);
 
                 return $task;
             });
 
         $latest_of_tasks = collect(TaskType::cases())->map(fn ($task) => $deployment->tasks()->where('task_type', $task->name)->latest()->first())
             ->filter(fn ($task) => $task !== null);
+
         $items = $latest_of_tasks->map(fn ($task) => $task->devices->map(fn ($device) => $device->interfaces)->collapse());
         $items_obj = collect(array_map(fn ($task, $item) => [$task['task_type'] => $item], $latest_of_tasks->toArray(), $items->toArray()))->collapse();
         $items_with_names = $items_obj->map(fn ($group) => array_map(fn ($member) => [...$member, 'name' => $member['interface']], $group));

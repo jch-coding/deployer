@@ -25,6 +25,9 @@ type DeviceDef = {
         id: number;
         interface: string;
         ip_address?: string;
+        sw_profile?: string;
+        description?: string;
+        lacp_profile_id?: number;
     }[]
 }
 
@@ -69,6 +72,7 @@ export const columns: ColumnDef<DeviceDef>[] = [
     },
     {
         id: "actions",
+        header: 'Interfaces',
         cell: ({ row }) => (
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -81,12 +85,12 @@ export const columns: ColumnDef<DeviceDef>[] = [
                         <MoreHorizontal className="h-5 w-5" />
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="overflow-y-scroll max-h-24">
                     <DropdownMenuLabel>Interfaces</DropdownMenuLabel>
                     {
                         row.original.interfaces.map((device_interface) => (
                             <DropdownMenuItem key={device_interface.id}>
-                                {device_interface.interface}
+                                {! device_interface.interface.includes('/') && ! device_interface.lacp_profile_id ? 'VLAN' : '' } {device_interface.lacp_profile_id ? 'LAG' : '' } {device_interface.interface} {device_interface.ip_address ? ` - IP: ${device_interface.ip_address}`: '' } {device_interface.sw_profile ? `(${device_interface.sw_profile})` : ''} {device_interface.description ? ` - desc: ${device_interface.description}` : ''}
                             </DropdownMenuItem>
                         ))
                     }
@@ -95,48 +99,3 @@ export const columns: ColumnDef<DeviceDef>[] = [
         )
     }
 ]
-
-const EditDeviceModal = (id : number) => {
-    const [isDialogOpen, setIsDialogOpen] = useState(false);
-    return (
-        <>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogHeader>
-                <DialogTitle>
-                    Edit Device
-                </DialogTitle>
-            </DialogHeader>
-            <DialogContent>
-                <Form action={editDevice(id)} method="PUT">
-                    <Field>
-                        <label htmlFor="name">Name</label>
-                        <input type="text" name="name" id="name" />
-                    </Field>
-                    <Field>
-                        <label htmlFor="serial">Serial</label>
-                        <input type="text" name="serial" id="serial" />
-                    </Field>
-                    <Field>
-                        <label htmlFor="device_function">Device Function</label>
-                        <input type="text" name="device_function" id="device_function" />
-                    </Field>
-                    <Field>
-                        <label htmlFor="group">Device Group</label>
-                        <input type="text" name="group" id="group" />
-                    </Field>
-                    <Field>
-                        <label htmlFor="site">Site</label>
-                        <input type="text" name="site" id="site" />
-                    </Field>
-                </Form>
-            </DialogContent>
-            <DialogFooter>
-                <DialogClose asChild>
-                    <Button variant="secondary">Cancel</Button>
-                </DialogClose>
-                <Button type="submit">Edit</Button>
-            </DialogFooter>
-        </Dialog>
-        </>
-    )
-}

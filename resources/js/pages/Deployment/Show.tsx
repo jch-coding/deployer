@@ -110,7 +110,7 @@ export default function Show() {
                             {latest_tasks.map((task, index) => (
                                 <Card index={index} className="max-w-sm px-2">
                                     <CardTitle className="text-center text-xs">
-                                        {task.task_type}
+                                        {task.friendly_name}
                                     </CardTitle>
                                     <CardDescription className="text-center text-xs">
                                         latest updated: {task.human_updated_at}
