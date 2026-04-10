@@ -4,12 +4,12 @@ namespace App\Http\Controllers;
 
 use App\BaseURL;
 use App\ClassicBaseUrl;
-use App\Http\Controllers\CentralController;
 use App\Http\Resources\ClientResource;
 use App\Models\Client;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+
 class ClientController extends Controller
 {
     /**
@@ -18,6 +18,7 @@ class ClientController extends Controller
     public function index(Request $request)
     {
         $clients = ClientResource::collection($request->user()->clients()->paginate(15));
+
         return Inertia::render('Client/Index', ['clients' => $clients, 'base_urls' => BaseURL::cases()]);
     }
 
@@ -44,13 +45,15 @@ class ClientController extends Controller
 
         $access_token = CentralController::getAccessToken($data['client_id'], $data['client_secret']);
 
-        if($access_token === 'failed_to_get_token') {
+        if ($access_token === 'failed_to_get_token') {
             Inertia::flash('error', 'Failed to get access token from central.');
+
             return back();
         }
 
         $data = array_merge($data, ['bearer_token' => $access_token]);
         Inertia::flash('success', 'Successfully got access token from central. Client created successfully.');
+
         return to_route('clients.index');
     }
 
@@ -69,14 +72,12 @@ class ClientController extends Controller
 
         $access_token = CentralController::getAccessToken($data['client_id'], $data['client_secret']);
 
-        if($access_token === 'failed_to_get_token') {
+        if ($access_token === 'failed_to_get_token') {
             return back()->withErrors(['failed_to_get_token' => 'Failed to get access token from central.']);
-        }
-
-        else {
+        } else {
             $client_data = array_merge($data, ['bearer_token' => $access_token]);
 
-            if($request->has('classic_client_id')) {
+            if ($request->classic_client_id !== null) {
                 $classic_central_data = $request->validate([
                     'classic_client_id' => 'required|string|min:12|max:255',
                     'classic_client_secret' => 'required|string|min:12|max:255',
@@ -87,16 +88,18 @@ class ClientController extends Controller
                 $client_data = array_merge($client_data, $classic_central_data, ['classic_base_url' => $classic_base_url]);
             }
             $request->user()->clients()->create($client_data);
-            if($request->user()->clients()->count() == 1) {
+            if ($request->user()->clients()->count() == 1) {
                 $request->user()->clients()->first()->update(['current' => true]);
             }
             Inertia::flash('success', 'Client created successfully.');
+
             return back();
         }
     }
 
-    public function mapClassicBaseUrl(string $base_url) {
-        switch($base_url) {
+    public function mapClassicBaseUrl(string $base_url)
+    {
+        switch ($base_url) {
             case BaseURL::US1->value:
                 return ClassicBaseUrl::US1->value;
             case BaseURL::US2->value:
@@ -113,10 +116,7 @@ class ClientController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Client $client)
-    {
-
-    }
+    public function show(Client $client) {}
 
     /**
      * Show the form for editing the specified resource.
@@ -131,24 +131,30 @@ class ClientController extends Controller
      */
     public function update(Request $request, Client $client)
     {
-        if($request->user()->cannot('update', $client)) {
+        if ($request->user()->cannot('update', $client)) {
             abort(403);
         }
 
         $validated = [];
-        if($request->has('name'))
+        if ($request->has('name')) {
             $validated = array_merge($validated, $request->validate(['name' => 'string|min:3|max:255']));
-        if($request->has('client_id'))
+        }
+        if ($request->has('client_id')) {
             $validated = array_merge($validated, $request->validate(['client_id' => 'string|min:12|max:255']));
-        if($request->has('client_secret'))
+        }
+        if ($request->has('client_secret')) {
             $validated = array_merge($validated, $request->validate(['client_secret' => 'string|min:12|max:255']));
-        if($request->has('customer_id'))
+        }
+        if ($request->has('customer_id')) {
             $validated = array_merge($validated, $request->validate(['customer_id' => 'string|min:12|max:255']));
-        if($request->has('base_url'))
+        }
+        if ($request->has('base_url')) {
             $validated = array_merge($validated, $request->validate(['base_url' => 'string']));
+        }
 
         $client->update($validated);
         Inertia::flash('success', 'Client updated successfully.');
+
         return to_route('clients.index');
     }
 
@@ -157,15 +163,16 @@ class ClientController extends Controller
      */
     public function updateCurrent(Request $request, Client $client)
     {
-        if($request->user()->cannot('update', $client)) {
+        if ($request->user()->cannot('update', $client)) {
             abort(403);
         }
         $oldCurrentClient = $request->user()->clients()->where('current', true)->first();
-        if($oldCurrentClient) {
+        if ($oldCurrentClient) {
             $oldCurrentClient->update(['current' => false]);
         }
         $client->update(['current' => true]);
         Inertia::share('current_client', $client);
+
         return to_route('clients.index');
     }
 
@@ -174,11 +181,12 @@ class ClientController extends Controller
      */
     public function destroy(Request $request, Client $client)
     {
-        if($request->user()->cannot('delete', $client)) {
+        if ($request->user()->cannot('delete', $client)) {
             abort(403);
         }
         $client->delete();
         Inertia::flash('success', 'Client deleted successfully.');
+
         return back();
     }
 }

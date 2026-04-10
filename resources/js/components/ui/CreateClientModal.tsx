@@ -1,4 +1,4 @@
-import { Form  } from '@inertiajs/react';
+import { Form, useForm } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Field, FieldGroup } from '@/components/ui/field';
 import { store } from '@/routes/clients';
 
 export default function CreateClientModal( {  errors, base_urls }: { errors: Record<string, string>, base_urls: string[] } ) {
+    const { resetAndClearErrors } = useForm();
     const dialogCloseRef = useRef<HTMLButtonElement>(null);
     const [ saveSuccess, setSaveSuccess ] = useState(false);
     useEffect(
@@ -41,6 +42,10 @@ export default function CreateClientModal( {  errors, base_urls }: { errors: Rec
                         setSaveSuccess(true);
                         }
                     }
+                    onError={ () => {
+                        toast.error('Failed to save client');
+                    }}
+                    onAbort={() => resetAndClearErrors()}
                     className="block space-y-4">
                     <FieldGroup>
                         {
@@ -79,18 +84,22 @@ export default function CreateClientModal( {  errors, base_urls }: { errors: Rec
                         <Field>
                             <label htmlFor="classic_client_id" className="font-bold">Classic Client ID</label>
                             <input name="classic_client_id" id="classic_client_id" type="text" placeholder="optional" className="input input-bordered w-full" />
+                            { errors.classic_client_id && <span className="text-error">{errors.classic_client_id}</span>}
                         </Field>
                         <Field>
                             <label htmlFor="classic_client_secret" className="font-bold">Classic Client Secret</label>
                             <input name="classic_client_secret" id="classic_client_secret" type="text" placeholder="optional" className="input input-bordered w-full" />
+                            { errors.classic_client_secret && <span className="text-error">{errors.classic_client_secret}</span>}
                         </Field>
                         <Field>
                             <label htmlFor="classic_username" className="font-bold">Classic Username</label>
                             <input name="classic_username" id="classic_username" type="text" placeholder="optional" className="input input-bordered w-full" />
+                            { errors.classic_username && <span className="text-error">{errors.classic_username}</span>}
                         </Field>
                         <Field>
                             <label htmlFor="classic_password" className="font-bold">Classic Password</label>
                             <input name="classic_password" id="classic_password" type="password" placeholder="optional" className="input input-bordered w-full" />
+                            { errors.classic_password && <span className="text-error">{errors.classic_password}</span>}
                         </Field>
                     </FieldGroup>
                     <DialogFooter>
