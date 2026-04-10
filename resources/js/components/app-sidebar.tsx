@@ -56,7 +56,7 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={dashboard()} className="text-slate-800 font-bold" prefetch>
+                            <Link href={dashboard()} className="text-slate-800 dark:text-slate-200 font-bold" prefetch>
                                 {current_client ? current_client.name : 'Client Not Set'}
                             </Link>
                         </SidebarMenuButton>

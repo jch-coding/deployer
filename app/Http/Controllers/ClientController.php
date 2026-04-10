@@ -91,9 +91,8 @@ class ClientController extends Controller
             if ($request->user()->clients()->count() == 1) {
                 $request->user()->clients()->first()->update(['current' => true]);
             }
-            Inertia::flash('success', 'Client created successfully.');
 
-            return back();
+            return back()->with('success', 'Client created successfully.');
         }
     }
 
