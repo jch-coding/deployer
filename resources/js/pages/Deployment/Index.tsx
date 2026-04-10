@@ -1,10 +1,15 @@
 import { Field } from '@headlessui/react';
-import { Form, usePage } from '@inertiajs/react';
+import { Form, Link, router, usePage } from '@inertiajs/react';
+import { TrashIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/DeploymentController';
 import { Button } from '@/components/ui/button';
-import { columns } from '@/components/ui/columns';
-import { DataTable } from '@/components/ui/data-table';
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import {
     Dialog,
     DialogClose,
@@ -17,12 +22,13 @@ import {
 import { FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
+import { destroy, show as showDeployment } from '@/routes/deployments';
 import { type SharedData } from '@/types';
 
 type Deployment = {
     id: number;
     name: string;
-    devices: number;
+    devices_count: number;
 }
 
 type DeploymentIndexProps = {
@@ -41,11 +47,51 @@ export default function Index() {
         <AppLayout>
             <div className="min-w-6xl mx-auto flex-1">
                 <h1 className="font-bold text-2xl text-center">Deployments</h1>
-                {
-                    deployments.length > 0
-                        ? <DataTable data={deployments} columns={columns} />
-                        : <p>No deployments found</p>
-                }
+                {deployments.length > 0 ? (
+                    <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {deployments.map((deployment) => (
+                            <Card key={deployment.id}>
+                                <CardHeader>
+                                    <CardTitle>{deployment.name}</CardTitle>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-3">
+                                    <p className="text-muted-foreground text-sm">
+                                        {deployment.devices_count === 1
+                                            ? '1 device'
+                                            : `${deployment.devices_count} devices`}
+                                    </p>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Link
+                                            href={showDeployment(deployment.id).url}
+                                            className="text-primary text-sm font-medium hover:underline"
+                                            data-test="deployment-link"
+                                        >
+                                            View deployment
+                                        </Link>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-auto px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                            data-test="delete"
+                                            onClick={() =>
+                                                router.delete(destroy(deployment.id))
+                                            }
+                                        >
+                                            <TrashIcon
+                                                className="mr-1 size-4"
+                                                aria-hidden
+                                            />
+                                            Delete
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                ) : (
+                    <p>No deployments found</p>
+                )}
                 <Dialog>
                     <DialogTrigger asChild>
                         <Button
