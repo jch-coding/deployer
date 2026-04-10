@@ -3,7 +3,6 @@ import {
     ActivityIcon,
     BookOpen,
     BuildingIcon,
-    Folder,
     LayoutGrid,
 } from 'lucide-react';
 import { NavFooter } from '@/components/nav-footer';
@@ -18,7 +17,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { dashboard, documentation } from '@/routes';
 import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
 import type { NavItem } from '@/types';
@@ -43,13 +42,8 @@ const mainNavItems: NavItem[] = [
 
 const footerNavItems: NavItem[] = [
     {
-        title: 'Repository',
-        href: 'https://github.com/laravel/react-starter-kit',
-        icon: Folder,
-    },
-    {
         title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#react',
+        href: documentation(),
         icon: BookOpen,
     },
 ];

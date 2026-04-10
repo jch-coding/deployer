@@ -5,6 +5,7 @@ use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DispatchController;
 use App\Http\Controllers\TaskController;
+use App\Http\Resources\ClientResource;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -15,8 +16,15 @@ Route::get('/', function () {
     ]);
 })->name('home');
 
+Route::get('/documentation', function () {
+    return Inertia::render('documentation');
+})->name('documentation');
+
 Route::get('dashboard', function () {
-    return Inertia::render('dashboard');
+    $clients = auth()->user()->clients()->withCount(['deployments', 'devices'])->get();
+    return Inertia::render('dashboard', [
+        'clients' => $clients->toResourceCollection(ClientResource::class),
+    ]);
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware(['auth'])->group(function () {
@@ -53,6 +61,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');
         Route::post('/tasks/test', 'test')->name('tasks.test');
         Route::patch('/tasks/{task}', 'cancel')->name('tasks.cancel');
+        Route::delete('/tasks/{task}', 'destroy')->name('tasks.destroy');
     });
 });
 

@@ -66,7 +66,7 @@ class DeviceController extends Controller
             'deployment_id' => $deployment->id,
         ]);
 
-        return redirect()->route('deployments.show', $deployment)->with('success', 'Device created successfully');
+        return to_route('deployments.show', $deployment)->with('success', 'Device created successfully');
     }
 
     /**
@@ -136,7 +136,7 @@ class DeviceController extends Controller
             }
         }
 
-        return redirect()->route('deployments.show', $deployment)
+        return to_route('deployments.show', $deployment)
             ->with([
                 'unsaved_devices' => $unsaved_devices,
                 'unsaved_interfaces' => $unsaved_interfaces,
@@ -158,11 +158,14 @@ class DeviceController extends Controller
             ];
             foreach ($device as $device_info) {
                 foreach (array_keys($empty) as $key) {
-                    if ($empty[$key] === '') $empty[$key] = $device_info[$key];
+                    if ($empty[$key] === '') {
+                        $empty[$key] = $device_info[$key] ?? '';
+                    }
                 }
             }
             $unique_devices[] = $empty;
         }
+
         return $unique_devices;
     }
 
@@ -493,7 +496,7 @@ class DeviceController extends Controller
         }
         $device->update($data);
 
-        return back()->with('success', 'Device updated successfully');
+        return to_route('deployments.show', $deployment)->with('success', 'Device updated successfully');
     }
 
     /**
@@ -501,8 +504,15 @@ class DeviceController extends Controller
      */
     public function destroy(Device $device)
     {
+        $deployment = $device->deployment;
+        if ($device->interfaces()->count() > 0) {
+            $device->interfaces->map(fn ($interface) => $interface->tasks()->detach());
+        }
+        if ($device->tasks()->count() > 0) {
+            $device->tasks()->detach();
+        }
         $device->delete();
 
-        return back()->with('success', 'Device deleted successfully');
+        return to_route('deployments.show', $deployment);
     }
 }

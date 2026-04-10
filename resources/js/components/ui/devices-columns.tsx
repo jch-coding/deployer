@@ -1,7 +1,9 @@
+import { router } from '@inertiajs/react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { MoreHorizontal, PencilIcon } from 'lucide-react';
+import { MoreHorizontal, TrashIcon } from 'lucide-react';
+import { Pencil } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { destroy as deleteDevice, edit as editDevice } from '@/routes/devices';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -9,12 +11,8 @@ import {
     DropdownMenuLabel,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Form, router } from '@inertiajs/react';
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Field } from '@/components/ui/field';
-import { useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { Pencil } from 'lucide-react';
+import { destroy as deleteDevice, edit as editDevice } from '@/routes/devices';
 
 type DeviceDef = {
     id: number;
@@ -96,6 +94,12 @@ export const columns: ColumnDef<DeviceDef>[] = [
                     }
                 </DropdownMenuContent>
             </DropdownMenu>
+        )
+    },
+    {
+        'id' : 'delete',
+        cell: ({row}) => (
+            <Button variant="outline" className="hover:bg-red-500 hover:text-white" onClick={() => router.delete(deleteDevice(row.original.id))}><TrashIcon /></Button>
         )
     }
 ]

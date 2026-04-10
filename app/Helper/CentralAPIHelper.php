@@ -609,9 +609,9 @@ class CentralAPIHelper
 
     public function delete_l2_vlan(Device $device, string $l2_vlan)
     {
-        if (! $this->client->handleBearerTokenAuth())
+        if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
-        else {
+        } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
                     'object-type' => 'LOCAL',
@@ -768,6 +768,7 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->classic_access_token)
                 ->withQueryParameters(['limit' => 20, 'offset' => 0])
                 ->get($this->client->classic_base_url.$this->classic_configuration['groups']);
+
             return $response;
         }
     }

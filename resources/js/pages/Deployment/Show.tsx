@@ -1,4 +1,16 @@
 import { Form, useForm, usePage } from '@inertiajs/react';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
+import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardTitle,
+} from '@/components/ui/card';
+import { DataTable } from '@/components/ui/data-table';
+import { columns } from '@/components/ui/devices-columns';
 import {
     Dialog,
     DialogClose,
@@ -8,25 +20,13 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/app-layout';
-import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
-import { columns } from '@/components/ui/devices-columns';
-import { DataTable } from '@/components/ui/data-table';
-import { toast } from 'sonner';
-import TaskCard from '@/components/ui/TaskCard';
-import type { Paginator } from '@/types/deployer';
-import type { SharedData } from '@/types';
-import { useState } from 'react';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardTitle,
-} from '@/components/ui/card';
+import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
+import AppLayout from '@/layouts/app-layout';
 import { show as showTask } from '@/routes/tasks';
+import type { SharedData } from '@/types';
+import type { Paginator } from '@/types/deployer';
 
 type Device = {
     id: string;
@@ -86,7 +86,6 @@ export default function Show() {
             'CONFIGURE_ETHERNET_INTERFACE',
             'CONFIGURE_LAG_INTERFACE',
             'CONFIGURE_VLAN_INTERFACE',
-            'CONFIGURE_ALL_INTERFACE',
         ]
     }
 
@@ -120,7 +119,6 @@ export default function Show() {
                                             <p>Devices: {task.devices_count}</p>
                                             <p>Status: {task.status}</p>
                                         </div>
-                                        {/*<Button onClick={() => router.patch(cancel(task.id).url)}>Cancel Task</Button>*/}
                                         <a
                                             href={showTask(task.id).url}
                                             className="text-emerald-500 hover:underline"

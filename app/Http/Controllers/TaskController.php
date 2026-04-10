@@ -97,6 +97,13 @@ class TaskController extends Controller
         return to_route('tasks.show', $task);
     }
 
+    public function destroy(Task $task)
+    {
+        $task->devices()->detach();
+        $task->delete();
+        return back();
+    }
+
     public function force_restart(Task $task)
     {
         $this->cancel($task);
