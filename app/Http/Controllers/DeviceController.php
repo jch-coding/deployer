@@ -475,7 +475,7 @@ class DeviceController extends Controller
             $data = array_merge($data, ['name' => $validated_name['name']]);
         }
         if ($request->has('serial')) {
-            $validated_serial = $request->validate(['serial' => 'string|min:12']);
+            $validated_serial = $request->validate(['serial' => 'string|min:10']);
             $data = array_merge($data, ['serial' => $validated_serial['serial']]);
         }
         if ($request->has('device_function')) {
@@ -495,6 +495,8 @@ class DeviceController extends Controller
             $data = array_merge($data, ['deployment_id' => $deployment->id]);
         }
         $device->update($data);
+
+        $deployment = $device->fresh()->deployment;
 
         return to_route('deployments.show', $deployment)->with('success', 'Device updated successfully');
     }

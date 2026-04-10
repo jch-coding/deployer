@@ -4,6 +4,27 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\User;
 
+it('can update serial', function () {
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients->first();
+    $client->update(['current' => true]);
+    $deployment = $client->deployments()->create(['name' => 'Test Deployment']);
+    $device = Device::factory()->create([
+        'client_id' => $client->id,
+        'deployment_id' => $deployment->id,
+        'serial' => '111111111111',
+        'name' => 'Device A',
+    ]);
+
+    $this->actingAs($user);
+    $this->putJson(route('devices.edit', $device), ['serial' => '222222222222'])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    expect($device->fresh()->serial)->toBe('222222222222');
+});
+
 it('can be updated with a new deployment', function () {
    $user = User::factory()
        ->has(Client::factory())

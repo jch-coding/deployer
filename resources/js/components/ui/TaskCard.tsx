@@ -1,8 +1,9 @@
 import { router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
@@ -10,10 +11,12 @@ import { AlarmClockIcon,
     BoltIcon} from 'lucide-react';
 
 type DeviceType = {
-    id: number,
-    name: string,
-    completed: boolean
-}
+    id: number;
+    name: string;
+    completed: boolean;
+    device_function: string;
+    serial?: string | number;
+};
 
 type DeploymentType = {
     id: number,
@@ -24,6 +27,24 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
     const [statusMessage, setStatusMessage] = useState()
+    const [switchesOnly, setSwitchesOnly] = useState(false)
+    const [apsOnly, setAPsOnly] = useState(false)
+    const [deviceSearch, setDeviceSearch] = useState('')
+
+    const filteredDevices = useMemo(() => {
+        const q = deviceSearch.trim().toLowerCase();
+        return devices.filter((device) => {
+            const typeOk = switchesOnly
+                ? device.device_function === 'ACCESS_SWITCH'
+                : apsOnly
+                  ? device.device_function === 'CAMPUS_AP'
+                  : true;
+            if (!typeOk) return false;
+            if (!q) return true;
+            const serial = String(device.serial ?? '').toLowerCase();
+            return device.name.toLowerCase().includes(q) || serial.includes(q);
+        });
+    }, [devices, switchesOnly, apsOnly, deviceSearch]);
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
@@ -118,17 +139,39 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                             Filter devices associated with this task
                         </DialogDescription>
                             <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4">
+                                <div className="mb-2 flex flex-wrap items-center gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => setSwitchesOnly(!switchesOnly)}>
+                                        {switchesOnly ? 'Switches Only' : 'All Devices'}
+                                    </Button>
+                                    <Button variant="outline" size="sm" onClick={() => setAPsOnly(!apsOnly)}>
+                                        {apsOnly ? 'APs Only' : 'All Devices'}
+                                    </Button>
+                                    <Input
+                                        type="search"
+                                        placeholder="Search name or serial…"
+                                        value={deviceSearch}
+                                        onChange={(e) => setDeviceSearch(e.target.value)}
+                                        className="min-w-[10rem] flex-1"
+                                        aria-label="Search devices by name or serial"
+                                    />
+                                </div>
                         {
                             devices.length > 0 ?
-                                devices.map((device, index) =>
-                                    <div className="flex gap-2" key={index}>
-                                        <Checkbox
-                                            id={`device-${index}`}
-                                            checked={taskDevices.find(dev => dev.id === device.id) !== undefined}
-                                            onCheckedChange={(checked) => handleCheckboxChange(device.id, checked)}
-                                        />
-                                        <label htmlFor={`device-${index}`}>{device.name}</label>
-                                    </div>
+                                filteredDevices.length > 0 ? (
+                                    filteredDevices.map((device) => (
+                                        <div className="flex gap-2" key={device.id}>
+                                            <Checkbox
+                                                id={`task-card-device-${device.id}`}
+                                                checked={taskDevices.find(dev => dev.id === device.id) !== undefined}
+                                                onCheckedChange={(checked) =>
+                                                    handleCheckboxChange(device.id, checked === true)
+                                                }
+                                            />
+                                            <label htmlFor={`task-card-device-${device.id}`}>{device.name}</label>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-muted-foreground text-sm">No devices match your filters.</p>
                                 ) :
                             <p>Add devices to deployment before adding tasks</p>
                         }
