@@ -40,7 +40,7 @@ class TestJob implements ShouldQueue
     public function handle(): void
     {
         sleep(random_int(1,10));
-        $this->fail();
+        $this->release($this->wait_time);
     }
 
     public function retryUntil(): DateTime
