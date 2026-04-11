@@ -17,16 +17,19 @@ import {
 interface DataTableProps<TData, TValue> {
     columns: ColumnDef<TData, TValue>[];
     data: TData[];
+    getRowId?: (originalRow: TData, index: number) => string;
 }
 
 export function DataTable<TData, TValue>({
     columns,
     data,
-                                         }: DataTableProps<TData, TValue>) {
+    getRowId,
+}: DataTableProps<TData, TValue>) {
     const table = useReactTable({
         data,
         columns,
         getCoreRowModel: getCoreRowModel(),
+        ...(getRowId ? { getRowId } : {}),
     })
 
     return (

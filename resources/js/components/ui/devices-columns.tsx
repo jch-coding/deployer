@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { destroy as deleteDevice, edit as editDevice } from '@/routes/devices';
 
-type DeviceDef = {
+export type DeviceDef = {
     id: number;
     name: string;
     serial: string | number;
@@ -28,74 +28,116 @@ type DeviceDef = {
     }[]
 }
 
+function EditableDeviceNameCell({ id, name }: { id: number; name: string }) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(name);
+
+    const onBlur = () => {
+        if (draft === name) {
+            setEditing(false);
+            return;
+        }
+        router.put(editDevice(id).url, { name: draft });
+        setEditing(false);
+    };
+
+    return editing ? (
+        <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={onBlur}
+        />
+    ) : (
+        <p className="group flex items-baseline justify-between">
+            {name}
+            <span>
+                <Button
+                    type="button"
+                    onClick={() => {
+                        setDraft(name);
+                        setEditing(true);
+                    }}
+                    variant="ghost"
+                    className="opacity-0 group-hover:opacity-100"
+                >
+                    <Pencil />
+                </Button>
+            </span>
+        </p>
+    );
+}
+
+function EditableDeviceSerialCell({
+    id,
+    serial,
+}: {
+    id: number;
+    serial: string | number;
+}) {
+    const serverSerial = String(serial ?? '');
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(serverSerial);
+
+    const onBlur = () => {
+        if (draft === serverSerial) {
+            setEditing(false);
+            return;
+        }
+        router.put(editDevice(id).url, { serial: draft });
+        setEditing(false);
+    };
+
+    return editing ? (
+        <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={onBlur}
+        />
+    ) : (
+        <p className="group flex items-baseline justify-between">
+            {serverSerial}
+            <span>
+                <Button
+                    type="button"
+                    onClick={() => {
+                        setDraft(serverSerial);
+                        setEditing(true);
+                    }}
+                    variant="ghost"
+                    className="opacity-0 group-hover:opacity-100"
+                    aria-label="Edit serial"
+                >
+                    <Pencil />
+                </Button>
+            </span>
+        </p>
+    );
+}
+
 export const columns: ColumnDef<DeviceDef>[] = [
     {
         accessorKey: 'id',
         header: 'ID',
     },
     {
-      accessorKey: 'name',
-      header: 'Name',
-        cell: ({ row }) => {
-          const initialValue = row.original.name;
-          const [value, setValue] = useState(initialValue);
-          const [editing, setEditing] = useState(false);
-
-          const onBlur = () => {
-              if (value === initialValue) return;
-              router.put(editDevice(row.original.id).url, { name: value });
-              setEditing(false);
-          };
-
-          return (
-              editing ?
-              <Input
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  onBlur={onBlur}
-                  />
-                  :
-                  <p className="flex justify-between items-baseline group">{value}<span><Button type="button" onClick={() => setEditing(true)} variant="ghost" className="opacity-0 group-hover:opacity-100"><Pencil/></Button></span></p>
-          )
-        }
+        accessorKey: 'name',
+        header: 'Name',
+        cell: ({ row }) => (
+            <EditableDeviceNameCell
+                id={row.original.id}
+                name={row.original.name}
+            />
+        ),
     },
     {
         accessorKey: 'serial',
         header: 'Serial',
-        cell: ({ row }) => {
-            const initialValue = String(row.original.serial ?? '');
-            const [value, setValue] = useState(initialValue);
-            const [editing, setEditing] = useState(false);
-
-            const onBlur = () => {
-                if (value === initialValue) return;
-                router.put(editDevice(row.original.id).url, { serial: value });
-                setEditing(false);
-            };
-
-            return editing ? (
-                <Input
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    onBlur={onBlur}
-                />
-            ) : (
-                <p className="group flex items-baseline justify-between">
-                    {value}
-                    <span>
-                        <Button
-                            type="button"
-                            onClick={() => setEditing(true)}
-                            variant="ghost"
-                            className="opacity-0 group-hover:opacity-100"
-                            aria-label="Edit serial"
-                        >
-                            <Pencil />
-                        </Button>
-                    </span>
-                </p>
-            );
-        },
+        cell: ({ row }) => (
+            <EditableDeviceSerialCell
+                id={row.original.id}
+                serial={row.original.serial}
+            />
+        ),
     },
     {
         accessorKey: 'device_function',

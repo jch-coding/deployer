@@ -1,5 +1,5 @@
 import { Form, useForm, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
 import { Button } from '@/components/ui/button';
@@ -10,10 +10,9 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
-import { columns } from '@/components/ui/devices-columns';
+import { columns, type DeviceDef } from '@/components/ui/devices-columns';
 import {
     Dialog,
-    DialogClose,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -65,26 +64,6 @@ export default function Show() {
     const deployment = usePage<DeploymentPageProps>().props.deployment;
     const devicesPaginator = usePage<DeploymentPageProps>().props.devices as Paginator<Device>;
     const devicesFromServer = devicesPaginator.data;
-    const [tableDevices, setTableDevices] = useState<Device[]>(() =>
-        devicesFromServer.map((d) => ({ ...d })),
-    );
-
-    useEffect(() => {
-        setTableDevices(devicesFromServer.map((d) => ({ ...d })));
-    }, [devicesFromServer]);
-
-    const dataTableKey = useMemo(
-        () =>
-            JSON.stringify(
-                devicesFromServer.map((d) => [
-                    d.id,
-                    d.name,
-                    d.serial ?? '',
-                    d.device_function ?? '',
-                ]),
-            ),
-        [devicesFromServer],
-    );
 
     const allDevices = deployment.devices;
     const { setData, post, progress, errors } = useForm({
@@ -101,14 +80,6 @@ export default function Show() {
             'PREPROVISION_DEVICE_TO_GROUP',
             'ASSOCIATE_SITE_AND_NAME',
             'CREATE_VSF_PROFILE',
-        ]
-    }
-
-    const isInterfaceBasedTask = (task_type: string) => {
-        return task_type in [
-            'CONFIGURE_ETHERNET_INTERFACE',
-            'CONFIGURE_LAG_INTERFACE',
-            'CONFIGURE_VLAN_INTERFACE',
         ]
     }
 
@@ -155,15 +126,14 @@ export default function Show() {
                     )}
                 </div>
                 <div>
-                    {tableDevices.length > 0 ? (
+                    {devicesFromServer.length > 0 ? (
                         <div className="mt-6">
-                            <DataTable
-                                key={dataTableKey}
-                                data={tableDevices}
+                            <DataTable<DeviceDef, unknown>
+                                data={devicesFromServer as DeviceDef[]}
                                 columns={columns}
+                                getRowId={(row) => String(row.id)}
                             />
-                            {tableDevices.length > 0 &&
-                                devicesPaginator.total >
+                            {devicesPaginator.total >
                                     devicesPaginator.per_page && (
                                     <LaravelPaginator
                                         TPaginator={devicesPaginator}
