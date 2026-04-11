@@ -18,22 +18,6 @@ use Illuminate\Validation\Rule;
 class DeviceController extends Controller
 {
     /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        //
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
      * Store a newly created resource in storage.
      */
     public function store(Request $request, Deployment $deployment)
@@ -447,22 +431,6 @@ class DeviceController extends Controller
         }
 
         return $saved_sites;
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(Device $device)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Device $device)
-    {
-        //
     }
 
     /**

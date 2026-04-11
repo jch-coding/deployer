@@ -23,14 +23,6 @@ class ClientController extends Controller
     }
 
     /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
      * Test central credentials endpoint
      */
     public function testCentralCreds(Request $request, Client $client)
@@ -110,19 +102,6 @@ class ClientController extends Controller
             case BaseURL::CA1->value:
                 return ClassicBaseUrl::CANADA1->value;
         }
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(Client $client) {}
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Client $client)
-    {
-        //
     }
 
     /**
