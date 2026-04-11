@@ -12,6 +12,7 @@ use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class DeviceController extends Controller
@@ -494,6 +495,33 @@ class DeviceController extends Controller
             }
             $data = array_merge($data, ['deployment_id' => $deployment->id]);
         }
+
+        $serialChanging = isset($data['serial']) && $data['serial'] !== $device->serial;
+
+        if ($serialChanging) {
+            if (Device::query()->where('serial', $data['serial'])->where('id', '!=', $device->id)->exists()) {
+                return back()->withErrors(['serial' => 'A device with this serial already exists.']);
+            }
+
+            $newDevice = DB::transaction(function () use ($device, $data): Device {
+                $newDevice = $device->replicate();
+                $newDevice->fill($data);
+                $newDevice->save();
+
+                DeviceInterface::query()->where('device_id', $device->id)->update(['device_id' => $newDevice->id]);
+
+                DB::table('device_task')->where('device_id', $device->id)->update(['device_id' => $newDevice->id]);
+
+                $device->delete();
+
+                return $newDevice->fresh();
+            });
+
+            $deployment = $newDevice->deployment;
+
+            return to_route('deployments.show', $deployment)->with('success', 'Device updated successfully');
+        }
+
         $device->update($data);
 
         $deployment = $device->fresh()->deployment;

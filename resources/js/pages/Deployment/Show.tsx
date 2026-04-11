@@ -1,5 +1,5 @@
 import { Form, useForm, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
 import { Button } from '@/components/ui/button';
@@ -31,7 +31,9 @@ import type { Paginator } from '@/types/deployer';
 type Device = {
     id: string;
     name: string;
-}
+    serial?: string | number;
+    device_function?: string;
+};
 
 type Deployment = {
     id: string;
@@ -62,8 +64,29 @@ type DeploymentPageProps = {
 export default function Show() {
     const deployment = usePage<DeploymentPageProps>().props.deployment;
     const devicesPaginator = usePage<DeploymentPageProps>().props.devices as Paginator<Device>;
-    const devices = devicesPaginator.data;
-    const allDevices = deployment.devices
+    const devicesFromServer = devicesPaginator.data;
+    const [tableDevices, setTableDevices] = useState<Device[]>(() =>
+        devicesFromServer.map((d) => ({ ...d })),
+    );
+
+    useEffect(() => {
+        setTableDevices(devicesFromServer.map((d) => ({ ...d })));
+    }, [devicesFromServer]);
+
+    const dataTableKey = useMemo(
+        () =>
+            JSON.stringify(
+                devicesFromServer.map((d) => [
+                    d.id,
+                    d.name,
+                    d.serial ?? '',
+                    d.device_function ?? '',
+                ]),
+            ),
+        [devicesFromServer],
+    );
+
+    const allDevices = deployment.devices;
     const { setData, post, progress, errors } = useForm({
         devices: null,
     })
@@ -132,10 +155,14 @@ export default function Show() {
                     )}
                 </div>
                 <div>
-                    {devices.length > 0 ? (
+                    {tableDevices.length > 0 ? (
                         <div className="mt-6">
-                            <DataTable data={devices} columns={columns} />
-                            {devices.length > 0 &&
+                            <DataTable
+                                key={dataTableKey}
+                                data={tableDevices}
+                                columns={columns}
+                            />
+                            {tableDevices.length > 0 &&
                                 devicesPaginator.total >
                                     devicesPaginator.per_page && (
                                     <LaravelPaginator
