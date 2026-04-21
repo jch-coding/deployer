@@ -51,6 +51,7 @@ type Task = {
     human_created_at: string;
     friendly_name: string;
     friendly_description: string;
+    required_columns: string[];
 }
 
 type DeploymentPageProps = {
@@ -146,14 +147,15 @@ export default function Show() {
                 </div>
                 <div>
                     <div className="mt-6 flex flex-wrap justify-center gap-2">
-                        {tasks.map((task, index) => {
+                        {tasks.map((task) => {
                             const TaskComponent = isDeviceBasedTask(task.task_type) ? TaskCard : TaskItemsCard;
                             return (
                                 <TaskComponent
-                                    index={index}
+                                    key={task.task_type}
                                     task={task.task_type}
                                     task_friendly_name={task.friendly_name}
                                     task_friendly_description={task.friendly_description}
+                                    required_columns={task.required_columns}
                                     devices={allDevices}
                                     deployment={deployment}
                                 />

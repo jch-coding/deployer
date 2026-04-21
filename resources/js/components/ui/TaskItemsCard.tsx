@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
+import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon,
     BoltIcon} from 'lucide-react';
 import { toast } from 'sonner';
@@ -25,7 +26,7 @@ type DeploymentType = {
     name: string,
 }
 
-export default function TaskItemsCard({ task, task_friendly_name, task_friendly_description, devices, deployment } : { task: string, task_friendly_name: string, task_friendly_description: string, devices: DeviceType[], deployment: DeploymentType }) {
+export default function TaskItemsCard({ task, task_friendly_name, task_friendly_description, required_columns, devices, deployment } : { task: string, task_friendly_name: string, task_friendly_description: string, required_columns: string[], devices: DeviceType[], deployment: DeploymentType }) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [switchesOnly, setSwitchesOnly] = useState(false)
     const [apsOnly, setAPsOnly] = useState(false)
@@ -75,7 +76,8 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
 
     return (
         <Card className="min-w-sm max-w-md">
-            <CardHeader>
+            <CardHeader className="relative pr-10">
+                <TaskRequiredColumnsInfo columns={required_columns} />
                 <CardTitle>{task_friendly_name}</CardTitle>
                 <CardDescription>{task_friendly_description}</CardDescription>
             </CardHeader>
