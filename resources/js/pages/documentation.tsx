@@ -1,6 +1,144 @@
 import Layout from '@/layouts/app-layout'
 import { Head } from '@inertiajs/react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
+
+const SAMPLE_DEVICE_HEADERS = [
+    'name',
+    'serial',
+    'device_function',
+    'description',
+    'interface',
+    'port_list',
+    'ip_address',
+    'sku',
+    'site',
+    'group',
+    'port_profile',
+    'interface_mode',
+    'access_vlan',
+    'native_vlan',
+    'trunk_vlan_all',
+    'trunk_vlan_ranges',
+    'trunk_type',
+] as const;
+
+type SampleDeviceRow = Partial<Record<(typeof SAMPLE_DEVICE_HEADERS)[number], string>>;
+
+const SAMPLE_DEVICE_ROWS: SampleDeviceRow[] = [
+    {
+        name: 'Example Campus AP',
+        serial: 'SN0000000001',
+        device_function: 'CAMPUS_AP',
+        site: 'Example Campus',
+    },
+    {
+        name: 'Example Access Switch 1',
+        serial: 'SN0000000002',
+        device_function: 'ACCESS_SWITCH',
+        description: 'data port VLAN 10',
+        interface: '1/1/1-1/1/48',
+        site: 'Building-A',
+        port_profile: 'User-Access',
+        interface_mode: 'ACCESS',
+        access_vlan: '10',
+    },
+    {
+        name: 'Example Access Switch 1',
+        serial: 'SN0000000002',
+        device_function: 'ACCESS_SWITCH',
+        description: 'to Core Switch',
+        interface: '1/1/51-1/1/52',
+        site: 'Building-A',
+        interface_mode: 'TRUNK',
+        native_vlan: '10',
+        trunk_vlan_ranges: '8&10-20',
+    },
+    {
+        name: 'Example Access Switch 2',
+        serial: 'SN0000000003',
+        device_function: 'ACCESS_SWITCH',
+        interface: '1/1/1&1/1/6-1/1/48',
+        site: 'Building-A',
+        interface_mode: 'ACCESS',
+        access_vlan: '20',
+    },
+    {
+        name: 'Example Access Switch 3',
+        serial: 'SN0000000004',
+        device_function: 'ACCESS_SWITCH',
+        interface: '5',
+        port_list: '1/1/14-1/1/15',
+        site: 'Building-A',
+        interface_mode: 'TRUNK',
+        native_vlan: '10',
+        trunk_vlan_all: 'true',
+        trunk_type: 'LACP',
+    },
+    {
+        name: 'Example L3 Switch',
+        serial: 'SN0000000005',
+        device_function: 'ACCESS_SWITCH',
+        interface: '11',
+        ip_address: '192.168.11.1/24',
+        site: 'Core-Site',
+    },
+    {
+        name: 'Example Stack Conductor',
+        serial: 'SN0000000006',
+        device_function: 'ACCESS_SWITCH',
+        sku: 'JL679A',
+        site: 'Data Center',
+    },
+    {
+        name: 'Example Stack Conductor',
+        serial: 'SN0000000007',
+        device_function: 'ACCESS_SWITCH',
+        description: 'stack member switch',
+        site: 'Core-Site',
+    },
+    {
+        name: 'Example Branch Switch',
+        serial: 'SN0000000008',
+        device_function: 'ACCESS_SWITCH',
+        site: 'Branch-HQ',
+    },
+    {
+        name: 'Example New Switch',
+        serial: 'SN0000000009',
+        device_function: 'ACCESS_SWITCH',
+        group: 'Onboarding-Pool',
+    },
+    {
+        name: 'Example Core Switch',
+        serial: 'SN0000000010',
+        device_function: 'CORE_SWITCH',
+    },
+];
+
+function buildSampleDeviceCsv(): string {
+    const lines = [
+        SAMPLE_DEVICE_HEADERS.join(','),
+        ...SAMPLE_DEVICE_ROWS.map((row) =>
+            SAMPLE_DEVICE_HEADERS.map((h) => row[h] ?? '').join(','),
+        ),
+    ];
+    return `\uFEFF${lines.join('\n')}`;
+}
+
+function downloadSampleDeviceCsv() {
+    const blob = new Blob([buildSampleDeviceCsv()], {
+        type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'sample-device-configuration.csv';
+    anchor.rel = 'noopener';
+    anchor.click();
+    URL.revokeObjectURL(url);
+}
 
 export default function documentation({}) {
     return (
@@ -11,10 +149,24 @@ export default function documentation({}) {
                     <CardHeader className="font-bold">
                         CSV required headers
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="space-y-4">
                         <p>
                             There are three pieces of information that are required
                             for all devices: name, serial and device_function
+                        </p>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="gap-2"
+                            onClick={downloadSampleDeviceCsv}
+                        >
+                            <Download className="size-4" aria-hidden />
+                            Download sample CSV
+                        </Button>
+                        <p className="text-muted-foreground text-sm">
+                            Example rows illustrate common column combinations. Replace
+                            names, serials, and values with data that matches your
+                            Aruba Central configuration.
                         </p>
                     </CardContent>
                 </Card>
@@ -73,7 +225,7 @@ export default function documentation({}) {
                             <li>serial</li>
                             <li>device_function</li>
                             <li>interface</li>
-                            <li>port_list</li>
+                            <li>port_list (<i>ex: 1/1/1-1/1/3 or 1/1/51&2/1/51</i>)</li>
                         </ul>
                         <p className="mt-4">Optional Columns</p>
                         <ul className="list-inside list-disc mt-2">
@@ -108,13 +260,12 @@ export default function documentation({}) {
                         Configure VSF Profile
                     </CardHeader>
                     <CardContent>
-                        <p>The sku column should be included for the conductor switch ONLY. The VSF profile name will be the name of the conductor plus -STACK appended.</p>
+                        <p>The sku column should be included for the conductor switch ONLY. The VSF profile name will be the name of the conductor plus -STACK appended. Note that this creates an auto-stacking VSF profile only.</p>
                         <p className="mt-4">Required Columns</p>
                         <ul className="list-inside list-disc mt-2">
                             <li>name</li>
                             <li>serial</li>
                             <li>device_function</li>
-                            <li>interface</li>
                             <li>sku</li>
                         </ul>
                     </CardContent>
