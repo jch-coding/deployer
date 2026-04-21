@@ -61,8 +61,12 @@ class DeploymentController extends Controller
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
             'devices' => $deployment->devices()->with('interfaces')->paginate(10),
-            'tasks' => array_map(fn ($task) => ['task_type' => $task->name, 'friendly_name' => Task::getTaskFriendlyName($task->name), 'friendly_description' => Task::getTaskFriendlyDescription($task->name)],
-                TaskType::cases()),
+            'tasks' => array_map(fn ($task) => [
+                'task_type' => $task->name,
+                'friendly_name' => Task::getTaskFriendlyName($task->name),
+                'friendly_description' => Task::getTaskFriendlyDescription($task->name),
+                'required_columns' => Task::getTaskRequiredColumns($task->name),
+            ], TaskType::cases()),
             'latest_tasks' => $latest_tasks,
             'items' => $items_with_names,
         ]);

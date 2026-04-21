@@ -127,6 +127,36 @@ class Task extends Model
         }
     }
 
+    public static function getTaskRequiredColumns($task_type): array
+    {
+        switch ($task_type) {
+            case 'UPDATE_SYSTEM_INFO':
+                return ['name', 'serial', 'device_function'];
+            case 'CONFIGURE_ETHERNET_INTERFACE':
+                return ['name', 'serial', 'device_function', 'interface'];
+            case 'CONFIGURE_LAG_INTERFACE':
+                return ['name', 'serial', 'device_function', 'interface'];
+            case 'CONFIGURE_VLAN_INTERFACE':
+                return ['name', 'serial', 'device_function', 'interface', 'ip_address'];
+            case 'CREATE_VSF_PROFILE':
+                return ['name', 'serial', 'device_function', 'interface', 'sku'];
+            case 'ASSOCIATE_DEVICE_TO_SITE':
+                return ['name', 'serial', 'device_function', 'site'];
+            case 'ASSOCIATE_SITE_AND_NAME':
+                return ['name', 'serial', 'device_function', 'site', 'name'];
+            case 'PREPROVISION_DEVICE_TO_GROUP':
+                return ['name', 'serial', 'device_function', 'group'];
+            case 'MOVE_DEVICE_TO_GROUP':
+                return ['name', 'serial', 'device_function', 'group'];
+            case 'ASSIGN_DEVICE_FUNCTION':
+                return ['name', 'serial', 'device_function'];
+            case 'TEST_TASK':
+                return [];
+            default:
+                return [];
+        }
+    }
+
     public function processTaskStatus()
     {
         if ($this->getTaskCategory($this->task_type) == 'INTERFACE') {
