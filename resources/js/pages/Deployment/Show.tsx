@@ -25,8 +25,10 @@ import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
 import AppLayout from '@/layouts/app-layout';
+import { index as clientsIndex } from '@/routes/clients';
+import { show as showDeployment } from '@/routes/deployments';
 import { show as showTask } from '@/routes/tasks';
-import type { SharedData } from '@/types';
+import type { BreadcrumbItem, SharedData } from '@/types';
 import type { Paginator } from '@/types/deployer';
 
 type Device = {
@@ -64,7 +66,7 @@ type DeploymentPageProps = {
     latest_tasks: Task[];
 } & SharedData;
 export default function Show() {
-    const deployment = usePage<DeploymentPageProps>().props.deployment;
+    const { deployment, current_client } = usePage<DeploymentPageProps>().props;
     const devicesPaginator = usePage<DeploymentPageProps>().props.devices as Paginator<Device>;
     const devicesFromServer = devicesPaginator.data;
 
@@ -75,6 +77,17 @@ export default function Show() {
     const tasks = usePage<DeploymentPageProps>().props.tasks;
     const latest_tasks = usePage<DeploymentPageProps>().props.latest_tasks;
     const [submitting, setSubmitting] = useState(false);
+
+    const breadcrumbs: BreadcrumbItem[] = [
+        {
+            title: current_client?.name ?? 'Clients',
+            href: clientsIndex().url,
+        },
+        {
+            title: deployment.name,
+            href: showDeployment(Number(deployment.id)).url,
+        },
+    ];
 
     const isDeviceBasedTask = (task_type: string) => {
         return task_type in [
@@ -92,7 +105,7 @@ export default function Show() {
     }
 
     return (
-        <AppLayout>
+        <AppLayout breadcrumbs={breadcrumbs}>
             <h1 className="text-center text-3xl font-semibold">
                 {deployment.name}
             </h1>
