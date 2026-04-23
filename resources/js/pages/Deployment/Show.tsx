@@ -1,6 +1,6 @@
-import { Form, useForm, usePage } from '@inertiajs/react';
-import { Download } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Form, router, useForm, usePage } from '@inertiajs/react';
+import { Download, Search } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { columns, type DeviceDef } from '@/components/ui/devices-columns';
+import { Input } from '@/components/ui/input';
 import {
     Dialog,
     DialogContent,
@@ -59,16 +60,23 @@ type Task = {
 }
 
 type DeploymentPageProps = {
-    paginator: Paginator<Device>;
+    devices: Paginator<Device>;
+    device_search?: string;
     base_urls: string[];
     deployment: Deployment;
     tasks: Task[];
     latest_tasks: Task[];
 } & SharedData;
 export default function Show() {
-    const { deployment, current_client, flash } = usePage<DeploymentPageProps>().props;
-    const devicesPaginator = usePage<DeploymentPageProps>().props.devices as Paginator<Device>;
+    const { deployment, current_client, flash, device_search = '' } =
+        usePage<DeploymentPageProps>().props;
+    const devicesPaginator = usePage<DeploymentPageProps>().props
+        .devices as Paginator<Device>;
     const devicesFromServer = devicesPaginator.data;
+    const deploymentId = Number(deployment.id);
+
+    const [deviceTableSearch, setDeviceTableSearch] = useState(device_search);
+    const previousDeploymentIdRef = useRef(deploymentId);
 
     const allDevices = deployment.devices;
     const { setData, post, progress, errors } = useForm({
@@ -87,6 +95,38 @@ export default function Show() {
         }
     }, [flash?.success, flash?.error]);
 
+    useEffect(() => {
+        if (previousDeploymentIdRef.current !== deploymentId) {
+            previousDeploymentIdRef.current = deploymentId;
+            setDeviceTableSearch(device_search);
+        }
+    }, [deploymentId, device_search]);
+
+    useEffect(() => {
+        const trimmed = deviceTableSearch.trim();
+        const trimmedServer = device_search.trim();
+        if (trimmed === trimmedServer) {
+            return;
+        }
+        const handle = window.setTimeout(() => {
+            router.get(
+                showDeployment.url(deploymentId, {
+                    query: {
+                        ...(trimmed !== '' ? { search: trimmed } : {}),
+                    },
+                }),
+                {},
+                {
+                    preserveState: true,
+                    preserveScroll: true,
+                    replace: true,
+                    only: ['devices', 'device_search'],
+                },
+            );
+        }, 350);
+        return () => window.clearTimeout(handle);
+    }, [deploymentId, deviceTableSearch, device_search]);
+
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: current_client?.name ?? 'Clients',
@@ -94,7 +134,7 @@ export default function Show() {
         },
         {
             title: deployment.name,
-            href: showDeployment(Number(deployment.id)).url,
+            href: showDeployment.url(deploymentId),
         },
     ];
 
@@ -151,8 +191,28 @@ export default function Show() {
                     )}
                 </div>
                 <div>
-                    {devicesFromServer.length > 0 ? (
+                    {devicesFromServer.length > 0 ||
+                    deviceTableSearch.trim() !== '' ? (
                         <div className="mt-6">
+                            <div className="mb-2 flex justify-end">
+                                <div className="relative w-full max-w-sm">
+                                    <Search
+                                        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                                        aria-hidden
+                                    />
+                                    <Input
+                                        type="search"
+                                        value={deviceTableSearch}
+                                        onChange={(e) =>
+                                            setDeviceTableSearch(e.target.value)
+                                        }
+                                        placeholder="Search name, serial, or function…"
+                                        className="pl-9"
+                                        data-test="devices-search"
+                                        aria-label="Search devices by name, serial, or device function"
+                                    />
+                                </div>
+                            </div>
                             <DataTable<DeviceDef, unknown>
                                 data={devicesFromServer as DeviceDef[]}
                                 columns={columns}

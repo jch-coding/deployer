@@ -1,5 +1,6 @@
 <?php
 
+use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
@@ -23,6 +24,36 @@ it('shows a list of devices associated with the deployment', function () {
         ->assertOk()
         ->assertSeeHtml($devices->first()->name)
         ->assertSeeHtml($devices->last()->name);
+});
+
+it('filters devices by name, serial, or device function search', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    Device::factory()->for($deployment)->create([
+        'name' => 'Alpha Switch',
+        'serial' => 'SERIAL-ALPHA-100',
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+    ]);
+    Device::factory()->for($deployment)->create([
+        'name' => 'Beta Switch',
+        'serial' => 'SERIAL-BETA-200',
+        'device_function' => DeviceFunction::ACCESS_SWITCH->name,
+    ]);
+    $this->actingAs($this->user);
+
+    $this->get(route('deployments.show', $deployment).'?search='.urlencode('Alpha'))
+        ->assertOk()
+        ->assertSeeHtml('Alpha Switch')
+        ->assertDontSee('Beta Switch');
+
+    $this->get(route('deployments.show', $deployment).'?search='.urlencode('SERIAL-BETA'))
+        ->assertOk()
+        ->assertSeeHtml('Beta Switch')
+        ->assertDontSee('Alpha Switch');
+
+    $this->get(route('deployments.show', $deployment).'?search='.urlencode('access_switch'))
+        ->assertOk()
+        ->assertSeeHtml('Beta Switch')
+        ->assertDontSee('Alpha Switch');
 });
 
 it('has an upload devices button', function () {

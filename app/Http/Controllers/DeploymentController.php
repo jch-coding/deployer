@@ -58,9 +58,23 @@ class DeploymentController extends Controller
         $items_obj = collect(array_map(fn ($task, $item) => [$task['task_type'] => $item], $latest_of_tasks->toArray(), $items->toArray()))->collapse();
         $items_with_names = $items_obj->map(fn ($group) => array_map(fn ($member) => [...$member, 'name' => $member['interface']], $group));
 
+        $rawSearch = $request->query('search');
+        $search = is_string($rawSearch) ? mb_substr(trim($rawSearch), 0, 255) : '';
+
+        $devicesQuery = $deployment->devices()->with('interfaces');
+        if ($search !== '') {
+            $pattern = '%'.addcslashes(mb_strtolower($search), '%_\\').'%';
+            $devicesQuery->where(function ($query) use ($pattern) {
+                $query->whereRaw('lower(name) LIKE ?', [$pattern])
+                    ->orWhereRaw('lower(serial) LIKE ?', [$pattern])
+                    ->orWhereRaw('lower(device_function) LIKE ?', [$pattern]);
+            });
+        }
+
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
-            'devices' => $deployment->devices()->with('interfaces')->paginate(10),
+            'devices' => $devicesQuery->paginate(10)->withQueryString(),
+            'device_search' => $search,
             'tasks' => array_map(fn ($task) => [
                 'task_type' => $task->name,
                 'friendly_name' => Task::getTaskFriendlyName($task->name),
