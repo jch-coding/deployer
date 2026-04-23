@@ -10,7 +10,10 @@ class CSVHelper
         {
             $data = [];
             while (($row = fgetcsv($file)) !== false) {
-                array_push($data, $row);
+                $hasValue = array_filter($row, fn ($cell) => strlen(trim((string) $cell)) > 0);
+                if ($hasValue !== []) {
+                    array_push($data, $row);
+                }
             }
             fclose($file);
             return $data;

@@ -28,6 +28,22 @@ it('returns a header row if the CSV file contains a header row with no data', fu
     expect($result)->toBeArray()->and($result)->toHaveCount(1)->and($result[0])->toBe(['name', 'serial', 'device_function']);
 });
 
+it('only adds non-empty rows to the data array when processing a CSV file', function () {
+    $path = tempnam(sys_get_temp_dir(), 'csv_helper_');
+    file_put_contents($path, "col1,col2\n\n   ,   \nx,y\n");
+
+    try {
+        $result = CSVHelper::processCSVFile($path);
+    } finally {
+        unlink($path);
+    }
+
+    expect($result)->toBeArray()
+        ->and($result)->toHaveCount(2)
+        ->and($result[0])->toBe(['col1', 'col2'])
+        ->and($result[1])->toBe(['x', 'y']);
+});
+
 it('returns an empty array if the CSVData is empty', function () {
     $result = CSVHelper::createDeviceArrays([]);
     expect($result)->toBeArray()->and($result)->toHaveCount(0);
