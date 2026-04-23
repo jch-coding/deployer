@@ -47,6 +47,8 @@ export default function CreateClientModal( {  errors, base_urls }: { errors: Rec
                     }}
                     onAbort={() => resetAndClearErrors()}
                     className="block space-y-4">
+                    {({ processing }) => (
+                        <>
                     <FieldGroup>
                         {
                             errors.failed_to_get_token && <p className="text-red-500 text-xs">{ errors.failed_to_get_token }</p>
@@ -106,10 +108,12 @@ export default function CreateClientModal( {  errors, base_urls }: { errors: Rec
                         <DialogClose asChild>
                             <Button ref={dialogCloseRef} variant="secondary">Cancel</Button>
                         </DialogClose>
-                        <Button type="submit">
+                        <Button type="submit" disabled={processing}>
                             Add Client
                         </Button>
                     </DialogFooter>
+                        </>
+                    )}
                 </Form>
             </DialogContent>
         </Dialog>
