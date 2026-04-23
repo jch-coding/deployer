@@ -8,22 +8,10 @@ import {
     PaginationPrevious,
 } from '@/components/ui/pagination';
 import AppLayout from '@/layouts/app-layout';
-import { dashboard } from '@/routes';
 import { index } from '@/routes/clients';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import { type Client } from '@/types/clients/client';
 import { type Paginator } from '@/types/deployer';
-
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard().url,
-    },
-    {
-        title: 'Clients',
-        href: index().url,
-    },
-];
 
 type ClientPageProps = {
     paginator: Paginator<Client>;
@@ -37,6 +25,13 @@ export default function Index() {
     const base_urls = usePage<ClientPageProps>().props.base_urls
     const current_client = usePage<ClientPageProps>().props.current_client
     const errors = usePage<ClientPageProps>().props.errors
+
+    const breadcrumbs: BreadcrumbItem[] = [
+        {
+            title: current_client?.name ?? 'Clients',
+            href: index().url,
+        },
+    ];
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
