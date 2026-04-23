@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\DeviceFunction;
+use App\Helper\CentralAPIHelper;
 use App\Helper\CSVHelper;
 use App\Models\Deployment;
 use App\Models\Device;
@@ -262,7 +263,6 @@ class DeviceController extends Controller
         array_map(function ($interfaces) use (&$total_interfaces) {
             $total_interfaces += count($interfaces);
         }, $devices_grouped_config);
-
         return [
             'unique_switchports' => $unique_switchports,
             'unique_stp' => $unique_stp,
@@ -301,12 +301,18 @@ class DeviceController extends Controller
         foreach ($interfaces['devices_grouped_config'] as $device_interfaces) {
             foreach ($device_interfaces as $device_interface) {
                 if ($has_switchport) {
-                    $switchport = SwitchPort::where('interface_mode', $device_interface['interface_mode'] ?? 'ACCESS')
-                        ->where('access_vlan', $device_interface['access_vlan'] ?? null)
-                        ->where('native_vlan', (int) $device_interface['native_vlan'] ?? null)
-                        ->where('trunk_vlan_all', (bool) $device_interface['trunk_vlan_all'] ?? false)
-                        ->where('trunk_vlan_ranges', $device_interface['trunk_vlan_ranges'] ?? null)
-                        ->first();
+                    $mode = $device_interface['interface_mode'] ?? 'ACCESS';
+                    if ($mode === 'ACCESS') {
+                        $switchport = SwitchPort::where('interface_mode', $mode)
+                            ->where('access_vlan', (int) $device_interface['access_vlan'] ?? 1)
+                            ->first();
+                    } else {
+                        $switchport = SwitchPort::where('interface_mode', $mode)
+                            ->where('native_vlan', (int) $device_interface['native_vlan'] ?? 1)
+                            ->where('trunk_vlan_all', (bool) $device_interface['trunk_vlan_all'] ?? false)
+                            ->where('trunk_vlan_ranges', $device_interface['trunk_vlan_ranges'] ?? null)
+                            ->first();
+                    }
                 }
 
                 if ($has_stp) {
@@ -495,6 +501,21 @@ class DeviceController extends Controller
         $deployment = $device->fresh()->deployment;
 
         return to_route('deployments.show', $deployment)->with('success', 'Device updated successfully');
+    }
+
+    /**
+     *  Refresh the device scope-id in Central
+     */
+    public function refreshCentralScopeId(Request $request, Device $device)
+    {
+        $centralAPIHelper = new CentralAPIHelper($request->user()->currentClient());
+        $scopeId = $centralAPIHelper->getScopeIdFromCentral($device);
+        if (! array_key_exists('error', $scopeId)) {
+            $device->update(['scope_id' => array_pop($scopeId)['scopeId']]);
+            return to_route('deployments.show', $device->fresh()->deployment)->with('success', 'Device scope ID refreshed successfully');
+        } else {
+            return to_route('deployments.show', $device->fresh()->deployment)->with('error', 'Failed to refresh device scope ID');
+        }
     }
 
     /**

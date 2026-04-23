@@ -67,6 +67,11 @@ class ConfigureLagInterfaceJob implements ShouldQueue
     {
         Log::error($exception);
         $this->task->deviceInterfaces()->find($this->device_interface)->pivot->update(['status' => 'FAILED']);
+        $failed_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => $interface->pivot->status == 'FAILED')->count();
+        $total_interfaces = $this->task->deviceInterfaces->count();
+        if ($failed_interfaces === $total_interfaces) {
+            $this->task->update(['status' => 'FAILED']);
+        }
         $this->task->processTaskStatusLog($exception);
         $this->release($this->wait_time * 60);
     }

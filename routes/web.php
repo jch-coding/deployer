@@ -48,6 +48,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
+        Route::put('/devices/refresh-scope-id/{device}', 'refreshScopeId')->name('devices.refresh-scope-id');
         Route::delete('/devices/{device}', 'destroy')->name('devices.destroy');
     });
 
