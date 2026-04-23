@@ -263,6 +263,7 @@ class DeviceController extends Controller
         array_map(function ($interfaces) use (&$total_interfaces) {
             $total_interfaces += count($interfaces);
         }, $devices_grouped_config);
+
         return [
             'unique_switchports' => $unique_switchports,
             'unique_stp' => $unique_stp,
@@ -506,12 +507,13 @@ class DeviceController extends Controller
     /**
      *  Refresh the device scope-id in Central
      */
-    public function refreshCentralScopeId(Request $request, Device $device)
+    public function refreshScopeId(Request $request, Device $device)
     {
         $centralAPIHelper = new CentralAPIHelper($request->user()->currentClient());
         $scopeId = $centralAPIHelper->getScopeIdFromCentral($device);
         if (! array_key_exists('error', $scopeId)) {
             $device->update(['scope_id' => array_pop($scopeId)['scopeId']]);
+
             return to_route('deployments.show', $device->fresh()->deployment)->with('success', 'Device scope ID refreshed successfully');
         } else {
             return to_route('deployments.show', $device->fresh()->deployment)->with('error', 'Failed to refresh device scope ID');

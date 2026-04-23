@@ -1,6 +1,6 @@
 import { router } from '@inertiajs/react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { MoreHorizontal, Pencil, TrashIcon } from 'lucide-react';
+import { MoreHorizontal, Pencil, RefreshCw, TrashIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +11,11 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { destroy as deleteDevice, edit as editDevice } from '@/routes/devices';
+import {
+    destroy as deleteDevice,
+    edit as editDevice,
+    refreshScopeId,
+} from '@/routes/devices';
 
 export type DeviceDef = {
     id: number;
@@ -114,6 +118,42 @@ function EditableDeviceSerialCell({
     );
 }
 
+function DeviceScopeAndDeleteActions({ id }: { id: number }) {
+    const [refreshing, setRefreshing] = useState(false);
+
+    return (
+        <div className="flex items-center justify-end gap-1">
+            <Button
+                type="button"
+                variant="outline"
+                disabled={refreshing}
+                aria-label="Refresh scope ID from Central"
+                data-test="refresh-device-scope-id"
+                onClick={() => {
+                    setRefreshing(true);
+                    router.put(refreshScopeId(id).url, {}, {
+                        preserveScroll: true,
+                        onFinish: () => setRefreshing(false),
+                    });
+                }}
+            >
+                <RefreshCw
+                    className={`size-4 ${refreshing ? 'animate-spin' : ''}`}
+                    aria-hidden
+                />
+            </Button>
+            <Button
+                variant="outline"
+                className="hover:bg-red-500 hover:text-white"
+                aria-label="Delete device"
+                onClick={() => router.delete(deleteDevice(id))}
+            >
+                <TrashIcon />
+            </Button>
+        </div>
+    );
+}
+
 export const columns: ColumnDef<DeviceDef>[] = [
     {
         accessorKey: 'id',
@@ -172,9 +212,9 @@ export const columns: ColumnDef<DeviceDef>[] = [
         )
     },
     {
-        'id' : 'delete',
-        cell: ({row}) => (
-            <Button variant="outline" className="hover:bg-red-500 hover:text-white" onClick={() => router.delete(deleteDevice(row.original.id))}><TrashIcon /></Button>
-        )
-    }
+        id: 'delete',
+        cell: ({ row }) => (
+            <DeviceScopeAndDeleteActions id={row.original.id} />
+        ),
+    },
 ]
