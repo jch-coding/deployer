@@ -17,7 +17,7 @@ return new class extends Migration
             $table->integer('deployment_time')->nullable();
             $table->string('batch_id')->nullable();
             $table->longText('status_log')->default('');
-            $table->enum('status', ['IN_PROGRESS', 'CANCELLED', 'COMPLETED'])->default('IN_PROGRESS');
+            $table->enum('status', ['IN_PROGRESS', 'FAILED', 'CANCELLED', 'COMPLETED'])->default('IN_PROGRESS');
             $table->timestamps();
         });
     }
