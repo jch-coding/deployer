@@ -173,7 +173,7 @@ class CentralAPIHelper
                     'device-function' => $device->device_function,
                 ])->withBody(json_encode([
                     'hostname' => $device->name,
-                ]))->patch($this->client->base_url.$this->system['system_info']);
+                ]))->post($this->client->base_url.$this->system['system_info']);
 
             return $response;
         }

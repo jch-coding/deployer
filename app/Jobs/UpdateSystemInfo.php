@@ -55,10 +55,28 @@ class UpdateSystemInfo implements ShouldQueue
             Log::info($message);
             $this->task->processTaskStatusLog($message);
         } else {
-            $message = 'Failed to update system info for device '.$this->device->name;
-            Log::error($message);
-            $this->task->processTaskStatusLog($message, true);
-            $this->release($this->wait_time * 60);
+            if (str_contains($response->json('message'), 'System Info doesn\'t exist')) {
+                $message = 'Failed to update system info for device '.$this->device->name.' Trying to create system info profile...';
+                Log::error($message);
+                $this->task->processTaskStatusLog($message, true);
+                $response = $this->centralAPIHelper->postSystemInfo($this->device);
+                if ($response->status() == 200) {
+                    $pivotForDevice->update(['status' => 'COMPLETED']);
+                    $message = 'System info for '.$this->device->name.' created successfully';
+                    Log::info($message);
+                    $this->task->processTaskStatusLog($message);
+                } else {
+                    $message = 'Failed to create system info for device '.$this->device->name;
+                    Log::error($message);
+                    $this->task->processTaskStatusLog($message, true);
+                    $this->release($this->wait_time * 60);
+                }
+            } else {
+                $message = 'Failed to update system info for device '.$this->device->name. ' with error: '.$response->json('message');
+                Log::error($message);
+                $this->task->processTaskStatusLog($message, true);
+                $this->release($this->wait_time * 60);
+            }
         }
     }
 
