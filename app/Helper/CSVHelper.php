@@ -15,6 +15,7 @@ class CSVHelper
                 }
             }
             fclose($file);
+            $data = self::fillInDeviceSerialAndDeviceFunction($data);
 
             return $data;
         } else {
