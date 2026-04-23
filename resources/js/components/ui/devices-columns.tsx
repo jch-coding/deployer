@@ -12,6 +12,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
     destroy as deleteDevice,
     edit as editDevice,
     refreshScopeId,
@@ -123,25 +128,32 @@ function DeviceScopeAndDeleteActions({ id }: { id: number }) {
 
     return (
         <div className="flex items-center justify-end gap-1">
-            <Button
-                type="button"
-                variant="outline"
-                disabled={refreshing}
-                aria-label="Refresh scope ID from Central"
-                data-test="refresh-device-scope-id"
-                onClick={() => {
-                    setRefreshing(true);
-                    router.put(refreshScopeId(id).url, {}, {
-                        preserveScroll: true,
-                        onFinish: () => setRefreshing(false),
-                    });
-                }}
-            >
-                <RefreshCw
-                    className={`size-4 ${refreshing ? 'animate-spin' : ''}`}
-                    aria-hidden
-                />
-            </Button>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <span className="inline-flex">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={refreshing}
+                            aria-label="refresh device scope ID"
+                            data-test="refresh-device-scope-id"
+                            onClick={() => {
+                                setRefreshing(true);
+                                router.put(refreshScopeId(id).url, {}, {
+                                    preserveScroll: true,
+                                    onFinish: () => setRefreshing(false),
+                                });
+                            }}
+                        >
+                            <RefreshCw
+                                className={`size-4 ${refreshing ? 'animate-spin' : ''}`}
+                                aria-hidden
+                            />
+                        </Button>
+                    </span>
+                </TooltipTrigger>
+                <TooltipContent>refresh device scope ID</TooltipContent>
+            </Tooltip>
             <Button
                 variant="outline"
                 className="hover:bg-red-500 hover:text-white"
