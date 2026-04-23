@@ -1,6 +1,6 @@
 import { Form, useForm, usePage } from '@inertiajs/react';
 import { Download } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
@@ -66,7 +66,7 @@ type DeploymentPageProps = {
     latest_tasks: Task[];
 } & SharedData;
 export default function Show() {
-    const { deployment, current_client } = usePage<DeploymentPageProps>().props;
+    const { deployment, current_client, flash } = usePage<DeploymentPageProps>().props;
     const devicesPaginator = usePage<DeploymentPageProps>().props.devices as Paginator<Device>;
     const devicesFromServer = devicesPaginator.data;
 
@@ -77,6 +77,15 @@ export default function Show() {
     const tasks = usePage<DeploymentPageProps>().props.tasks;
     const latest_tasks = usePage<DeploymentPageProps>().props.latest_tasks;
     const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (flash?.success) {
+            toast.success(flash.success, { id: 'deployment-flash-success' });
+        }
+        if (flash?.error) {
+            toast.error(flash.error, { id: 'deployment-flash-error' });
+        }
+    }, [flash?.success, flash?.error]);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
