@@ -69,7 +69,7 @@ class ConfigureVlanInterfaceJob implements ShouldQueue
                         $this->task->processTaskStatusLog($message);
 
                     } else {
-                        $error_message = '\nFailed to override VLAN. Aborting...';
+                        $error_message = '\nFailed to override VLAN. '.$override_response->json()['message'].' Aborting...';
                         Log::error($error_message);
                         $this->task->processTaskStatusLog($error_message);
 
@@ -91,7 +91,7 @@ class ConfigureVlanInterfaceJob implements ShouldQueue
                 $this->task->processTaskStatusLog($info_message);
                 $patch_vlan_interface_response = $this->centralAPIHelper->patch_vlan_interface($this->deviceInterface);
                 if (! $patch_vlan_interface_response->ok()) {
-                    $error_message = '\nFailed to patch vlan interface.';
+                    $error_message = '\nFailed to patch vlan interface. '.$patch_vlan_interface_response->json()['message'].' Retrying in a few...';
                     Log::error($error_message);
                     $this->task->processTaskStatusLog($error_message, true);
                     $this->release($this->wait_time * 60);
@@ -121,6 +121,12 @@ class ConfigureVlanInterfaceJob implements ShouldQueue
     {
         Log::error($exception);
         $this->task->deviceInterfaces()->find($this->deviceInterface)?->pivot->update(['status' => 'FAILED']);
+        $failed_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => $interface->pivot->status == 'FAILED' && $interface->ip_address)->count();
+        $total_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => $interface->ip_address)->count();
+        if ($failed_interfaces === $total_interfaces) {
+            $this->task->update(['status' => 'FAILED']);
+            $this->task->processTaskStatusLog('Task timed out or failed.');
+        }
         $this->release($this->wait_time * 60);
     }
 }

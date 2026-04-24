@@ -73,9 +73,13 @@ class ConfigureEthernetInterface implements ShouldQueue
     public function failed(?Throwable $exception): void
     {
         Log::error($exception);
-        $this->task->update(['status' => 'FAILED']);
         $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'FAILED']);
-        $this->task->processTaskStatusLog('Task timed out or failed.');
+        $failed_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => $interface->pivot->status == 'FAILED' && str_contains($interface->interface, '/'))->count();
+        $total_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => str_contain($interface->interface, '/'))->count();
+        if ($failed_interfaces === $total_interfaces) {
+            $this->task->update(['status' => 'FAILED']);
+            $this->task->processTaskStatusLog('Task timed out or failed.');
+        }
         sleep($this->wait_time * 60);
     }
 }

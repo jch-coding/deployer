@@ -83,6 +83,11 @@ class PreprovisionDevicesToGroupJob implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        Artisan::call('queue:clear');
+        Log::error($exception);
+        $this->task->processTaskStatusLog('Failed preprovisioning devices to group. Task timed out or failed.');
+        $this->task->devices->each(function ($device) {
+            $device->pivot->update(['status' => 'FAILED']);
+        });
+        $this->task->update(['status' => 'FAILED']);
     }
 }

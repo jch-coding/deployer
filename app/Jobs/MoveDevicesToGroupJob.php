@@ -62,7 +62,7 @@ class MoveDevicesToGroupJob implements ShouldQueue
         $response = $this->centralAPIHelper->move_devices_to_group($this->group_name, $devices);
         $message = '';
         if (! $response->ok()) {
-            Log::error('Failed to move devices to group');
+            Log::error('Failed to move devices to group with error '.$response->json()['message']);
             array_reduce($devices, function ($carry, $item) {
                 $carry .= "\nFailed Device ".$item.' move to group '.$this->group_name;
 
@@ -87,6 +87,11 @@ class MoveDevicesToGroupJob implements ShouldQueue
     public function failed(?Throwable $exception): void
     {
         Log::error($exception);
+        $this->task->processTaskStatusLog('Failed moving devices to group. Task timed out or failed.');
+        $this->task->devices->each(function (Device $device) {
+            $device->pivot->update(['status' => 'FAILED']);
+        });
+        $this->task->update(['status' => 'FAILED']);
         $this->release($this->wait_time * 60);
     }
 }

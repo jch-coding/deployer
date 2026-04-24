@@ -89,8 +89,14 @@ class UpdateSystemInfo implements ShouldQueue
     {
         Log::error($exception);
         $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
+        $failed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status == 'FAILED')->count();
+        $total_devices = $this->task->devices->count();
         $message = 'Failed updating system info for .'.$this->device->name;
         $this->task->processTaskStatusLog($message, true);
+        if ($failed_devices === $total_devices) {
+            $this->task->update(['status' => 'FAILED']);
+            $this->task->processTaskStatusLog('Task timed out or failed.');
+        }
         sleep($this->wait_time * 60);
     }
 }

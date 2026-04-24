@@ -55,6 +55,12 @@ class AssignDeviceFunctionJob implements ShouldQueue
     {
         Log::error($exception);
         $this->task->devices()->find($this->devices[0]['id'])->pivot->update(['status' => 'FAILED']);
+        $failed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status == 'FAILED')->count();
+        $total_devices = $this->task->devices->count();
+        if ($failed_devices === $total_devices) {
+            $this->task->update(['status' => 'FAILED']);
+        }
+        $this->task->processTaskStatusLog('Task timed out or failed.');
         $this->release($this->wait_time * 60);
     }
 }

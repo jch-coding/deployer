@@ -61,7 +61,7 @@ class CreateVSFProfileJob implements ShouldQueue
             }
             $response = $this->centralAPIHelper->post_vsf_profile($this->device);
             if (! $response->ok()) {
-                $message = 'VSF Profile Creation Failed.';
+                $message = 'VSF Profile Creation Failed with error '.$response->json()['message'];
                 Log::error($response->json('message'));
                 $this->task->processTaskStatusLog($message, true);
                 $this->release($this->wait_time * 60);
@@ -81,7 +81,10 @@ class CreateVSFProfileJob implements ShouldQueue
 
     public function failed(?Throwable $exception)
     {
-        Log::error($exception);
+        Log::error('VSF profile creation timed out or failed.');
+        $this->task->processTaskStatusLog('VSF profile creation timed out or failed.', true);
+        $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
+        $this->task->update(['status' => 'FAILED']);
         sleep($this->wait_time * 60);
     }
 }

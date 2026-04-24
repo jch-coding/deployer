@@ -94,7 +94,12 @@ class AssociateDeviceToSiteJob implements ShouldQueue
     {
         Log::error($exception);
         $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
-        $this->task->update(['status_log' => $this->task->status_log.$exception]);
+        $failed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status == 'FAILED')->count();
+        $total_devices = $this->task->devices->count();
+        if ($failed_devices === $total_devices) {
+            $this->task->update(['status' => 'FAILED']);
+        }
+        $this->task->processTaskStatusLog('Task timed out or failed.');
         sleep($this->wait_time * 60);
     }
 }
