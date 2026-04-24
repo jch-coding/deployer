@@ -7,6 +7,29 @@ import { show as showDeployment } from '@/routes/deployments';
 import { show as showDevice } from '@/routes/devices';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
+export type SwitchPortDetail = {
+    access_vlan: number | null;
+    interface_mode: string;
+    native_vlan: number | null;
+    trunk_vlan_all: boolean | null;
+    trunk_vlan_ranges: string | null;
+};
+
+export type LacpProfileDetail = {
+    mode: string;
+    port_id: number | null;
+    rate: string;
+    trunk_type: string;
+    port_list: string[];
+};
+
+export type StpProfileDetail = {
+    admin_edge_port: boolean;
+    admin_edge_port_trunk: boolean;
+    bpdu_guard: boolean;
+    loop_guard: boolean;
+};
+
 export type DeviceInterfaceRow = {
     id: number;
     interface: string;
@@ -18,15 +41,67 @@ export type DeviceInterfaceRow = {
     vrf_forwarding: string;
     sw_profile: string | null;
     portchannel_lag: string | null;
-    switch_port_id: number | null;
-    lacp_profile_id: number | null;
-    stp_profile_id: number | null;
-    created_at: string | null;
-    updated_at: string | null;
+    switch_port: SwitchPortDetail | null;
+    lacp_profile: LacpProfileDetail | null;
+    stp_profile: StpProfileDetail | null;
 };
 
 function yesNo(value: boolean): string {
     return value ? 'Yes' : 'No';
+}
+
+function formatSwitchPort(sp: SwitchPortDetail | null): string {
+    if (!sp) {
+        return '—';
+    }
+    const parts: string[] = [sp.interface_mode];
+    if (sp.access_vlan != null) {
+        parts.push(`access VLAN ${sp.access_vlan}`);
+    }
+    if (sp.native_vlan != null) {
+        parts.push(`native VLAN ${sp.native_vlan}`);
+    }
+    if (sp.trunk_vlan_all) {
+        parts.push('trunk all VLANs');
+    } else if (sp.trunk_vlan_ranges) {
+        parts.push(`trunk ranges ${sp.trunk_vlan_ranges}`);
+    }
+    return parts.join(' · ');
+}
+
+function formatLacpProfile(lp: LacpProfileDetail | null): string {
+    if (!lp) {
+        return '—';
+    }
+    const parts: string[] = [lp.mode, lp.rate];
+    if (lp.port_id != null) {
+        parts.push(`port ${lp.port_id}`);
+    }
+    parts.push(lp.trunk_type);
+    if (lp.port_list.length > 0) {
+        parts.push(`ports ${lp.port_list.map(String).join(', ')}`);
+    }
+    return parts.join(' · ');
+}
+
+function formatStpProfile(stp: StpProfileDetail | null): string {
+    if (!stp) {
+        return '—';
+    }
+    const flags: string[] = [];
+    if (stp.admin_edge_port) {
+        flags.push('admin edge');
+    }
+    if (stp.admin_edge_port_trunk) {
+        flags.push('admin edge trunk');
+    }
+    if (stp.bpdu_guard) {
+        flags.push('BPDU guard');
+    }
+    if (stp.loop_guard) {
+        flags.push('loop guard');
+    }
+    return flags.length > 0 ? flags.join(' · ') : '—';
 }
 
 const interfaceColumns: ColumnDef<DeviceInterfaceRow>[] = [
@@ -52,11 +127,21 @@ const interfaceColumns: ColumnDef<DeviceInterfaceRow>[] = [
     { accessorKey: 'vrf_forwarding', header: 'VRF forwarding' },
     { accessorKey: 'sw_profile', header: 'Switch profile' },
     { accessorKey: 'portchannel_lag', header: 'Port-channel / LAG' },
-    { accessorKey: 'switch_port_id', header: 'Switch port ID' },
-    { accessorKey: 'lacp_profile_id', header: 'LACP profile ID' },
-    { accessorKey: 'stp_profile_id', header: 'STP profile ID' },
-    { accessorKey: 'created_at', header: 'Created' },
-    { accessorKey: 'updated_at', header: 'Updated' },
+    {
+        id: 'switch_port',
+        header: 'Switch port',
+        accessorFn: (row) => formatSwitchPort(row.switch_port),
+    },
+    {
+        id: 'lacp_profile',
+        header: 'LACP profile',
+        accessorFn: (row) => formatLacpProfile(row.lacp_profile),
+    },
+    {
+        id: 'stp_profile',
+        header: 'STP profile',
+        accessorFn: (row) => formatStpProfile(row.stp_profile),
+    },
 ];
 
 type DeviceShowProps = {

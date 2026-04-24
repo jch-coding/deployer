@@ -18,6 +18,8 @@ class LacpProfileResource extends JsonResource
             'mode' => $this->mode,
             'port_id' => $this->port_id,
             'rate' => $this->rate,
+            'trunk_type' => $this->trunk_type,
+            'port_list' => $this->port_list,
         ];
     }
 }

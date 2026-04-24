@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\DeviceFunction;
 use App\Helper\CentralAPIHelper;
+use App\Http\Resources\LacpProfileResource;
+use App\Http\Resources\StpProfileResource;
+use App\Http\Resources\SwitchPortResource;
 use App\Helper\CSVHelper;
 use App\Models\Deployment;
 use App\Models\Device;
@@ -467,11 +470,15 @@ class DeviceController extends Controller
                 'vrf_forwarding' => $interface->vrf_forwarding,
                 'sw_profile' => $interface->sw_profile,
                 'portchannel_lag' => $interface->portchannel_lag,
-                'switch_port_id' => $interface->switch_port_id,
-                'lacp_profile_id' => $interface->lacp_profile_id,
-                'stp_profile_id' => $interface->stp_profile_id,
-                'created_at' => $interface->created_at?->toIso8601String(),
-                'updated_at' => $interface->updated_at?->toIso8601String(),
+                'switch_port' => $interface->switch_port
+                    ? SwitchPortResource::make($interface->switch_port)->resolve()
+                    : null,
+                'lacp_profile' => $interface->lacp_profile
+                    ? LacpProfileResource::make($interface->lacp_profile)->resolve()
+                    : null,
+                'stp_profile' => $interface->stp_profile
+                    ? StpProfileResource::make($interface->stp_profile)->resolve()
+                    : null,
             ];
         })->values()->all();
 
