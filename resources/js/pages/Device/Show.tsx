@@ -50,6 +50,22 @@ function yesNo(value: boolean): string {
     return value ? 'Yes' : 'No';
 }
 
+function hasIpAddress(row: DeviceInterfaceRow): boolean {
+    return Boolean(row.ip_address?.trim());
+}
+
+function formatInterfaceDisplay(row: DeviceInterfaceRow): string {
+    const tags: string[] = [];
+    if (hasIpAddress(row)) {
+        tags.push('VLAN');
+    }
+    if (row.lacp_profile) {
+        tags.push('LAG');
+    }
+    const prefix = tags.length > 0 ? `${tags.join(' ')} ` : '';
+    return `${prefix}${row.interface}`;
+}
+
 function formatSwitchPort(sp: SwitchPortDetail | null): string {
     if (!sp) {
         return '—';
@@ -106,7 +122,11 @@ function formatStpProfile(stp: StpProfileDetail | null): string {
 
 const interfaceColumns: ColumnDef<DeviceInterfaceRow>[] = [
     { accessorKey: 'id', header: 'ID' },
-    { accessorKey: 'interface', header: 'Interface' },
+    {
+        id: 'interface',
+        header: 'Interface',
+        accessorFn: (row) => formatInterfaceDisplay(row),
+    },
     { accessorKey: 'description', header: 'Description' },
     { accessorKey: 'ip_address', header: 'IP address' },
     {
@@ -130,7 +150,8 @@ const interfaceColumns: ColumnDef<DeviceInterfaceRow>[] = [
     {
         id: 'switch_port',
         header: 'Switch port',
-        accessorFn: (row) => formatSwitchPort(row.switch_port),
+        accessorFn: (row) =>
+            hasIpAddress(row) ? '—' : formatSwitchPort(row.switch_port),
     },
     {
         id: 'lacp_profile',
