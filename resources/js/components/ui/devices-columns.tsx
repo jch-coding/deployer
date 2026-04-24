@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { MoreHorizontal, Pencil, RefreshCw, TrashIcon } from 'lucide-react';
 import { useState } from 'react';
@@ -20,6 +20,7 @@ import {
     destroy as deleteDevice,
     edit as editDevice,
     refreshScopeId,
+    show as showDevice,
 } from '@/routes/devices';
 
 export type DeviceDef = {
@@ -57,9 +58,15 @@ function EditableDeviceNameCell({ id, name }: { id: number; name: string }) {
             onBlur={onBlur}
         />
     ) : (
-        <p className="group flex items-baseline justify-between">
-            {name}
-            <span>
+        <p className="group flex items-baseline justify-between gap-2">
+            <Link
+                href={showDevice(id).url}
+                className="text-primary font-medium hover:underline"
+                data-test="device-show-link"
+            >
+                {name}
+            </Link>
+            <span className="shrink-0">
                 <Button
                     type="button"
                     onClick={() => {

@@ -15,6 +15,8 @@ use App\Models\SwitchPort;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class DeviceController extends Controller
 {
@@ -438,6 +440,54 @@ class DeviceController extends Controller
         }
 
         return $saved_sites;
+    }
+
+    public function show(Request $request, Device $device): Response
+    {
+        if ($request->user()->currentClient()->id !== $device->client_id) {
+            abort(403);
+        }
+
+        $device->load([
+            'deployment',
+            'interfaces.switch_port',
+            'interfaces.lacp_profile',
+            'interfaces.stp_profile',
+        ]);
+
+        $interfaces = $device->interfaces->map(function (DeviceInterface $interface) {
+            return [
+                'id' => $interface->id,
+                'interface' => $interface->interface,
+                'description' => $interface->description,
+                'ip_address' => $interface->ip_address,
+                'enable' => $interface->enable,
+                'jumbo_frames' => (bool) $interface->jumbo_frames,
+                'routing' => (bool) $interface->routing,
+                'vrf_forwarding' => $interface->vrf_forwarding,
+                'sw_profile' => $interface->sw_profile,
+                'portchannel_lag' => $interface->portchannel_lag,
+                'switch_port_id' => $interface->switch_port_id,
+                'lacp_profile_id' => $interface->lacp_profile_id,
+                'stp_profile_id' => $interface->stp_profile_id,
+                'created_at' => $interface->created_at?->toIso8601String(),
+                'updated_at' => $interface->updated_at?->toIso8601String(),
+            ];
+        })->values()->all();
+
+        return Inertia::render('Device/Show', [
+            'device' => [
+                'id' => $device->id,
+                'name' => $device->name,
+                'serial' => $device->serial,
+                'device_function' => $device->device_function,
+            ],
+            'deployment' => [
+                'id' => $device->deployment->id,
+                'name' => $device->deployment->name,
+            ],
+            'interfaces' => $interfaces,
+        ]);
     }
 
     /**
