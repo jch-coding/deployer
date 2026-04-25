@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -24,7 +25,7 @@ type DeploymentType = {
     name: string,
 }
 
-export default function TaskCard({ task, task_friendly_name, task_friendly_description, required_columns, devices, deployment } : { task: string, task_friendly_name: string, task_friendly_description: string, required_columns: string[], devices: DeviceType[], deployment: DeploymentType }) {
+export default function TaskCard({ task, task_friendly_name, task_friendly_description, required_columns, devices, deployment, requiresClassicCentral = false } : { task: string, task_friendly_name: string, task_friendly_description: string, required_columns: string[], devices: DeviceType[], deployment: DeploymentType, requiresClassicCentral?: boolean }) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
     const [statusMessage, setStatusMessage] = useState()
@@ -82,6 +83,11 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
             <CardHeader className="relative pr-10">
                 <TaskRequiredColumnsInfo columns={required_columns} />
                 <CardTitle>{task_friendly_name}</CardTitle>
+                {requiresClassicCentral ? (
+                    <Badge variant="outline" className="mt-1 w-fit font-normal">
+                        Classic Central API
+                    </Badge>
+                ) : null}
                 <CardDescription>{task_friendly_description}</CardDescription>
             </CardHeader>
             <CardContent className="flex gap-2">
