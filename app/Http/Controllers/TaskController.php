@@ -86,17 +86,88 @@ class TaskController extends Controller
             'deployment_time' => 'required|integer',
         ]);
 
-        $task = $deployment->tasks()->create([
-            'task_type' => $validated['task_type'],
-            'name' => 'task_for_'.$deployment->name.now(),
-            'deployment_time' => $validated['deployment_time'],
-            'status' => 'IN_PROGRESS',
-        ]);
+        if ($validated['task_type'] === 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES')
+        {
+            $remove_vlans_task = $deployment->tasks()->create([
+                'task_type' => 'REMOVE_LOCAL_OVERRIDE_VLANS',
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+            ]);
+            $remove_dns_task = $deployment->tasks()->create([
+                'task_type' => 'REMOVE_LOCAL_OVERRIDE_DNS',
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+            ]);
+            $remove_static_route_task = $deployment->tasks()->create([
+                'task_type' => 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+            ]);
+            $remove_ntp_task = $deployment->tasks()->create([
+                'task_type' => 'REMOVE_LOCAL_OVERRIDE_NTP',
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+            ]);
+            $device_collection = Collection::make($validated['devices']);
+            $remove_vlans_task->devices()->attach($device_collection->pluck('id'));
+            $remove_dns_task->devices()->attach($device_collection->pluck('id'));
+            $remove_static_route_task->devices()->attach($device_collection->pluck('id'));
+            $remove_ntp_task->devices()->attach($device_collection->pluck('id'));
 
-        $device_collection = Collection::make($validated['devices']);
-        $task->devices()->attach($device_collection->pluck('id'));
-        $batch = $this->dispatchJob($task);
-        $task->update(['batch_id' => $batch]);
+            $batch = $this->dispatchJob($remove_vlans_task);
+            $remove_vlans_task->update(['batch_id' => $batch]);
+            $batch = $this->dispatchJob($remove_dns_task);
+            $remove_dns_task->update(['batch_id' => $batch]);
+            $batch = $this->dispatchJob($remove_static_route_task);
+            $remove_static_route_task->update(['batch_id' => $batch]);
+            $batch = $this->dispatchJob($remove_ntp_task);
+            $remove_ntp_task->update(['batch_id' => $batch]);
+        } elseif ($validated['task_type'] === 'CONFIGURE_ALL_INTERFACES') {
+            $configure_lag_task = $deployment->tasks()->create([
+                'task_type' => 'CONFIGURE_LAG_INTERFACE',
+                'name' => 'configure_lag_interface_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+            ]);
+            $configure_ethernet_task = $deployment->tasks()->create([
+                'task_type' => 'CONFIGURE_ETHERNET_INTERFACE',
+                'name' => 'configure_ethernet_interface_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+            ]);
+            $configure_svi_task = $deployment->tasks()->create([
+                'task_type' => 'CONFIGURE_VLAN_INTERFACE',
+                'name' => 'configure_svi_interface_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+            ]);
+            $device_collection = Collection::make($validated['devices']);
+            $configure_lag_task->devices()->attach($device_collection->pluck('id'));
+            $configure_ethernet_task->devices()->attach($device_collection->pluck('id'));
+            $configure_svi_task->devices()->attach($device_collection->pluck('id'));
+            $batch = $this->dispatchJob($configure_lag_task);
+            $configure_lag_task->update(['batch_id' => $batch]);
+            $batch = $this->dispatchJob($configure_ethernet_task);
+            $configure_ethernet_task->update(['batch_id' => $batch]);
+            $batch = $this->dispatchJob($configure_svi_task);
+            $configure_svi_task->update(['batch_id' => $batch]);
+        } else {
+            $task = $deployment->tasks()->create([
+                'task_type' => $validated['task_type'],
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+            ]);
+
+            $device_collection = Collection::make($validated['devices']);
+            $task->devices()->attach($device_collection->pluck('id'));
+            $batch = $this->dispatchJob($task);
+            $task->update(['batch_id' => $batch]);
+        }
 
         return to_route('tasks.show', $task);
     }
@@ -203,10 +274,20 @@ class TaskController extends Controller
                 break;
             case 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE':
                 $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
-                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideVlansJob($task, $device, $centralAPIHelper))->toArray();
                 $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideDnsJob($task, $device, $centralAPIHelper))->toArray();
-                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideStaticRouteJob($task, $device, $centralAPIHelper))->toArray();
+                break;
+            case 'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE':
+                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideNtpJob($task, $device, $centralAPIHelper))->toArray();
+                break;
+            case 'REMOVE_LOCAL_OVERRIDE_VLANS':
+                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
+                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideVlansJob($task, $device, $centralAPIHelper))->toArray();
+                break;
+            case 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE':
+                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
+                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideStaticRouteJob($task, $device, $centralAPIHelper))->toArray();
+                break;
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 $devices_with_port_profiles = $task->devices->map(function ($device) {
                     $device->interfaces_sw_profiles = $device->interfaces->filter(fn ($interface) => $interface->sw_profile && str_contains($interface->interface, '/'));

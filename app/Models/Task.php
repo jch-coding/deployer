@@ -73,6 +73,8 @@ class Task extends Model
         switch ($task_type) {
             case 'UPDATE_SYSTEM_INFO':
                 return 'Name Devices';
+            case 'CONFIGURE_ALL_INTERFACE':
+                return 'Configure LAG, Ethernet and VLAN Interfaces';
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 return 'Configure Ethernet Interfaces';
             case 'CONFIGURE_LAG_INTERFACE':
@@ -105,6 +107,8 @@ class Task extends Model
         switch ($task_type) {
             case 'UPDATE_SYSTEM_INFO':
                 return 'Name or rename devices';
+            case 'CONFIGURE_ALL_INTERFACE':
+                return 'Configure LAG, physical and SVIs in that order.';
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 return 'Configure physical interfaces';
             case 'CONFIGURE_LAG_INTERFACE':
@@ -137,6 +141,8 @@ class Task extends Model
         switch ($task_type) {
             case 'UPDATE_SYSTEM_INFO':
                 return ['name', 'serial', 'device_function'];
+            case 'CONFIGURE_ALL_INTERFACE':
+                return ['name', 'serial', 'device_function', 'interface', 'ip_address'];
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 return ['name', 'serial', 'device_function', 'interface'];
             case 'CONFIGURE_LAG_INTERFACE':
