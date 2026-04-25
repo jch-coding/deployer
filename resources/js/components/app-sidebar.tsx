@@ -4,6 +4,7 @@ import {
     BookOpen,
     BuildingIcon,
     LayoutGrid,
+    ScrollText,
 } from 'lucide-react';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -17,7 +18,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard, documentation } from '@/routes';
+import { dashboard, documentation, usage } from '@/routes';
 import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
 import type { NavItem } from '@/types';
@@ -41,6 +42,11 @@ const mainNavItems: NavItem[] = [
 ];
 
 const footerNavItems: NavItem[] = [
+    {
+        title: 'Usage',
+        href: usage(),
+        icon: ScrollText,
+    },
     {
         title: 'Documentation',
         href: documentation(),
