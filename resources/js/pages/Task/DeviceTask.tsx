@@ -17,7 +17,7 @@ export default function Show() {
     const task = usePage().props.task
     const task_friendly_name = usePage().props.task_friendly_name
     const devices = usePage().props.devices
-    const displayColumns= usePage().props.display_columns
+    const displayColumns = usePage().props.display_columns ?? []
     const deployment = usePage().props.deployment
     const completedDevices= devices.filter(
         (device) => device.pivot.status === 'COMPLETED',
