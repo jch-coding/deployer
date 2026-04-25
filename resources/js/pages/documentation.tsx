@@ -1,5 +1,6 @@
 import Layout from '@/layouts/app-layout'
 import { Head } from '@inertiajs/react'
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
@@ -136,8 +137,11 @@ export default function documentation({}) {
                     </CardContent>
                 </Card>
                 <Card>
-                    <CardHeader className="font-bold">
-                        Associate Devices to Site
+                    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 font-bold">
+                        <span>Associate Devices to Site</span>
+                        <Badge variant="outline" className="shrink-0 font-normal">
+                            Classic Central API
+                        </Badge>
                     </CardHeader>
                     <CardContent>
                         <p>The site column should be included for all devices that need to be associated with a site. The site name should be in the site column and must match the site name configured in Central.</p>
@@ -151,8 +155,11 @@ export default function documentation({}) {
                     </CardContent>
                 </Card>
                 <Card>
-                    <CardHeader className="font-bold">
-                        Associate Devices to Site and Name
+                    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 font-bold">
+                        <span>Associate Devices to Site and Name</span>
+                        <Badge variant="outline" className="shrink-0 font-normal">
+                            Classic Central API
+                        </Badge>
                     </CardHeader>
                     <CardContent>
                         <p>The site and name columns should be included for all devices that need to be associated with a site and a name. The site name should be in the site column and must match the site name configured in Central. The name column should be the name of the device that will be configured in the device name column.</p>
@@ -166,8 +173,11 @@ export default function documentation({}) {
                     </CardContent>
                 </Card>
                 <Card>
-                    <CardHeader className="font-bold">
-                        Preprovision Devices to Group
+                    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 font-bold">
+                        <span>Preprovision Devices to Group</span>
+                        <Badge variant="outline" className="shrink-0 font-normal">
+                            Classic Central API
+                        </Badge>
                     </CardHeader>
                     <CardContent>
                         <p>The group column should be included for all devices that need to be preprovisioned to a group. The group name should be in the group column and must match the group name configured in Central.</p>
@@ -181,8 +191,11 @@ export default function documentation({}) {
                     </CardContent>
                 </Card>
                 <Card>
-                    <CardHeader className="font-bold">
-                        Move Devices to Device Group
+                    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 font-bold">
+                        <span>Move Devices to Device Group</span>
+                        <Badge variant="outline" className="shrink-0 font-normal">
+                            Classic Central API
+                        </Badge>
                     </CardHeader>
                     <CardContent>
                         <p>The group column should be included for all devices that need to be moved to a group. The group name should be in the group column and must match the group name configured in Central.</p>
