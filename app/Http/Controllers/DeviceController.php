@@ -453,6 +453,7 @@ class DeviceController extends Controller
 
         $device->load([
             'deployment',
+            'site',
             'interfaces.switch_port',
             'interfaces.lacp_profile',
             'interfaces.stp_profile',
@@ -486,7 +487,10 @@ class DeviceController extends Controller
             'device' => [
                 'id' => $device->id,
                 'name' => $device->name,
+                'site' => $device->site?->name,
+                'group' => $device->group,
                 'serial' => $device->serial,
+                'scope_id' => $device->scope_id,
                 'device_function' => $device->device_function,
             ],
             'deployment' => [

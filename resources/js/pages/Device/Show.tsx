@@ -50,6 +50,37 @@ function yesNo(value: boolean): string {
     return value ? 'Yes' : 'No';
 }
 
+function formatDeviceMetadata(device: {
+    site: string | null;
+    group: string | null;
+    serial: string | null;
+    scope_id: string | null;
+    device_function: string | null;
+}): string | null {
+    const parts: string[] = [];
+    const pushLabeled = (label: string, value: string | null | undefined) => {
+        if (value == null) {
+            return;
+        }
+        const trimmed = String(value).trim();
+        if (trimmed === '') {
+            return;
+        }
+        parts.push(`${label} ${trimmed}`);
+    };
+    pushLabeled('Site', device.site);
+    pushLabeled('Group', device.group);
+    pushLabeled('Serial', device.serial);
+    pushLabeled('Scope ID', device.scope_id);
+    if (device.device_function != null) {
+        const fn = String(device.device_function).trim();
+        if (fn !== '') {
+            parts.push(fn);
+        }
+    }
+    return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 function hasIpAddress(row: DeviceInterfaceRow): boolean {
     return Boolean(row.ip_address?.trim());
 }
@@ -169,8 +200,11 @@ type DeviceShowProps = {
     device: {
         id: number;
         name: string;
-        serial: string;
-        device_function: string;
+        site: string | null;
+        group: string | null;
+        serial: string | null;
+        scope_id: string | null;
+        device_function: string | null;
     };
     deployment: {
         id: number;
@@ -182,6 +216,8 @@ type DeviceShowProps = {
 export default function Show() {
     const { device, deployment, current_client, interfaces } =
         usePage<DeviceShowProps>().props;
+
+    const deviceSubtitle = formatDeviceMetadata(device);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -203,9 +239,11 @@ export default function Show() {
             <div className="space-y-4 p-4">
                 <div>
                     <h1 className="text-2xl font-semibold">{device.name}</h1>
-                    <p className="text-muted-foreground text-sm">
-                        Serial {device.serial} · {device.device_function}
-                    </p>
+                    {deviceSubtitle ? (
+                        <p className="text-muted-foreground text-sm">
+                            {deviceSubtitle}
+                        </p>
+                    ) : null}
                 </div>
                 <div>
                     <h2 className="mb-2 text-lg font-medium">Interfaces</h2>
