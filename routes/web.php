@@ -20,8 +20,13 @@ Route::get('/documentation', function () {
     return Inertia::render('documentation');
 })->name('documentation');
 
+Route::get('/usage', function () {
+    return Inertia::render('Usage');
+})->name('usage');
+
 Route::get('dashboard', function () {
     $clients = auth()->user()->clients()->withCount(['deployments', 'devices'])->get();
+
     return Inertia::render('dashboard', [
         'clients' => $clients->toResourceCollection(ClientResource::class),
     ]);
