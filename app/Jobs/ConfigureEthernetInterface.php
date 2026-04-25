@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\DeviceInterface;
 use App\Models\Task;
@@ -14,11 +15,12 @@ use Throwable;
 
 class ConfigureEthernetInterface implements ShouldQueue
 {
-    use Batchable, Queueable;
+    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
 
     public int $deployment_time;
 
     public int $wait_time;
+    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -34,34 +36,38 @@ class ConfigureEthernetInterface implements ShouldQueue
      */
     public function handle(): void
     {
-        $device = $this->deviceInterface->device;
-        if (! $device->scope_id) {
-            $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($device);
-            if (array_key_exists('error', $scopeid_response)) {
-                return;
+        try {
+            $device = $this->deviceInterface->device;
+            if (! $device->scope_id) {
+                $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($device);
+                if (array_key_exists('error', $scopeid_response)) {
+                    return;
+                }
+                $device->scope_id = $scopeid_response[0]['scopeId'];
+                $device->save();
             }
-            $device->scope_id = $scopeid_response[0]['scopeId'];
-            $device->save();
-        }
-        $statusLog = $this->task->status_log;
-        $interface_response = $this->centralAPIHelper->patch_ethernet_interface($this->deviceInterface);
-        if (! $interface_response->ok()) {
-            $message = 'Failed to patch ethernet interface: '.$this->deviceInterface->interface.' ondevice '.$device->name.' with message:'.$interface_response->json()['message'];
-            $this->task->processTaskStatusLog($message, true);
-            Log::error('Failed to patch ethernet interface: '.$this->deviceInterface->interface.' on device '.$device->name.' with message:'.$interface_response->json()['message']);
-            $this->release($this->wait_time * 60);
-        } else {
-            $message = 'Interface '.$this->deviceInterface->interface.' configured on device '.$device->name;
-            if ($this->deviceInterface->sw_profile) {
-                $message .= ' with '.$this->deviceInterface->sw_profile.' profile';
+            $statusLog = $this->task->status_log;
+            $interface_response = $this->centralAPIHelper->patch_ethernet_interface($this->deviceInterface);
+            if (! $interface_response->ok()) {
+                $message = 'Failed to patch ethernet interface: '.$this->deviceInterface->interface.' ondevice '.$device->name.' with message:'.$interface_response->json()['message'];
+                $this->task->processTaskStatusLog($message, true);
+                Log::error('Failed to patch ethernet interface: '.$this->deviceInterface->interface.' on device '.$device->name.' with message:'.$interface_response->json()['message']);
+                $this->release($this->wait_time * 60);
+            } else {
+                $message = 'Interface '.$this->deviceInterface->interface.' configured on device '.$device->name;
+                if ($this->deviceInterface->sw_profile) {
+                    $message .= ' with '.$this->deviceInterface->sw_profile.' profile';
+                }
+                $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
+                $deviceInterfaces = $this->task->deviceInterfaces->filter(fn ($deviceInterface) => $deviceInterface->device_id === $device->id);
+                $completedDeviceInterfaces = $deviceInterfaces->filter(fn ($deviceInterface) => $deviceInterface->pivot->status === 'COMPLETED');
+                if ($completedDeviceInterfaces->count() === $deviceInterfaces->count()) {
+                    $this->task->devices()->find($device)->pivot->update(['status' => 'COMPLETED']);
+                }
+                $this->task->processTaskStatusLog($message);
             }
-            $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
-            $deviceInterfaces = $this->task->deviceInterfaces->filter(fn ($deviceInterface) => $deviceInterface->device_id === $device->id);
-            $completedDeviceInterfaces = $deviceInterfaces->filter(fn ($deviceInterface) => $deviceInterface->pivot->status === 'COMPLETED');
-            if ($completedDeviceInterfaces->count() === $deviceInterfaces->count()) {
-                $this->task->devices()->find($device)->pivot->update(['status' => 'COMPLETED']);
-            }
-            $this->task->processTaskStatusLog($message);
+        } catch (Throwable $exception) {
+            $this->failTaskOnUnhandledException($exception, 'Configure ethernet interface');
         }
     }
 
@@ -80,6 +86,5 @@ class ConfigureEthernetInterface implements ShouldQueue
             $this->task->update(['status' => 'FAILED']);
             $this->task->processTaskStatusLog('Task timed out or failed.');
         }
-        sleep($this->wait_time * 60);
     }
 }

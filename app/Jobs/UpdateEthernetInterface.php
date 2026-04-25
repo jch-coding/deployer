@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\DeviceInterface;
 use App\Models\Task;
@@ -14,7 +15,7 @@ use Throwable;
 
 class UpdateEthernetInterface implements ShouldQueue
 {
-    use Batchable, Queueable;
+    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
 
     /**
      * Create a new job instance.
@@ -22,6 +23,7 @@ class UpdateEthernetInterface implements ShouldQueue
     public int $deployment_time;
 
     public int $wait_time;
+    public int $tries = 1;
 
     public function __construct(public DeviceInterface $deviceInterface, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
@@ -34,22 +36,26 @@ class UpdateEthernetInterface implements ShouldQueue
      */
     public function handle(): void
     {
-        if (! $this->centralAPIHelper->client->handleBearerTokenAuth()) {
-            $message = 'Access Token Renewal failed';
-            Log::error($message);
-            $this->task->processTaskStatusLog($message);
-        } else {
-            $response = $this->centralAPIHelper->patch_ethernet_interface($this->deviceInterface);
-            if (! $response->ok()) {
-                $message = 'Failed updating: '.$this->deviceInterface->interface.' on '.$this->deviceInterface->device->name;
+        try {
+            if (! $this->centralAPIHelper->client->handleBearerTokenAuth()) {
+                $message = 'Access Token Renewal failed';
                 Log::error($message);
-                $this->task->processTaskStatusLog($message, true);
-                $this->release($this->wait_time * 60);
-            } else {
-                $message = 'Updated interface '.$this->deviceInterface->interface.' on '.$this->deviceInterface->device->name;
-                $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
                 $this->task->processTaskStatusLog($message);
+            } else {
+                $response = $this->centralAPIHelper->patch_ethernet_interface($this->deviceInterface);
+                if (! $response->ok()) {
+                    $message = 'Failed updating: '.$this->deviceInterface->interface.' on '.$this->deviceInterface->device->name;
+                    Log::error($message);
+                    $this->task->processTaskStatusLog($message, true);
+                    $this->release($this->wait_time * 60);
+                } else {
+                    $message = 'Updated interface '.$this->deviceInterface->interface.' on '.$this->deviceInterface->device->name;
+                    $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
+                    $this->task->processTaskStatusLog($message);
+                }
             }
+        } catch (Throwable $exception) {
+            $this->failTaskOnUnhandledException($exception, 'Update ethernet interface');
         }
     }
 
@@ -63,7 +69,5 @@ class UpdateEthernetInterface implements ShouldQueue
         Log::error($exception);
         $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'FAILED']);
         $this->task->processTaskStatusLog($exception);
-
-        sleep($this->wait_time * 60);
     }
 }

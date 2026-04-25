@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
@@ -14,11 +15,12 @@ use Throwable;
 
 class MoveDevicesToGroupJob implements ShouldQueue
 {
-    use Batchable, Queueable;
+    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
 
     public int $deployment_time;
 
     public int $wait_time;
+    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -34,8 +36,12 @@ class MoveDevicesToGroupJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
-        $this->moveDevicesToGroup($device_serials);
+        try {
+            $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
+            $this->moveDevicesToGroup($device_serials);
+        } catch (Throwable $exception) {
+            $this->failTaskOnUnhandledException($exception, 'Move devices to group');
+        }
     }
 
     public function moveDevicesToGroup($devices): void
@@ -92,6 +98,5 @@ class MoveDevicesToGroupJob implements ShouldQueue
             $device->pivot->update(['status' => 'FAILED']);
         });
         $this->task->update(['status' => 'FAILED']);
-        $this->release($this->wait_time * 60);
     }
 }

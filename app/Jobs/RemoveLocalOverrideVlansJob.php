@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
@@ -14,11 +15,12 @@ use Throwable;
 
 class RemoveLocalOverrideVlansJob implements ShouldQueue
 {
-    use Queueable, Batchable;
+    use Queueable, Batchable, HandlesUncaughtTaskExceptions;
 
     public int $deployment_time;
 
     public int $wait_time;
+    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -34,6 +36,7 @@ class RemoveLocalOverrideVlansJob implements ShouldQueue
      */
     public function handle(): void
     {
+        try {
         // refresh device scope-id
         if (! $this->device->scope_id) {
             $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
@@ -83,6 +86,9 @@ class RemoveLocalOverrideVlansJob implements ShouldQueue
             $message = "\nFailed to get local override vlans: {$l2_vlan_response->json()['message']}";
             $this->task->processTaskStatusLog($message, true);
             $this->release($this->wait_time * 60);
+        }
+        } catch (Throwable $exception) {
+            $this->failTaskOnUnhandledException($exception, 'Remove local VLAN overrides');
         }
     }
 

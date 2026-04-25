@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
 use DateTime;
@@ -13,13 +14,14 @@ use Throwable;
 
 class AssignDeviceFunctionJob implements ShouldQueue
 {
-    use Batchable, Queueable;
+    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
 
     /**
      * Create a new job instance.
      */
     public int $deployment_time;
     public int $wait_time;
+    public int $tries = 1;
 
     public function __construct(public array $devices, public string $device_function, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
@@ -32,17 +34,20 @@ class AssignDeviceFunctionJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
-        $response = $this->centralAPIHelper->assignDeviceFunction($device_serials, $this->device_function);
-        if (! $response->ok()) {
-            Log::error($response->json('message'));
-            $this->fail();
-        }
-        else {
-            array_map(fn($device) => $this->task->devices()->find($device['id'])->pivot->update(['status' => 'COMPLETED']), $this->devices);
-            $status_log = $this->task->status_log;
-            array_reduce($this->devices, fn($carry, $device) => $carry . "\nDevice " . $device['name'] . ' assigned to ' . $device['device_function'], $status_log);
-            $this->task->update(['status_log' => $status_log]);
+        try {
+            $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
+            $response = $this->centralAPIHelper->assignDeviceFunction($device_serials, $this->device_function);
+            if (! $response->ok()) {
+                Log::error($response->json('message'));
+                $this->fail();
+            } else {
+                array_map(fn ($device) => $this->task->devices()->find($device['id'])->pivot->update(['status' => 'COMPLETED']), $this->devices);
+                $status_log = $this->task->status_log;
+                array_reduce($this->devices, fn ($carry, $device) => $carry . "\nDevice " . $device['name'] . ' assigned to ' . $device['device_function'], $status_log);
+                $this->task->update(['status_log' => $status_log]);
+            }
+        } catch (Throwable $exception) {
+            $this->failTaskOnUnhandledException($exception, 'Assign device function');
         }
     }
 
@@ -61,6 +66,5 @@ class AssignDeviceFunctionJob implements ShouldQueue
             $this->task->update(['status' => 'FAILED']);
         }
         $this->task->processTaskStatusLog('Task timed out or failed.');
-        $this->release($this->wait_time * 60);
     }
 }

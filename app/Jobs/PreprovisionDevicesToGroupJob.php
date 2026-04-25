@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
 use DateTime;
@@ -14,12 +15,13 @@ use Throwable;
 
 class PreprovisionDevicesToGroupJob implements ShouldQueue
 {
-    use Batchable, Queueable;
+    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
 
     /**
      * Create a new job instance.
      */
     public int $deployment_time;
+    public int $tries = 1;
 
     public function __construct(public array $devices, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
@@ -31,8 +33,12 @@ class PreprovisionDevicesToGroupJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
-        $this->preprovisionDevices($device_serials);
+        try {
+            $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
+            $this->preprovisionDevices($device_serials);
+        } catch (Throwable $exception) {
+            $this->failTaskOnUnhandledException($exception, 'Preprovision devices to group');
+        }
     }
 
     public function preprovisionDevices($devices): void

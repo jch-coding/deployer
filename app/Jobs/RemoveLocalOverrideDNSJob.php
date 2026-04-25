@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
@@ -14,10 +15,11 @@ use Throwable;
 
 class RemoveLocalOverrideDNSJob implements ShouldQueue
 {
-    use Queueable, Batchable;
+    use Queueable, Batchable, HandlesUncaughtTaskExceptions;
 
     public int $deployment_time;
     public int $wait_time;
+    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -33,6 +35,7 @@ class RemoveLocalOverrideDNSJob implements ShouldQueue
      */
     public function handle(): void
     {
+        try {
         //refresh device scope-id
         if (!$this->device->scope_id) {
             $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
@@ -76,6 +79,9 @@ class RemoveLocalOverrideDNSJob implements ShouldQueue
             $message = "\nFailed to get local override dns profiles: {$dns_response->json()['message']}";
             $this->task->processTaskStatusLog($message, true);
             $this->release($this->wait_time * 60);
+        }
+        } catch (Throwable $exception) {
+            $this->failTaskOnUnhandledException($exception, 'Remove local DNS override');
         }
     }
 
