@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
@@ -14,11 +15,12 @@ use Throwable;
 
 class AssociateDeviceToSiteJob implements ShouldQueue
 {
-    use Batchable, Queueable;
+    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
 
     public int $deployment_time;
 
     public int $wait_time;
+    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -34,21 +36,25 @@ class AssociateDeviceToSiteJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $device_type = $this->get_device_type($this->device->device_function);
-        $this->populate_classic_site_id();
-        $device_site_association_body = [
-            'site_id' => $this->device->site->classic_id,
-            'device_type' => $device_type,
-            'device_id' => $this->device->serial,
-        ];
-        $response = $this->centralAPIHelper->classic_associate_device_to_site($device_site_association_body);
-        if (! $response->ok()) {
-            Log::error('Failed to associate devices to site');
-            $this->release($this->wait_time * 60);
-        } else {
-            $status_log = $this->task->status_log;
-            $new_log = $status_log.'\nDevice '.$this->device->name.' associated to site '.$this->site->name;
-            $this->task->update(['status_log' => $new_log]);
+        try {
+            $device_type = $this->get_device_type($this->device->device_function);
+            $this->populate_classic_site_id();
+            $device_site_association_body = [
+                'site_id' => $this->device->site->classic_id,
+                'device_type' => $device_type,
+                'device_id' => $this->device->serial,
+            ];
+            $response = $this->centralAPIHelper->classic_associate_device_to_site($device_site_association_body);
+            if (! $response->ok()) {
+                Log::error('Failed to associate devices to site');
+                $this->release($this->wait_time * 60);
+            } else {
+                $status_log = $this->task->status_log;
+                $new_log = $status_log.'\nDevice '.$this->device->name.' associated to site '.$this->site->name;
+                $this->task->update(['status_log' => $new_log]);
+            }
+        } catch (Throwable $exception) {
+            $this->failTaskOnUnhandledException($exception, 'Associate device to site');
         }
     }
 
@@ -100,6 +106,5 @@ class AssociateDeviceToSiteJob implements ShouldQueue
             $this->task->update(['status' => 'FAILED']);
         }
         $this->task->processTaskStatusLog('Task timed out or failed.');
-        sleep($this->wait_time * 60);
     }
 }
