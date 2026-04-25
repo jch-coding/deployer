@@ -25,7 +25,6 @@ use App\TaskType;
 use Illuminate\Bus\Batch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -192,17 +191,14 @@ class TaskController extends Controller
     public function cancel(Task $task)
     {
         $task->update(['status' => 'CANCELLED']);
-        // queue clear is not 100% successful on first try
-        $queue_cleared = false;
-        $tries = 3;
-        while (! $queue_cleared && $tries > 0) {
-            Artisan::call('queue:clear');
-            if (str_contains(Artisan::output(), 'Cleared 0 jobs')) {
-                $queue_cleared = true;
-                $tries -= 1;
-                sleep(random_int(1, 6));
+
+        if ($task->batch_id) {
+            $batch = Bus::findBatch($task->batch_id);
+            if ($batch) {
+                $batch->cancel();
             }
         }
+
         Inertia::flash('success', 'Task cancelled successfully.');
         return back();
     }
