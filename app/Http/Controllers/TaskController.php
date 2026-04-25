@@ -23,6 +23,7 @@ use App\Models\Deployment;
 use App\Models\Task;
 use App\TaskType;
 use Illuminate\Bus\Batch;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
@@ -125,6 +126,7 @@ class TaskController extends Controller
             $remove_static_route_task->update(['batch_id' => $batch]);
             $batch = $this->dispatchJob($remove_ntp_task);
             $remove_ntp_task->update(['batch_id' => $batch]);
+            $task = $remove_ntp_task;
         } elseif ($validated['task_type'] === 'CONFIGURE_ALL_INTERFACES') {
             $configure_lag_task = $deployment->tasks()->create([
                 'task_type' => 'CONFIGURE_LAG_INTERFACE',
@@ -154,6 +156,7 @@ class TaskController extends Controller
             $configure_ethernet_task->update(['batch_id' => $batch]);
             $batch = $this->dispatchJob($configure_svi_task);
             $configure_svi_task->update(['batch_id' => $batch]);
+            $task = $configure_svi_task;
         } else {
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
@@ -164,8 +167,10 @@ class TaskController extends Controller
 
             $device_collection = Collection::make($validated['devices']);
             $task->devices()->attach($device_collection->pluck('id'));
-            $batch = $this->dispatchJob($task);
-            $task->update(['batch_id' => $batch]);
+            $batchId = $this->dispatchJob($task);
+            if ($batchId !== null) {
+                $task->forceFill(['batch_id' => $batchId])->save();
+            }
         }
 
         return to_route('tasks.show', $task);
@@ -182,8 +187,10 @@ class TaskController extends Controller
     {
         $this->cancel($task);
         $task->update(['status' => 'IN_PROGRESS']);
-        $batch = $this->dispatchJob($task);
-        $task->update(['batch_id' => $batch]);
+        $batchId = $this->dispatchJob($task);
+        if ($batchId !== null) {
+            $task->forceFill(['batch_id' => $batchId])->save();
+        }
 
         return to_route('tasks.show', $task);
     }
@@ -230,8 +237,10 @@ class TaskController extends Controller
         return $task->refresh();
     }
 
-    public function dispatchJob(Task $task)
+    public function dispatchJob(Task $task): ?string
     {
+        $task->loadMissing('devices', 'deviceInterfaces');
+
         $centralAPIHelper = new CentralAPIHelper($task->deployment->client);
         $jobs = [];
         switch ($task->task_type) {
@@ -321,13 +330,29 @@ class TaskController extends Controller
                 break;
         }
 
-        // Most task types dispatch as a single batch; return its id so the task
-        // can store a cancellable batch reference.
-        if (count($jobs) === 1 && is_array($jobs[0])) {
-            return Bus::batch($jobs[0])->allowFailures()->dispatch()->id;
+        $pendingBatches = [];
+
+        foreach ($jobs as $segment) {
+            if (is_array($segment)) {
+                $segment = array_values(array_filter($segment));
+                if ($segment === []) {
+                    continue;
+                }
+                $pendingBatches[] = Bus::batch($segment)->allowFailures();
+            } elseif ($segment instanceof ShouldQueue) {
+                $pendingBatches[] = Bus::batch([$segment])->allowFailures();
+            }
         }
 
-        Bus::chain(array_map(fn ($j) => Bus::batch($j)->allowFailures(), $jobs))->dispatch();
+        if ($pendingBatches === []) {
+            return null;
+        }
+
+        if (count($pendingBatches) === 1) {
+            return $pendingBatches[0]->dispatch()->id;
+        }
+
+        Bus::chain($pendingBatches)->dispatch();
 
         return null;
     }
