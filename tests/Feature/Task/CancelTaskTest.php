@@ -29,7 +29,7 @@ beforeEach(function () {
 });
 
 test('cancelling a task cancels its dispatched batch', function () {
-    $task = Task::factory()->for($this->deployment)->create([
+    $task = Task::factory()->recycle($this->deployment)->create([
         'status' => 'IN_PROGRESS',
     ]);
 
