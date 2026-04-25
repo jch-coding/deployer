@@ -91,7 +91,7 @@ export default function Usage() {
 
     const updateActiveFromScroll = useCallback(() => {
         const headerOffset = 96;
-        const position = window.scrollY + headerOffset;
+        const activationY = headerOffset;
 
         let current = tocSections[0].id;
         for (const { id } of tocSections) {
@@ -99,8 +99,8 @@ export default function Usage() {
             if (!el) {
                 continue;
             }
-            const top = el.getBoundingClientRect().top + window.scrollY;
-            if (position >= top - 8) {
+            const top = el.getBoundingClientRect().top;
+            if (top <= activationY + 8) {
                 current = id;
             }
         }
@@ -119,11 +119,15 @@ export default function Usage() {
         };
 
         updateActiveFromScroll();
+
+        const inset = document.querySelector<HTMLElement>('[data-slot="sidebar-inset"]');
         window.addEventListener('scroll', onScroll, { passive: true });
+        inset?.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onScroll, { passive: true });
 
         return () => {
             window.removeEventListener('scroll', onScroll);
+            inset?.removeEventListener('scroll', onScroll);
             window.removeEventListener('resize', onScroll);
             if (scrollSpyRaf.current !== null) {
                 cancelAnimationFrame(scrollSpyRaf.current);
@@ -275,32 +279,33 @@ export default function Usage() {
                     </section>
                 </article>
 
-                <aside className="hidden w-52 shrink-0 lg:block" aria-label="On this page">
-                    <div className="sticky top-20">
-                        <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wide">
-                            On this page
-                        </p>
-                        <nav>
-                            <ul className="space-y-1 text-sm">
-                                {tocSections.map(({ id, label }) => (
-                                    <li key={id}>
-                                        <button
-                                            type="button"
-                                            onClick={() => scrollToSection(id)}
-                                            className={cn(
-                                                'w-full rounded-md px-2 py-1.5 text-left transition-colors',
-                                                activeId === id
-                                                    ? 'bg-muted text-foreground font-medium'
-                                                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                                            )}
-                                        >
-                                            {label}
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                        </nav>
-                    </div>
+                <aside
+                    className="hidden w-52 shrink-0 self-start lg:sticky lg:top-24 lg:block"
+                    aria-label="On this page"
+                >
+                    <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wide">
+                        On this page
+                    </p>
+                    <nav>
+                        <ul className="space-y-1 text-sm">
+                            {tocSections.map(({ id, label }) => (
+                                <li key={id}>
+                                    <button
+                                        type="button"
+                                        onClick={() => scrollToSection(id)}
+                                        className={cn(
+                                            'w-full rounded-md px-2 py-1.5 text-left transition-colors',
+                                            activeId === id
+                                                ? 'bg-muted text-foreground font-medium'
+                                                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                                        )}
+                                    >
+                                        {label}
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </nav>
                 </aside>
             </div>
         </AppLayout>
