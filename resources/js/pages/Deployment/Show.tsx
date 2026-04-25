@@ -85,6 +85,12 @@ export default function Show() {
     const tasks = usePage<DeploymentPageProps>().props.tasks;
     const latest_tasks = usePage<DeploymentPageProps>().props.latest_tasks;
     const [submitting, setSubmitting] = useState(false);
+    const classicCentralTaskTypes = new Set([
+        'ASSOCIATE_DEVICE_TO_SITE',
+        'ASSOCIATE_SITE_AND_NAME',
+        'PREPROVISION_DEVICE_TO_GROUP',
+        'MOVE_DEVICE_TO_GROUP',
+    ]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -242,6 +248,7 @@ export default function Show() {
                                     required_columns={task.required_columns}
                                     devices={allDevices}
                                     deployment={deployment}
+                                    requiresClassicCentral={classicCentralTaskTypes.has(task.task_type)}
                                 />
                             );
                         })}

@@ -2,6 +2,7 @@ import { router, usePage } from '@inertiajs/react';
 import { useEcho } from '@laravel/echo-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -26,7 +27,7 @@ type DeploymentType = {
     name: string,
 }
 
-export default function TaskItemsCard({ task, task_friendly_name, task_friendly_description, required_columns, devices, deployment } : { task: string, task_friendly_name: string, task_friendly_description: string, required_columns: string[], devices: DeviceType[], deployment: DeploymentType }) {
+export default function TaskItemsCard({ task, task_friendly_name, task_friendly_description, required_columns, devices, deployment, requiresClassicCentral = false } : { task: string, task_friendly_name: string, task_friendly_description: string, required_columns: string[], devices: DeviceType[], deployment: DeploymentType, requiresClassicCentral?: boolean }) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [switchesOnly, setSwitchesOnly] = useState(false)
     const [apsOnly, setAPsOnly] = useState(false)
@@ -79,6 +80,11 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
             <CardHeader className="relative pr-10">
                 <TaskRequiredColumnsInfo columns={required_columns} />
                 <CardTitle>{task_friendly_name}</CardTitle>
+                {requiresClassicCentral ? (
+                    <Badge variant="outline" className="mt-1 w-fit font-normal">
+                        Classic Central API
+                    </Badge>
+                ) : null}
                 <CardDescription>{task_friendly_description}</CardDescription>
             </CardHeader>
             <CardContent className="flex gap-2">
