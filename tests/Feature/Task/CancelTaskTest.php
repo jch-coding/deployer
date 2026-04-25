@@ -24,7 +24,7 @@ beforeEach(function () {
         ->create();
     $this->client = $this->user->clients()->first();
     $this->client->update(['current' => true]);
-    $this->deployment = $this->client->deployments()->for($this->client)->create(['name' => 'Test Deployment']);
+    $this->deployment = $this->client->deployments()->create(['name' => 'Test Deployment']);
     $this->actingAs($this->user);
 });
 

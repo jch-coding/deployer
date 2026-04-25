@@ -321,7 +321,15 @@ class TaskController extends Controller
                 break;
         }
 
-        return Bus::chain(array_map(fn ($j) => Bus::batch($j)->allowFailures(), $jobs))->dispatch();
+        // Most task types dispatch as a single batch; return its id so the task
+        // can store a cancellable batch reference.
+        if (count($jobs) === 1 && is_array($jobs[0])) {
+            return Bus::batch($jobs[0])->allowFailures()->dispatch()->id;
+        }
+
+        Bus::chain(array_map(fn ($j) => Bus::batch($j)->allowFailures(), $jobs))->dispatch();
+
+        return null;
     }
 
     public static function get_unique_sw_profiles(Collection $devices)
