@@ -28,6 +28,12 @@ class CentralAPIHelper
 
     public array $system = [
         'system_info' => 'network-config/v1alpha1/system-info',
+        'dns' => 'network-config/v1alpha1/dns',
+        'ntp' => 'network-config/v1alpha1/ntp',
+    ];
+
+    public array $routing_and_overlays = [
+        'static_route' => 'network-config/v1alpha1/static-route',
     ];
 
     public array $configManagement = [
@@ -624,6 +630,83 @@ class CentralAPIHelper
         }
     }
 
+    public function get_dns_profiles($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->system['dns']);
+
+            return $response;
+        }
+    }
+
+    public function delete_dns_profile(string $profile_name, $queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->delete($this->client->base_url.$this->system['dns'].'/'.$profile_name);
+
+            return $response;
+        }
+    }
+
+    public function get_ntp_profiles($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->system['ntp']);
+
+            return $response;
+        }
+    }
+
+    public function delete_ntp_profile(string $profile_name, $queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->delete($this->client->base_url.$this->system['ntp'].'/'.$profile_name);
+
+            return $response;
+        }
+    }
+
+    public function get_static_route($query_parameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($query_parameters)
+                ->get($this->client->base_url.$this->routing_and_overlays['static_route']);
+
+            return $response;
+        }
+    }
+
+    public function delete_static_route(string $profile_name, $queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->delete($this->client->base_url.$this->routing_and_overlays['static_route'].'/'.$profile_name);
+
+            return $response;
+        }
+    }
     public function get_sw_port_profile($profile_name = '', $queryParameters = ['view-type' => 'LIBRARY'])
     {
         if (! $this->client->handleBearerTokenAuth()) {
