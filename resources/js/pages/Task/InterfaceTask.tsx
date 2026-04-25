@@ -22,7 +22,7 @@ export default function Show() {
     const completedDeviceInterfaces = interfaces.filter(
         (device_interface) => device_interface.pivot.status === 'COMPLETED',
     );
-    const displayColumns = usePage().props.display_columns
+    const displayColumns = usePage().props.display_columns ?? []
 
     const breadcrumbs: BreadcrumbItem[] = [
         {

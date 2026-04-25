@@ -18,6 +18,9 @@ class Task extends Model
         'deployment_time',
         'batch_id',
         'status',
+        'composite_group_id',
+        'composite_kind',
+        'composite_order',
     ];
 
     public function users(): BelongsToMany
@@ -58,14 +61,20 @@ class Task extends Model
             'UPDATE_SYSTEM_INFO',
             'MOVE_DEVICE_TO_GROUP',
             'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES',
+            'REMOVE_LOCAL_OVERRIDE_VLANS',
+            'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE',
+            'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
+            'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
         ];
 
-        switch ($task_type) {
-            case in_array($task_type, $interface_based):
-                return 'INTERFACE';
-            case in_array($task_type, $device_based):
-                return 'DEVICE';
+        if (in_array($task_type, $interface_based, true)) {
+            return 'INTERFACE';
         }
+        if (in_array($task_type, $device_based, true)) {
+            return 'DEVICE';
+        }
+
+        return null;
     }
 
     public static function getTaskFriendlyName($task_type): string
@@ -85,6 +94,14 @@ class Task extends Model
                 return 'Create VSF Profile';
             case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
                 return 'Remove VSF profile local overrides';
+            case 'REMOVE_LOCAL_OVERRIDE_VLANS':
+                return 'Remove local VLAN overrides';
+            case 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE':
+                return 'Remove local DNS overrides';
+            case 'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE':
+                return 'Remove local NTP overrides';
+            case 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE':
+                return 'Remove local static route overrides';
             case 'ASSOCIATE_DEVICE_TO_SITE':
                 return 'Associate Devices to Site';
             case 'ASSOCIATE_SITE_AND_NAME':
@@ -125,6 +142,14 @@ class Task extends Model
                 return 'Create autostack VSF Profile';
             case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
                 return 'Remove VLANs, DNS, NTP and Static Route Overrides introduced by the VSF onboarding';
+            case 'REMOVE_LOCAL_OVERRIDE_VLANS':
+                return 'Remove VLAN overrides from devices';
+            case 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE':
+                return 'Remove DNS profile overrides from devices';
+            case 'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE':
+                return 'Remove NTP profile overrides from devices';
+            case 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE':
+                return 'Remove static route overrides from devices';
             case 'MOVE_DEVICE_TO_GROUP':
                 return 'Move devices to a device group';
             case 'ASSIGN_DEVICE_FUNCTION':

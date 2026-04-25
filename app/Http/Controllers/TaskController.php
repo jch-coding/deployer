@@ -27,6 +27,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -60,10 +61,36 @@ class TaskController extends Controller
             'group',
         ],
         'TEST_TASK' => [],
+        'REMOVE_LOCAL_OVERRIDE_VLANS' => [],
+        'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE' => [],
+        'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE' => [],
+        'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE' => [],
     ];
 
     public function show(Task $task)
     {
+        $task->loadMissing('deployment');
+
+        if ($task->composite_group_id !== null && $task->composite_kind !== null) {
+            $siblings = Task::query()
+                ->where('deployment_id', $task->deployment_id)
+                ->where('composite_group_id', $task->composite_group_id)
+                ->orderBy('composite_order')
+                ->with([
+                    'devices' => fn ($q) => $q->withPivot('status')->with('interfaces'),
+                    'deviceInterfaces' => fn ($q) => $q->withPivot('status'),
+                ])
+                ->get();
+
+            return Inertia::render('Task/MultiJobTask', [
+                'task' => $task,
+                'deployment' => $task->deployment,
+                'logical_friendly_name' => Task::getTaskFriendlyName($task->composite_kind),
+                'logical_description' => Task::getTaskFriendlyDescription($task->composite_kind),
+                'sub_jobs' => $this->buildSubJobsForCompositePage($siblings),
+            ]);
+        }
+
         $isDeviceBasedTask = $task->getTaskCategory($task->task_type) === 'DEVICE';
         $inertia_component = $isDeviceBasedTask ? 'Task/DeviceTask' : 'Task/InterfaceTask';
 
@@ -74,8 +101,83 @@ class TaskController extends Controller
             'devices' => $task->devices,
             'interfaces' => $isDeviceBasedTask ? [] : $task->deviceInterfaces()->withPivot('status')->get(),
             'deployment' => $task->deployment,
-            'display_columns' => $this->display_columns[$task->task_type],
+            'display_columns' => $this->display_columns[$task->task_type] ?? [],
         ]);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Task>  $siblings
+     * @return array<int, array<string, mixed>>
+     */
+    protected function buildSubJobsForCompositePage(Collection $siblings): array
+    {
+        return $siblings->map(function (Task $sub) {
+            $isDeviceBased = $sub->getTaskCategory($sub->task_type) === 'DEVICE';
+            if ($isDeviceBased) {
+                $devices = $sub->devices;
+                $completed = $devices->filter(fn ($d) => ($d->pivot->status ?? null) === 'COMPLETED')->count();
+                $total = $devices->count();
+
+                return [
+                    'id' => $sub->id,
+                    'task_type' => $sub->task_type,
+                    'status' => $sub->status,
+                    'status_log' => $sub->status_log ?? '',
+                    'friendly_label' => Task::getTaskFriendlyName($sub->task_type),
+                    'completed_count' => $completed,
+                    'total_count' => $total,
+                    'is_device_based' => true,
+                    'devices' => $devices,
+                    'interfaces' => [],
+                    'display_columns' => $this->display_columns[$sub->task_type] ?? [],
+                ];
+            }
+
+            $interfaces = $sub->deviceInterfaces;
+            $completed = $interfaces->filter(fn ($i) => ($i->pivot->status ?? null) === 'COMPLETED')->count();
+            $total = $interfaces->count();
+
+            return [
+                'id' => $sub->id,
+                'task_type' => $sub->task_type,
+                'status' => $sub->status,
+                'status_log' => $sub->status_log ?? '',
+                'friendly_label' => Task::getTaskFriendlyName($sub->task_type),
+                'completed_count' => $completed,
+                'total_count' => $total,
+                'is_device_based' => false,
+                'devices' => $sub->devices,
+                'interfaces' => $interfaces,
+                'display_columns' => $this->display_columns[$sub->task_type] ?? [],
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, Task>
+     */
+    protected function tasksInCompositeGroup(Task $task): Collection
+    {
+        if ($task->composite_group_id === null) {
+            return collect([$task]);
+        }
+
+        return Task::query()
+            ->where('deployment_id', $task->deployment_id)
+            ->where('composite_group_id', $task->composite_group_id)
+            ->orderBy('composite_order')
+            ->get();
+    }
+
+    protected function performCancelSingle(Task $task): void
+    {
+        $task->update(['status' => 'CANCELLED']);
+        if ($task->batch_id) {
+            $batch = Bus::findBatch($task->batch_id);
+            if ($batch) {
+                $batch->cancel();
+            }
+        }
     }
 
     public function store(Request $request, Deployment $deployment)
@@ -86,31 +188,44 @@ class TaskController extends Controller
             'deployment_time' => 'required|integer',
         ]);
 
-        if ($validated['task_type'] === 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES')
-        {
+        if ($validated['task_type'] === 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES') {
+            $compositeGroupId = (string) Str::uuid();
+            $compositeKind = 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES';
             $remove_vlans_task = $deployment->tasks()->create([
                 'task_type' => 'REMOVE_LOCAL_OVERRIDE_VLANS',
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'composite_group_id' => $compositeGroupId,
+                'composite_kind' => $compositeKind,
+                'composite_order' => 1,
             ]);
             $remove_dns_task = $deployment->tasks()->create([
-                'task_type' => 'REMOVE_LOCAL_OVERRIDE_DNS',
+                'task_type' => 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE',
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'composite_group_id' => $compositeGroupId,
+                'composite_kind' => $compositeKind,
+                'composite_order' => 2,
             ]);
             $remove_static_route_task = $deployment->tasks()->create([
                 'task_type' => 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'composite_group_id' => $compositeGroupId,
+                'composite_kind' => $compositeKind,
+                'composite_order' => 3,
             ]);
             $remove_ntp_task = $deployment->tasks()->create([
-                'task_type' => 'REMOVE_LOCAL_OVERRIDE_NTP',
+                'task_type' => 'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'composite_group_id' => $compositeGroupId,
+                'composite_kind' => $compositeKind,
+                'composite_order' => 4,
             ]);
             $device_collection = Collection::make($validated['devices']);
             $remove_vlans_task->devices()->attach($device_collection->pluck('id'));
@@ -126,25 +241,36 @@ class TaskController extends Controller
             $remove_static_route_task->update(['batch_id' => $batch]);
             $batch = $this->dispatchJob($remove_ntp_task);
             $remove_ntp_task->update(['batch_id' => $batch]);
-            $task = $remove_ntp_task;
-        } elseif ($validated['task_type'] === 'CONFIGURE_ALL_INTERFACES') {
+            $task = $remove_vlans_task;
+        } elseif ($validated['task_type'] === 'CONFIGURE_ALL_INTERFACE') {
+            $compositeGroupId = (string) Str::uuid();
+            $compositeKind = 'CONFIGURE_ALL_INTERFACE';
             $configure_lag_task = $deployment->tasks()->create([
                 'task_type' => 'CONFIGURE_LAG_INTERFACE',
                 'name' => 'configure_lag_interface_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'composite_group_id' => $compositeGroupId,
+                'composite_kind' => $compositeKind,
+                'composite_order' => 1,
             ]);
             $configure_ethernet_task = $deployment->tasks()->create([
                 'task_type' => 'CONFIGURE_ETHERNET_INTERFACE',
                 'name' => 'configure_ethernet_interface_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'composite_group_id' => $compositeGroupId,
+                'composite_kind' => $compositeKind,
+                'composite_order' => 2,
             ]);
             $configure_svi_task = $deployment->tasks()->create([
                 'task_type' => 'CONFIGURE_VLAN_INTERFACE',
                 'name' => 'configure_svi_interface_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'composite_group_id' => $compositeGroupId,
+                'composite_kind' => $compositeKind,
+                'composite_order' => 3,
             ]);
             $device_collection = Collection::make($validated['devices']);
             $configure_lag_task->devices()->attach($device_collection->pluck('id'));
@@ -156,7 +282,7 @@ class TaskController extends Controller
             $configure_ethernet_task->update(['batch_id' => $batch]);
             $batch = $this->dispatchJob($configure_svi_task);
             $configure_svi_task->update(['batch_id' => $batch]);
-            $task = $configure_svi_task;
+            $task = $configure_lag_task;
         } else {
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
@@ -180,33 +306,35 @@ class TaskController extends Controller
     {
         $task->devices()->detach();
         $task->delete();
+
         return back();
     }
 
     public function force_restart(Task $task)
     {
-        $this->cancel($task);
-        $task->update(['status' => 'IN_PROGRESS']);
-        $batchId = $this->dispatchJob($task);
-        if ($batchId !== null) {
-            $task->forceFill(['batch_id' => $batchId])->save();
+        $group = $this->tasksInCompositeGroup($task);
+        foreach ($group as $t) {
+            $this->performCancelSingle($t);
+        }
+        foreach ($group as $t) {
+            $t->update(['status' => 'IN_PROGRESS']);
+            $batchId = $this->dispatchJob($t);
+            if ($batchId !== null) {
+                $t->forceFill(['batch_id' => $batchId])->save();
+            }
         }
 
-        return to_route('tasks.show', $task);
+        return to_route('tasks.show', $group->first());
     }
 
     public function cancel(Task $task)
     {
-        $task->update(['status' => 'CANCELLED']);
-
-        if ($task->batch_id) {
-            $batch = Bus::findBatch($task->batch_id);
-            if ($batch) {
-                $batch->cancel();
-            }
+        foreach ($this->tasksInCompositeGroup($task) as $t) {
+            $this->performCancelSingle($t);
         }
 
         Inertia::flash('success', 'Task cancelled successfully.');
+
         return back();
     }
 
