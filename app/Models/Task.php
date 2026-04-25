@@ -57,6 +57,7 @@ class Task extends Model
             'CREATE_VSF_PROFILE',
             'UPDATE_SYSTEM_INFO',
             'MOVE_DEVICE_TO_GROUP',
+            'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES',
         ];
 
         switch ($task_type) {
@@ -80,6 +81,8 @@ class Task extends Model
                 return 'Configure SVI';
             case 'CREATE_VSF_PROFILE':
                 return 'Create VSF Profile';
+            case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
+                return 'Remove VSF profile local overrides';
             case 'ASSOCIATE_DEVICE_TO_SITE':
                 return 'Associate Devices to Site';
             case 'ASSOCIATE_SITE_AND_NAME':
@@ -116,6 +119,8 @@ class Task extends Model
                 return 'Preprovision devices to a group';
             case 'CREATE_VSF_PROFILE':
                 return 'Create autostack VSF Profile';
+            case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
+                return 'Remove VLANs, DNS, NTP and Static Route Overrides introduced by the VSF onboarding';
             case 'MOVE_DEVICE_TO_GROUP':
                 return 'Move devices to a device group';
             case 'ASSIGN_DEVICE_FUNCTION':
@@ -140,6 +145,8 @@ class Task extends Model
                 return ['name', 'serial', 'device_function', 'interface', 'ip_address'];
             case 'CREATE_VSF_PROFILE':
                 return ['name', 'serial', 'device_function', 'interface', 'sku'];
+            case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
+                return ['name', 'serial', 'device_function'];
             case 'ASSOCIATE_DEVICE_TO_SITE':
                 return ['name', 'serial', 'device_function', 'site'];
             case 'ASSOCIATE_SITE_AND_NAME':

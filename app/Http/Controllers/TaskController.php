@@ -13,6 +13,10 @@ use App\Jobs\ConfigureVlanInterfaceJob;
 use App\Jobs\CreateVSFProfileJob;
 use App\Jobs\MoveDevicesToGroupJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
+use App\Jobs\RemoveLocalOverrideDNSJob;
+use App\Jobs\RemoveLocalOverrideNTPJob;
+use App\Jobs\RemoveLocalOverrideStaticRouteJob;
+use App\Jobs\RemoveLocalOverrideVlansJob;
 use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
@@ -197,6 +201,12 @@ class TaskController extends Controller
                 $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new CreateVSFProfileJob($device, $task, $centralAPIHelper))->toArray();
                 break;
+            case 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE':
+                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
+                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideVlansJob($task, $device, $centralAPIHelper))->toArray();
+                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideDnsJob($task, $device, $centralAPIHelper))->toArray();
+                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideStaticRouteJob($task, $device, $centralAPIHelper))->toArray();
+                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideNtpJob($task, $device, $centralAPIHelper))->toArray();
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 $devices_with_port_profiles = $task->devices->map(function ($device) {
                     $device->interfaces_sw_profiles = $device->interfaces->filter(fn ($interface) => $interface->sw_profile && str_contains($interface->interface, '/'));
