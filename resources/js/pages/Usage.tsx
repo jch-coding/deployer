@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import AppLayout from '@/layouts/app-layout';
 import { dashboard, documentation, usage } from '@/routes';
@@ -31,52 +32,64 @@ const deploymentTasks = [
     {
         title: 'Name Devices',
         description: 'Name or rename devices in Aruba Central according to the names in your device CSV.',
+        requiresClassicCentral: false,
     },
     {
         title: 'Configure LAG, Ethernet and VLAN Interfaces',
         description:
             'Runs LAG, physical Ethernet, and SVI configuration in sequence for the selected devices.',
+        requiresClassicCentral: false,
     },
     {
         title: 'Configure Ethernet Interfaces',
         description: 'Configure physical switch interfaces (mode, VLANs, and related port settings).',
+        requiresClassicCentral: false,
     },
     {
         title: 'Configure Portchannel/LAG interface',
         description: 'Configure aggregate interfaces and member ports from your CSV.',
+        requiresClassicCentral: false,
     },
     {
         title: 'Configure SVI',
         description: 'Configure Layer 3 VLAN interfaces (SVIs) with IP addressing.',
+        requiresClassicCentral: false,
     },
     {
         title: 'Create VSF Profile',
         description: 'Create an auto-stacking VSF profile for stack members, including conductor SKU where required.',
+        requiresClassicCentral: false,
     },
     {
         title: 'Remove VSF profile local overrides',
         description:
             'Clears VLAN, DNS, NTP, and static route local overrides introduced during VSF onboarding.',
+        requiresClassicCentral: false,
     },
     {
         title: 'Associate Devices to Site',
         description: 'Associate devices to a site that already exists in Central.',
+        requiresClassicCentral: true,
     },
     {
         title: 'Associate Devices to Site and Name',
         description: 'Associate devices to a site and set their device names in Central.',
+        requiresClassicCentral: true,
     },
     {
         title: 'Preprovision Devices to Group',
         description: 'Preprovision devices into a Central device group.',
+        requiresClassicCentral: true,
     },
     {
         title: 'Move Devices to Device Group',
         description: 'Move existing devices into a Central device group.',
+        requiresClassicCentral: true,
     },
     {
         title: 'Assign Device Function to Devices',
         description: 'Assign the persona or device function in Central to match your CSV.',
+        requiresClassicCentral: false,
     },
 ] as const;
 
@@ -263,10 +276,35 @@ export default function Usage() {
                             expects your CSV to include the columns described in Documentation for that
                             task.
                         </p>
-                        <ul className={cn(body, 'mt-4 list-disc space-y-3 pl-5')}>
+                        <div
+                            className="mt-6 rounded-lg border border-border bg-muted/40 px-4 py-3 text-[15px] leading-relaxed text-foreground/90"
+                            role="note"
+                        >
+                            <p className="font-medium text-foreground">Classic Central credentials</p>
+                            <p className="mt-2">
+                                These tasks call Aruba Central&apos;s <strong>classic</strong> REST APIs and
+                                will not succeed unless the current client has{' '}
+                                <strong>Classic API</strong> credentials saved (classic client ID and secret,
+                                username and password, and the classic base URL derived from your Central
+                                region). That applies to: <strong>Associate Devices to Site</strong>,{' '}
+                                <strong>Associate Devices to Site and Name</strong>,{' '}
+                                <strong>Preprovision Devices to Group</strong>, and{' '}
+                                <strong>Move Devices to Device Group</strong>. Enter those fields when you add
+                                or edit a client, under the optional Classic API section.
+                            </p>
+                        </div>
+                        <ul className={cn(body, 'mt-6 list-disc space-y-3 pl-5')}>
                             {deploymentTasks.map((task) => (
                                 <li key={task.title}>
                                     <strong>{task.title}</strong>
+                                    {task.requiresClassicCentral ? (
+                                        <>
+                                            {' '}
+                                            <Badge variant="outline" className="ml-0.5 align-middle text-xs font-normal">
+                                                Classic Central API
+                                            </Badge>
+                                        </>
+                                    ) : null}
                                     {' — '}
                                     {task.description}
                                 </li>
