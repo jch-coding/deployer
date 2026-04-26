@@ -6,7 +6,6 @@ x-queue-worker: &queue-worker
     build:
         context: './vendor/laravel/sail/runtimes/8.5'
         dockerfile: Dockerfile
-        platform: '${SAIL_PLATFORM:-linux/amd64}'
         args:
             WWWGROUP: '${WWWGROUP:-1000}'
     image: 'sail-8.5/app'
@@ -45,7 +44,6 @@ services:
         build:
             context: './vendor/laravel/sail/runtimes/8.5'
             dockerfile: Dockerfile
-            platform: '${SAIL_PLATFORM:-linux/amd64}'
             args:
                 WWWGROUP: '${WWWGROUP:-1000}'
         image: 'sail-8.5/app'
