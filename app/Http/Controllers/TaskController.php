@@ -68,6 +68,95 @@ class TaskController extends Controller
         'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE' => [],
     ];
 
+    public function index(Request $request)
+    {
+        $currentClient = $request->user()?->currentClient();
+        $taskName = trim((string) $request->query('task_name', ''));
+        $deploymentName = trim((string) $request->query('deployment_name', ''));
+        $status = trim((string) $request->query('status', ''));
+
+        $tasksQuery = Task::query()
+            ->with(['deployment.client'])
+            ->withCount(['devices', 'deviceInterfaces'])
+            ->when(
+                $currentClient,
+                fn ($query) => $query->whereHas('deployment', fn ($deploymentQuery) => $deploymentQuery->where('client_id', $currentClient->id)),
+                fn ($query) => $query->whereRaw('1 = 0')
+            );
+
+        if ($status !== '') {
+            $tasksQuery->where('status', $status);
+        }
+
+        if ($deploymentName !== '') {
+            $tasksQuery->whereHas('deployment', fn ($deploymentQuery) => $deploymentQuery
+                ->whereRaw('lower(name) LIKE ?', ['%'.mb_strtolower($deploymentName).'%']));
+        }
+
+        if ($taskName !== '') {
+            $availableTypes = Task::query()
+                ->when(
+                    $currentClient,
+                    fn ($query) => $query->whereHas('deployment', fn ($deploymentQuery) => $deploymentQuery->where('client_id', $currentClient->id)),
+                    fn ($query) => $query->whereRaw('1 = 0')
+                )
+                ->select('task_type')
+                ->distinct()
+                ->pluck('task_type')
+                ->all();
+
+            $matchingTypes = array_values(array_filter(
+                $availableTypes,
+                fn (string $taskType) => str_contains(mb_strtolower(Task::getTaskFriendlyName($taskType)), mb_strtolower($taskName))
+            ));
+
+            if ($matchingTypes === []) {
+                $tasksQuery->whereRaw('1 = 0');
+            } else {
+                $tasksQuery->whereIn('task_type', $matchingTypes);
+            }
+        }
+
+        $statusOptions = Task::query()
+            ->when(
+                $currentClient,
+                fn ($query) => $query->whereHas('deployment', fn ($deploymentQuery) => $deploymentQuery->where('client_id', $currentClient->id)),
+                fn ($query) => $query->whereRaw('1 = 0')
+            )
+            ->select('status')
+            ->distinct()
+            ->orderBy('status')
+            ->pluck('status')
+            ->all();
+
+        $tasks = $tasksQuery
+            ->latest()
+            ->paginate(15)
+            ->withQueryString()
+            ->through(function (Task $task) {
+                $category = $task->getTaskCategory($task->task_type);
+
+                return [
+                    'id' => $task->id,
+                    'task_name' => Task::getTaskFriendlyName($task->task_type),
+                    'deployment_name' => $task->deployment?->name,
+                    'client_name' => $task->deployment?->client?->name,
+                    'status' => $task->status,
+                    'item_count' => $category === 'INTERFACE' ? $task->device_interfaces_count : $task->devices_count,
+                ];
+            });
+
+        return Inertia::render('Task/Index', [
+            'tasks' => $tasks,
+            'status_options' => $statusOptions,
+            'filters' => [
+                'task_name' => $taskName,
+                'deployment_name' => $deploymentName,
+                'status' => $status,
+            ],
+        ]);
+    }
+
     public function show(Task $task)
     {
         $task->loadMissing('deployment');

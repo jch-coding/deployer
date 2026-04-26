@@ -63,6 +63,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::controller(TaskController::class)->group(function () {
+        Route::get('/tasks', 'index')->name('tasks.index');
         Route::get('/tasks/{task}', 'show')->name('tasks.show');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');
