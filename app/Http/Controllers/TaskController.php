@@ -26,6 +26,7 @@ use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -336,6 +337,52 @@ class TaskController extends Controller
         Inertia::flash('success', 'Task cancelled successfully.');
 
         return back();
+    }
+
+    public function clearQueue(Task $task)
+    {
+        $maxAttempts = 5;
+        $lastOutput = '';
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            $exitCode = Artisan::call('queue:clear');
+            $rawOutput = trim(Artisan::output());
+            $normalizedOutput = strtolower($rawOutput);
+            $lastOutput = $rawOutput;
+
+            if ($exitCode !== 0) {
+                usleep(200000);
+
+                continue;
+            }
+
+            if (
+                str_contains($normalizedOutput, 'no messages were deleted')
+                || str_contains($normalizedOutput, 'queue is empty')
+            ) {
+                Inertia::flash('success', 'Queue is clear. No pending jobs remain.');
+
+                return to_route('tasks.show', $task);
+            }
+
+            if (
+                preg_match('/cleared\s+\[(\d+)\]\s+jobs?/', $normalizedOutput, $matches) === 1
+                && (int) $matches[1] === 0
+            ) {
+                Inertia::flash('success', 'Queue cleared successfully.');
+
+                return to_route('tasks.show', $task);
+            }
+
+            usleep(200000);
+        }
+
+        Inertia::flash(
+            'error',
+            'Unable to confirm queue is clear after 5 attempts.'.($lastOutput !== '' ? ' Last output: '.$lastOutput : '')
+        );
+
+        return to_route('tasks.show', $task);
     }
 
     public function chunk_devices(Collection $devices_by_group)

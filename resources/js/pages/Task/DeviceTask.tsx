@@ -1,5 +1,6 @@
 import { router, usePage, usePoll } from '@inertiajs/react';
-import { PowerOff, PowerOffIcon } from 'lucide-react';
+import { PowerOffIcon, Trash2Icon } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import {
     ChevronRightCircleIcon,
 } from 'lucide-react';
@@ -8,12 +9,13 @@ import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { index as clientIndex } from '@/routes/clients';
 import  { show as showDeployment } from '@/routes/deployments';
-import { show as showTask, cancel } from '@/routes/tasks';
+import { show as showTask, cancel, clear_queue } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 export default function Show() {
-    const { current_client } = usePage<SharedData>().props;
+    const { current_client, flash } = usePage<SharedData>().props;
     const task = usePage().props.task
     const task_friendly_name = usePage().props.task_friendly_name
     const devices = usePage().props.devices
@@ -22,6 +24,8 @@ export default function Show() {
     const completedDevices= devices.filter(
         (device) => device.pivot.status === 'COMPLETED',
     );
+    const [isCancelling, setIsCancelling] = useState(false);
+    const [isClearingQueue, setIsClearingQueue] = useState(false);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -40,10 +44,40 @@ export default function Show() {
 
     usePoll(2000)
 
+    useEffect(() => {
+        if (flash?.success) {
+            toast.success(flash.success, { id: 'task-flash-success' });
+        }
+        if (flash?.error) {
+            toast.error(flash.error, { id: 'task-flash-error' });
+        }
+    }, [flash?.success, flash?.error]);
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <div className="absolute top-4 right-4">
-                <Button variant="destructive" onClick={() => router.patch(cancel(task.id).url)}>
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+                <Button
+                    variant="outline"
+                    disabled={isClearingQueue || isCancelling}
+                    onClick={() => {
+                        setIsClearingQueue(true);
+                        router.post(clear_queue(task.id).url, {}, {
+                            onFinish: () => setIsClearingQueue(false),
+                        });
+                    }}
+                >
+                    <Trash2Icon /> Clear Queue
+                </Button>
+                <Button
+                    variant="destructive"
+                    disabled={isClearingQueue || isCancelling}
+                    onClick={() => {
+                        setIsCancelling(true);
+                        router.patch(cancel(task.id).url, {}, {
+                            onFinish: () => setIsCancelling(false),
+                        });
+                    }}
+                >
                     <PowerOffIcon /> Cancel Task
                 </Button>
             </div>

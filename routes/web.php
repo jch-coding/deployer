@@ -67,6 +67,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');
         Route::post('/tasks/test', 'test')->name('tasks.test');
+        Route::post('/tasks/{task}/clear-queue', 'clearQueue')->name('tasks.clear_queue');
         Route::patch('/tasks/{task}', 'cancel')->name('tasks.cancel');
         Route::delete('/tasks/{task}', 'destroy')->name('tasks.destroy');
     });
