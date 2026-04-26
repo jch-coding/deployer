@@ -76,7 +76,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
     }
 
     return (
-        <Card className="min-w-sm max-w-md">
+        <Card className="w-96">
             <CardHeader className="relative pr-10">
                 <TaskRequiredColumnsInfo columns={required_columns} />
                 <CardTitle>{task_friendly_name}</CardTitle>

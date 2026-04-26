@@ -79,7 +79,7 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
     const resetCompletedDevices = () => setCompletedDevices([])
 
     return (
-        <Card className="max-w-sm">
+        <Card className="w-96">
             <CardHeader className="relative pr-10">
                 <TaskRequiredColumnsInfo columns={required_columns} />
                 <CardTitle>{task_friendly_name}</CardTitle>
