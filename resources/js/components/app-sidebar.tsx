@@ -3,7 +3,6 @@ import {
     ActivityIcon,
     BookOpen,
     BuildingIcon,
-    LayoutGrid,
     ScrollText,
 } from 'lucide-react';
 import { NavFooter } from '@/components/nav-footer';
@@ -18,17 +17,12 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard, documentation, usage } from '@/routes';
+import { documentation, usage } from '@/routes';
 import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
     {
         title: 'Clients',
         href: client_index(),
@@ -62,7 +56,7 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={dashboard()} className="text-slate-800 dark:text-slate-200 font-bold" prefetch>
+                            <Link href={client_index()} className="text-slate-800 dark:text-slate-200 font-bold" prefetch>
                                 {current_client ? current_client.name : 'Client Not Set'}
                             </Link>
                         </SidebarMenuButton>
