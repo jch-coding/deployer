@@ -14,6 +14,7 @@ const tocSections = [
     { id: 'create-a-deployment', label: 'Create a deployment' },
     { id: 'add-devices', label: 'Add devices' },
     { id: 'how-deployment-tasks-work', label: 'How tasks work' },
+    { id: 'stopping-tasks-and-clearing-queue', label: 'Stopping tasks and queue behavior' },
     { id: 'available-tasks', label: 'Available tasks' },
 ] as const;
 
@@ -266,6 +267,36 @@ export default function Usage() {
                         <p className={cn(body, 'mt-4')}>
                             Interface-oriented tasks attach to matching interface rows from your CSV;
                             device-oriented tasks run against the devices you select in the card.
+                        </p>
+                    </section>
+
+                    <section id="stopping-tasks-and-clearing-queue" className="border-b border-border py-10">
+                        <h2 className={h2}>Stopping tasks and queue behavior</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            The task detail page includes both <strong>Cancel Task</strong> and{' '}
+                            <strong>Clear Queue</strong>. They serve different purposes and can be used
+                            together during incident recovery.
+                        </p>
+                        <ul className={cn(body, 'mt-4 list-disc space-y-2 pl-5')}>
+                            <li>
+                                <strong>Cancel Task:</strong> marks the task as cancelled and cancels the
+                                Laravel batch tied to the task. This only prevents <strong>pending</strong>{' '}
+                                jobs in that batch from being placed on the queue and picked up later.
+                                Jobs that are already running or already executed are not undone.
+                            </li>
+                            <li>
+                                <strong>Clear Queue:</strong> runs Laravel&apos;s{' '}
+                                <code>artisan queue:clear</code> operation to remove queued jobs from the
+                                backend queue store. The app retries this operation and checks command
+                                output before reporting success.
+                            </li>
+                        </ul>
+                        <p className={cn(body, 'mt-4')}>
+                            Technical summary: <strong>Cancel Task</strong> is batch-level control inside
+                            the application workflow, while <strong>Clear Queue</strong> is queue-level
+                            cleanup against the queue backend (for example, Redis). Use cancel to stop new
+                            work from a task, and clear queue when you need to drain queued jobs that
+                            should not run.
                         </p>
                     </section>
 
