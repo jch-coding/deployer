@@ -33,7 +33,7 @@ export default function Show() {
             href: clientIndex().url,
         },
         {
-            title: 'Deployment',
+            title: deployment.name,
             href: showDeployment(deployment.id).url,
         },
         {
