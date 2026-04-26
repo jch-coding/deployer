@@ -116,7 +116,7 @@ export default function MultiJobTask() {
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: current_client?.name ?? 'Clients', href: clientIndex().url },
-        { title: 'Deployment', href: showDeployment(deployment.id).url },
+        { title: deployment.name, href: showDeployment(deployment.id).url },
         { title: 'Task', href: showTask(task.id).url },
     ];
 
