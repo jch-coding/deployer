@@ -1,23 +1,12 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import AppLayout from '@/layouts/app-layout';
-import { dashboard, documentation, usage } from '@/routes';
+import { documentation, usage } from '@/routes';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as deploymentsIndex } from '@/routes/deployments';
-import type { BreadcrumbItem } from '@/types';
-
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard().url,
-    },
-    {
-        title: 'Usage',
-        href: usage().url,
-    },
-];
+import type { BreadcrumbItem, SharedData } from '@/types';
 
 const tocSections = [
     { id: 'introduction', label: 'Introduction' },
@@ -99,6 +88,17 @@ function scrollToSection(id: string) {
 }
 
 export default function Usage() {
+    const { current_client } = usePage<SharedData>().props;
+    const breadcrumbs: BreadcrumbItem[] = [
+        {
+            title: current_client?.name ?? 'Clients',
+            href: clientsIndex().url,
+        },
+        {
+            title: 'Usage',
+            href: usage().url,
+        },
+    ];
     const [activeId, setActiveId] = useState<string>(tocSections[0].id);
     const scrollSpyRaf = useRef<number | null>(null);
 

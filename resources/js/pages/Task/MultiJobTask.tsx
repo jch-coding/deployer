@@ -10,11 +10,10 @@ import {
 } from '@/components/ui/collapsible';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
-import { dashboard } from '@/routes';
 import { index as clientIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
 import { cancel, show as showTask } from '@/routes/tasks';
-import type { BreadcrumbItem } from '@/types';
+import type { BreadcrumbItem, SharedData } from '@/types';
 
 type Pivot = { status: string };
 
@@ -61,7 +60,7 @@ type PageProps = {
     logical_friendly_name: string;
     logical_description: string;
     sub_jobs: SubJob[];
-};
+} & SharedData;
 
 function SubJobLog({ status_log }: { status_log: string }) {
     const lines = status_log.split('\\n').filter((line) => line.length > 0);
@@ -109,11 +108,11 @@ function SubJobCollapsibleLog({ status_log }: { status_log: string }) {
 }
 
 export default function MultiJobTask() {
-    const { task, deployment, logical_friendly_name, logical_description, sub_jobs } =
+    const { task, deployment, logical_friendly_name, logical_description, sub_jobs, current_client } =
         usePage<PageProps>().props;
 
     const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Dashboard', href: dashboard().url },
+        { title: current_client?.name ?? 'Clients', href: clientIndex().url },
         { title: 'Client', href: clientIndex().url },
         { title: 'Deployment', href: showDeployment(deployment.id).url },
         { title: 'Task', href: showTask(task.id).url },

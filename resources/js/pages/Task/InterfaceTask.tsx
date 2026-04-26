@@ -5,15 +5,15 @@ import { cn } from '@/lib/utils';
 import {
     ChevronRightCircleIcon, PowerOffIcon,
 } from 'lucide-react';
-import { dashboard } from '@/routes';
 import { index as clientIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
 import { cancel, show as showTask } from '@/routes/tasks';
-import type { BreadcrumbItem } from '@/types';
+import type { BreadcrumbItem, SharedData } from '@/types';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 
 export default function Show() {
+    const { current_client } = usePage<SharedData>().props;
     const task = usePage().props.task
     const task_friendly_name = usePage().props.task_friendly_name
     const devices = usePage().props.devices
@@ -26,8 +26,8 @@ export default function Show() {
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
-            title: 'Dashboard',
-            href: dashboard().url,
+            title: current_client?.name ?? 'Clients',
+            href: clientIndex().url,
         },
         {
             title: 'Client',
