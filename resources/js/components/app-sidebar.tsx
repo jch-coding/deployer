@@ -3,6 +3,7 @@ import {
     ActivityIcon,
     BookOpen,
     BuildingIcon,
+    ListTodoIcon,
     ScrollText,
 } from 'lucide-react';
 import { NavFooter } from '@/components/nav-footer';
@@ -20,6 +21,7 @@ import {
 import { documentation, usage } from '@/routes';
 import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
+import { index as task_index } from '@/routes/tasks'
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -32,6 +34,11 @@ const mainNavItems: NavItem[] = [
         title: 'Deployments',
         href: deployment_index(),
         icon: ActivityIcon,
+    },
+    {
+        title: 'Tasks',
+        href: task_index(),
+        icon: ListTodoIcon,
     },
 ];
 
