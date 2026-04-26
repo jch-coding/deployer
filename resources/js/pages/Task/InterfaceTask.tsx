@@ -3,17 +3,18 @@ import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import {
-    ChevronRightCircleIcon, PowerOffIcon,
+    ChevronRightCircleIcon, PowerOffIcon, Trash2Icon,
 } from 'lucide-react';
 import { index as clientIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
-import { cancel, show as showTask } from '@/routes/tasks';
+import { cancel, clear_queue, show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react';
 
 export default function Show() {
-    const { current_client } = usePage<SharedData>().props;
+    const { current_client, flash } = usePage<SharedData>().props;
     const task = usePage().props.task
     const task_friendly_name = usePage().props.task_friendly_name
     const devices = usePage().props.devices
@@ -23,6 +24,8 @@ export default function Show() {
         (device_interface) => device_interface.pivot.status === 'COMPLETED',
     );
     const displayColumns = usePage().props.display_columns ?? []
+    const [isCancelling, setIsCancelling] = useState(false);
+    const [isClearingQueue, setIsClearingQueue] = useState(false);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -41,10 +44,40 @@ export default function Show() {
 
     usePoll(2000)
 
+    useEffect(() => {
+        if (flash?.success) {
+            toast.success(flash.success, { id: 'task-flash-success' });
+        }
+        if (flash?.error) {
+            toast.error(flash.error, { id: 'task-flash-error' });
+        }
+    }, [flash?.success, flash?.error]);
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <div className="absolute top-4 right-4">
-                <Button variant="destructive" onClick={() => router.patch(cancel(task.id).url)}>
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+                <Button
+                    variant="outline"
+                    disabled={isCancelling || isClearingQueue}
+                    onClick={() => {
+                        setIsClearingQueue(true);
+                        router.post(clear_queue(task.id).url, {}, {
+                            onFinish: () => setIsClearingQueue(false),
+                        });
+                    }}
+                >
+                    <Trash2Icon /> Clear Queue
+                </Button>
+                <Button
+                    variant="destructive"
+                    disabled={isCancelling || isClearingQueue}
+                    onClick={() => {
+                        setIsCancelling(true);
+                        router.patch(cancel(task.id).url, {}, {
+                            onFinish: () => setIsCancelling(false),
+                        });
+                    }}
+                >
                     <PowerOffIcon /> Cancel Task
                 </Button>
             </div>

@@ -1,6 +1,6 @@
 import { router, usePage, usePoll } from '@inertiajs/react';
-import { ChevronDown, PowerOffIcon } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, PowerOffIcon, Trash2Icon } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
@@ -12,8 +12,9 @@ import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { index as clientIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
-import { cancel, show as showTask } from '@/routes/tasks';
+import { cancel, clear_queue, show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
+import { toast } from 'sonner';
 
 type Pivot = { status: string };
 
@@ -108,8 +109,10 @@ function SubJobCollapsibleLog({ status_log }: { status_log: string }) {
 }
 
 export default function MultiJobTask() {
-    const { task, deployment, logical_friendly_name, logical_description, sub_jobs, current_client } =
+    const { task, deployment, logical_friendly_name, logical_description, sub_jobs, current_client, flash } =
         usePage<PageProps>().props;
+    const [isCancelling, setIsCancelling] = useState(false);
+    const [isClearingQueue, setIsClearingQueue] = useState(false);
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: current_client?.name ?? 'Clients', href: clientIndex().url },
@@ -119,12 +122,39 @@ export default function MultiJobTask() {
 
     usePoll(2000);
 
+    useEffect(() => {
+        if (flash?.success) {
+            toast.success(flash.success, { id: 'task-flash-success' });
+        }
+        if (flash?.error) {
+            toast.error(flash.error, { id: 'task-flash-error' });
+        }
+    }, [flash?.success, flash?.error]);
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <div className="absolute top-4 right-4">
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+                <Button
+                    variant="outline"
+                    disabled={isCancelling || isClearingQueue}
+                    onClick={() => {
+                        setIsClearingQueue(true);
+                        router.post(clear_queue(task.id).url, {}, {
+                            onFinish: () => setIsClearingQueue(false),
+                        });
+                    }}
+                >
+                    <Trash2Icon /> Clear Queue
+                </Button>
                 <Button
                     variant="destructive"
-                    onClick={() => router.patch(cancel(task.id).url)}
+                    disabled={isCancelling || isClearingQueue}
+                    onClick={() => {
+                        setIsCancelling(true);
+                        router.patch(cancel(task.id).url, {}, {
+                            onFinish: () => setIsCancelling(false),
+                        });
+                    }}
                 >
                     <PowerOffIcon /> Cancel task
                 </Button>
