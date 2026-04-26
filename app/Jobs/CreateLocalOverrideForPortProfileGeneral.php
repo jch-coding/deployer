@@ -4,20 +4,14 @@ namespace App\Jobs;
 
 use App\Events\DeploymentEvent;
 use App\Events\FailureEvent;
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class CreateLocalOverrideForPortProfileGeneral implements ShouldQueue
+class CreateLocalOverrideForPortProfileGeneral extends BaseTaskJob
 {
-    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
-
     /**
      * Create a new job instance.
      * $portProfileInfo = [
@@ -29,7 +23,6 @@ class CreateLocalOverrideForPortProfileGeneral implements ShouldQueue
      */
     public int $deployment_time;
     public int $wait_time;
-    public int $tries = 1;
 
     public function __construct(public array $portProfileInfo, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
@@ -42,7 +35,7 @@ class CreateLocalOverrideForPortProfileGeneral implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
             $container_to_url = [
                 'site_collection' => fn () => $this->centralAPIHelper->get_site_collections(),
                 'site' => fn () => $this->centralAPIHelper->get_sites(),
@@ -94,9 +87,7 @@ class CreateLocalOverrideForPortProfileGeneral implements ShouldQueue
             }
             $newStatusLog = $statusLog."\nPort profile override for ".$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name." completed\n";
             $this->task->update(['status_log' => $newStatusLog]);
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Create generic local override for port profile');
-        }
+        }, 'Create generic local override for port profile');
     }
 
     public function retryUntil(): DateTime
@@ -106,9 +97,8 @@ class CreateLocalOverrideForPortProfileGeneral implements ShouldQueue
 
     public function failed(?Throwable $exception)
     {
-        Log::error($exception);
-        $statusLog = $this->task->status_log;
-        $newStatusLog = $statusLog."\nFailed Configuring Port Profile".$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name."\n";
-        $this->task->update(['status_log' => $newStatusLog]);
+        $this->logFailedException($exception);
+        $message = 'Failed configuring port profile '.$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name;
+        $this->task->processTaskStatusLog($message, true);
     }
 }

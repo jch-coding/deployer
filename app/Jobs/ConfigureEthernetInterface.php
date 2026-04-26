@@ -2,25 +2,18 @@
 
 namespace App\Jobs;
 
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\DeviceInterface;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class ConfigureEthernetInterface implements ShouldQueue
+class ConfigureEthernetInterface extends BaseTaskJob
 {
-    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
-
     public int $deployment_time;
 
     public int $wait_time;
-    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -36,7 +29,7 @@ class ConfigureEthernetInterface implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
             $device = $this->deviceInterface->device;
             if (! $device->scope_id) {
                 $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($device);
@@ -66,9 +59,7 @@ class ConfigureEthernetInterface implements ShouldQueue
                 }
                 $this->task->processTaskStatusLog($message);
             }
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Configure ethernet interface');
-        }
+        }, 'Configure ethernet interface');
     }
 
     public function retryUntil(): DateTime
@@ -78,13 +69,11 @@ class ConfigureEthernetInterface implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        Log::error($exception);
-        $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'FAILED']);
-        $failed_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => $interface->pivot->status == 'FAILED' && str_contains($interface->interface, '/'))->count();
-        $total_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => str_contain($interface->interface, '/'))->count();
-        if ($failed_interfaces === $total_interfaces) {
-            $this->task->update(['status' => 'FAILED']);
-            $this->task->processTaskStatusLog('Task timed out or failed.');
-        }
+        $this->logFailedException($exception);
+        $this->failInterfaceAndTaskIfNeeded(
+            $this->deviceInterface,
+            fn ($interface) => str_contains($interface->interface, '/'),
+            fn ($interface) => $interface->pivot->status === 'FAILED' && str_contains($interface->interface, '/')
+        );
     }
 }

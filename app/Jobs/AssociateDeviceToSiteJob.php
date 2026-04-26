@@ -2,25 +2,18 @@
 
 namespace App\Jobs;
 
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class AssociateDeviceToSiteJob implements ShouldQueue
+class AssociateDeviceToSiteJob extends BaseTaskJob
 {
-    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
-
     public int $deployment_time;
 
     public int $wait_time;
-    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -36,7 +29,7 @@ class AssociateDeviceToSiteJob implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
             $device_type = $this->get_device_type($this->device->device_function);
             $this->populate_classic_site_id();
             $device_site_association_body = [
@@ -53,9 +46,7 @@ class AssociateDeviceToSiteJob implements ShouldQueue
                 $new_log = $status_log.'\nDevice '.$this->device->name.' associated to site '.$this->site->name;
                 $this->task->update(['status_log' => $new_log]);
             }
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Associate device to site');
-        }
+        }, 'Associate device to site');
     }
 
     public function get_device_type($device_function)
@@ -98,13 +89,7 @@ class AssociateDeviceToSiteJob implements ShouldQueue
 
     public function failed(?Throwable $exception)
     {
-        Log::error($exception);
-        $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
-        $failed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status == 'FAILED')->count();
-        $total_devices = $this->task->devices->count();
-        if ($failed_devices === $total_devices) {
-            $this->task->update(['status' => 'FAILED']);
-        }
-        $this->task->processTaskStatusLog('Task timed out or failed.');
+        $this->logFailedException($exception);
+        $this->failDeviceAndTaskIfNeeded($this->device);
     }
 }

@@ -2,25 +2,18 @@
 
 namespace App\Jobs;
 
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class MoveDevicesToGroupJob implements ShouldQueue
+class MoveDevicesToGroupJob extends BaseTaskJob
 {
-    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
-
     public int $deployment_time;
 
     public int $wait_time;
-    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -36,12 +29,10 @@ class MoveDevicesToGroupJob implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
             $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
             $this->moveDevicesToGroup($device_serials);
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Move devices to group');
-        }
+        }, 'Move devices to group');
     }
 
     public function moveDevicesToGroup($devices): void
@@ -92,11 +83,8 @@ class MoveDevicesToGroupJob implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        Log::error($exception);
-        $this->task->processTaskStatusLog('Failed moving devices to group. Task timed out or failed.');
-        $this->task->devices->each(function (Device $device) {
-            $device->pivot->update(['status' => 'FAILED']);
-        });
-        $this->task->update(['status' => 'FAILED']);
+        $this->logFailedException($exception);
+        $this->markAllDevicesFailed();
+        $this->failTask('Failed moving devices to group. Task timed out or failed.');
     }
 }

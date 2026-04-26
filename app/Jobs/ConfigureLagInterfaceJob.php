@@ -2,27 +2,20 @@
 
 namespace App\Jobs;
 
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\DeviceInterface;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class ConfigureLagInterfaceJob implements ShouldQueue
+class ConfigureLagInterfaceJob extends BaseTaskJob
 {
-    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
-
     /**
      * Create a new job instance.
      */
     public $deployment_time;
     public $wait_time;
-    public int $tries = 1;
 
     public function __construct(public DeviceInterface $device_interface, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
@@ -35,7 +28,7 @@ class ConfigureLagInterfaceJob implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
             $device = $this->device_interface->device;
             if (! $device->scope_id) {
                 $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($device);
@@ -59,9 +52,7 @@ class ConfigureLagInterfaceJob implements ShouldQueue
             $message = 'Configured LAG '.$this->device_interface->interface;
             $this->task->processTaskStatusLog($message);
             $this->task->deviceInterfaces()->find($this->device_interface)->pivot->update(['status' => 'COMPLETED']);
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Configure LAG interface');
-        }
+        }, 'Configure LAG interface');
     }
 
     public function retryUntil(): DateTime
@@ -71,13 +62,11 @@ class ConfigureLagInterfaceJob implements ShouldQueue
 
     public function failed(?Throwable $exception)
     {
-        Log::error($exception);
-        $this->task->deviceInterfaces()->find($this->device_interface)->pivot->update(['status' => 'FAILED']);
-        $failed_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => $interface->pivot->status == 'FAILED' && $interface->lacp_profile_id)->count();
-        $total_interfaces = $this->task->deviceInterfaces->filter(fn ($interface) => $interface->lacp_profile_id)->count();
-        if ($failed_interfaces === $total_interfaces) {
-            $this->task->update(['status' => 'FAILED']);
-            $this->task->processTaskStatusLog('Task timed out or failed.');
-        }
+        $this->logFailedException($exception);
+        $this->failInterfaceAndTaskIfNeeded(
+            $this->device_interface,
+            fn ($interface) => (bool) $interface->lacp_profile_id,
+            fn ($interface) => $interface->pivot->status === 'FAILED' && (bool) $interface->lacp_profile_id
+        );
     }
 }

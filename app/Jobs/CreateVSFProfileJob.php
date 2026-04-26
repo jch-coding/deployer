@@ -2,28 +2,21 @@
 
 namespace App\Jobs;
 
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class CreateVSFProfileJob implements ShouldQueue
+class CreateVSFProfileJob extends BaseTaskJob
 {
-    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
-
     /**
      * Create a new job instance.
      */
     public int $deployment_time;
 
     public int $wait_time;
-    public int $tries = 1;
 
     public function __construct(public Device $device, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
@@ -36,7 +29,7 @@ class CreateVSFProfileJob implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
             if (! $this->device->scope_id) {
                 $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
                 if (array_key_exists('error', $scopeid_response)) {
@@ -75,9 +68,7 @@ class CreateVSFProfileJob implements ShouldQueue
                     $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                 }
             }
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Create VSF profile');
-        }
+        }, 'Create VSF profile');
     }
 
     public function retryUntil(): DateTime
@@ -87,9 +78,8 @@ class CreateVSFProfileJob implements ShouldQueue
 
     public function failed(?Throwable $exception)
     {
-        Log::error('VSF profile creation timed out or failed.');
-        $this->task->processTaskStatusLog('VSF profile creation timed out or failed.', true);
-        $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
-        $this->task->update(['status' => 'FAILED']);
+        $this->logFailedException($exception);
+        $this->markDeviceFailed($this->device);
+        $this->failTask('VSF profile creation timed out or failed.', true);
     }
 }

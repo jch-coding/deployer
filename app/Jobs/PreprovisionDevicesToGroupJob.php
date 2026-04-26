@@ -2,26 +2,19 @@
 
 namespace App\Jobs;
 
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class PreprovisionDevicesToGroupJob implements ShouldQueue
+class PreprovisionDevicesToGroupJob extends BaseTaskJob
 {
-    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
-
     /**
      * Create a new job instance.
      */
     public int $deployment_time;
-    public int $tries = 1;
 
     public function __construct(public array $devices, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
@@ -33,12 +26,10 @@ class PreprovisionDevicesToGroupJob implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
             $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
             $this->preprovisionDevices($device_serials);
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Preprovision devices to group');
-        }
+        }, 'Preprovision devices to group');
     }
 
     public function preprovisionDevices($devices): void
@@ -89,11 +80,8 @@ class PreprovisionDevicesToGroupJob implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        Log::error($exception);
-        $this->task->processTaskStatusLog('Failed preprovisioning devices to group. Task timed out or failed.');
-        $this->task->devices->each(function ($device) {
-            $device->pivot->update(['status' => 'FAILED']);
-        });
-        $this->task->update(['status' => 'FAILED']);
+        $this->logFailedException($exception);
+        $this->markAllDevicesFailed();
+        $this->failTask('Failed preprovisioning devices to group. Task timed out or failed.');
     }
 }

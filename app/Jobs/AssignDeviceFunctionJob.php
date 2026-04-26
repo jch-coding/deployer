@@ -2,26 +2,19 @@
 
 namespace App\Jobs;
 
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class AssignDeviceFunctionJob implements ShouldQueue
+class AssignDeviceFunctionJob extends BaseTaskJob
 {
-    use Batchable, HandlesUncaughtTaskExceptions, Queueable;
-
     /**
      * Create a new job instance.
      */
     public int $deployment_time;
     public int $wait_time;
-    public int $tries = 1;
 
     public function __construct(public array $devices, public string $device_function, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
@@ -34,7 +27,7 @@ class AssignDeviceFunctionJob implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
             $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
             $response = $this->centralAPIHelper->assignDeviceFunction($device_serials, $this->device_function);
             if (! $response->ok()) {
@@ -46,9 +39,7 @@ class AssignDeviceFunctionJob implements ShouldQueue
                 array_reduce($this->devices, fn ($carry, $device) => $carry . "\nDevice " . $device['name'] . ' assigned to ' . $device['device_function'], $status_log);
                 $this->task->update(['status_log' => $status_log]);
             }
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Assign device function');
-        }
+        }, 'Assign device function');
     }
 
     public function retryUntil(): DateTime
@@ -58,13 +49,7 @@ class AssignDeviceFunctionJob implements ShouldQueue
 
     public function failed(?Throwable $exception)
     {
-        Log::error($exception);
-        $this->task->devices()->find($this->devices[0]['id'])->pivot->update(['status' => 'FAILED']);
-        $failed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status == 'FAILED')->count();
-        $total_devices = $this->task->devices->count();
-        if ($failed_devices === $total_devices) {
-            $this->task->update(['status' => 'FAILED']);
-        }
-        $this->task->processTaskStatusLog('Task timed out or failed.');
+        $this->logFailedException($exception);
+        $this->failDeviceAndTaskIfNeeded($this->devices[0]['id']);
     }
 }

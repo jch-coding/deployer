@@ -2,24 +2,17 @@
 
 namespace App\Jobs;
 
-use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
 use DateTime;
-use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class RemoveLocalOverrideDNSJob implements ShouldQueue
+class RemoveLocalOverrideDNSJob extends BaseTaskJob
 {
-    use Queueable, Batchable, HandlesUncaughtTaskExceptions;
-
     public int $deployment_time;
     public int $wait_time;
-    public int $tries = 1;
 
     /**
      * Create a new job instance.
@@ -35,7 +28,7 @@ class RemoveLocalOverrideDNSJob implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
+        $this->handleSafely(function (): void {
         //refresh device scope-id
         if (!$this->device->scope_id) {
             $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
@@ -80,9 +73,7 @@ class RemoveLocalOverrideDNSJob implements ShouldQueue
             $this->task->processTaskStatusLog($message, true);
             $this->release($this->wait_time * 60);
         }
-        } catch (Throwable $exception) {
-            $this->failTaskOnUnhandledException($exception, 'Remove local DNS override');
-        }
+        }, 'Remove local DNS override');
     }
 
     public function retryUntil(): DateTime
@@ -92,13 +83,9 @@ class RemoveLocalOverrideDNSJob implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        Log::error($exception);
+        $this->logFailedException($exception);
         $message = "\nFailed to delete all local override dns profiles or task timed out. Please check Central for more details.";
         $this->task->processTaskStatusLog($message, true);
-        $this->task->devices()->find($this->device)->pivot->update(['status' => 'FAILED']);
-        $failed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status == 'FAILED')->count();
-        if ($failed_devices == $this->task->devices->count()) {
-            $this->task->update(['status' => 'FAILED']);
-        }
+        $this->failDeviceAndTaskIfNeeded($this->device);
     }
 }
