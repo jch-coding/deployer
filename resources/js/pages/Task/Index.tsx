@@ -2,6 +2,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
@@ -30,6 +31,23 @@ type TaskIndexProps = {
     };
 } & SharedData;
 
+function statusBadgeClass(status: string): string {
+    switch (status) {
+        case 'COMPLETED':
+            return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+        case 'FAILED':
+            return 'bg-red-100 text-red-800 border-red-200';
+        case 'CANCELLED':
+            return 'bg-slate-200 text-slate-800 border-slate-300';
+        case 'IN_PROGRESS':
+            return 'bg-blue-100 text-blue-800 border-blue-200';
+        case 'PENDING':
+            return 'bg-amber-100 text-amber-900 border-amber-200';
+        default:
+            return '';
+    }
+}
+
 const columns: ColumnDef<TaskRow>[] = [
     {
         accessorKey: 'task_name',
@@ -54,6 +72,11 @@ const columns: ColumnDef<TaskRow>[] = [
     {
         accessorKey: 'status',
         header: 'Status',
+        cell: ({ row }) => (
+            <Badge variant="outline" className={statusBadgeClass(row.original.status)}>
+                {row.original.status}
+            </Badge>
+        ),
     },
     {
         accessorKey: 'item_count',
