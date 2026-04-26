@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
-use DateTime;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -14,11 +13,9 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
     /**
      * Create a new job instance.
      */
-    public int $deployment_time;
-
     public function __construct(public array $devices, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
+        $this->initTaskTiming($task, defaultDeploymentMinutes: 3);
     }
 
     /**
@@ -71,11 +68,6 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
             }, $message);
             $this->task->processTaskStatusLog($message);
         }
-    }
-
-    public function retryUntil(): DateTime
-    {
-        return now()->addMinutes($this->deployment_time)->toDateTime();
     }
 
     public function failed(?Throwable $exception): void

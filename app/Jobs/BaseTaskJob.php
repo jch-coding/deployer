@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Jobs\Concerns\HandlesUncaughtTaskExceptions;
+use App\Models\Task;
+use DateTime;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -15,6 +17,24 @@ abstract class BaseTaskJob implements ShouldQueue
     use Batchable, HandlesUncaughtTaskExceptions, Queueable;
 
     public int $tries = 1;
+    protected int $deployment_time = 3;
+    protected int $wait_time = 1;
+
+    protected function resolvePositiveInt(?int $value, int $default): int
+    {
+        return $value !== null && $value > 0 ? $value : $default;
+    }
+
+    protected function initTaskTiming(Task $task, int $defaultDeploymentMinutes = 3, int $defaultWaitMinutes = 1): void
+    {
+        $this->deployment_time = $this->resolvePositiveInt($task->deployment_time, $defaultDeploymentMinutes);
+        $this->wait_time = $this->resolvePositiveInt($task->wait_time, $defaultWaitMinutes);
+    }
+
+    public function retryUntil(): DateTime
+    {
+        return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
 
     protected function handleSafely(callable $callback, string $context = ''): void
     {

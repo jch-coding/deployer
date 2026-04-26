@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Helper\CentralAPIHelper;
 use App\Models\DeviceInterface;
 use App\Models\Task;
-use DateTime;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -14,13 +13,9 @@ class ConfigureLagInterfaceJob extends BaseTaskJob
     /**
      * Create a new job instance.
      */
-    public $deployment_time;
-    public $wait_time;
-
     public function __construct(public DeviceInterface $device_interface, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
-        $this->wait_time = $task->wait_time ?? 3;
+        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 3);
     }
 
     /**
@@ -53,11 +48,6 @@ class ConfigureLagInterfaceJob extends BaseTaskJob
             $this->task->processTaskStatusLog($message);
             $this->task->deviceInterfaces()->find($this->device_interface)->pivot->update(['status' => 'COMPLETED']);
         }, 'Configure LAG interface');
-    }
-
-    public function retryUntil(): DateTime
-    {
-        return now()->addMinutes($this->deployment_time)->toDateTime();
     }
 
     public function failed(?Throwable $exception)

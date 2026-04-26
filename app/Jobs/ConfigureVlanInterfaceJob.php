@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Helper\CentralAPIHelper;
 use App\Models\DeviceInterface;
 use App\Models\Task;
-use DateTime;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -14,14 +13,9 @@ class ConfigureVlanInterfaceJob extends BaseTaskJob
     /**
      * Create a new job instance.
      */
-    public $deployment_time;
-
-    public $wait_time;
-
     public function __construct(public DeviceInterface $deviceInterface, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time ?? 3;
-        $this->wait_time = $task->wait_time ?? 1;
+        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
     }
 
     /**
@@ -107,11 +101,6 @@ class ConfigureVlanInterfaceJob extends BaseTaskJob
             $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
         }
         }, 'Configure VLAN interface');
-    }
-
-    public function retryUntil(): DateTime
-    {
-        return now()->addMinutes($this->deployment_time)->toDateTime();
     }
 
     public function failed(?Throwable $exception): void

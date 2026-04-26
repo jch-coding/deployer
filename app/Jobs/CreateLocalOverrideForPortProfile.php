@@ -6,7 +6,6 @@ use App\Events\DeploymentEvent;
 use App\Events\FailureEvent;
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
-use DateTime;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -20,13 +19,9 @@ class CreateLocalOverrideForPortProfile extends BaseTaskJob
      *     'site' => site model with name and possibly scope_id
      * ]
      */
-    public int $deployment_time;
-    public int $wait_time;
-
     public function __construct(public array $portProfileInfo, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
-        $this->wait_time = $task->wait_time ?? 1;
+        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
     }
 
     /**
@@ -76,11 +71,6 @@ class CreateLocalOverrideForPortProfile extends BaseTaskJob
             $newStatusLog = $statusLog."\nPort profile override for ".$this->portProfileInfo['sw_profile'].' at site '.$this->portProfileInfo['site']->name." completed\n";
             $this->task->update(['status_log' => $newStatusLog]);
         }, 'Create local override for port profile');
-    }
-
-    public function retryUntil(): DateTime
-    {
-        return now()->addMinutes($this->deployment_time)->toDateTime();
     }
 
     public function failed(?Throwable $exception)

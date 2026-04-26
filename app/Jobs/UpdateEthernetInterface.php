@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Helper\CentralAPIHelper;
 use App\Models\DeviceInterface;
 use App\Models\Task;
-use DateTime;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -14,14 +13,9 @@ class UpdateEthernetInterface extends BaseTaskJob
     /**
      * Create a new job instance.
      */
-    public int $deployment_time;
-
-    public int $wait_time;
-
     public function __construct(public DeviceInterface $deviceInterface, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time > 0 ? $task->deployment_time : 3;
-        $this->wait_time = $task->wait_time ?? 1;
+        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
     }
 
     /**
@@ -48,11 +42,6 @@ class UpdateEthernetInterface extends BaseTaskJob
                 }
             }
         }, 'Update ethernet interface');
-    }
-
-    public function retryUntil(): DateTime
-    {
-        return now()->addMinutes($this->deployment_time)->toDateTime();
     }
 
     public function failed(?Throwable $exception): void

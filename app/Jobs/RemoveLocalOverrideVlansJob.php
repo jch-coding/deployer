@@ -5,23 +5,17 @@ namespace App\Jobs;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
-use DateTime;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class RemoveLocalOverrideVlansJob extends BaseTaskJob
 {
-    public int $deployment_time;
-
-    public int $wait_time;
-
     /**
      * Create a new job instance.
      */
     public function __construct(public Task $task, public Device $device, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time ?? 3;
-        $this->wait_time = $task->wait_time ?? 3;
+        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 3);
     }
 
     /**
@@ -81,11 +75,6 @@ class RemoveLocalOverrideVlansJob extends BaseTaskJob
             $this->release($this->wait_time * 60);
         }
         }, 'Remove local VLAN overrides');
-    }
-
-    public function retryUntil(): DateTime
-    {
-        return now()->addMinutes($this->deployment_time)->toDateTime();
     }
 
     public function failed(?Throwable $exception): void

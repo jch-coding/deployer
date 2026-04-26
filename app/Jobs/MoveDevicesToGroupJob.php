@@ -5,23 +5,17 @@ namespace App\Jobs;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
-use DateTime;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class MoveDevicesToGroupJob extends BaseTaskJob
 {
-    public int $deployment_time;
-
-    public int $wait_time;
-
     /**
      * Create a new job instance.
      */
     public function __construct(public string $group_name, public array $devices, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->deployment_time = $task->deployment_time ?? 3;
-        $this->wait_time = $task->wait_time ?? 1;
+        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
     }
 
     /**
@@ -74,11 +68,6 @@ class MoveDevicesToGroupJob extends BaseTaskJob
             }, $message);
             $this->task->processTaskStatusLog($message);
         }
-    }
-
-    public function retryUntil(): DateTime
-    {
-        return now()->addMinutes($this->wait_time)->toDateTime();
     }
 
     public function failed(?Throwable $exception): void
