@@ -417,6 +417,24 @@ class TaskController extends Controller
         return to_route('tasks.show', $group->first());
     }
 
+    public function relaunch(Task $task)
+    {
+        if (! in_array($task->status, ['FAILED', 'CANCELLED'], true)) {
+            Inertia::flash('error', 'Only failed or cancelled tasks can be relaunched.');
+
+            return back();
+        }
+
+        $task->update(['status' => 'IN_PROGRESS']);
+        $batchId = $this->dispatchJob($task);
+
+        if ($batchId !== null) {
+            $task->forceFill(['batch_id' => $batchId])->save();
+        }
+
+        return to_route('tasks.show', $task);
+    }
+
     public function cancel(Task $task)
     {
         foreach ($this->tasksInCompositeGroup($task) as $t) {
