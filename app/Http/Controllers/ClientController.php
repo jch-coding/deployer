@@ -38,13 +38,13 @@ class ClientController extends Controller
         $access_token = CentralController::getAccessToken($data['client_id'], $data['client_secret']);
 
         if ($access_token === 'failed_to_get_token') {
-            Inertia::flash('error', 'Failed to get access token from central.');
+            session()->flash('error', 'Failed to get access token from central.');
 
             return back();
         }
 
         $data = array_merge($data, ['bearer_token' => $access_token]);
-        Inertia::flash('success', 'Successfully got access token from central. Client created successfully.');
+        session()->flash('success', 'Successfully got access token from central. Client created successfully.');
 
         return to_route('clients.index');
     }
@@ -131,7 +131,7 @@ class ClientController extends Controller
         }
 
         $client->update($validated);
-        Inertia::flash('success', 'Client updated successfully.');
+        session()->flash('success', 'Client updated successfully.');
 
         return to_route('clients.index');
     }
@@ -163,7 +163,7 @@ class ClientController extends Controller
             abort(403);
         }
         $client->delete();
-        Inertia::flash('success', 'Client deleted successfully.');
+        session()->flash('success', 'Client deleted successfully.');
 
         return back();
     }
