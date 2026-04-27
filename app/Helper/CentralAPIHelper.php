@@ -773,12 +773,13 @@ class CentralAPIHelper
         return $response;
     }
 
-    public function get_sites()
+    public function get_sites(array $queryParameters = [])
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
                 ->get($this->client->base_url.$this->scopeManagement['sites']['sites']);
 
             return $response;

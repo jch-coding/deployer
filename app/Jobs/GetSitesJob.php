@@ -31,31 +31,60 @@ class GetSitesJob implements ShouldQueue
      */
     public function handle(): void
     {
-        if (!$this->centralAPIHelper->client->handleBearerTokenAuth()) {
+        if (! $this->centralAPIHelper->client->handleBearerTokenAuth()) {
             Log::error('Access Token Renewal failed');
             throw new \Exception('Access Token Renewal failed');
         }
 
-        $central_sites = $this->centralAPIHelper->get_sites();
-        if(!$central_sites->ok()) {
-            Log::error('Failed to get sites from Central');
-            throw new \Exception('Failed to get sites from Central');
+        $limit = 100;
+        $offset = 0;
+        $returned_sites = [];
+
+        while (true) {
+            $central_sites = $this->centralAPIHelper->get_sites([
+                'offset' => $offset,
+                'limit' => $limit,
+            ]);
+
+            if (! $central_sites->ok()) {
+                Log::error('Failed to get sites from Central');
+                throw new \Exception('Failed to get sites from Central');
+            }
+
+            $page_items = $central_sites->json('items', []);
+            $returned_sites = array_merge($returned_sites, $page_items);
+
+            if (count($page_items) < $limit) {
+                break;
+            }
+
+            $offset += $limit;
         }
 
-        $returned_sites = $central_sites->json()['items'] ?? [];
-        $returned_sites_corresponding_to_sites_passed = array_map(fn($site) => array_find($returned_sites, fn($s) => $s['scopeName'] === $site['name']), $this->sites);
-        if(count($returned_sites_corresponding_to_sites_passed) !== count($this->sites)) {
+        $returned_sites_corresponding_to_sites_passed = array_values(array_filter(array_map(
+            fn ($site) => array_find($returned_sites, fn ($s) => ($s['scopeName'] ?? null) === ($site['name'] ?? null)),
+            $this->sites
+        )));
+
+        if (count($returned_sites_corresponding_to_sites_passed) !== count($this->sites)) {
             Log::error('Not all sites are configured in Central');
         }
-        $updated_sites = array_map(function ($returned_site) {
+
+        $succeeded_updates = 0;
+        foreach ($returned_sites_corresponding_to_sites_passed as $returned_site) {
+            if (! isset($returned_site['scopeName'], $returned_site['scopeId'])) {
+                continue;
+            }
+
             $found = Site::where('name', $returned_site['scopeName'])->get()->first();
-            if($found) {
+            if ($found) {
                 $found->scope_id = $returned_site['scopeId'];
                 $found->save();
+                $succeeded_updates++;
             }
-        }, $returned_sites_corresponding_to_sites_passed);
-        $succeeded_updates = array_filter($updated_sites, fn($update) => $update);
-        if(count($succeeded_updates) !== count($returned_sites_corresponding_to_sites_passed)) {
+        }
+
+        if ($succeeded_updates !== count($returned_sites_corresponding_to_sites_passed)) {
             Log::error('Failed to update scope_id for some sites');
         }
     }
