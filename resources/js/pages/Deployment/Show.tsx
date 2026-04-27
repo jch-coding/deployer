@@ -27,6 +27,7 @@ import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
+import { index as deploymentsIndex } from '@/routes/deployments';
 import { show as showDeployment } from '@/routes/deployments';
 import { show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -137,6 +138,10 @@ export default function Show() {
         {
             title: current_client?.name ?? 'Clients',
             href: clientsIndex().url,
+        },
+        {
+            title: 'Deployments',
+            href: deploymentsIndex().url,
         },
         {
             title: deployment.name,
