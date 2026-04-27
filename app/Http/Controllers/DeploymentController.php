@@ -16,7 +16,7 @@ class DeploymentController extends Controller
         $currentClient = $request->user()->clients->where('current', true)->first();
 
         if (! $currentClient) {
-            Inertia::flash('error', 'Please set current client to view deployments');
+            session()->flash('error', 'Please set current client to view deployments');
 
             return to_route('clients.index');
         }

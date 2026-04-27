@@ -74,3 +74,22 @@ test('clear queue succeeds when command reports cleared zero jobs', function () 
         ->assertRedirect(route('tasks.show', $task))
         ->assertSessionHas('success', 'Queue cleared successfully.');
 });
+
+test('clear queue succeeds when command reports info cleared zero jobs format', function () {
+    $task = Task::factory()->recycle($this->deployment)->create([
+        'status' => 'IN_PROGRESS',
+    ]);
+
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('queue:clear')
+        ->andReturn(0);
+
+    Artisan::shouldReceive('output')
+        ->once()
+        ->andReturn('INFO  Cleared 0 jobs from the [default] queue.');
+
+    $this->post(route('tasks.clear_queue', $task))
+        ->assertRedirect(route('tasks.show', $task))
+        ->assertSessionHas('success', 'Queue cleared successfully.');
+});

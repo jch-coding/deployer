@@ -420,7 +420,7 @@ class TaskController extends Controller
     public function relaunch(Task $task)
     {
         if (! in_array($task->status, ['FAILED', 'CANCELLED'], true)) {
-            Inertia::flash('error', 'Only failed or cancelled tasks can be relaunched.');
+            session()->flash('error', 'Only failed or cancelled tasks can be relaunched.');
 
             return back();
         }
@@ -441,7 +441,7 @@ class TaskController extends Controller
             $this->performCancelSingle($t);
         }
 
-        Inertia::flash('success', 'Task cancelled successfully.');
+        session()->flash('success', 'Task cancelled successfully.');
 
         return back();
     }
@@ -467,16 +467,16 @@ class TaskController extends Controller
                 str_contains($normalizedOutput, 'no messages were deleted')
                 || str_contains($normalizedOutput, 'queue is empty')
             ) {
-                Inertia::flash('success', 'Queue is clear. No pending jobs remain.');
+                session()->flash('success', 'Queue is clear. No pending jobs remain.');
 
                 return to_route('tasks.show', $task);
             }
 
             if (
-                preg_match('/cleared\s+\[(\d+)\]\s+jobs?/', $normalizedOutput, $matches) === 1
+                preg_match('/cleared\s+\[?(\d+)\]?\s+jobs?/', $normalizedOutput, $matches) === 1
                 && (int) $matches[1] === 0
             ) {
-                Inertia::flash('success', 'Queue cleared successfully.');
+                session()->flash('success', 'Queue cleared successfully.');
 
                 return to_route('tasks.show', $task);
             }
@@ -484,10 +484,7 @@ class TaskController extends Controller
             usleep(200000);
         }
 
-        Inertia::flash(
-            'error',
-            'Unable to confirm queue is clear after 5 attempts.'.($lastOutput !== '' ? ' Last output: '.$lastOutput : '')
-        );
+        session()->flash('error', 'Unable to confirm queue is clear after 5 attempts.'.($lastOutput !== '' ? ' Last output: '.$lastOutput : ''));
 
         return to_route('tasks.show', $task);
     }
