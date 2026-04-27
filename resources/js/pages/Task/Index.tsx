@@ -3,12 +3,13 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
-import { index as taskIndex, show as showTask } from '@/routes/tasks';
+import { index as taskIndex, relaunch, show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import type { Paginator } from '@/types/deployer';
 
@@ -48,6 +49,10 @@ function statusBadgeClass(status: string): string {
     }
 }
 
+function canRelaunch(status: string): boolean {
+    return status === 'FAILED' || status === 'CANCELLED';
+}
+
 const columns: ColumnDef<TaskRow>[] = [
     {
         accessorKey: 'task_name',
@@ -81,6 +86,31 @@ const columns: ColumnDef<TaskRow>[] = [
     {
         accessorKey: 'item_count',
         header: 'Items',
+    },
+    {
+        id: 'actions',
+        header: 'Actions',
+        cell: ({ row }) => {
+            const disabled = !canRelaunch(row.original.status);
+
+            return (
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={disabled}
+                    onClick={() => {
+                        if (disabled) {
+                            return;
+                        }
+                        router.post(relaunch(row.original.id).url);
+                    }}
+                    data-test={`tasks-relaunch-${row.original.id}`}
+                >
+                    Relaunch
+                </Button>
+            );
+        },
     },
 ];
 
