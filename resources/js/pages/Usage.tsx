@@ -14,6 +14,7 @@ const tocSections = [
     { id: 'create-a-deployment', label: 'Create a deployment' },
     { id: 'add-devices', label: 'Add devices' },
     { id: 'how-deployment-tasks-work', label: 'How tasks work' },
+    { id: 'task-expiry-and-failed-status', label: 'Task expiry and failed status' },
     { id: 'stopping-tasks-and-clearing-queue', label: 'Stopping tasks and queue behavior' },
     { id: 'available-tasks', label: 'Available tasks' },
 ] as const;
@@ -268,6 +269,34 @@ export default function Usage() {
                             Interface-oriented tasks attach to matching interface rows from your CSV;
                             device-oriented tasks run against the devices you select in the card.
                         </p>
+                    </section>
+
+                    <section id="task-expiry-and-failed-status" className="border-b border-border py-10">
+                        <h2 className={h2}>Task expiry and failed status</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            Tasks have an execution window based on their deployment time setting. After that
+                            window expires, a background sweeper reviews tasks still in{' '}
+                            <strong>IN_PROGRESS</strong>.
+                        </p>
+                        <ul className={cn(body, 'mt-4 list-disc space-y-2 pl-5')}>
+                            <li>
+                                Expiry is evaluated from task creation time plus the deployment time (in
+                                minutes).
+                            </li>
+                            <li>
+                                The sweeper checks each task&apos;s tracked items (devices for device-based
+                                tasks, interfaces for interface-based tasks).
+                            </li>
+                            <li>
+                                If <strong>any</strong> required item has not reached{' '}
+                                <strong>COMPLETED</strong> by expiry, the task is marked{' '}
+                                <strong>FAILED</strong>.
+                            </li>
+                            <li>
+                                A status log entry is appended with completion counts so operators can quickly
+                                see how far the task progressed.
+                            </li>
+                        </ul>
                     </section>
 
                     <section id="stopping-tasks-and-clearing-queue" className="border-b border-border py-10">
