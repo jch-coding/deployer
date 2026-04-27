@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Carbon;
 
 class Task extends Model
 {
@@ -197,15 +198,56 @@ class Task extends Model
 
     public function processTaskStatus()
     {
-        if ($this->getTaskCategory($this->task_type) == 'INTERFACE') {
-            $completed_interfaces = $this->deviceInterfaces()->where('status', 'COMPLETED')->get();
+        return $this->allTrackedItemsCompleted();
+    }
 
-            return count($completed_interfaces) == $this->deviceInterfaces()->count();
-        } elseif ($this->getTaskCategory($this->task_type) == 'DEVICE') {
-            $completed_devices = $this->devices()->where('status', 'COMPLETED')->get();
+    public function trackedItemTotals(): array
+    {
+        $category = $this->getTaskCategory($this->task_type);
 
-            return count($completed_devices) == $this->devices()->count();
+        if ($category === 'INTERFACE') {
+            $total = $this->deviceInterfaces()->count();
+            $completed = $this->deviceInterfaces()->wherePivot('status', 'COMPLETED')->count();
+
+            return ['category' => 'INTERFACE', 'completed' => $completed, 'total' => $total];
         }
+
+        if ($category === 'DEVICE') {
+            $total = $this->devices()->count();
+            $completed = $this->devices()->wherePivot('status', 'COMPLETED')->count();
+
+            return ['category' => 'DEVICE', 'completed' => $completed, 'total' => $total];
+        }
+
+        return ['category' => null, 'completed' => 0, 'total' => 0];
+    }
+
+    public function allTrackedItemsCompleted(): bool
+    {
+        $totals = $this->trackedItemTotals();
+        $total = $totals['total'];
+
+        if ($total === 0) {
+            return false;
+        }
+
+        return $totals['completed'] === $total;
+    }
+
+    public function effectiveDeploymentMinutes(int $defaultMinutes = 3): int
+    {
+        return $this->deployment_time !== null && $this->deployment_time > 0
+            ? $this->deployment_time
+            : $defaultMinutes;
+    }
+
+    public function expiresAt(int $defaultMinutes = 3): ?Carbon
+    {
+        if ($this->created_at === null) {
+            return null;
+        }
+
+        return $this->created_at->copy()->addMinutes($this->effectiveDeploymentMinutes($defaultMinutes));
     }
 
     public function processTaskStatusLog($message, $withTimeStamp = false)

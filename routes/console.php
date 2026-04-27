@@ -9,5 +9,6 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('queue:prune-batches --hours=48 --unfinished=72')->daily();
+Schedule::command('tasks:finalize-expired')->everyMinute();
 
 Schedule::command('tasks:prune-stale')->dailyAt('23:59');
