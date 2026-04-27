@@ -4,6 +4,8 @@ use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\DeviceInterface;
+use App\Models\Site;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -255,4 +257,102 @@ test('a device can have a lag interface', function () {
     $this->assertDatabaseCount('switch_ports', 2);
     $this->assertDatabaseCount('lacp_profiles', 1);
     $this->assertDatabaseHas('lacp_profiles', ['port_id' => 11, 'mode' => 'ACTIVE', 'timeout' => 'SHORT']);
+});
+
+it('updates device optionals without mutating interfaces when a later upload has no interface column', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $initialUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,group,sku,site,interface,description,ip_address'.PHP_EOL.
+        'SW-1,SNMPASS00001,ACCESS_SWITCH,Group-A,JL660A,Site A,1/1/1,Original Desc,10.10.10.1/24'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $initialUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device = Device::query()->where('serial', 'SNMPASS00001')->firstOrFail();
+    $interface = DeviceInterface::query()->where('device_id', $device->id)->where('interface', '1/1/1')->firstOrFail();
+    $originalSiteId = $device->site_id;
+
+    $secondUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,group,sku,site'.PHP_EOL.
+        'SW-1 Renamed,SNMPASS00001,ACCESS_SWITCH,Group-B,JL661A,Site B'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $secondUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device->refresh();
+    $interface->refresh();
+
+    expect($device->name)->toBe('SW-1 Renamed')
+        ->and($device->group)->toBe('Group-B')
+        ->and($device->sku)->toBe('JL661A')
+        ->and($device->site_id)->not()->toBe($originalSiteId)
+        ->and(Site::query()->where('name', 'Site B')->exists())->toBeTrue();
+
+    expect($interface->description)->toBe('Original Desc')
+        ->and($interface->ip_address)->toBe('10.10.10.1/24');
+});
+
+it('accepts snake_case optional headers and persists interface-related fields', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,interface_mode,native_vlan,trunk_vlan_all,trunk_vlan_ranges,description,ip_address,admin_edge_port,bpdu_guard'.PHP_EOL.
+        'SW-2,SN_SNAKE_0001,ACCESS_SWITCH,1/1/10,TRUNK,20,false,20-30,Uplink Interface,10.20.30.1/24,true,true'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device = Device::query()->where('serial', 'SN_SNAKE_0001')->firstOrFail();
+
+    $this->assertDatabaseHas('device_interfaces', [
+        'device_id' => $device->id,
+        'interface' => '1/1/10',
+        'description' => 'Uplink Interface',
+        'ip_address' => '10.20.30.1/24',
+    ]);
+    $this->assertDatabaseHas('switch_ports', [
+        'interface_mode' => 'TRUNK',
+        'native_vlan' => 20,
+        'trunk_vlan_all' => false,
+        'trunk_vlan_ranges' => '20-30',
+    ]);
+    $this->assertDatabaseHas('stp_profiles', [
+        'admin_edge_port' => true,
+        'bpdu_guard' => true,
+    ]);
+});
+
+it('does not create interfaces when optional interface column is present but blank', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,description,ip_address'.PHP_EOL.
+        'SW-3,SNBLANKINT01,ACCESS_SWITCH,,Should Be Ignored,10.0.0.1/24'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', ['serial' => 'SNBLANKINT01']);
+    $this->assertDatabaseMissing('device_interfaces', ['description' => 'Should Be Ignored']);
 });

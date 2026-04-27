@@ -5,6 +5,7 @@ use App\Http\Controllers\DeviceController;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\LacpProfile;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
 
@@ -621,4 +622,140 @@ test("it saves portchannel interfaces from a csv", function () {
     $this->assertEquals($interface->switch_port->interface_mode, 'TRUNK');
     $this->assertEquals($interface->switch_port->native_vlan, 10);
     $this->assertEquals($interface->switch_port->trunk_vlan_all, true);
+});
+
+test('saveInterfaces updates existing interface optional fields for the same device and interface', function () {
+    $deployment = Deployment::factory()->create();
+    $device = Device::factory()->for($deployment)->create([
+        'serial' => 'SN-UPDATE-0001',
+        'name' => 'SW-UPDATE-1',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $initial = [
+        'unique_switchports' => [],
+        'unique_stp' => [],
+        'unique_lacp' => [],
+        'devices_grouped_config' => [[
+            [
+                'serial' => $device->serial,
+                'interface' => '1/1/1',
+                'description' => 'old description',
+                'ip_address' => '10.0.0.1/24',
+                'port_profile' => 'old-profile',
+            ],
+        ]],
+        'total_interfaces' => 1,
+    ];
+
+    DeviceController::saveInterfaces($initial);
+
+    $updated = [
+        'unique_switchports' => [],
+        'unique_stp' => [],
+        'unique_lacp' => [],
+        'devices_grouped_config' => [[
+            [
+                'serial' => $device->serial,
+                'interface' => '1/1/1',
+                'description' => 'new description',
+                'ip_address' => '10.0.0.2/24',
+                'port_profile' => 'new-profile',
+            ],
+        ]],
+        'total_interfaces' => 1,
+    ];
+
+    DeviceController::saveInterfaces($updated);
+
+    $this->assertDatabaseCount('device_interfaces', 1);
+    $this->assertDatabaseHas('device_interfaces', [
+        'device_id' => $device->id,
+        'interface' => '1/1/1',
+        'description' => 'new description',
+        'ip_address' => '10.0.0.2/24',
+        'sw_profile' => 'new-profile',
+    ]);
+});
+
+test('saveInterfaces links switchport, stp, and lacp profiles from optional columns', function () {
+    $deployment = Deployment::factory()->create();
+    $device = Device::factory()->for($deployment)->create([
+        'serial' => 'SN-LACP-0001',
+        'name' => 'SW-LACP-1',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $interfaces = [
+        'unique_switchports' => [[
+            'interface_mode' => 'TRUNK',
+            'access_vlan' => null,
+            'native_vlan' => 20,
+            'trunk_vlan_all' => false,
+            'trunk_vlan_ranges' => '20-30',
+        ]],
+        'unique_stp' => [[
+            'admin_edge_port' => false,
+            'admin_edge_port_trunk' => true,
+            'bpdu_guard' => false,
+            'loop_guard' => true,
+        ]],
+        'unique_lacp' => [[
+            'mode' => 'ACTIVE',
+            'trunk_type' => 'LACP',
+            'port_list' => '1/1/1-1/1/2',
+            'rate' => 'FAST',
+        ]],
+        'devices_grouped_config' => [[
+            [
+                'serial' => $device->serial,
+                'interface' => '10',
+                'interface_mode' => 'TRUNK',
+                'native_vlan' => 20,
+                'trunk_vlan_all' => false,
+                'trunk_vlan_ranges' => '20-30',
+                'admin_edge_port' => false,
+                'admin_edge_port_trunk' => true,
+                'bpdu_guard' => false,
+                'loop_guard' => true,
+                'lacp_mode' => 'ACTIVE',
+                'trunk_type' => 'LACP',
+                'port_list' => '1/1/1-1/1/2',
+                'lacp_rate' => 'FAST',
+            ],
+        ]],
+        'total_interfaces' => 1,
+    ];
+
+    DeviceController::saveInterfaces($interfaces);
+
+    $switchPort = SwitchPort::query()->firstOrFail();
+    $stp = StpProfile::query()->firstOrFail();
+    $lacp = LacpProfile::query()->firstOrFail();
+
+    $this->assertDatabaseHas('device_interfaces', [
+        'device_id' => $device->id,
+        'interface' => '10',
+        'switch_port_id' => $switchPort->id,
+        'stp_profile_id' => $stp->id,
+        'lacp_profile_id' => $lacp->id,
+    ]);
+});
+
+test('saveSitesWithDevices updates device site_id based on optional site column mapping', function () {
+    $first = Device::factory()->create(['serial' => 'SN-SITE-0001']);
+    $second = Device::factory()->create(['serial' => 'SN-SITE-0002']);
+
+    DeviceController::saveSitesWithDevices([
+        [
+            'name' => 'Optional Site Alpha',
+            'devices' => [$first->serial, $second->serial],
+        ],
+    ]);
+
+    $this->assertDatabaseHas('sites', ['name' => 'Optional Site Alpha']);
+    $siteId = \App\Models\Site::query()->where('name', 'Optional Site Alpha')->value('id');
+
+    $this->assertDatabaseHas('devices', ['id' => $first->id, 'site_id' => $siteId]);
+    $this->assertDatabaseHas('devices', ['id' => $second->id, 'site_id' => $siteId]);
 });

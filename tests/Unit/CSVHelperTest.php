@@ -123,3 +123,85 @@ it('processes portchannel and non-portchannel interfaces from one CSV file', fun
         ],
     ]);
 });
+
+it('maps device optional columns when creating device arrays', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'group', 'sku', 'site'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'Branch-Switches', 'JL660A', 'Site A'],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0])->toMatchArray([
+            'name' => 'SW-1',
+            'serial' => 'SN0000000001',
+            'device_function' => 'ACCESS_SWITCH',
+            'group' => 'Branch-Switches',
+            'sku' => 'JL660A',
+            'site' => 'Site A',
+        ]);
+});
+
+it('maps interface, stp, and lacp optional columns when present', function () {
+    $csvData = [
+        [
+            'name', 'serial', 'device_function', 'interface', 'description', 'ip_address',
+            'interface_mode', 'access_vlan', 'native_vlan', 'trunk_vlan_all', 'trunk_vlan_ranges',
+            'admin_edge_port', 'admin_edge_port_trunk', 'bpdu_guard', 'loop_guard',
+            'lacp_mode', 'trunk_type', 'port_list', 'lacp_rate',
+        ],
+        [
+            'SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1', 'to AP', '10.0.0.1/24',
+            'TRUNK', '', '10', 'false', '10-20',
+            'true', '', 'true', 'false',
+            'ACTIVE', 'LACP', '1/1/1-1/1/2', 'FAST',
+        ],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0])->toMatchArray([
+            'interface' => '1/1/1',
+            'description' => 'to AP',
+            'ip_address' => '10.0.0.1/24',
+            'interface_mode' => 'TRUNK',
+            'native_vlan' => '10',
+            'trunk_vlan_all' => 'false',
+            'trunk_vlan_ranges' => '10-20',
+            'admin_edge_port' => 'true',
+            'bpdu_guard' => 'true',
+            'lacp_mode' => 'ACTIVE',
+            'trunk_type' => 'LACP',
+            'port_list' => '1/1/1-1/1/2',
+            'lacp_rate' => 'FAST',
+        ]);
+});
+
+it('keeps missing optional columns absent from mapped rows', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH'],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays[0])->not()->toHaveKeys(['group', 'sku', 'site', 'interface', 'description', 'ip_address']);
+});
+
+it('retains blank optional column values so downstream handlers can normalize them', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'group', 'site', 'interface', 'description'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '', '', '1/1/1', ''],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays[0])->toMatchArray([
+        'group' => '',
+        'site' => '',
+        'interface' => '1/1/1',
+        'description' => '',
+    ]);
+});
