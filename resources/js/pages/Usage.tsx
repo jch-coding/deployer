@@ -269,6 +269,27 @@ export default function Usage() {
                             Interface-oriented tasks attach to matching interface rows from your CSV;
                             device-oriented tasks run against the devices you select in the card.
                         </p>
+                        <div className={cn(body, 'mt-4 rounded-lg border border-border bg-muted/40 px-4 py-3')}>
+                            <p className="font-medium text-foreground">Set Duration options</p>
+                            <p className="mt-2">
+                                Before deploying, you can open <strong>Set Duration</strong> on the task card
+                                to control timing behavior:
+                            </p>
+                            <ul className="mt-2 list-disc space-y-1 pl-5">
+                                <li>
+                                    <strong>Hours</strong> and <strong>Minutes</strong> combine into the
+                                    task&apos;s deployment window.
+                                </li>
+                                <li>
+                                    <strong>Retry Interval (minutes)</strong> controls how long a job waits
+                                    before retry/release when a task job is re-queued.
+                                </li>
+                                <li>
+                                    If you leave values at zero, task defaults are used by the backend for
+                                    deployment duration and retry timing.
+                                </li>
+                            </ul>
+                        </div>
                     </section>
 
                     <section id="task-expiry-and-failed-status" className="border-b border-border py-10">
