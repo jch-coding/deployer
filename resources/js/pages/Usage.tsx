@@ -290,6 +290,12 @@ export default function Usage() {
                                 backend queue store. The app retries this operation and checks command
                                 output before reporting success.
                             </li>
+                            <li>
+                                <strong>Relaunch Task:</strong> available from the Tasks index for tasks in
+                                <strong> FAILED</strong> or <strong>CANCELLED</strong> state. Relaunch sets
+                                the task back to <strong>IN_PROGRESS</strong>, redispatches work, and sends
+                                you to the task detail page.
+                            </li>
                         </ul>
                         <p className={cn(body, 'mt-4')}>
                             Technical summary: <strong>Cancel Task</strong> is batch-level control inside
@@ -297,6 +303,12 @@ export default function Usage() {
                             cleanup against the queue backend (for example, Redis). Use cancel to stop new
                             work from a task, and clear queue when you need to drain queued jobs that
                             should not run.
+                        </p>
+                        <p className={cn(body, 'mt-4')}>
+                            Technical detail for relaunch: redispatch uses the task&apos;s existing
+                            device/interface pivot rows and only queues items whose pivot status is not
+                            <strong> COMPLETED</strong>. This makes relaunch behave like a resume operation
+                            for failed/cancelled work instead of re-running already completed items.
                         </p>
                     </section>
 
