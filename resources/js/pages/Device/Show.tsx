@@ -1,5 +1,7 @@
 import { usePage } from '@inertiajs/react';
-import { type ColumnDef } from '@tanstack/react-table';
+import { type ColumnDef, type VisibilityState } from '@tanstack/react-table';
+import { useEffect, useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
@@ -146,6 +148,7 @@ const interfaceColumns: ColumnDef<DeviceInterfaceRow>[] = [
     {
         id: 'interface',
         header: 'Interface',
+        enableHiding: false,
         accessorFn: (row) => formatInterfaceDisplay(row),
     },
     { accessorKey: 'description', header: 'Description' },
@@ -240,6 +243,57 @@ const interfaceColumns: ColumnDef<DeviceInterfaceRow>[] = [
     },
 ];
 
+const DEVICE_SHOW_VISIBILITY_KEY = 'device-show-columns:v1';
+
+const SIMPLE_VISIBLE_COLUMN_IDS = new Set<string>([
+    'interface',
+    'description',
+    'ip_address',
+    'enable',
+    'vrf_forwarding',
+    'sw_profile',
+    'portchannel_lag',
+]);
+
+const PROFILE_COLUMN_IDS = new Set<string>([
+    'switch_port_mode',
+    'switch_port_access_vlan',
+    'switch_port_native_vlan',
+    'switch_port_trunk_vlan_all',
+    'switch_port_trunk_vlan_ranges',
+    'lacp_mode',
+    'lacp_port_id',
+    'lacp_rate',
+    'lacp_trunk_type',
+    'lacp_port_list',
+    'stp_admin_edge',
+    'stp_admin_edge_trunk',
+    'stp_bpdu_guard',
+    'stp_loop_guard',
+]);
+
+function buildVisibilityPreset(
+    allColumnIds: string[],
+    visible: Set<string>,
+): VisibilityState {
+    return Object.fromEntries(
+        allColumnIds.map((id) => [id, visible.has(id)]),
+    );
+}
+
+function isValidVisibilityState(
+    value: unknown,
+    allowedColumnIds: Set<string>,
+): value is VisibilityState {
+    if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+        return false;
+    }
+    return Object.keys(value).every((key) => {
+        const cell = (value as Record<string, unknown>)[key];
+        return allowedColumnIds.has(key) && typeof cell === 'boolean';
+    });
+}
+
 type DeviceShowProps = {
     device: {
         id: number;
@@ -260,6 +314,70 @@ type DeviceShowProps = {
 export default function Show() {
     const { device, deployment, current_client, interfaces } =
         usePage<DeviceShowProps>().props;
+
+    const allLeafColumnIds = useMemo(() => {
+        return interfaceColumns.map((column) => {
+            if ('id' in column && typeof column.id === 'string') {
+                return column.id;
+            }
+            if (
+                'accessorKey' in column &&
+                (typeof column.accessorKey === 'string' ||
+                    typeof column.accessorKey === 'number')
+            ) {
+                return String(column.accessorKey);
+            }
+            return '';
+        }).filter((id) => id.length > 0);
+    }, []);
+
+    const allColumnIdSet = useMemo(() => new Set(allLeafColumnIds), [allLeafColumnIds]);
+
+    const simplePreset = useMemo(
+        () => buildVisibilityPreset(allLeafColumnIds, SIMPLE_VISIBLE_COLUMN_IDS),
+        [allLeafColumnIds],
+    );
+    const profilesPreset = useMemo(
+        () =>
+            buildVisibilityPreset(
+                allLeafColumnIds,
+                new Set([...SIMPLE_VISIBLE_COLUMN_IDS, ...PROFILE_COLUMN_IDS]),
+            ),
+        [allLeafColumnIds],
+    );
+    const fullPreset = useMemo(
+        () => buildVisibilityPreset(allLeafColumnIds, new Set(allLeafColumnIds)),
+        [allLeafColumnIds],
+    );
+
+    const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
+        if (typeof window === 'undefined') {
+            return simplePreset;
+        }
+        const raw = window.localStorage.getItem(DEVICE_SHOW_VISIBILITY_KEY);
+        if (!raw) {
+            return simplePreset;
+        }
+        try {
+            const parsed: unknown = JSON.parse(raw);
+            if (isValidVisibilityState(parsed, allColumnIdSet)) {
+                return parsed;
+            }
+        } catch {
+            // Fall through to default preset.
+        }
+        return simplePreset;
+    });
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(
+            DEVICE_SHOW_VISIBILITY_KEY,
+            JSON.stringify(columnVisibility),
+        );
+    }, [columnVisibility]);
 
     const deviceSubtitle = formatDeviceMetadata(device);
 
@@ -290,12 +408,90 @@ export default function Show() {
                     ) : null}
                 </div>
                 <div>
-                    <h2 className="mb-2 text-lg font-medium">Interfaces</h2>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <h2 className="text-lg font-medium">Interfaces</h2>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setColumnVisibility(simplePreset)}
+                            >
+                                Simple
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setColumnVisibility(profilesPreset)}
+                            >
+                                Profiles
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setColumnVisibility(fullPreset)}
+                            >
+                                Full
+                            </Button>
+                        </div>
+                    </div>
                     <DataTable<DeviceInterfaceRow, unknown>
                         data={interfaces}
                         columns={interfaceColumns}
                         getRowId={(row) => String(row.id)}
                         stickyLeftColumnIds={['interface']}
+                        enableColumnPicker
+                        columnPickerTitle="Columns"
+                        columnVisibility={columnVisibility}
+                        onColumnVisibilityChange={setColumnVisibility}
+                        columnGroups={[
+                            {
+                                label: 'Core',
+                                columnIds: [
+                                    'id',
+                                    'interface',
+                                    'description',
+                                    'ip_address',
+                                    'enable',
+                                    'jumbo_frames',
+                                    'routing',
+                                    'vrf_forwarding',
+                                    'sw_profile',
+                                    'portchannel_lag',
+                                ],
+                            },
+                            {
+                                label: 'Switch Port',
+                                columnIds: [
+                                    'switch_port_mode',
+                                    'switch_port_access_vlan',
+                                    'switch_port_native_vlan',
+                                    'switch_port_trunk_vlan_all',
+                                    'switch_port_trunk_vlan_ranges',
+                                ],
+                            },
+                            {
+                                label: 'LACP',
+                                columnIds: [
+                                    'lacp_mode',
+                                    'lacp_port_id',
+                                    'lacp_rate',
+                                    'lacp_trunk_type',
+                                    'lacp_port_list',
+                                ],
+                            },
+                            {
+                                label: 'STP',
+                                columnIds: [
+                                    'stp_admin_edge',
+                                    'stp_admin_edge_trunk',
+                                    'stp_bpdu_guard',
+                                    'stp_loop_guard',
+                                ],
+                            },
+                        ]}
                     />
                 </div>
             </div>

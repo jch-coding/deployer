@@ -1,9 +1,23 @@
 import {
     type ColumnDef,
+    type VisibilityState,
     flexRender,
     getCoreRowModel,
+    getFilteredRowModel,
+    type OnChangeFn,
     useReactTable
 } from '@tanstack/react-table';
+import { Columns2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuCheckboxItem,
+    DropdownMenuContent,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 import {
     Table,
@@ -21,6 +35,11 @@ interface DataTableProps<TData, TValue> {
     getRowId?: (originalRow: TData, index: number) => string;
     /** Column ids (left-to-right) pinned to the left during horizontal scroll */
     stickyLeftColumnIds?: string[];
+    columnVisibility?: VisibilityState;
+    onColumnVisibilityChange?: OnChangeFn<VisibilityState>;
+    enableColumnPicker?: boolean;
+    columnPickerTitle?: string;
+    columnGroups?: { label: string; columnIds: string[] }[];
 }
 
 function stickyCellClass(
@@ -54,16 +73,119 @@ export function DataTable<TData, TValue>({
     data,
     getRowId,
     stickyLeftColumnIds,
+    columnVisibility: controlledColumnVisibility,
+    onColumnVisibilityChange,
+    enableColumnPicker = false,
+    columnPickerTitle = 'Columns',
+    columnGroups,
 }: DataTableProps<TData, TValue>) {
+    const [internalColumnVisibility, setInternalColumnVisibility] = useState<VisibilityState>(
+        controlledColumnVisibility ?? {},
+    );
+    const isControlled = controlledColumnVisibility !== undefined;
+    const columnVisibility = isControlled
+        ? controlledColumnVisibility
+        : internalColumnVisibility;
+
+    useEffect(() => {
+        if (!isControlled) {
+            setInternalColumnVisibility(controlledColumnVisibility ?? {});
+        }
+    }, [controlledColumnVisibility, isControlled]);
+
+    const handleColumnVisibilityChange: OnChangeFn<VisibilityState> = (updater) => {
+        if (isControlled) {
+            onColumnVisibilityChange?.(updater);
+            return;
+        }
+        setInternalColumnVisibility((current) => {
+            const next =
+                typeof updater === 'function'
+                    ? updater(current)
+                    : updater;
+            onColumnVisibilityChange?.(next);
+            return next;
+        });
+    };
+
     const table = useReactTable({
         data,
         columns,
         getCoreRowModel: getCoreRowModel(),
+        getFilteredRowModel: getFilteredRowModel(),
+        state: {
+            columnVisibility,
+        },
+        onColumnVisibilityChange: handleColumnVisibilityChange,
         ...(getRowId ? { getRowId } : {}),
     })
 
+    const hideableColumns = useMemo(
+        () => table.getAllLeafColumns().filter((column) => column.getCanHide()),
+        [table],
+    );
+
+    const groupedColumns = useMemo(() => {
+        if (!columnGroups?.length) {
+            return [];
+        }
+        return columnGroups
+            .map((group) => {
+                const cols = group.columnIds
+                    .map((id) => table.getColumn(id))
+                    .filter((column): column is NonNullable<typeof column> =>
+                        Boolean(column?.getCanHide()));
+                return { label: group.label, columns: cols };
+            })
+            .filter((group) => group.columns.length > 0);
+    }, [columnGroups, table]);
+
     return (
-        <div className="overflow-hidden rounded-md border">
+        <div className="space-y-2">
+            {enableColumnPicker ? (
+                <div className="flex items-center justify-end">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="outline" size="sm" className="gap-2">
+                                <Columns2 className="size-4" aria-hidden />
+                                {columnPickerTitle}
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="max-h-[60vh] w-64 overflow-y-auto">
+                            {groupedColumns.length > 0 ? (
+                                groupedColumns.map((group, index) => (
+                                    <div key={group.label}>
+                                        {index > 0 ? <DropdownMenuSeparator /> : null}
+                                        <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
+                                        {group.columns.map((column) => (
+                                            <DropdownMenuCheckboxItem
+                                                key={column.id}
+                                                checked={column.getIsVisible()}
+                                                onCheckedChange={(value) =>
+                                                    column.toggleVisibility(Boolean(value))}
+                                            >
+                                                {String(column.columnDef.header ?? column.id)}
+                                            </DropdownMenuCheckboxItem>
+                                        ))}
+                                    </div>
+                                ))
+                            ) : (
+                                hideableColumns.map((column) => (
+                                    <DropdownMenuCheckboxItem
+                                        key={column.id}
+                                        checked={column.getIsVisible()}
+                                        onCheckedChange={(value) =>
+                                            column.toggleVisibility(Boolean(value))}
+                                    >
+                                        {String(column.columnDef.header ?? column.id)}
+                                    </DropdownMenuCheckboxItem>
+                                ))
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            ) : null}
+            <div className="overflow-hidden rounded-md border">
             <Table
                 className={
                     stickyLeftColumnIds?.length
@@ -131,6 +253,7 @@ export function DataTable<TData, TValue>({
                     )}
                 </TableBody>
             </Table>
+            </div>
         </div>
     )
 }
