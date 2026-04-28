@@ -336,10 +336,12 @@ export default function Usage() {
                             </li>
                             <li>
                                 <strong>Clear Queue:</strong> runs Laravel&apos;s{' '}
-                                <code>artisan queue:clear</code> for the <strong>named queue tied to this
-                                task</strong> (each task uses one of several parallel queues). The app
-                                retries and checks command output before reporting success, so other
-                                tasks on different queues are not affected.
+                                <code>artisan queue:clear</code> for the <strong>shard queue tied to this
+                                task</strong> (names like <code>q0</code> … <code>q63</code> by default).
+                                The app retries and checks command output before reporting success. Other
+                                tasks on <em>different</em> shards are unaffected; tasks that share the
+                                same shard can still collide, only less often than with a tiny fixed set
+                                of queue names.
                             </li>
                             <li>
                                 <strong>Relaunch Task:</strong> available from the Tasks index for tasks in
@@ -350,12 +352,15 @@ export default function Usage() {
                         </ul>
                         <p className={cn(body, 'mt-4')}>
                             Technical summary: <strong>Cancel Task</strong> is batch-level control inside
-                            the application workflow, while <strong>Clear Queue</strong> clears only that
-                            task&apos;s queue name on the queue connection (for example Redis or database).
-                            Workers must listen to all task queue names (for example{' '}
-                            <code>default,first,second,third,fourth</code>). Use cancel to stop new work
-                            from a task, and clear queue when you need to drain queued jobs that should
-                            not run for that task&apos;s queue.
+                            the application workflow, while <strong>Clear Queue</strong> clears every
+                            pending job on that task&apos;s shard name on the queue connection (for example
+                            Redis or database)—including jobs from <em>other</em> tasks assigned the same
+                            shard. Shards are chosen from many <code>qN</code> names (count configurable via{' '}
+                            <code>TASK_JOB_QUEUE_SHARD_COUNT</code>) using a hash of the creating user and
+                            request entropy to reduce collisions, not remove them. Workers must listen to
+                            all shard names; use <code>php artisan task:queue-shard-list</code> to print the
+                            comma-separated list for <code>queue:work --queue=...</code>, or run{' '}
+                            <code>bash scripts/queue-work.sh</code> locally (same as Sail&apos;s worker).
                         </p>
                         <p className={cn(body, 'mt-4')}>
                             Technical detail for relaunch: redispatch uses the task&apos;s existing

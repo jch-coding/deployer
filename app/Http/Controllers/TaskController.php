@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\TestEvent;
 use App\Helper\CentralAPIHelper;
+use App\JobQueueShard;
 use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssociateDeviceToSiteJob;
 use App\Jobs\AssociateSiteAndNameJob;
@@ -21,7 +22,6 @@ use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
 use App\Models\Task;
-use App\TaskJobQueue;
 use App\TaskType;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -260,11 +260,11 @@ class TaskController extends Controller
             ->get();
     }
 
-    protected function allocateJobQueue(): TaskJobQueue
+    protected function allocateJobQueue(Request $request, string $entropy): string
     {
-        $index = (int) ((Task::query()->max('id') ?? 0) % 5);
+        $userId = (int) $request->user()->id;
 
-        return TaskJobQueue::orderedCases()[$index];
+        return JobQueueShard::fromUserEntropy($userId, $entropy);
     }
 
     protected function performCancelSingle(Task $task): void
@@ -286,10 +286,12 @@ class TaskController extends Controller
             'deployment_time' => 'required|integer',
         ]);
 
+        $shardEntropy = (string) Str::uuid();
+
         if ($validated['task_type'] === 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES') {
             $compositeGroupId = (string) Str::uuid();
             $compositeKind = 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES';
-            $jobQueue = $this->allocateJobQueue();
+            $jobQueue = $this->allocateJobQueue($request, $shardEntropy);
             $remove_vlans_task = $deployment->tasks()->create([
                 'task_type' => 'REMOVE_LOCAL_OVERRIDE_VLANS',
                 'name' => 'task_for_'.$deployment->name.now(),
@@ -348,7 +350,7 @@ class TaskController extends Controller
         } elseif ($validated['task_type'] === 'CONFIGURE_ALL_INTERFACE') {
             $compositeGroupId = (string) Str::uuid();
             $compositeKind = 'CONFIGURE_ALL_INTERFACE';
-            $jobQueue = $this->allocateJobQueue();
+            $jobQueue = $this->allocateJobQueue($request, $shardEntropy);
             $configure_lag_task = $deployment->tasks()->create([
                 'task_type' => 'CONFIGURE_LAG_INTERFACE',
                 'name' => 'configure_lag_interface_for_'.$deployment->name.now(),
@@ -396,7 +398,7 @@ class TaskController extends Controller
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
-                'job_queue' => $this->allocateJobQueue(),
+                'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
             ]);
 
             $device_collection = Collection::make($validated['devices']);
@@ -470,7 +472,7 @@ class TaskController extends Controller
         $lastOutput = '';
 
         $connection = config('queue.default');
-        $queueName = $task->job_queue->value;
+        $queueName = JobQueueShard::resolve($task->job_queue);
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             $exitCode = Artisan::call('queue:clear', [
@@ -544,7 +546,7 @@ class TaskController extends Controller
     {
         $task->loadMissing('devices', 'deviceInterfaces');
 
-        $queueName = ($task->job_queue ?? TaskJobQueue::Default)->value;
+        $queueName = JobQueueShard::resolve($task->job_queue);
 
         $centralAPIHelper = new CentralAPIHelper($task->deployment->client);
         $jobs = [];

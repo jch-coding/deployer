@@ -44,6 +44,7 @@ test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES stores four composite sibling 
         'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
     ]);
     expect($tasks->pluck('job_queue')->unique())->toHaveCount(1);
+    expect($tasks->first()->job_queue)->toMatch('/^q\d+$/');
 
     $first = $tasks->firstWhere('composite_order', 1);
     expect($first)->not->toBeNull();
@@ -75,6 +76,7 @@ test('creating CONFIGURE_ALL_INTERFACE stores three composite sibling tasks', fu
         'CONFIGURE_VLAN_INTERFACE',
     ]);
     expect($tasks->pluck('job_queue')->unique())->toHaveCount(1);
+    expect($tasks->first()->job_queue)->toMatch('/^q\d+$/');
 
     $first = $tasks->firstWhere('composite_order', 1);
     expect($first)->not->toBeNull();

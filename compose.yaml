@@ -28,7 +28,7 @@ x-queue-worker: &queue-worker
         redis:
             condition: service_healthy
     restart: unless-stopped
-    command: php artisan queue:work --sleep=3 --queue=default,first,second,third,fourth
+    command: bash scripts/queue-work.sh
     healthcheck:
         test:
             - CMD-SHELL
