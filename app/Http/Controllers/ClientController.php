@@ -162,6 +162,12 @@ class ClientController extends Controller
         if ($request->user()->cannot('delete', $client)) {
             abort(403);
         }
+        if ($client->current) {
+            $next = $request->user()->clients()->whereKeyNot($client->getKey())->first();
+            if ($next) {
+                $next->update(['current' => true]);
+            }
+        }
         $client->delete();
         session()->flash('success', 'Client deleted successfully.');
 
