@@ -222,6 +222,50 @@ export default function documentation() {
                         </div>
                     </DocCard>
 
+                    <DocCard title="Configure LAG, Ethernet and VLAN Interfaces" defaultOpen>
+                        <div className="space-y-4">
+                            <p>
+                                Multi-job task <code className="rounded bg-muted px-1 py-0.5 text-sm">
+                                    CONFIGURE_ALL_INTERFACE
+                                </code>
+                                . Runs <strong>Configure Portchannel/LAG interface</strong>, then{' '}
+                                <strong>Configure Ethernet Interfaces</strong>, then{' '}
+                                <strong>Configure SVI</strong>, in that order, using the same interface rows
+                                from your CSV.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                Include optional columns needed for each layer (for example{' '}
+                                <span className="font-mono text-xs">port_list</span> for LAG rows) per the
+                                standalone cards above.
+                            </p>
+                            <ColumnPair
+                                required={[
+                                    'name',
+                                    'serial',
+                                    'device_function',
+                                    'interface',
+                                    <>
+                                        ip_address (<i>ex: 192.168.1.1/24</i>)
+                                    </>,
+                                ]}
+                                optional={[
+                                    <>
+                                        port_list (<i>required for LAG rows; ex: 1/1/1-1/1/3</i>)
+                                    </>,
+                                    'port_profile',
+                                    'interface_mode',
+                                    'access_vlan',
+                                    'native_vlan',
+                                    'trunk_vlan_all',
+                                    'trunk_vlan_ranges',
+                                    <>
+                                        trunk_type (<i>LACP, TRUNK, DT_TRUNK, MULTI_CHASSIS,</i> etc.)
+                                    </>,
+                                ]}
+                            />
+                        </div>
+                    </DocCard>
+
                     <DocCard title="Configure VSF Profile" defaultOpen>
                         <div className="space-y-4">
                             <p>
@@ -231,6 +275,28 @@ export default function documentation() {
                             </p>
                             <ColumnPair
                                 required={['name', 'serial', 'device_function', 'sku']}
+                                optional={[]}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard title="Remove VSF profile local overrides" defaultOpen>
+                        <div className="space-y-4">
+                            <p>
+                                Multi-job task{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">
+                                    REMOVE_VSF_PROFILE_LOCAL_OVERRIDES
+                                </code>
+                                . Device-based: clears local overrides introduced during VSF onboarding by
+                                running remove tasks for VLANs, DNS profile, static routes, and NTP profile in
+                                sequence.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                Select devices on the deployment when starting the task; CSV rows identify
+                                devices only (no interface columns).
+                            </p>
+                            <ColumnPair
+                                required={['name', 'serial', 'device_function']}
                                 optional={[]}
                             />
                         </div>
