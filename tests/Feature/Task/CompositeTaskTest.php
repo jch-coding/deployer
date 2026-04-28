@@ -4,6 +4,7 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -18,6 +19,8 @@ beforeEach(function () {
 });
 
 test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES stores four composite sibling tasks', function () {
+    Bus::fake();
+
     $devices = Device::factory(2)->create([
         'deployment_id' => $this->deployment->id,
         'client_id' => $this->client->id,
@@ -40,6 +43,7 @@ test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES stores four composite sibling 
         'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
         'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
     ]);
+    expect($tasks->pluck('job_queue')->unique())->toHaveCount(1);
 
     $first = $tasks->firstWhere('composite_order', 1);
     expect($first)->not->toBeNull();
@@ -47,6 +51,8 @@ test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES stores four composite sibling 
 });
 
 test('creating CONFIGURE_ALL_INTERFACE stores three composite sibling tasks', function () {
+    Bus::fake();
+
     $devices = Device::factory(1)->create([
         'deployment_id' => $this->deployment->id,
         'client_id' => $this->client->id,
@@ -68,6 +74,7 @@ test('creating CONFIGURE_ALL_INTERFACE stores three composite sibling tasks', fu
         'CONFIGURE_ETHERNET_INTERFACE',
         'CONFIGURE_VLAN_INTERFACE',
     ]);
+    expect($tasks->pluck('job_queue')->unique())->toHaveCount(1);
 
     $first = $tasks->firstWhere('composite_order', 1);
     expect($first)->not->toBeNull();

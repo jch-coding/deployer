@@ -3,6 +3,7 @@
 use App\Models\Client;
 use App\Models\Device;
 use App\Models\User;
+use Illuminate\Support\Facades\Bus;
 
 beforeEach(function () {
     $this->user = User::factory()
@@ -15,6 +16,8 @@ beforeEach(function () {
 });
 
 test('creating a task with devices stores the task and attaches the devices', function () {
+    Bus::fake();
+
     $devices = Device::factory(2)->create(['deployment_id' => $this->deployment->id, 'client_id' => $this->client->id]);
     $response = $this->post(route('tasks.store', $this->deployment), [
         'name' => 'Test Task',

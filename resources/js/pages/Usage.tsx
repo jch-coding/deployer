@@ -336,9 +336,10 @@ export default function Usage() {
                             </li>
                             <li>
                                 <strong>Clear Queue:</strong> runs Laravel&apos;s{' '}
-                                <code>artisan queue:clear</code> operation to remove queued jobs from the
-                                backend queue store. The app retries this operation and checks command
-                                output before reporting success.
+                                <code>artisan queue:clear</code> for the <strong>named queue tied to this
+                                task</strong> (each task uses one of several parallel queues). The app
+                                retries and checks command output before reporting success, so other
+                                tasks on different queues are not affected.
                             </li>
                             <li>
                                 <strong>Relaunch Task:</strong> available from the Tasks index for tasks in
@@ -349,10 +350,12 @@ export default function Usage() {
                         </ul>
                         <p className={cn(body, 'mt-4')}>
                             Technical summary: <strong>Cancel Task</strong> is batch-level control inside
-                            the application workflow, while <strong>Clear Queue</strong> is queue-level
-                            cleanup against the queue backend (for example, Redis). Use cancel to stop new
-                            work from a task, and clear queue when you need to drain queued jobs that
-                            should not run.
+                            the application workflow, while <strong>Clear Queue</strong> clears only that
+                            task&apos;s queue name on the queue connection (for example Redis or database).
+                            Workers must listen to all task queue names (for example{' '}
+                            <code>default,first,second,third,fourth</code>). Use cancel to stop new work
+                            from a task, and clear queue when you need to drain queued jobs that should
+                            not run for that task&apos;s queue.
                         </p>
                         <p className={cn(body, 'mt-4')}>
                             Technical detail for relaunch: redispatch uses the task&apos;s existing

@@ -3,6 +3,7 @@
 use App\Models\Client;
 use App\Models\Task;
 use App\Models\User;
+use App\TaskJobQueue;
 use Illuminate\Support\Facades\Artisan;
 
 beforeEach(function () {
@@ -18,11 +19,16 @@ beforeEach(function () {
 test('clear queue retries until output confirms queue is empty', function () {
     $task = Task::factory()->recycle($this->deployment)->create([
         'status' => 'IN_PROGRESS',
+        'job_queue' => TaskJobQueue::Default,
     ]);
 
     Artisan::shouldReceive('call')
         ->times(2)
-        ->with('queue:clear')
+        ->withArgs(function (string $command, array $parameters) use ($task): bool {
+            return $command === 'queue:clear'
+                && ($parameters[0] ?? null) === config('queue.default')
+                && ($parameters['--queue'] ?? null) === $task->job_queue->value;
+        })
         ->andReturn(0);
 
     Artisan::shouldReceive('output')
@@ -40,11 +46,16 @@ test('clear queue retries until output confirms queue is empty', function () {
 test('clear queue sets error flash when queue cannot be confirmed clear', function () {
     $task = Task::factory()->recycle($this->deployment)->create([
         'status' => 'IN_PROGRESS',
+        'job_queue' => TaskJobQueue::Default,
     ]);
 
     Artisan::shouldReceive('call')
         ->times(5)
-        ->with('queue:clear')
+        ->withArgs(function (string $command, array $parameters) use ($task): bool {
+            return $command === 'queue:clear'
+                && ($parameters[0] ?? null) === config('queue.default')
+                && ($parameters['--queue'] ?? null) === $task->job_queue->value;
+        })
         ->andReturn(0);
 
     Artisan::shouldReceive('output')
@@ -59,16 +70,21 @@ test('clear queue sets error flash when queue cannot be confirmed clear', functi
 test('clear queue succeeds when command reports cleared zero jobs', function () {
     $task = Task::factory()->recycle($this->deployment)->create([
         'status' => 'IN_PROGRESS',
+        'job_queue' => TaskJobQueue::Third,
     ]);
 
     Artisan::shouldReceive('call')
         ->once()
-        ->with('queue:clear')
+        ->withArgs(function (string $command, array $parameters) use ($task): bool {
+            return $command === 'queue:clear'
+                && ($parameters[0] ?? null) === config('queue.default')
+                && ($parameters['--queue'] ?? null) === $task->job_queue->value;
+        })
         ->andReturn(0);
 
     Artisan::shouldReceive('output')
         ->once()
-        ->andReturn('Cleared [0] jobs from the [default] queue.');
+        ->andReturn('Cleared [0] jobs from the [third] queue.');
 
     $this->post(route('tasks.clear_queue', $task))
         ->assertRedirect(route('tasks.show', $task))
@@ -78,11 +94,16 @@ test('clear queue succeeds when command reports cleared zero jobs', function () 
 test('clear queue succeeds when command reports info cleared zero jobs format', function () {
     $task = Task::factory()->recycle($this->deployment)->create([
         'status' => 'IN_PROGRESS',
+        'job_queue' => TaskJobQueue::Default,
     ]);
 
     Artisan::shouldReceive('call')
         ->once()
-        ->with('queue:clear')
+        ->withArgs(function (string $command, array $parameters) use ($task): bool {
+            return $command === 'queue:clear'
+                && ($parameters[0] ?? null) === config('queue.default')
+                && ($parameters['--queue'] ?? null) === $task->job_queue->value;
+        })
         ->andReturn(0);
 
     Artisan::shouldReceive('output')
