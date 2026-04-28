@@ -21,6 +21,7 @@ use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
 use App\Models\Task;
+use App\TaskJobQueue;
 use App\TaskType;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -259,6 +260,13 @@ class TaskController extends Controller
             ->get();
     }
 
+    protected function allocateJobQueue(): TaskJobQueue
+    {
+        $index = (int) ((Task::query()->max('id') ?? 0) % 5);
+
+        return TaskJobQueue::orderedCases()[$index];
+    }
+
     protected function performCancelSingle(Task $task): void
     {
         $task->update(['status' => 'CANCELLED']);
@@ -281,11 +289,13 @@ class TaskController extends Controller
         if ($validated['task_type'] === 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES') {
             $compositeGroupId = (string) Str::uuid();
             $compositeKind = 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES';
+            $jobQueue = $this->allocateJobQueue();
             $remove_vlans_task = $deployment->tasks()->create([
                 'task_type' => 'REMOVE_LOCAL_OVERRIDE_VLANS',
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'job_queue' => $jobQueue,
                 'composite_group_id' => $compositeGroupId,
                 'composite_kind' => $compositeKind,
                 'composite_order' => 1,
@@ -295,6 +305,7 @@ class TaskController extends Controller
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'job_queue' => $jobQueue,
                 'composite_group_id' => $compositeGroupId,
                 'composite_kind' => $compositeKind,
                 'composite_order' => 2,
@@ -304,6 +315,7 @@ class TaskController extends Controller
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'job_queue' => $jobQueue,
                 'composite_group_id' => $compositeGroupId,
                 'composite_kind' => $compositeKind,
                 'composite_order' => 3,
@@ -313,6 +325,7 @@ class TaskController extends Controller
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'job_queue' => $jobQueue,
                 'composite_group_id' => $compositeGroupId,
                 'composite_kind' => $compositeKind,
                 'composite_order' => 4,
@@ -335,11 +348,13 @@ class TaskController extends Controller
         } elseif ($validated['task_type'] === 'CONFIGURE_ALL_INTERFACE') {
             $compositeGroupId = (string) Str::uuid();
             $compositeKind = 'CONFIGURE_ALL_INTERFACE';
+            $jobQueue = $this->allocateJobQueue();
             $configure_lag_task = $deployment->tasks()->create([
                 'task_type' => 'CONFIGURE_LAG_INTERFACE',
                 'name' => 'configure_lag_interface_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'job_queue' => $jobQueue,
                 'composite_group_id' => $compositeGroupId,
                 'composite_kind' => $compositeKind,
                 'composite_order' => 1,
@@ -349,6 +364,7 @@ class TaskController extends Controller
                 'name' => 'configure_ethernet_interface_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'job_queue' => $jobQueue,
                 'composite_group_id' => $compositeGroupId,
                 'composite_kind' => $compositeKind,
                 'composite_order' => 2,
@@ -358,6 +374,7 @@ class TaskController extends Controller
                 'name' => 'configure_svi_interface_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'job_queue' => $jobQueue,
                 'composite_group_id' => $compositeGroupId,
                 'composite_kind' => $compositeKind,
                 'composite_order' => 3,
@@ -379,6 +396,7 @@ class TaskController extends Controller
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
+                'job_queue' => $this->allocateJobQueue(),
             ]);
 
             $device_collection = Collection::make($validated['devices']);
@@ -451,8 +469,14 @@ class TaskController extends Controller
         $maxAttempts = 5;
         $lastOutput = '';
 
+        $connection = config('queue.default');
+        $queueName = $task->job_queue->value;
+
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            $exitCode = Artisan::call('queue:clear');
+            $exitCode = Artisan::call('queue:clear', [
+                $connection,
+                '--queue' => $queueName,
+            ]);
             $rawOutput = trim(Artisan::output());
             $normalizedOutput = strtolower($rawOutput);
             $lastOutput = $rawOutput;
@@ -519,6 +543,8 @@ class TaskController extends Controller
     public function dispatchJob(Task $task): ?string
     {
         $task->loadMissing('devices', 'deviceInterfaces');
+
+        $queueName = ($task->job_queue ?? TaskJobQueue::Default)->value;
 
         $centralAPIHelper = new CentralAPIHelper($task->deployment->client);
         $jobs = [];
@@ -617,9 +643,9 @@ class TaskController extends Controller
                 if ($segment === []) {
                     continue;
                 }
-                $pendingBatches[] = Bus::batch($segment)->allowFailures();
+                $pendingBatches[] = Bus::batch($segment)->allowFailures()->onQueue($queueName);
             } elseif ($segment instanceof ShouldQueue) {
-                $pendingBatches[] = Bus::batch([$segment])->allowFailures();
+                $pendingBatches[] = Bus::batch([$segment])->allowFailures()->onQueue($queueName);
             }
         }
 
@@ -631,7 +657,7 @@ class TaskController extends Controller
             return $pendingBatches[0]->dispatch()->id;
         }
 
-        Bus::chain($pendingBatches)->dispatch();
+        Bus::chain($pendingBatches)->onQueue($queueName)->dispatch();
 
         return null;
     }

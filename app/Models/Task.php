@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\TaskJobQueue;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,7 +23,18 @@ class Task extends Model
         'composite_group_id',
         'composite_kind',
         'composite_order',
+        'job_queue',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'job_queue' => TaskJobQueue::class,
+        ];
+    }
 
     public function users(): BelongsToMany
     {
