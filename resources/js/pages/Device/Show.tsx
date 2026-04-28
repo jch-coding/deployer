@@ -166,7 +166,7 @@ const interfaceColumns: ColumnDef<DeviceInterfaceRow>[] = [
         cell: ({ getValue }) => yesNo(Boolean(getValue())),
     },
     { accessorKey: 'vrf_forwarding', header: 'VRF forwarding' },
-    { accessorKey: 'sw_profile', header: 'Switch profile' },
+    { accessorKey: 'sw_profile', header: 'Port profile' },
     { accessorKey: 'portchannel_lag', header: 'Port-channel / LAG' },
     {
         id: 'switch_port_mode',
