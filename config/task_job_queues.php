@@ -13,6 +13,6 @@ return [
     |
     */
 
-    'shard_count' => (int) env('TASK_JOB_QUEUE_SHARD_COUNT', 64),
+    'shard_count' => (int) env('TASK_JOB_QUEUE_SHARD_COUNT', 8),
 
 ];

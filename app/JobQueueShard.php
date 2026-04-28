@@ -8,7 +8,7 @@ final class JobQueueShard
 
     public static function shardCount(): int
     {
-        $configured = (int) config('task_job_queues.shard_count', 64);
+        $configured = (int) config('task_job_queues.shard_count', 8);
 
         return max(1, min(self::MAX_SHARD_COUNT, $configured));
     }

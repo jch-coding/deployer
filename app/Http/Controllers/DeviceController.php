@@ -309,12 +309,15 @@ class DeviceController extends Controller
                 if ($has_switchport) {
                     $mode = $device_interface['interface_mode'] ?? 'ACCESS';
                     if ($mode === 'ACCESS') {
+                        $accessVlan = ($device_interface['access_vlan'] ?? null) === null
+                            ? 1
+                            : (int) $device_interface['access_vlan'];
                         $switchport = SwitchPort::where('interface_mode', $mode)
-                            ->where('access_vlan', (int) $device_interface['access_vlan'] ?? 1)
+                            ->where('access_vlan', $accessVlan)
                             ->first();
                     } else {
                         $switchport = SwitchPort::where('interface_mode', $mode)
-                            ->where('native_vlan', (int) $device_interface['native_vlan'] ?? 1)
+                            ->where('native_vlan', $nativeVlan)
                             ->where('trunk_vlan_all', (bool) $device_interface['trunk_vlan_all'] ?? false)
                             ->where('trunk_vlan_ranges', $device_interface['trunk_vlan_ranges'] ?? null)
                             ->first();

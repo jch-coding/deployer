@@ -379,6 +379,8 @@ class CentralAPIHelper
         $switchport_rest_body = ['name' => $deviceInterface->interface];
         if ($deviceInterface->sw_profile !== null) {
             $switchport_rest_body['sw-profile'] = $deviceInterface->sw_profile;
+        } elseif ($deviceInterface->description !== null) {
+            $switchport_rest_body['description'] = $deviceInterface->description;
         } elseif ($deviceInterface->portchannel_lag !== null) {
             $switchport_rest_body['portchannel-lag'] = $deviceInterface->portchannel_lag;
         } else {

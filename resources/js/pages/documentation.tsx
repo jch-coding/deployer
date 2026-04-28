@@ -152,11 +152,21 @@ export default function documentation() {
                                 required={['name', 'serial', 'device_function', 'interface']}
                                 optional={[
                                     'port_profile',
+                                    'description',
+                                    'ip_address',
                                     'interface_mode',
                                     'access_vlan',
                                     'native_vlan',
                                     'trunk_vlan_all',
                                     'trunk_vlan_ranges',
+                                    'admin_edge_port',
+                                    'admin_edge_port_trunk',
+                                    'bpdu_guard',
+                                    'loop_guard',
+                                    'lacp_mode',
+                                    'lacp_rate',
+                                    'trunk_type',
+                                    'port_list',
                                 ]}
                             />
                         </div>
@@ -253,11 +263,19 @@ export default function documentation() {
                                         port_list (<i>required for LAG rows; ex: 1/1/1-1/1/3</i>)
                                     </>,
                                     'port_profile',
+                                    'description',
+                                    'ip_address',
                                     'interface_mode',
                                     'access_vlan',
                                     'native_vlan',
                                     'trunk_vlan_all',
                                     'trunk_vlan_ranges',
+                                    'admin_edge_port',
+                                    'admin_edge_port_trunk',
+                                    'bpdu_guard',
+                                    'loop_guard',
+                                    'lacp_mode',
+                                    'lacp_rate',
                                     <>
                                         trunk_type (<i>LACP, TRUNK, DT_TRUNK, MULTI_CHASSIS,</i> etc.)
                                     </>,
