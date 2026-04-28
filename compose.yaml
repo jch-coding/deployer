@@ -69,12 +69,6 @@ services:
                 condition: service_healthy
     queue-worker-1:
         <<: *queue-worker
-    queue-worker-2:
-        <<: *queue-worker
-    queue-worker-3:
-        <<: *queue-worker
-    queue-worker-4:
-        <<: *queue-worker
     pgsql:
         image: 'postgres:18-alpine'
         ports:

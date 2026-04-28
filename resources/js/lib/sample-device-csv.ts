@@ -15,6 +15,12 @@ const SAMPLE_DEVICE_HEADERS = [
     'native_vlan',
     'trunk_vlan_all',
     'trunk_vlan_ranges',
+    'admin_edge_port',
+    'admin_edge_port_trunk',
+    'bpdu_guard',
+    'loop_guard',
+    'lacp_mode',
+    'lacp_rate',
     'trunk_type',
 ] as const;
 
@@ -39,6 +45,9 @@ const SAMPLE_DEVICE_ROWS: SampleDeviceRow[] = [
         port_profile: 'User-Access',
         interface_mode: 'ACCESS',
         access_vlan: '10',
+        admin_edge_port: 'true',
+        bpdu_guard: 'true',
+        loop_guard: 'true',
     },
     {
         name: 'Example Access Switch 1',
@@ -50,6 +59,9 @@ const SAMPLE_DEVICE_ROWS: SampleDeviceRow[] = [
         interface_mode: 'TRUNK',
         native_vlan: '10',
         trunk_vlan_ranges: '8&10-20',
+        admin_edge_port_trunk: 'true',
+        lacp_mode: 'ACTIVE',
+        lacp_rate: 'FAST',
     },
     {
         name: 'Example Access Switch 2',
@@ -70,6 +82,8 @@ const SAMPLE_DEVICE_ROWS: SampleDeviceRow[] = [
         interface_mode: 'TRUNK',
         native_vlan: '10',
         trunk_vlan_all: 'true',
+        lacp_mode: 'ACTIVE',
+        lacp_rate: 'FAST',
         trunk_type: 'LACP',
     },
     {
