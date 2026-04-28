@@ -295,6 +295,7 @@ export default function Show() {
                         data={interfaces}
                         columns={interfaceColumns}
                         getRowId={(row) => String(row.id)}
+                        stickyLeftColumnIds={['interface']}
                     />
                 </div>
             </div>
