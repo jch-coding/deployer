@@ -1,6 +1,13 @@
 import { router, usePage } from '@inertiajs/react';
 import { type ColumnDef, type VisibilityState } from '@tanstack/react-table';
-import { type ComponentProps, type ReactNode, useEffect, useMemo, useState } from 'react';
+import {
+    type ComponentProps,
+    type ReactNode,
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+} from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
@@ -247,6 +254,12 @@ type InterfaceColumnOptions = {
     setDraftField: (id: number, key: keyof InterfaceDraftRow, value: unknown) => void;
     clearDraftField: (id: number, key: keyof InterfaceDraftRow) => void;
     fieldErrorsByInterfaceId: Map<number, Record<string, string>>;
+    allInterfaceIds: number[];
+    selectedInterfaceIds: ReadonlySet<number>;
+    toggleSelect: (id: number) => void;
+    toggleSelectAll: () => void;
+    allRowsSelected: boolean;
+    someRowsSelected: boolean;
 };
 
 function FieldWrap({
@@ -276,6 +289,12 @@ function createInterfaceColumns({
     setDraftField,
     clearDraftField,
     fieldErrorsByInterfaceId,
+    allInterfaceIds,
+    selectedInterfaceIds,
+    toggleSelect,
+    toggleSelectAll,
+    allRowsSelected,
+    someRowsSelected,
 }: InterfaceColumnOptions): ColumnDef<DeviceInterfaceRow>[] {
     const fieldErr = (interfaceId: number, field: string) =>
         fieldErrorsByInterfaceId.get(interfaceId)?.[field];
@@ -386,6 +405,41 @@ function createInterfaceColumns({
     };
 
     return [
+        {
+            id: 'select',
+            enableHiding: false,
+            header: () =>
+                editing && allInterfaceIds.length > 0 ? (
+                    <div className="flex justify-center px-1">
+                        <Checkbox
+                            checked={
+                                allRowsSelected
+                                    ? true
+                                    : someRowsSelected
+                                      ? 'indeterminate'
+                                      : false
+                            }
+                            aria-label="Select all interfaces"
+                            onCheckedChange={() => toggleSelectAll()}
+                        />
+                    </div>
+                ) : (
+                    <span className="text-muted-foreground"> </span>
+                ),
+            cell: ({ row }) =>
+                editing ? (
+                    <div className="flex justify-center px-1">
+                        <Checkbox
+                            checked={selectedInterfaceIds.has(row.original.id)}
+                            aria-label={`Select ${row.original.interface}`}
+                            onCheckedChange={() => toggleSelect(row.original.id)}
+                        />
+                    </div>
+                ) : (
+                    <span className="text-muted-foreground">—</span>
+                ),
+            accessorFn: () => '',
+        },
         { accessorKey: 'id', header: 'ID' },
         {
             id: 'interface',
@@ -624,6 +678,7 @@ function createInterfaceColumns({
 const DEVICE_SHOW_VISIBILITY_KEY = 'device-show-columns:v1';
 
 const SIMPLE_VISIBLE_COLUMN_IDS = new Set<string>([
+    'select',
     'interface',
     'description',
     'ip_address',
@@ -690,19 +745,38 @@ type DeviceShowProps = {
     errors?: Record<string, string>;
 } & SharedData;
 
+const BULK_BOOL_NOOP = '__noop__' as const;
+
 export default function Show() {
     const { device, deployment, current_client, interfaces, errors } =
         usePage<DeviceShowProps>().props;
     const [isEditing, setIsEditing] = useState(false);
     const [drafts, setDrafts] = useState<Record<number, InterfaceDraftRow>>({});
+    const [selectedInterfaceIds, setSelectedInterfaceIds] = useState<Set<number>>(() => new Set());
     const [isSaving, setIsSaving] = useState(false);
     const [dismissedFieldErrors, setDismissedFieldErrors] = useState(() => new Set<string>());
+    const [bulkDescriptionText, setBulkDescriptionText] = useState('');
+    const [bulkEnableChoice, setBulkEnableChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkJumboChoice, setBulkJumboChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkRoutingChoice, setBulkRoutingChoice] = useState<string>(BULK_BOOL_NOOP);
+
+    const allInterfaceIds = useMemo(() => interfaces.map((r) => r.id), [interfaces]);
 
     const errorsFingerprint = useMemo(() => JSON.stringify(errors ?? {}), [errors]);
 
     useEffect(() => {
         setDismissedFieldErrors(new Set());
     }, [errorsFingerprint]);
+
+    useEffect(() => {
+        if (!isEditing) {
+            setSelectedInterfaceIds(new Set());
+            setBulkDescriptionText('');
+            setBulkEnableChoice(BULK_BOOL_NOOP);
+            setBulkJumboChoice(BULK_BOOL_NOOP);
+            setBulkRoutingChoice(BULK_BOOL_NOOP);
+        }
+    }, [isEditing]);
 
     const dismissFieldErrorForCell = (interfaceId: number, field: keyof InterfaceDraftRow | string) => {
         const key = dismissedCellErrorKey(interfaceId, String(field));
@@ -754,6 +828,58 @@ export default function Show() {
         return rowDraft[key] as T;
     };
 
+    const toggleSelect = useCallback((id: number) => {
+        setSelectedInterfaceIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    }, []);
+
+    const toggleSelectAll = useCallback(() => {
+        setSelectedInterfaceIds((prev) => {
+            if (prev.size === allInterfaceIds.length) {
+                return new Set();
+            }
+            return new Set(allInterfaceIds);
+        });
+    }, [allInterfaceIds]);
+
+    const allRowsSelected =
+        allInterfaceIds.length > 0 && selectedInterfaceIds.size === allInterfaceIds.length;
+    const someRowsSelected =
+        selectedInterfaceIds.size > 0 && selectedInterfaceIds.size < allInterfaceIds.length;
+
+    const applyBoolToSelected = (key: 'enable' | 'jumbo_frames' | 'routing', value: boolean) => {
+        for (const id of selectedInterfaceIds) {
+            dismissFieldErrorForCell(id, key);
+        }
+        setDrafts((current) => {
+            const next = { ...current };
+            for (const id of selectedInterfaceIds) {
+                next[id] = { ...next[id], [key]: value };
+            }
+            return next;
+        });
+    };
+
+    const applyDescriptionToSelected = () => {
+        for (const id of selectedInterfaceIds) {
+            dismissFieldErrorForCell(id, 'description');
+        }
+        setDrafts((current) => {
+            const next = { ...current };
+            for (const id of selectedInterfaceIds) {
+                next[id] = { ...next[id], description: bulkDescriptionText };
+            }
+            return next;
+        });
+    };
+
     const pendingUpdates = useMemo(() => {
         return Object.entries(drafts).map(([id, rowDraft]) => {
             const update = { id: Number(id), ...rowDraft } as Record<string, unknown>;
@@ -795,8 +921,24 @@ export default function Show() {
                 setDraftField,
                 clearDraftField,
                 fieldErrorsByInterfaceId,
+                allInterfaceIds,
+                selectedInterfaceIds,
+                toggleSelect,
+                toggleSelectAll,
+                allRowsSelected,
+                someRowsSelected,
             }),
-        [isEditing, drafts, fieldErrorsByInterfaceId],
+        [
+            isEditing,
+            drafts,
+            fieldErrorsByInterfaceId,
+            allInterfaceIds,
+            selectedInterfaceIds,
+            toggleSelect,
+            toggleSelectAll,
+            allRowsSelected,
+            someRowsSelected,
+        ],
     );
 
     const allLeafColumnIds = useMemo(() => {
@@ -976,6 +1118,105 @@ export default function Show() {
                             server value for that column. VLAN and LACP port ID accept numeric input.
                         </p>
                     ) : null}
+                    {isEditing && selectedInterfaceIds.size > 0 ? (
+                        <div className="bg-muted/40 mb-3 flex flex-wrap items-end gap-3 rounded-md border px-3 py-2 text-sm">
+                            <span className="text-muted-foreground self-center text-xs font-medium">
+                                Apply to {selectedInterfaceIds.size} selected
+                            </span>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">Enabled</span>
+                                <Select
+                                    value={bulkEnableChoice}
+                                    onValueChange={(v) => {
+                                        if (v === BULK_BOOL_NOOP) {
+                                            return;
+                                        }
+                                        applyBoolToSelected('enable', v === 'true');
+                                        setBulkEnableChoice(BULK_BOOL_NOOP);
+                                    }}
+                                >
+                                    <SelectTrigger className="h-8 w-[7.5rem] text-xs">
+                                        <SelectValue placeholder="No change" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">
+                                            No change
+                                        </SelectItem>
+                                        <SelectItem value="true">Yes</SelectItem>
+                                        <SelectItem value="false">No</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">Jumbo frames</span>
+                                <Select
+                                    value={bulkJumboChoice}
+                                    onValueChange={(v) => {
+                                        if (v === BULK_BOOL_NOOP) {
+                                            return;
+                                        }
+                                        applyBoolToSelected('jumbo_frames', v === 'true');
+                                        setBulkJumboChoice(BULK_BOOL_NOOP);
+                                    }}
+                                >
+                                    <SelectTrigger className="h-8 w-[7.5rem] text-xs">
+                                        <SelectValue placeholder="No change" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">
+                                            No change
+                                        </SelectItem>
+                                        <SelectItem value="true">Yes</SelectItem>
+                                        <SelectItem value="false">No</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">Routing</span>
+                                <Select
+                                    value={bulkRoutingChoice}
+                                    onValueChange={(v) => {
+                                        if (v === BULK_BOOL_NOOP) {
+                                            return;
+                                        }
+                                        applyBoolToSelected('routing', v === 'true');
+                                        setBulkRoutingChoice(BULK_BOOL_NOOP);
+                                    }}
+                                >
+                                    <SelectTrigger className="h-8 w-[7.5rem] text-xs">
+                                        <SelectValue placeholder="No change" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">
+                                            No change
+                                        </SelectItem>
+                                        <SelectItem value="true">Yes</SelectItem>
+                                        <SelectItem value="false">No</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 flex-1 space-y-1 sm:min-w-[12rem]">
+                                <span className="text-muted-foreground text-xs">Description</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Input
+                                        className="h-8 min-w-[8rem] flex-1 text-sm"
+                                        value={bulkDescriptionText}
+                                        onChange={(e) => setBulkDescriptionText(e.target.value)}
+                                        placeholder="Same for all selected"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-8 shrink-0"
+                                        onClick={applyDescriptionToSelected}
+                                    >
+                                        Apply
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                        </div>
+                    ) : null}
                     {batchUpdateError ? (
                         <div
                             className="border-destructive/30 bg-destructive/10 text-destructive mb-3 rounded-md border px-3 py-2 text-sm"
@@ -988,7 +1229,7 @@ export default function Show() {
                         data={interfaces}
                         columns={interfaceColumns}
                         getRowId={(row) => String(row.id)}
-                        stickyLeftColumnIds={['interface']}
+                        stickyLeftColumnIds={['select', 'interface']}
                         enableColumnPicker
                         columnPickerTitle="Columns"
                         columnVisibility={columnVisibility}
@@ -997,6 +1238,7 @@ export default function Show() {
                             {
                                 label: 'Core',
                                 columnIds: [
+                                    'select',
                                     'id',
                                     'interface',
                                     'description',
