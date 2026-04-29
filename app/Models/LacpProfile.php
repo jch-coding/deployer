@@ -15,7 +15,9 @@ class LacpProfile extends Model
     protected $fillable = [
         'mode',
         'port_id',
-        'timeout'
+        'rate',
+        'port_list',
+        'trunk_type',
     ];
 
     public function deviceInterfaces() : HasMany

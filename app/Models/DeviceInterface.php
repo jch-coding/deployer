@@ -16,6 +16,7 @@ class DeviceInterface extends Model
     protected $fillable = [
         'interface',
         'description',
+        'ip_address',
         'enable',
         'jumbo_frames',
         'routing',
@@ -25,6 +26,7 @@ class DeviceInterface extends Model
         'switch_port_id',
         'stp_profile_id',
         'sw_profile',
+        'portchannel_lag',
     ];
 
     protected $casts = [

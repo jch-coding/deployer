@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\DeviceFunction;
 use App\Helper\CentralAPIHelper;
+use App\Http\Requests\UpdateDeviceInterfacesRequest;
 use App\Http\Resources\LacpProfileResource;
 use App\Http\Resources\StpProfileResource;
 use App\Http\Resources\SwitchPortResource;
@@ -17,6 +18,7 @@ use App\Models\StpProfile;
 use App\Models\SwitchPort;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -283,64 +285,9 @@ class DeviceController extends Controller
      */
     public static function saveInterfaces($interfaces)
     {
-        $has_switchport = false;
-        $has_stp = false;
-        $has_lacp = false;
-
-        // start with the switchport configurations, if any
-        if (count($interfaces['unique_switchports']) > 0) {
-            static::saveSwitchPorts($interfaces['unique_switchports']);
-            $has_switchport = true;
-        }
-
-        if (count($interfaces['unique_stp']) > 0) {
-            static::saveStp($interfaces['unique_stp']);
-            $has_stp = true;
-        }
-
-        if (count($interfaces['unique_lacp']) > 0) {
-            static::saveLacp($interfaces['unique_lacp']);
-            $has_lacp = true;
-        }
-
         $saved_interfaces = 0;
         foreach ($interfaces['devices_grouped_config'] as $device_interfaces) {
             foreach ($device_interfaces as $device_interface) {
-                if ($has_switchport) {
-                    $mode = $device_interface['interface_mode'] ?? 'ACCESS';
-                    if ($mode === 'ACCESS') {
-                        $accessVlan = ($device_interface['access_vlan'] ?? null) === null
-                            ? 1
-                            : (int) $device_interface['access_vlan'];
-                        $switchport = SwitchPort::where('interface_mode', $mode)
-                            ->where('access_vlan', $accessVlan)
-                            ->first();
-                    } else {
-                        $switchport = SwitchPort::where('interface_mode', $mode)
-                            ->where('native_vlan', $nativeVlan)
-                            ->where('trunk_vlan_all', (bool) $device_interface['trunk_vlan_all'] ?? false)
-                            ->where('trunk_vlan_ranges', $device_interface['trunk_vlan_ranges'] ?? null)
-                            ->first();
-                    }
-                }
-
-                if ($has_stp) {
-                    $null_to_false = fn ($v) => $v === null ? false : $v;
-                    $stp_profile = StpProfile::where('admin_edge_port', $null_to_false($device_interface['admin_edge_port'] ?? null))
-                        ->where('admin_edge_port_trunk', $null_to_false($device_interface['admin_edge_port_trunk'] ?? null))
-                        ->where('bpdu_guard', $null_to_false($device_interface['bpdu_guard'] ?? null))
-                        ->where('loop_guard', $null_to_false($device_interface['loop_guard'] ?? null))
-                        ->first();
-                }
-
-                if ($has_lacp) {
-                    $lacp_profile = LacpProfile::where('mode', $device_interface['lacp_mode'] ?? 'ACTIVE')
-                        ->where('trunk_type', $device_interface['trunk_type'] ?? 'LACP')
-                        ->where('port_list', $device_interface['port_list'])
-                        ->where('rate', $device_interface['lacp_rate'] ?? 'SLOW')
-                        ->first();
-                }
-
                 $device = Device::where('serial', $device_interface['serial'])->first();
                 $device_interface_config = [
                     'device_id' => $device->id,
@@ -348,9 +295,9 @@ class DeviceController extends Controller
                     'description' => $device_interface['description'] ?? null,
                     'ip_address' => $device_interface['ip_address'] ?? null,
                     'sw_profile' => $device_interface['port_profile'] ?? null,
-                    'switch_port_id' => $switchport->id ?? null,
-                    'stp_profile_id' => $stp_profile->id ?? null,
-                    'lacp_profile_id' => $lacp_profile->id ?? null,
+                    'switch_port_id' => static::resolveSwitchPortId($device_interface),
+                    'stp_profile_id' => static::resolveStpProfileId($device_interface),
+                    'lacp_profile_id' => static::resolveLacpProfileId($device_interface),
                 ];
 
                 DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address']);
@@ -359,6 +306,93 @@ class DeviceController extends Controller
         }
 
         return $saved_interfaces;
+    }
+
+    protected static function normalizeSwitchPortAttributes(array $interfaceData): ?array
+    {
+        if (! array_key_exists('interface_mode', $interfaceData) || $interfaceData['interface_mode'] === null) {
+            return null;
+        }
+
+        $mode = $interfaceData['interface_mode'] ?? 'ACCESS';
+        if ($mode === 'TRUNK') {
+            return [
+                'interface_mode' => 'TRUNK',
+                'access_vlan' => null,
+                'native_vlan' => (int) ($interfaceData['native_vlan'] ?? 1),
+                'trunk_vlan_all' => (bool) ($interfaceData['trunk_vlan_all'] ?? false),
+                'trunk_vlan_ranges' => $interfaceData['trunk_vlan_ranges'] ?? null,
+            ];
+        }
+
+        return [
+            'interface_mode' => 'ACCESS',
+            'access_vlan' => (int) ($interfaceData['access_vlan'] ?? 1),
+            'native_vlan' => null,
+            'trunk_vlan_all' => null,
+            'trunk_vlan_ranges' => null,
+        ];
+    }
+
+    protected static function normalizeStpAttributes(array $interfaceData): ?array
+    {
+        $stp_keys = ['admin_edge_port', 'admin_edge_port_trunk', 'bpdu_guard', 'loop_guard'];
+        if (! array_any($interfaceData, fn ($v, $k) => in_array($k, $stp_keys, true))) {
+            return null;
+        }
+
+        return [
+            'admin_edge_port' => (bool) ($interfaceData['admin_edge_port'] ?? false),
+            'admin_edge_port_trunk' => (bool) ($interfaceData['admin_edge_port_trunk'] ?? false),
+            'bpdu_guard' => (bool) ($interfaceData['bpdu_guard'] ?? false),
+            'loop_guard' => (bool) ($interfaceData['loop_guard'] ?? false),
+        ];
+    }
+
+    protected static function normalizeLacpAttributes(array $interfaceData): ?array
+    {
+        $lacpPortList = $interfaceData['port_list'] ?? null;
+        if ($lacpPortList === null || $lacpPortList === '') {
+            return null;
+        }
+
+        return [
+            'mode' => $interfaceData['lacp_mode'] ?? 'ACTIVE',
+            'trunk_type' => $interfaceData['trunk_type'] ?? 'LACP',
+            'port_list' => $lacpPortList,
+            'rate' => $interfaceData['lacp_rate'] ?? 'SLOW',
+            'port_id' => $interfaceData['lacp_port_id'] ?? null,
+        ];
+    }
+
+    protected static function resolveSwitchPortId(array $interfaceData): ?int
+    {
+        $switchPortAttributes = static::normalizeSwitchPortAttributes($interfaceData);
+        if ($switchPortAttributes === null) {
+            return null;
+        }
+
+        return SwitchPort::firstOrCreate($switchPortAttributes)->id;
+    }
+
+    protected static function resolveStpProfileId(array $interfaceData): ?int
+    {
+        $stpAttributes = static::normalizeStpAttributes($interfaceData);
+        if ($stpAttributes === null) {
+            return null;
+        }
+
+        return StpProfile::firstOrCreate($stpAttributes)->id;
+    }
+
+    protected static function resolveLacpProfileId(array $interfaceData): ?int
+    {
+        $lacpAttributes = static::normalizeLacpAttributes($interfaceData);
+        if ($lacpAttributes === null) {
+            return null;
+        }
+
+        return LacpProfile::firstOrCreate($lacpAttributes)->id;
     }
 
     /**
@@ -502,6 +536,145 @@ class DeviceController extends Controller
             ],
             'interfaces' => $interfaces,
         ]);
+    }
+
+    public function updateInterfaces(UpdateDeviceInterfacesRequest $request, Device $device)
+    {
+        if ($request->user()->currentClient()->id !== $device->client_id) {
+            abort(403);
+        }
+
+        $updates = $request->validated('updates', []);
+        if (count($updates) === 0) {
+            return back()->with('success', 'No interface updates to apply.');
+        }
+
+        $ids = collect($updates)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $interfaces = DeviceInterface::query()
+            ->where('device_id', $device->id)
+            ->whereIn('id', $ids)
+            ->with(['switch_port', 'lacp_profile', 'stp_profile'])
+            ->get()
+            ->keyBy('id');
+
+        if ($interfaces->count() !== count($ids)) {
+            throw ValidationException::withMessages([
+                'updates' => 'One or more interfaces do not belong to the selected device.',
+            ]);
+        }
+
+        DB::transaction(function () use ($updates, $interfaces): void {
+            foreach ($updates as $index => $update) {
+                /** @var DeviceInterface $interface */
+                $interface = $interfaces->get((int) $update['id']);
+                $resolved = $this->resolveInterfaceUpdateData($interface, $update, $index);
+
+                $interface->description = $resolved['description'];
+                $interface->ip_address = $resolved['ip_address'];
+                $interface->enable = $resolved['enable'];
+                $interface->jumbo_frames = $resolved['jumbo_frames'];
+                $interface->routing = $resolved['routing'];
+                $interface->vrf_forwarding = $resolved['vrf_forwarding'];
+                $interface->sw_profile = $resolved['sw_profile'];
+                $interface->portchannel_lag = $resolved['portchannel_lag'];
+                $interface->switch_port_id = $resolved['switch_port_id'];
+                $interface->lacp_profile_id = $resolved['lacp_profile_id'];
+                $interface->stp_profile_id = $resolved['stp_profile_id'];
+                $interface->save();
+            }
+        });
+
+        return back()->with('success', 'Interface updates saved successfully.');
+    }
+
+    protected function resolveInterfaceUpdateData(DeviceInterface $interface, array $update, int $index): array
+    {
+        $mode = $update['interface_mode'] ?? $interface->switch_port?->interface_mode;
+        $switchPortData = null;
+
+        if ($mode !== null) {
+            if ($mode === 'ACCESS') {
+                $accessVlan = $update['access_vlan'] ?? $interface->switch_port?->access_vlan;
+                if ($accessVlan === null) {
+                    throw ValidationException::withMessages([
+                        "updates.{$index}.access_vlan" => 'access_vlan is required when interface_mode is ACCESS.',
+                    ]);
+                }
+
+                $switchPortData = [
+                    'interface_mode' => 'ACCESS',
+                    'access_vlan' => (int) $accessVlan,
+                ];
+            } else {
+                $nativeVlan = $update['native_vlan'] ?? $interface->switch_port?->native_vlan;
+                if ($nativeVlan === null) {
+                    throw ValidationException::withMessages([
+                        "updates.{$index}.native_vlan" => 'native_vlan is required when interface_mode is TRUNK.',
+                    ]);
+                }
+
+                $switchPortData = [
+                    'interface_mode' => 'TRUNK',
+                    'native_vlan' => (int) $nativeVlan,
+                    'trunk_vlan_all' => (bool) ($update['trunk_vlan_all'] ?? $interface->switch_port?->trunk_vlan_all ?? false),
+                    'trunk_vlan_ranges' => $update['trunk_vlan_ranges'] ?? $interface->switch_port?->trunk_vlan_ranges,
+                ];
+            }
+        }
+
+        $lacpInput = $update['lacp_port_list'] ?? $interface->lacp_profile?->port_list ?? [];
+        $lacpPortList = $this->normalizeLacpPortList($lacpInput);
+        if (count($lacpPortList) === 0) {
+            $lacpData = null;
+        } else {
+            $lacpData = [
+                'port_list' => implode('&', $lacpPortList),
+                'lacp_mode' => $update['lacp_mode'] ?? $interface->lacp_profile?->mode ?? 'ACTIVE',
+                'lacp_rate' => $update['lacp_rate'] ?? $interface->lacp_profile?->rate ?? 'SLOW',
+                'trunk_type' => $update['trunk_type'] ?? $interface->lacp_profile?->trunk_type ?? 'LACP',
+                'lacp_port_id' => $update['lacp_port_id'] ?? $interface->lacp_profile?->port_id,
+            ];
+        }
+
+        $stpKeys = ['admin_edge_port', 'admin_edge_port_trunk', 'bpdu_guard', 'loop_guard'];
+        $hasStpInput = array_any($stpKeys, fn ($key) => array_key_exists($key, $update));
+        $stpData = null;
+        if ($hasStpInput || $interface->stp_profile_id !== null) {
+            $stpData = [
+                'admin_edge_port' => $update['admin_edge_port'] ?? $interface->stp_profile?->admin_edge_port ?? false,
+                'admin_edge_port_trunk' => $update['admin_edge_port_trunk'] ?? $interface->stp_profile?->admin_edge_port_trunk ?? false,
+                'bpdu_guard' => $update['bpdu_guard'] ?? $interface->stp_profile?->bpdu_guard ?? false,
+                'loop_guard' => $update['loop_guard'] ?? $interface->stp_profile?->loop_guard ?? false,
+            ];
+        }
+
+        return [
+            'description' => array_key_exists('description', $update) ? $update['description'] : $interface->description,
+            'ip_address' => array_key_exists('ip_address', $update) ? $update['ip_address'] : $interface->ip_address,
+            'enable' => array_key_exists('enable', $update) ? (bool) $update['enable'] : (bool) $interface->enable,
+            'jumbo_frames' => array_key_exists('jumbo_frames', $update) ? (bool) $update['jumbo_frames'] : (bool) $interface->jumbo_frames,
+            'routing' => array_key_exists('routing', $update) ? (bool) $update['routing'] : (bool) $interface->routing,
+            'vrf_forwarding' => array_key_exists('vrf_forwarding', $update) ? $update['vrf_forwarding'] : $interface->vrf_forwarding,
+            'sw_profile' => array_key_exists('sw_profile', $update) ? $update['sw_profile'] : $interface->sw_profile,
+            'portchannel_lag' => array_key_exists('portchannel_lag', $update) ? $update['portchannel_lag'] : $interface->portchannel_lag,
+            'switch_port_id' => $switchPortData ? static::resolveSwitchPortId($switchPortData) : $interface->switch_port_id,
+            'lacp_profile_id' => $lacpData ? static::resolveLacpProfileId($lacpData) : null,
+            'stp_profile_id' => $stpData ? static::resolveStpProfileId($stpData) : null,
+        ];
+    }
+
+    protected function normalizeLacpPortList(array|string|null $portList): array
+    {
+        if ($portList === null) {
+            return [];
+        }
+
+        $parts = is_array($portList) ? $portList : explode('&', $portList);
+
+        return array_values(array_filter(array_map(
+            static fn ($part) => trim((string) $part),
+            $parts
+        )));
     }
 
     /**
