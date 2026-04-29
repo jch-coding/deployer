@@ -1516,7 +1516,7 @@ export default function Show() {
                         data={interfaces}
                         columns={interfaceColumns}
                         getRowId={(row) => String(row.id)}
-                        stickyLeftColumnIds={isEditing ? ['select', 'interface'] : ['interface']}
+                        stickyLeftColumnIds={isEditing ? ['select', 'id', 'interface'] : ['interface']}
                         enableColumnPicker
                         columnPickerTitle="Columns"
                         columnVisibility={columnVisibility}
