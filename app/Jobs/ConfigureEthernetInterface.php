@@ -34,6 +34,37 @@ class ConfigureEthernetInterface extends BaseTaskJob
                 $device->save();
             }
             $statusLog = $this->task->status_log;
+            // checks current interface configuration for any associated port profiles
+            $get_response = $this->centralAPIHelper->get_ethernet_interface($this->deviceInterface);
+            if (! $get_response->ok()) {
+                $message = '\nFailed to retrieve ethernet interface: '.$this->deviceInterface->interface.' Trying to patch anyways. This will fail if a port profile is already associated.';
+                $this->task->processTaskStatusLog($message, true);
+                Log::info($message);
+            } else {
+                // if sw-profile exists, there is a port-profile associated
+                if (array_key_exists('sw-profile', $get_response->json())) {
+                    $message = '\nEthernet interface '.$this->deviceInterface->interface.' on device '.$device->name.' has a port profile associated. Removing port profile before patching interface.';
+                    $this->task->processTaskStatusLog($message);
+                    Log::info($message);
+
+                    $patch_body = [
+                        'sw-profile' => null,
+                    ];
+                    $interface_response = $this->centralAPIHelper->patch_ethernet_interface($this->deviceInterface, $patch_body);
+                    if (! $interface_response->ok()) {
+                        $message = '\nFailed to remove port profile from ethernet interface: '.$this->deviceInterface->interface.' on device '.$device->name.' with message:'.$interface_response->json()['message'].' Aborting configuration pus for interface.';
+                        $this->task->processTaskStatusLog($message, true);
+                        Log::error($message);
+                        $this->fail();
+
+                        return;
+                    } else {
+                        $message = "\nPort profile ".$get_response->json()['sw-profile'].' removed from ethernet interface: '.$this->deviceInterface->interface.' on device '.$device->name;
+                        $this->task->processTaskStatusLog($message);
+                        Log::info($message);
+                    }
+                }
+            }
             $interface_response = $this->centralAPIHelper->patch_ethernet_interface($this->deviceInterface);
             if (! $interface_response->ok()) {
                 $message = 'Failed to patch ethernet interface: '.$this->deviceInterface->interface.' ondevice '.$device->name.' with message:'.$interface_response->json()['message'];

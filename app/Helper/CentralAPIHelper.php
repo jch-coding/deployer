@@ -396,9 +396,13 @@ class CentralAPIHelper
         return array_filter($switchport_rest_body, fn ($value) => $value !== []);
     }
 
-    public function patch_ethernet_interface(DeviceInterface $deviceInterface)
+    public function patch_ethernet_interface(DeviceInterface $deviceInterface, array $patch_body = [])
     {
-        $interface_rest_body = static::build_switchport_from_device_interface($deviceInterface);
+        if (empty($patch_body)) {
+            $interface_rest_body = static::build_switchport_from_device_interface($deviceInterface);
+        } else {
+            $interface_rest_body = $patch_body;
+        }
 
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
@@ -416,7 +420,7 @@ class CentralAPIHelper
         }
     }
 
-    public function get_ethernet_interface(Device $device, DeviceInterface $deviceInterface)
+    public function get_ethernet_interface(DeviceInterface $deviceInterface)
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
@@ -425,8 +429,8 @@ class CentralAPIHelper
                 ->withQueryParameters([
                     'view-type' => 'LOCAL',
                     'object-type' => 'LOCAL',
-                    'scope-id' => $device->scope_id,
-                    'device-function' => $device->device_function,
+                    'scope-id' => $deviceInterface->device->scope_id,
+                    'device-function' => $deviceInterface->device->device_function,
                 ])->get($this->client->base_url.$this->interfaces['interface_ethernet'].$deviceInterface->interface);
 
             return $response;
