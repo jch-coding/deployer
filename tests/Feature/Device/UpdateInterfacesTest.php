@@ -143,6 +143,7 @@ it('reuses existing profiles instead of creating duplicates', function () {
         'rate' => 'SLOW',
         'trunk_type' => 'LACP',
         'port_list' => '1/1/1&1/1/2',
+        'port_id' => null,
     ]);
     $stp = StpProfile::factory()->create([
         'admin_edge_port' => false,
