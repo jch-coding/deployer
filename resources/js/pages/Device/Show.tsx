@@ -741,6 +741,7 @@ type DeviceShowProps = {
 } & SharedData;
 
 const BULK_BOOL_NOOP = '__noop__' as const;
+const BULK_ENUM_NOOP = '__noop__' as const;
 
 export default function Show() {
     const { device, deployment, current_client, interfaces, errors } =
@@ -751,9 +752,27 @@ export default function Show() {
     const [isSaving, setIsSaving] = useState(false);
     const [dismissedFieldErrors, setDismissedFieldErrors] = useState(() => new Set<string>());
     const [bulkDescriptionText, setBulkDescriptionText] = useState('');
+    const [bulkIpAddressText, setBulkIpAddressText] = useState('');
+    const [bulkVrfForwardingText, setBulkVrfForwardingText] = useState('');
+    const [bulkSwProfileText, setBulkSwProfileText] = useState('');
+    const [bulkPortchannelLagText, setBulkPortchannelLagText] = useState('');
+    const [bulkAccessVlanText, setBulkAccessVlanText] = useState('');
+    const [bulkNativeVlanText, setBulkNativeVlanText] = useState('');
+    const [bulkTrunkVlanRangesText, setBulkTrunkVlanRangesText] = useState('');
+    const [bulkLacpPortIdText, setBulkLacpPortIdText] = useState('');
+    const [bulkLacpPortListText, setBulkLacpPortListText] = useState('');
     const [bulkEnableChoice, setBulkEnableChoice] = useState<string>(BULK_BOOL_NOOP);
     const [bulkJumboChoice, setBulkJumboChoice] = useState<string>(BULK_BOOL_NOOP);
     const [bulkRoutingChoice, setBulkRoutingChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkTrunkAllChoice, setBulkTrunkAllChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkAdminEdgeChoice, setBulkAdminEdgeChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkAdminEdgeTrunkChoice, setBulkAdminEdgeTrunkChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkBpduGuardChoice, setBulkBpduGuardChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkLoopGuardChoice, setBulkLoopGuardChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkInterfaceModeChoice, setBulkInterfaceModeChoice] = useState<string>(BULK_ENUM_NOOP);
+    const [bulkLacpModeChoice, setBulkLacpModeChoice] = useState<string>(BULK_ENUM_NOOP);
+    const [bulkLacpRateChoice, setBulkLacpRateChoice] = useState<string>(BULK_ENUM_NOOP);
+    const [bulkLacpTrunkTypeChoice, setBulkLacpTrunkTypeChoice] = useState<string>(BULK_ENUM_NOOP);
 
     const allInterfaceIds = useMemo(() => interfaces.map((r) => r.id), [interfaces]);
 
@@ -767,9 +786,27 @@ export default function Show() {
         if (!isEditing) {
             setSelectedInterfaceIds(new Set());
             setBulkDescriptionText('');
+            setBulkIpAddressText('');
+            setBulkVrfForwardingText('');
+            setBulkSwProfileText('');
+            setBulkPortchannelLagText('');
+            setBulkAccessVlanText('');
+            setBulkNativeVlanText('');
+            setBulkTrunkVlanRangesText('');
+            setBulkLacpPortIdText('');
+            setBulkLacpPortListText('');
             setBulkEnableChoice(BULK_BOOL_NOOP);
             setBulkJumboChoice(BULK_BOOL_NOOP);
             setBulkRoutingChoice(BULK_BOOL_NOOP);
+            setBulkTrunkAllChoice(BULK_BOOL_NOOP);
+            setBulkAdminEdgeChoice(BULK_BOOL_NOOP);
+            setBulkAdminEdgeTrunkChoice(BULK_BOOL_NOOP);
+            setBulkBpduGuardChoice(BULK_BOOL_NOOP);
+            setBulkLoopGuardChoice(BULK_BOOL_NOOP);
+            setBulkInterfaceModeChoice(BULK_ENUM_NOOP);
+            setBulkLacpModeChoice(BULK_ENUM_NOOP);
+            setBulkLacpRateChoice(BULK_ENUM_NOOP);
+            setBulkLacpTrunkTypeChoice(BULK_ENUM_NOOP);
         }
     }, [isEditing]);
 
@@ -877,6 +914,32 @@ export default function Show() {
         });
     };
 
+    const applyFieldToSelected = (key: keyof InterfaceDraftRow, value: unknown) => {
+        for (const id of selectedInterfaceIds) {
+            dismissFieldErrorForCell(id, key);
+        }
+        setDrafts((current) => {
+            const next = { ...current };
+            for (const id of selectedInterfaceIds) {
+                next[id] = { ...next[id], [key]: value };
+            }
+            return next;
+        });
+    };
+
+    const clearFieldForSelected = (key: keyof InterfaceDraftRow) => {
+        for (const id of selectedInterfaceIds) {
+            dismissFieldErrorForCell(id, key);
+        }
+        setDrafts((current) => {
+            const next = { ...current };
+            for (const id of selectedInterfaceIds) {
+                next[id] = { ...next[id], [key]: null };
+            }
+            return next;
+        });
+    };
+
     const applyDescriptionToSelected = () => {
         for (const id of selectedInterfaceIds) {
             dismissFieldErrorForCell(id, 'description');
@@ -888,6 +951,16 @@ export default function Show() {
             }
             return next;
         });
+    };
+
+    const applyInterfaceModeToSelected = (mode: string) => {
+        if (mode === 'ACCESS' && bulkAccessVlanText.trim() === '') {
+            return;
+        }
+        if (mode === 'TRUNK' && bulkNativeVlanText.trim() === '') {
+            return;
+        }
+        applyFieldToSelected('interface_mode', mode);
     };
 
     const pendingUpdates = useMemo(() => {
@@ -1236,7 +1309,269 @@ export default function Show() {
                                     >
                                         Apply
                                     </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 shrink-0"
+                                        onClick={() => clearFieldForSelected('description')}
+                                    >
+                                        Clear
+                                    </Button>
                                 </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 flex-1 space-y-1 sm:min-w-[12rem]">
+                                <span className="text-muted-foreground text-xs">IP address</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Input
+                                        className="h-8 min-w-[8rem] flex-1 text-sm"
+                                        value={bulkIpAddressText}
+                                        onChange={(e) => setBulkIpAddressText(e.target.value)}
+                                        placeholder="e.g. 192.0.2.10/24"
+                                    />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" onClick={() => applyFieldToSelected('ip_address', bulkIpAddressText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0" onClick={() => clearFieldForSelected('ip_address')}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">Port mode</span>
+                                <Select
+                                    value={bulkInterfaceModeChoice}
+                                    onValueChange={(v) => {
+                                        if (v === BULK_ENUM_NOOP) {
+                                            return;
+                                        }
+                                        applyInterfaceModeToSelected(v);
+                                        setBulkInterfaceModeChoice(BULK_ENUM_NOOP);
+                                    }}
+                                >
+                                    <SelectTrigger className="h-8 w-[9rem] text-xs">
+                                        <SelectValue placeholder="No change" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_ENUM_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        {INTERFACE_MODES.map((opt) => (
+                                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">Access VLAN</span>
+                                <div className="flex items-center gap-2">
+                                    <Input className="h-8 w-[7rem] text-sm" type="number" min={1} max={4094} value={bulkAccessVlanText} onChange={(e) => setBulkAccessVlanText(e.target.value)} />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8" onClick={() => applyFieldToSelected('access_vlan', bulkAccessVlanText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => clearFieldForSelected('access_vlan')}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">Native VLAN</span>
+                                <div className="flex items-center gap-2">
+                                    <Input className="h-8 w-[7rem] text-sm" type="number" min={1} max={4094} value={bulkNativeVlanText} onChange={(e) => setBulkNativeVlanText(e.target.value)} />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8" onClick={() => applyFieldToSelected('native_vlan', bulkNativeVlanText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => clearFieldForSelected('native_vlan')}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">Trunk all VLANs</span>
+                                <Select value={bulkTrunkAllChoice} onValueChange={(v) => {
+                                    if (v === BULK_BOOL_NOOP) return;
+                                    applyFieldToSelected('trunk_vlan_all', v === 'true');
+                                    setBulkTrunkAllChoice(BULK_BOOL_NOOP);
+                                }}>
+                                    <SelectTrigger className="h-8 w-[7.5rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        <SelectItem value="true">Yes</SelectItem>
+                                        <SelectItem value="false">No</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 flex-1 space-y-1 sm:min-w-[12rem]">
+                                <span className="text-muted-foreground text-xs">Trunk VLAN ranges</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Input className="h-8 min-w-[8rem] flex-1 text-sm" value={bulkTrunkVlanRangesText} onChange={(e) => setBulkTrunkVlanRangesText(e.target.value)} placeholder="e.g. 10,20,30-40" />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" onClick={() => applyFieldToSelected('trunk_vlan_ranges', bulkTrunkVlanRangesText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0" onClick={() => clearFieldForSelected('trunk_vlan_ranges')}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 flex-1 space-y-1 sm:min-w-[10rem]">
+                                <span className="text-muted-foreground text-xs">VRF forwarding</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Input className="h-8 min-w-[7rem] flex-1 text-sm" value={bulkVrfForwardingText} onChange={(e) => setBulkVrfForwardingText(e.target.value)} />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" onClick={() => applyFieldToSelected('vrf_forwarding', bulkVrfForwardingText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0" onClick={() => applyFieldToSelected('vrf_forwarding', 'default')}>
+                                        Reset
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 flex-1 space-y-1 sm:min-w-[10rem]">
+                                <span className="text-muted-foreground text-xs">Port profile</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Input className="h-8 min-w-[7rem] flex-1 text-sm" value={bulkSwProfileText} onChange={(e) => setBulkSwProfileText(e.target.value)} />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" onClick={() => applyFieldToSelected('sw_profile', bulkSwProfileText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0" onClick={() => clearFieldForSelected('sw_profile')}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 flex-1 space-y-1 sm:min-w-[10rem]">
+                                <span className="text-muted-foreground text-xs">Portchannel/LAG</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Input className="h-8 min-w-[7rem] flex-1 text-sm" value={bulkPortchannelLagText} onChange={(e) => setBulkPortchannelLagText(e.target.value)} />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" onClick={() => applyFieldToSelected('portchannel_lag', bulkPortchannelLagText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0" onClick={() => clearFieldForSelected('portchannel_lag')}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">LACP mode</span>
+                                <Select value={bulkLacpModeChoice} onValueChange={(v) => {
+                                    if (v === BULK_ENUM_NOOP) return;
+                                    applyFieldToSelected('lacp_mode', v);
+                                    setBulkLacpModeChoice(BULK_ENUM_NOOP);
+                                }}>
+                                    <SelectTrigger className="h-8 w-[8rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_ENUM_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        {LACP_MODES.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">LACP rate</span>
+                                <Select value={bulkLacpRateChoice} onValueChange={(v) => {
+                                    if (v === BULK_ENUM_NOOP) return;
+                                    applyFieldToSelected('lacp_rate', v);
+                                    setBulkLacpRateChoice(BULK_ENUM_NOOP);
+                                }}>
+                                    <SelectTrigger className="h-8 w-[8rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_ENUM_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        {LACP_RATES.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">LACP trunk type</span>
+                                <Select value={bulkLacpTrunkTypeChoice} onValueChange={(v) => {
+                                    if (v === BULK_ENUM_NOOP) return;
+                                    applyFieldToSelected('trunk_type', v);
+                                    setBulkLacpTrunkTypeChoice(BULK_ENUM_NOOP);
+                                }}>
+                                    <SelectTrigger className="h-8 w-[10rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_ENUM_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        {LACP_TRUNK_TYPES.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">LACP port ID</span>
+                                <div className="flex items-center gap-2">
+                                    <Input className="h-8 w-[7rem] text-sm" type="number" min={1} value={bulkLacpPortIdText} onChange={(e) => setBulkLacpPortIdText(e.target.value)} />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8" onClick={() => applyFieldToSelected('lacp_port_id', bulkLacpPortIdText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => clearFieldForSelected('lacp_port_id')}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 flex-1 space-y-1 sm:min-w-[12rem]">
+                                <span className="text-muted-foreground text-xs">LACP port list</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Input className="h-8 min-w-[8rem] flex-1 text-sm" value={bulkLacpPortListText} onChange={(e) => setBulkLacpPortListText(e.target.value)} placeholder="e.g. 1/1/1, 1/1/2" />
+                                    <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" onClick={() => applyFieldToSelected('lacp_port_list', bulkLacpPortListText)}>
+                                        Apply
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0" onClick={() => applyFieldToSelected('lacp_port_list', '')}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">STP admin edge</span>
+                                <Select value={bulkAdminEdgeChoice} onValueChange={(v) => {
+                                    if (v === BULK_BOOL_NOOP) return;
+                                    applyFieldToSelected('admin_edge_port', v === 'true');
+                                    setBulkAdminEdgeChoice(BULK_BOOL_NOOP);
+                                }}>
+                                    <SelectTrigger className="h-8 w-[8rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        <SelectItem value="true">Yes</SelectItem>
+                                        <SelectItem value="false">No</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">STP edge trunk</span>
+                                <Select value={bulkAdminEdgeTrunkChoice} onValueChange={(v) => {
+                                    if (v === BULK_BOOL_NOOP) return;
+                                    applyFieldToSelected('admin_edge_port_trunk', v === 'true');
+                                    setBulkAdminEdgeTrunkChoice(BULK_BOOL_NOOP);
+                                }}>
+                                    <SelectTrigger className="h-8 w-[8rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        <SelectItem value="true">Yes</SelectItem>
+                                        <SelectItem value="false">No</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">STP BPDU guard</span>
+                                <Select value={bulkBpduGuardChoice} onValueChange={(v) => {
+                                    if (v === BULK_BOOL_NOOP) return;
+                                    applyFieldToSelected('bpdu_guard', v === 'true');
+                                    setBulkBpduGuardChoice(BULK_BOOL_NOOP);
+                                }}>
+                                    <SelectTrigger className="h-8 w-[8rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        <SelectItem value="true">Yes</SelectItem>
+                                        <SelectItem value="false">No</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FieldWrap>
+                            <FieldWrap className="min-w-0 space-y-1">
+                                <span className="text-muted-foreground text-xs">STP loop guard</span>
+                                <Select value={bulkLoopGuardChoice} onValueChange={(v) => {
+                                    if (v === BULK_BOOL_NOOP) return;
+                                    applyFieldToSelected('loop_guard', v === 'true');
+                                    setBulkLoopGuardChoice(BULK_BOOL_NOOP);
+                                }}>
+                                    <SelectTrigger className="h-8 w-[8rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                        <SelectItem value="true">Yes</SelectItem>
+                                        <SelectItem value="false">No</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </FieldWrap>
                         </div>
                     ) : null}

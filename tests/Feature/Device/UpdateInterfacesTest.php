@@ -176,3 +176,103 @@ it('reuses existing profiles instead of creating duplicates', function () {
         ->and($interface->lacp_profile_id)->toBe($lacp->id)
         ->and($interface->stp_profile_id)->toBe($stp->id);
 });
+
+it('updates multiple interfaces with all supported payload columns', function () {
+    $user = makeCurrentClientUser();
+    $client = $user->currentClient();
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $device = Device::factory()->create([
+        'client_id' => $client->id,
+        'user_id' => $user->id,
+        'deployment_id' => $deployment->id,
+    ]);
+    $first = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'description' => 'Before first',
+    ]);
+    $second = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'description' => 'Before second',
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('devices.interfaces.update', $device), [
+            'updates' => [
+                [
+                    'id' => $first->id,
+                    'description' => 'Bulk A',
+                    'ip_address' => '10.10.10.1/24',
+                    'enable' => true,
+                    'jumbo_frames' => true,
+                    'routing' => true,
+                    'vrf_forwarding' => 'default',
+                    'sw_profile' => 'core-profile',
+                    'portchannel_lag' => 'lag-10',
+                    'interface_mode' => 'TRUNK',
+                    'native_vlan' => 100,
+                    'trunk_vlan_all' => false,
+                    'trunk_vlan_ranges' => '100,200-220',
+                    'lacp_mode' => 'ACTIVE',
+                    'lacp_port_id' => 10,
+                    'lacp_rate' => 'FAST',
+                    'trunk_type' => 'LACP',
+                    'lacp_port_list' => ['1/1/1', '1/1/2'],
+                    'admin_edge_port' => false,
+                    'admin_edge_port_trunk' => true,
+                    'bpdu_guard' => true,
+                    'loop_guard' => false,
+                ],
+                [
+                    'id' => $second->id,
+                    'description' => 'Bulk B',
+                    'ip_address' => null,
+                    'enable' => false,
+                    'jumbo_frames' => false,
+                    'routing' => false,
+                    'vrf_forwarding' => 'default',
+                    'sw_profile' => 'edge-profile',
+                    'portchannel_lag' => null,
+                    'interface_mode' => 'ACCESS',
+                    'access_vlan' => 20,
+                    'trunk_vlan_all' => false,
+                    'trunk_vlan_ranges' => null,
+                    'lacp_mode' => 'PASSIVE',
+                    'lacp_port_id' => null,
+                    'lacp_rate' => 'SLOW',
+                    'trunk_type' => 'TRUNK',
+                    'lacp_port_list' => ['1/1/10'],
+                    'admin_edge_port' => true,
+                    'admin_edge_port_trunk' => false,
+                    'bpdu_guard' => false,
+                    'loop_guard' => true,
+                ],
+            ],
+        ])
+        ->assertStatus(302)
+        ->assertSessionHas('success', 'Interface updates saved successfully.')
+        ->assertSessionHasNoErrors();
+
+    $first->refresh();
+    $second->refresh();
+
+    expect($first->description)->toBe('Bulk A')
+        ->and($first->ip_address)->toBe('10.10.10.1/24')
+        ->and($first->enable)->toBeTrue()
+        ->and($first->jumbo_frames)->toBeTrue()
+        ->and($first->routing)->toBeTrue()
+        ->and($first->vrf_forwarding)->toBe('default')
+        ->and($first->sw_profile)->toBe('core-profile')
+        ->and($first->portchannel_lag)->toBe('lag-10')
+        ->and($first->switch_port_id)->not->toBeNull()
+        ->and($first->lacp_profile_id)->not->toBeNull()
+        ->and($first->stp_profile_id)->not->toBeNull();
+
+    expect($second->description)->toBe('Bulk B')
+        ->and($second->enable)->toBeFalse()
+        ->and($second->jumbo_frames)->toBeFalse()
+        ->and($second->routing)->toBeFalse()
+        ->and($second->sw_profile)->toBe('edge-profile')
+        ->and($second->switch_port_id)->not->toBeNull()
+        ->and($second->lacp_profile_id)->not->toBeNull()
+        ->and($second->stp_profile_id)->not->toBeNull();
+});
