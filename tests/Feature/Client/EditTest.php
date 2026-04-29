@@ -108,15 +108,17 @@ test('only one client can be set as current for a user', function () {
    $user = User::factory()
                ->has(Client::factory(2)->state(['current' => false]))
                ->create();
+   $firstClient = $user->clients->first();
+   $lastClient = $user->clients->last();
    $this->actingAs($user);
-   $this->put(route('clients.current', $user->clients->first()));
+   $this->put(route('clients.current', $firstClient));
    $current_client = $user->refresh()->currentClient();
 
-   expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe(1);
+   expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe($firstClient->id);
    expect($user->clients->where('current', true))->toHaveCount(1);
-   $this->put(route('clients.current', $user->clients->last()));
+   $this->put(route('clients.current', $lastClient));
    $current_client = $user->refresh()->currentClient();
-   expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe(2);
+   expect($current_client)->toBeInstanceOf(Client::class)->and($current_client->id)->toBe($lastClient->id);
    expect($user->clients->where('current', true))->toHaveCount(1);
 });
 
