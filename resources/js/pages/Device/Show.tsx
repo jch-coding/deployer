@@ -410,7 +410,7 @@ function createInterfaceColumns({
               enableHiding: false,
               header: () =>
                   allInterfaceIds.length > 0 ? (
-                      <div className="flex justify-center px-1">
+                      <div className="flex w-14 min-w-14 justify-center px-1">
                           <Checkbox
                               checked={
                                   allRowsSelected
@@ -425,7 +425,7 @@ function createInterfaceColumns({
                       </div>
                   ) : null,
               cell: ({ row }) => (
-                  <div className="flex justify-center px-1">
+                  <div className="flex w-14 min-w-14 justify-center px-1">
                       <Checkbox
                           checked={selectedInterfaceIds.has(row.original.id)}
                           aria-label={`Select ${row.original.interface}`}
@@ -1516,7 +1516,7 @@ export default function Show() {
                         data={interfaces}
                         columns={interfaceColumns}
                         getRowId={(row) => String(row.id)}
-                        stickyLeftColumnIds={isEditing ? ['select', 'id', 'interface'] : ['interface']}
+                        stickyLeftColumnIds={isEditing ? ['select', 'interface'] : ['interface']}
                         enableColumnPicker
                         columnPickerTitle="Columns"
                         columnVisibility={columnVisibility}
