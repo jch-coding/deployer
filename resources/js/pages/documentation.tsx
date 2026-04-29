@@ -100,6 +100,166 @@ function DocCard({
     );
 }
 
+type CsvColumnDetail = {
+    column: string;
+    type: string;
+    accepted: ReactNode;
+};
+
+const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
+    {
+        column: 'name',
+        type: 'string',
+        accepted: 'Device name (example: ACC-SWITCH-1).',
+    },
+    {
+        column: 'serial',
+        type: 'string',
+        accepted: 'Device serial number.',
+    },
+    {
+        column: 'device_function',
+        type: 'enum',
+        accepted:
+            'CAMPUS_AP, CORE_SWITCH, AGG_SWITCH, BRANCH_GW, MOBILITY_GW, VPNC, MICROBRANCH_AP, ACCESS_SWITCH, AOSS_ACCESS_SWITCH, AOSS_CORE_SWITCH, AOSS_AGG_SWITCH, ALL.',
+    },
+    {
+        column: 'interface',
+        type: 'string (single value or range expression)',
+        accepted: (
+            <>
+                Single interface, or interface ranges separated by <code>&amp;</code>. Examples:{' '}
+                <code>1/1/1</code>, <code>1/1/1-1/1/48</code>, <code>1/1/1&amp;1/1/6-1/1/48</code>.
+            </>
+        ),
+    },
+    {
+        column: 'port_list',
+        type: 'string (range expression)',
+        accepted: (
+            <>
+                LAG member ports. Uses the same range syntax as <code>interface</code>. Examples:{' '}
+                <code>1/1/1-1/1/3</code>, <code>1/1/51&amp;2/1/51</code>.
+            </>
+        ),
+    },
+    {
+        column: 'trunk_vlan_ranges',
+        type: 'string (range expression)',
+        accepted: (
+            <>
+                VLAN ranges separated by <code>&amp;</code>. Examples: <code>10-20</code>,{' '}
+                <code>10-20&amp;30-40</code>.
+            </>
+        ),
+    },
+    {
+        column: 'interface_mode',
+        type: 'enum',
+        accepted: 'ACCESS, TRUNK.',
+    },
+    {
+        column: 'lacp_mode',
+        type: 'enum',
+        accepted: 'ACTIVE, PASSIVE, AUTO.',
+    },
+    {
+        column: 'lacp_rate',
+        type: 'enum',
+        accepted: 'FAST, SLOW.',
+    },
+    {
+        column: 'trunk_type',
+        type: 'enum',
+        accepted: 'LACP, TRUNK, DT_TRUNK, MULTI_CHASSIS, MULTI_CHASSIS_STATIC.',
+    },
+    {
+        column: 'access_vlan',
+        type: 'integer',
+        accepted: 'VLAN ID (typically 1-4094). Example: 10.',
+    },
+    {
+        column: 'native_vlan',
+        type: 'integer',
+        accepted: 'VLAN ID (typically 1-4094). Example: 20.',
+    },
+    {
+        column: 'ip_address',
+        type: 'string',
+        accepted: 'IP/CIDR notation. Example: 192.168.1.1/24.',
+    },
+    {
+        column: 'port_profile',
+        type: 'string',
+        accepted: 'Port profile name to apply.',
+    },
+    {
+        column: 'description',
+        type: 'string',
+        accepted: 'Interface description text.',
+    },
+    {
+        column: 'group',
+        type: 'string',
+        accepted: 'Central group name.',
+    },
+    {
+        column: 'site',
+        type: 'string',
+        accepted: 'Central site name.',
+    },
+    {
+        column: 'sku',
+        type: 'string',
+        accepted: 'Switch SKU (used for VSF profile creation). Example: JL660A.',
+    },
+    {
+        column: 'trunk_vlan_all',
+        type: 'boolean',
+        accepted: (
+            <>
+                <code>true</code> or <code>false</code> (case sensitive).
+            </>
+        ),
+    },
+    {
+        column: 'admin_edge_port',
+        type: 'boolean',
+        accepted: (
+            <>
+                <code>true</code> or <code>false</code> (case sensitive).
+            </>
+        ),
+    },
+    {
+        column: 'admin_edge_port_trunk',
+        type: 'boolean',
+        accepted: (
+            <>
+                <code>true</code> or <code>false</code> (case sensitive).
+            </>
+        ),
+    },
+    {
+        column: 'bpdu_guard',
+        type: 'boolean',
+        accepted: (
+            <>
+                <code>true</code> or <code>false</code> (case sensitive).
+            </>
+        ),
+    },
+    {
+        column: 'loop_guard',
+        type: 'boolean',
+        accepted: (
+            <>
+                <code>true</code> or <code>false</code> (case sensitive).
+            </>
+        ),
+    },
+];
+
 export default function documentation() {
     return (
         <Layout>
@@ -433,6 +593,28 @@ export default function documentation() {
                                 ]}
                                 optional={[]}
                             />
+                        </div>
+                    </DocCard>
+                </div>
+                <div className="mt-6">
+                    <DocCard title="CSV column data types and accepted values" defaultOpen>
+                        <div className="space-y-4">
+                            <p className="text-sm">
+                                This section defines the expected datatype for each CSV column. For
+                                boolean columns, values are case-sensitive and must be{' '}
+                                <code>true</code> or <code>false</code>.
+                            </p>
+                            <ul className="space-y-3 text-sm">
+                                {CSV_COLUMN_DETAILS.map((detail) => (
+                                    <li key={detail.column} className="rounded-md border px-3 py-2">
+                                        <p className="font-mono text-xs font-semibold">{detail.column}</p>
+                                        <p className="text-muted-foreground text-xs">
+                                            Type: {detail.type}
+                                        </p>
+                                        <p className="mt-1">{detail.accepted}</p>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     </DocCard>
                 </div>
