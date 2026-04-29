@@ -237,6 +237,12 @@ export default function Usage() {
                             Devices are defined with a CSV upload on the deployment page. Rows are merged by
                             serial so you can refine the same hardware over time.
                         </p>
+                        <p className={cn(body, 'mt-4')}>
+                            Device records are scoped per user, so multiple users can add the same physical
+                            device serial to their own deployments independently. If more than one user pushes
+                            configuration to that same physical device, the device ends up with whichever
+                            configuration was pushed most recently.
+                        </p>
                         <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
                             <li>
                                 From the deployment&apos;s page, choose <strong>Add Devices</strong> and
