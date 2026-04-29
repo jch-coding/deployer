@@ -564,19 +564,6 @@ function createInterfaceColumns({
             accessorFn: (row) => (editing ? '' : displayLacpCell(row, (lp) => lp.mode)),
         },
         {
-            id: 'lacp_port_id',
-            header: 'LACP port ID',
-            cell: ({ row }) =>
-                textCell(
-                    row.original,
-                    'lacp_port_id',
-                    row.original.lacp_profile?.port_id?.toString() ?? null,
-                    'lacp_port_id',
-                    { type: 'number', min: 1 },
-                ),
-            accessorFn: (row) => (editing ? '' : displayLacpCell(row, (lp) => lp.port_id)),
-        },
-        {
             id: 'lacp_rate',
             header: 'LACP rate',
             cell: ({ row }) =>
@@ -690,7 +677,6 @@ const PROFILE_COLUMN_IDS = new Set<string>([
     'switch_port_trunk_vlan_all',
     'switch_port_trunk_vlan_ranges',
     'lacp_mode',
-    'lacp_port_id',
     'lacp_rate',
     'lacp_trunk_type',
     'lacp_port_list',
@@ -1551,7 +1537,6 @@ export default function Show() {
                                 label: 'LACP',
                                 columnIds: [
                                     'lacp_mode',
-                                    'lacp_port_id',
                                     'lacp_rate',
                                     'lacp_trunk_type',
                                     'lacp_port_list',
