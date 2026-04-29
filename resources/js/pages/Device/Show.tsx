@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
+import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import {
     Select,
     SelectContent,
@@ -25,6 +26,7 @@ import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
 import { show as showDevice } from '@/routes/devices';
+import type { Paginator } from '@/types/deployer';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 export type SwitchPortDetail = {
@@ -741,7 +743,7 @@ type DeviceShowProps = {
         id: number;
         name: string;
     };
-    interfaces: DeviceInterfaceRow[];
+    interfaces: Paginator<DeviceInterfaceRow>;
     errors?: Record<string, string>;
 } & SharedData;
 
@@ -780,7 +782,8 @@ export default function Show() {
     const [bulkLacpRateChoice, setBulkLacpRateChoice] = useState<string>(BULK_ENUM_NOOP);
     const [bulkLacpTrunkTypeChoice, setBulkLacpTrunkTypeChoice] = useState<string>(BULK_ENUM_NOOP);
 
-    const allInterfaceIds = useMemo(() => interfaces.map((r) => r.id), [interfaces]);
+    const interfaceRows = interfaces.data;
+    const allInterfaceIds = useMemo(() => interfaceRows.map((r) => r.id), [interfaceRows]);
 
     const errorsFingerprint = useMemo(() => JSON.stringify(errors ?? {}), [errors]);
 
@@ -1143,7 +1146,11 @@ export default function Show() {
 
     const discardEdits = () => {
         setDrafts({});
-        router.get(showDevice(device.id).url, {}, { preserveScroll: true, replace: true });
+                        router.get(
+                            showDevice(device.id).url,
+                            { page: interfaces.current_page },
+                            { preserveScroll: true, replace: true },
+                        );
     };
 
     return (
@@ -1535,7 +1542,7 @@ export default function Show() {
                         </div>
                     ) : null}
                     <DataTable<DeviceInterfaceRow, unknown>
-                        data={interfaces}
+                        data={interfaceRows}
                         columns={interfaceColumns}
                         getRowId={(row) => String(row.id)}
                         stickyLeftColumnIds={isEditing ? ['select', 'interface'] : ['interface']}
@@ -1590,6 +1597,7 @@ export default function Show() {
                             },
                         ]}
                     />
+                    {interfaces.last_page > 1 ? <LaravelPaginator TPaginator={interfaces} /> : null}
                 </div>
             </div>
         </AppLayout>

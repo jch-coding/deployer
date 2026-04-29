@@ -21,10 +21,16 @@ it('shows the device page with interface rows for the current client', function 
         'deployment_id' => $deployment->id,
         'client_id' => $this->client->id,
     ]);
-    DeviceInterface::factory()->for($device)->create([
-        'interface' => '0/0/1',
-        'shutdown_on_split' => true,
-    ]);
+    DeviceInterface::factory()
+        ->for($device)
+        ->count(25)
+        ->sequence(fn ($sequence) => ['interface' => '1/1/'.($sequence->index + 1)])
+        ->create();
+    DeviceInterface::query()
+        ->where('device_id', $device->id)
+        ->orderBy('id')
+        ->first()
+        ?->update(['interface' => '0/0/1', 'shutdown_on_split' => true]);
 
     $this->actingAs($this->user)
         ->get(route('devices.show', $device))
@@ -38,11 +44,17 @@ it('shows the device page with interface rows for the current client', function 
             ->has('deployment', fn (Assert $d) => $d
                 ->where('id', $deployment->id)
                 ->where('name', $deployment->name))
-            ->has('interfaces', fn (Assert $list) => $list
-                ->has(0, fn (Assert $row) => $row
+            ->has('interfaces', fn (Assert $interfaces) => $interfaces
+                ->where('current_page', 1)
+                ->where('per_page', 20)
+                ->where('total', 25)
+                ->has('data', 20)
+                ->has('data.0', fn (Assert $row) => $row
                     ->where('interface', '0/0/1')
                     ->where('shutdown_on_split', true)
-                    ->etc())));
+                    ->etc())
+                ->has('links')
+                ->etc()));
 });
 
 it('updates shutdown_on_split from the interface edit endpoint', function () {

@@ -560,35 +560,38 @@ class DeviceController extends Controller
         $device->load([
             'deployment',
             'site',
-            'interfaces.switch_port',
-            'interfaces.lacp_profile',
-            'interfaces.stp_profile',
         ]);
 
-        $interfaces = $device->interfaces->map(function (DeviceInterface $interface) {
-            return [
-                'id' => $interface->id,
-                'interface' => $interface->interface,
-                'description' => $interface->description,
-                'ip_address' => $interface->ip_address,
-                'enable' => $interface->enable,
-                'jumbo_frames' => (bool) $interface->jumbo_frames,
-                'routing' => (bool) $interface->routing,
-                'shutdown_on_split' => (bool) $interface->shutdown_on_split,
-                'vrf_forwarding' => $interface->vrf_forwarding,
-                'sw_profile' => $interface->sw_profile,
-                'portchannel_lag' => $interface->portchannel_lag,
-                'switch_port' => $interface->switch_port
-                    ? SwitchPortResource::make($interface->switch_port)->resolve()
-                    : null,
-                'lacp_profile' => $interface->lacp_profile
-                    ? LacpProfileResource::make($interface->lacp_profile)->resolve()
-                    : null,
-                'stp_profile' => $interface->stp_profile
-                    ? StpProfileResource::make($interface->stp_profile)->resolve()
-                    : null,
-            ];
-        })->values()->all();
+        $interfaces = DeviceInterface::query()
+            ->where('device_id', $device->id)
+            ->with(['switch_port', 'lacp_profile', 'stp_profile'])
+            ->orderBy('id')
+            ->paginate(20)
+            ->withQueryString()
+            ->through(function (DeviceInterface $interface) {
+                return [
+                    'id' => $interface->id,
+                    'interface' => $interface->interface,
+                    'description' => $interface->description,
+                    'ip_address' => $interface->ip_address,
+                    'enable' => $interface->enable,
+                    'jumbo_frames' => (bool) $interface->jumbo_frames,
+                    'routing' => (bool) $interface->routing,
+                    'shutdown_on_split' => (bool) $interface->shutdown_on_split,
+                    'vrf_forwarding' => $interface->vrf_forwarding,
+                    'sw_profile' => $interface->sw_profile,
+                    'portchannel_lag' => $interface->portchannel_lag,
+                    'switch_port' => $interface->switch_port
+                        ? SwitchPortResource::make($interface->switch_port)->resolve()
+                        : null,
+                    'lacp_profile' => $interface->lacp_profile
+                        ? LacpProfileResource::make($interface->lacp_profile)->resolve()
+                        : null,
+                    'stp_profile' => $interface->stp_profile
+                        ? StpProfileResource::make($interface->stp_profile)->resolve()
+                        : null,
+                ];
+            });
 
         return Inertia::render('Device/Show', [
             'device' => [
