@@ -669,7 +669,7 @@ class DeviceController extends Controller
             return [];
         }
 
-        $parts = is_array($portList) ? $portList : explode('&', $portList);
+        $parts = is_array($portList) ? $portList : explode(',', $portList);
 
         return array_values(array_filter(array_map(
             static fn ($part) => trim((string) $part),
