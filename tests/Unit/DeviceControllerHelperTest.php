@@ -650,6 +650,7 @@ test('saveInterfaces updates existing interface optional fields for the same dev
                 'description' => 'old description',
                 'ip_address' => '10.0.0.1/24',
                 'port_profile' => 'old-profile',
+                'shutdown_on_split' => false,
             ],
         ]],
         'total_interfaces' => 1,
@@ -668,6 +669,7 @@ test('saveInterfaces updates existing interface optional fields for the same dev
                 'description' => 'new description',
                 'ip_address' => '10.0.0.2/24',
                 'port_profile' => 'new-profile',
+                'shutdown_on_split' => true,
             ],
         ]],
         'total_interfaces' => 1,
@@ -682,6 +684,7 @@ test('saveInterfaces updates existing interface optional fields for the same dev
         'description' => 'new description',
         'ip_address' => '10.0.0.2/24',
         'sw_profile' => 'new-profile',
+        'shutdown_on_split' => true,
     ]);
 });
 

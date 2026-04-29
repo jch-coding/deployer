@@ -14,6 +14,9 @@ test('build_switchport_from_device_interface returns a switchport array with sub
 
     $expected = [
         'name' => $deviceInterface->interface,
+        'vsx' => [
+            'shutdown-on-split' => false,
+        ],
         'switchport' => [
             'access-vlan' => $switch_port->access_vlan,
             'interface-mode' => $switch_port->interface_mode,
@@ -32,6 +35,9 @@ test('build_switchport_from_device_interface returns a switchport array for a po
     $deviceInterface = DeviceInterface::factory()->create(['description' => null, 'portchannel_lag' => '10']);
     $expected = [
         'name' => $deviceInterface->interface,
+        'vsx' => [
+            'shutdown-on-split' => false,
+        ],
         'portchannel-lag' => '10'
     ];
     $actual =  CentralAPIHelper::build_switchport_from_device_interface($deviceInterface);
@@ -61,6 +67,9 @@ test('it processes portchannel interfaces', function () {
     ]);
     $expected = [
         'name' => $deviceInterface->interface,
+        'vsx' => [
+            'shutdown-on-split' => false,
+        ],
         'switchport' => [
             'access-vlan' => null,
             'interface-mode' => 'TRUNK',

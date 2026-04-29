@@ -376,7 +376,10 @@ class CentralAPIHelper
                 )
             );
         }
-        $switchport_rest_body = ['name' => $deviceInterface->interface];
+        $switchport_rest_body = [
+            'name' => $deviceInterface->interface,
+            'vsx' => ['shutdown-on-split' => (bool) $deviceInterface->shutdown_on_split],
+        ];
         if ($deviceInterface->sw_profile !== null) {
             $switchport_rest_body['sw-profile'] = $deviceInterface->sw_profile;
         } elseif ($deviceInterface->description !== null) {

@@ -329,12 +329,13 @@ class DeviceController extends Controller
                     'description' => $device_interface['description'] ?? null,
                     'ip_address' => $device_interface['ip_address'] ?? null,
                     'sw_profile' => $device_interface['port_profile'] ?? null,
+                    'shutdown_on_split' => static::toBoolean($device_interface['shutdown_on_split'] ?? false),
                     'switch_port_id' => static::resolveSwitchPortId($device_interface),
                     'stp_profile_id' => static::resolveStpProfileId($device_interface),
                     'lacp_profile_id' => static::resolveLacpProfileId($device_interface),
                 ];
 
-                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address']);
+                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile', 'shutdown_on_split', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address']);
                 $saved_interfaces++;
             }
         }

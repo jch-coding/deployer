@@ -190,6 +190,19 @@ it('keeps missing optional columns absent from mapped rows', function () {
     expect($deviceArrays[0])->not()->toHaveKeys(['group', 'sku', 'site', 'interface', 'description', 'ip_address']);
 });
 
+it('normalizes shutdown-on-split CSV header to shutdown_on_split key', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'interface', 'shutdown-on-split'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1', 'true'],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0])->toHaveKey('shutdown_on_split')
+        ->and($deviceArrays[0]['shutdown_on_split'])->toBe('true');
+});
+
 it('retains blank optional column values so downstream handlers can normalize them', function () {
     $csvData = [
         ['name', 'serial', 'device_function', 'group', 'site', 'interface', 'description'],

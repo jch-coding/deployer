@@ -27,10 +27,12 @@ class DeviceInterface extends Model
         'stp_profile_id',
         'sw_profile',
         'portchannel_lag',
+        'shutdown_on_split',
     ];
 
     protected $casts = [
         'enable' => 'boolean',
+        'shutdown_on_split' => 'boolean',
     ];
 
     public function device() : BelongsTo
