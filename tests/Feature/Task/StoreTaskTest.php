@@ -38,3 +38,23 @@ test('creating a task with devices stores the task and attaches the devices', fu
     $this->assertEquals('PENDING', $task->devices()->find($devices[1])->pivot->status);
     expect($task->batch_id)->not()->toBeNull();
 });
+
+test('CONFIGURE_ALL_INTERFACE does not create subtasks when selected devices have no eligible interfaces', function () {
+    Bus::fake();
+
+    $devices = Device::factory(1)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+
+    $response = $this->from(route('deployments.show', $this->deployment))
+        ->post(route('tasks.store', $this->deployment), [
+            'task_type' => 'CONFIGURE_ALL_INTERFACE',
+            'deployment_time' => 1,
+            'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+        ]);
+
+    $response->assertRedirect(route('deployments.show', $this->deployment));
+    $response->assertSessionHasErrors('devices');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+});
