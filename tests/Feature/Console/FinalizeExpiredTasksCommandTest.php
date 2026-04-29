@@ -11,7 +11,7 @@ function expireTask(Task $task, int $minutesAgo = 10): void
     $task->update(['created_at' => now()->subMinutes($minutesAgo)]);
 }
 
-it('marks expired in-progress device task as failed when partially completed', function () {
+it('marks expired in-progress device task as timed out when partially completed', function () {
     $task = Task::factory()->create([
         'task_type' => 'UPDATE_SYSTEM_INFO',
         'status' => 'IN_PROGRESS',
@@ -26,10 +26,12 @@ it('marks expired in-progress device task as failed when partially completed', f
 
     Artisan::call('tasks:finalize-expired');
 
-    expect($task->fresh()->status)->toBe('FAILED');
+    expect($task->fresh()->status)->toBe('TIMED_OUT');
+    expect($task->devices()->where('devices.id', $deviceOne->id)->first()->pivot->status)->toBe('COMPLETED');
+    expect($task->devices()->where('devices.id', $deviceTwo->id)->first()->pivot->status)->toBe('TIMED_OUT');
 });
 
-it('marks expired in-progress interface task as failed when partially completed', function () {
+it('marks expired in-progress interface task as timed out when partially completed', function () {
     $task = Task::factory()->create([
         'task_type' => 'CONFIGURE_VLAN_INTERFACE',
         'status' => 'IN_PROGRESS',
@@ -44,7 +46,9 @@ it('marks expired in-progress interface task as failed when partially completed'
 
     Artisan::call('tasks:finalize-expired');
 
-    expect($task->fresh()->status)->toBe('FAILED');
+    expect($task->fresh()->status)->toBe('TIMED_OUT');
+    expect($task->deviceInterfaces()->where('device_interfaces.id', $interfaceOne->id)->first()->pivot->status)->toBe('COMPLETED');
+    expect($task->deviceInterfaces()->where('device_interfaces.id', $interfaceTwo->id)->first()->pivot->status)->toBe('TIMED_OUT');
 });
 
 it('keeps expired in-progress task unchanged when all tracked items are completed', function () {
@@ -83,7 +87,7 @@ it('keeps non-expired in-progress tasks unchanged', function () {
 it('ignores tasks already in terminal states', function () {
     $taskIdsByStatus = [];
 
-    foreach (['FAILED', 'CANCELLED', 'COMPLETED'] as $status) {
+    foreach (['FAILED', 'TIMED_OUT', 'CANCELLED', 'COMPLETED'] as $status) {
         $task = Task::factory()->create([
             'task_type' => 'UPDATE_SYSTEM_INFO',
             'status' => $status,
