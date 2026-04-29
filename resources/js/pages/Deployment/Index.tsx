@@ -22,8 +22,9 @@ import {
 import { FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
+import { index as clientsIndex } from '@/routes/clients';
 import { destroy, show as showDeployment } from '@/routes/deployments';
-import { type SharedData } from '@/types';
+import type { BreadcrumbItem, SharedData } from '@/types';
 
 type Deployment = {
     id: number;
@@ -36,15 +37,21 @@ type DeploymentIndexProps = {
 } & SharedData;
 
 export default function Index() {
-    const deployments = usePage<DeploymentIndexProps>().props.deployments;
-    const dialogCloseRef = useRef(null);
+    const { deployments, current_client } = usePage<DeploymentIndexProps>().props;
+    const dialogCloseRef = useRef<HTMLButtonElement | null>(null);
     const [success, setSuccess] = useState(false);
+    const breadcrumbs: BreadcrumbItem[] = [
+        {
+            title: current_client?.name ?? 'Clients',
+            href: clientsIndex().url,
+        },
+    ];
     useEffect(() => {
         if (!success) return;
         dialogCloseRef.current?.click();
     })
     return (
-        <AppLayout>
+        <AppLayout breadcrumbs={breadcrumbs}>
             <div className="min-w-6xl mx-auto flex-1">
                 <h1 className="font-bold text-2xl text-center">Deployments</h1>
                 {deployments.length > 0 ? (
