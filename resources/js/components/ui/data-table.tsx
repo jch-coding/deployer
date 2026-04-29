@@ -185,7 +185,7 @@ export function DataTable<TData, TValue>({
                     </DropdownMenu>
                 </div>
             ) : null}
-            <div className="overflow-hidden rounded-md border">
+            <div className="min-w-0 overflow-x-auto rounded-md border">
             <Table
                 className={
                     stickyLeftColumnIds?.length
