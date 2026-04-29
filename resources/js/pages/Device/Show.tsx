@@ -6,6 +6,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react';
 import { Button } from '@/components/ui/button';
@@ -253,7 +254,7 @@ type InterfaceColumnOptions = {
     getDraftValue: <T>(row: DeviceInterfaceRow, key: keyof InterfaceDraftRow, fallback: T) => T;
     setDraftField: (id: number, key: keyof InterfaceDraftRow, value: unknown) => void;
     clearDraftField: (id: number, key: keyof InterfaceDraftRow) => void;
-    fieldErrorsByInterfaceId: Map<number, Record<string, string>>;
+    getFieldError: (interfaceId: number, field: string) => string | undefined;
     allInterfaceIds: number[];
     selectedInterfaceIds: ReadonlySet<number>;
     toggleSelect: (id: number) => void;
@@ -288,7 +289,7 @@ function createInterfaceColumns({
     getDraftValue,
     setDraftField,
     clearDraftField,
-    fieldErrorsByInterfaceId,
+    getFieldError,
     allInterfaceIds,
     selectedInterfaceIds,
     toggleSelect,
@@ -296,8 +297,7 @@ function createInterfaceColumns({
     allRowsSelected,
     someRowsSelected,
 }: InterfaceColumnOptions): ColumnDef<DeviceInterfaceRow>[] {
-    const fieldErr = (interfaceId: number, field: string) =>
-        fieldErrorsByInterfaceId.get(interfaceId)?.[field];
+    const fieldErr = (interfaceId: number, field: string) => getFieldError(interfaceId, field);
     const textCell = (
         row: DeviceInterfaceRow,
         key: keyof InterfaceDraftRow,
@@ -780,55 +780,70 @@ export default function Show() {
         }
     }, [isEditing]);
 
-    const dismissFieldErrorForCell = (interfaceId: number, field: keyof InterfaceDraftRow | string) => {
-        const key = dismissedCellErrorKey(interfaceId, String(field));
-        setDismissedFieldErrors((prev) => {
-            if (prev.has(key)) {
-                return prev;
-            }
-            const next = new Set(prev);
-            next.add(key);
-            return next;
-        });
-    };
+    const dismissFieldErrorForCell = useCallback(
+        (interfaceId: number, field: keyof InterfaceDraftRow | string) => {
+            const key = dismissedCellErrorKey(interfaceId, String(field));
+            setDismissedFieldErrors((prev) => {
+                if (prev.has(key)) {
+                    return prev;
+                }
+                const next = new Set(prev);
+                next.add(key);
+                return next;
+            });
+        },
+        [],
+    );
 
-    const setDraftField = (id: number, key: keyof InterfaceDraftRow, value: unknown) => {
-        dismissFieldErrorForCell(id, key);
-        setDrafts((current) => ({
-            ...current,
-            [id]: {
-                ...current[id],
-                [key]: value,
-            },
-        }));
-    };
+    const setDraftField = useCallback(
+        (id: number, key: keyof InterfaceDraftRow, value: unknown) => {
+            dismissFieldErrorForCell(id, key);
+            setDrafts((current) => ({
+                ...current,
+                [id]: {
+                    ...current[id],
+                    [key]: value,
+                },
+            }));
+        },
+        [dismissFieldErrorForCell],
+    );
 
-    const clearDraftField = (id: number, key: keyof InterfaceDraftRow) => {
-        dismissFieldErrorForCell(id, key);
-        setDrafts((current) => {
-            const prevRow = current[id];
-            if (!prevRow) {
-                return current;
-            }
-            const row = { ...prevRow };
-            delete row[key];
-            const next = { ...current };
-            if (Object.keys(row).length === 0) {
-                delete next[id];
-            } else {
-                next[id] = row;
-            }
-            return next;
-        });
-    };
+    const clearDraftField = useCallback(
+        (id: number, key: keyof InterfaceDraftRow) => {
+            dismissFieldErrorForCell(id, key);
+            setDrafts((current) => {
+                const prevRow = current[id];
+                if (!prevRow) {
+                    return current;
+                }
+                const row = { ...prevRow };
+                delete row[key];
+                const next = { ...current };
+                if (Object.keys(row).length === 0) {
+                    delete next[id];
+                } else {
+                    next[id] = row;
+                }
+                return next;
+            });
+        },
+        [dismissFieldErrorForCell],
+    );
 
-    const getDraftValue = <T,>(row: DeviceInterfaceRow, key: keyof InterfaceDraftRow, fallback: T): T => {
-        const rowDraft = drafts[row.id];
-        if (!rowDraft || !(key in rowDraft)) {
-            return fallback;
-        }
-        return rowDraft[key] as T;
-    };
+    const draftsRef = useRef(drafts);
+    draftsRef.current = drafts;
+
+    const getDraftValue = useCallback(
+        <T,>(row: DeviceInterfaceRow, key: keyof InterfaceDraftRow, fallback: T): T => {
+            const rowDraft = draftsRef.current[row.id];
+            if (!rowDraft || !(key in rowDraft)) {
+                return fallback;
+            }
+            return rowDraft[key] as T;
+        },
+        [],
+    );
 
     const toggleSelect = useCallback((id: number) => {
         setSelectedInterfaceIds((prev) => {
@@ -912,6 +927,13 @@ export default function Show() {
         return filterFieldErrorsByDismissed(raw, dismissedFieldErrors);
     }, [errors, pendingUpdates, dismissedFieldErrors]);
 
+    const fieldErrorsRef = useRef(fieldErrorsByInterfaceId);
+    fieldErrorsRef.current = fieldErrorsByInterfaceId;
+
+    const getFieldError = useCallback((interfaceId: number, field: string) => {
+        return fieldErrorsRef.current.get(interfaceId)?.[field];
+    }, []);
+
     const batchUpdateError =
         errors && typeof errors.updates === 'string' ? errors.updates : undefined;
 
@@ -922,7 +944,7 @@ export default function Show() {
                 getDraftValue,
                 setDraftField,
                 clearDraftField,
-                fieldErrorsByInterfaceId,
+                getFieldError,
                 allInterfaceIds,
                 selectedInterfaceIds,
                 toggleSelect,
@@ -932,8 +954,10 @@ export default function Show() {
             }),
         [
             isEditing,
-            drafts,
-            fieldErrorsByInterfaceId,
+            getDraftValue,
+            setDraftField,
+            clearDraftField,
+            getFieldError,
             allInterfaceIds,
             selectedInterfaceIds,
             toggleSelect,
