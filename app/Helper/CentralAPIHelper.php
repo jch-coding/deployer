@@ -378,19 +378,21 @@ class CentralAPIHelper
         }
         $switchport_rest_body = [
             'name' => $deviceInterface->interface,
-            'vsx' => ['shutdown-on-split' => (bool) $deviceInterface->shutdown_on_split],
         ];
         if ($deviceInterface->sw_profile !== null) {
             $switchport_rest_body['sw-profile'] = $deviceInterface->sw_profile;
-        } elseif ($deviceInterface->description !== null) {
-            $switchport_rest_body['description'] = $deviceInterface->description;
-        } elseif ($deviceInterface->portchannel_lag !== null) {
-            $switchport_rest_body['portchannel-lag'] = $deviceInterface->portchannel_lag;
         } else {
-            $switchport_rest_body = array_merge($switchport_rest_body, [
-                'switchport' => $switch_port,
-                'stp' => $stp_profile,
-            ]);
+            $switchport_rest_body['vsx'] = ['shutdown-on-split' => (bool) $deviceInterface->shutdown_on_split];
+            if ($deviceInterface->description !== null) {
+                $switchport_rest_body['description'] = $deviceInterface->description;
+            } elseif ($deviceInterface->portchannel_lag !== null) {
+                $switchport_rest_body['portchannel-lag'] = $deviceInterface->portchannel_lag;
+            } else {
+                $switchport_rest_body = array_merge($switchport_rest_body, [
+                    'switchport' => $switch_port,
+                    'stp' => $stp_profile,
+                ]);
+            }
         }
 
         return array_filter($switchport_rest_body, fn ($value) => $value !== []);
