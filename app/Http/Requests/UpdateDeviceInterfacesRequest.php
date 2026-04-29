@@ -22,7 +22,7 @@ class UpdateDeviceInterfacesRequest extends FormRequest
             'updates.*.enable' => ['sometimes', 'boolean'],
             'updates.*.jumbo_frames' => ['sometimes', 'boolean'],
             'updates.*.routing' => ['sometimes', 'boolean'],
-            'updates.*.vrf_forwarding' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'updates.*.vrf_forwarding' => ['sometimes', 'string', 'max:255'],
             'updates.*.sw_profile' => ['sometimes', 'nullable', 'string', 'max:255'],
             'updates.*.portchannel_lag' => ['sometimes', 'nullable', 'string', 'max:255'],
             'updates.*.interface_mode' => ['sometimes', Rule::in(['ACCESS', 'TRUNK'])],
