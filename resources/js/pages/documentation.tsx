@@ -258,6 +258,16 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
             </>
         ),
     },
+    {
+        column: 'shutdown_on_split',
+        type: 'boolean',
+        accepted: (
+            <>
+                <code>true</code> or <code>false</code> (case sensitive). Applies VSX shutdown behavior
+                for split-brain handling on supported ethernet interfaces.
+            </>
+        ),
+    },
 ];
 
 export default function documentation() {
@@ -323,6 +333,7 @@ export default function documentation() {
                                     'admin_edge_port_trunk',
                                     'bpdu_guard',
                                     'loop_guard',
+                                    'shutdown_on_split',
                                     'lacp_mode',
                                     'lacp_rate',
                                     'trunk_type',
@@ -434,6 +445,7 @@ export default function documentation() {
                                     'admin_edge_port_trunk',
                                     'bpdu_guard',
                                     'loop_guard',
+                                    'shutdown_on_split',
                                     'lacp_mode',
                                     'lacp_rate',
                                     <>
