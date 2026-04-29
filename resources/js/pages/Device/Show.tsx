@@ -1,8 +1,18 @@
 import { router, usePage } from '@inertiajs/react';
 import { type ColumnDef, type VisibilityState } from '@tanstack/react-table';
-import { useEffect, useMemo, useState } from 'react';
+import { type ComponentProps, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
+import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
@@ -72,6 +82,43 @@ type InterfaceDraftRow = {
     bpdu_guard?: boolean;
     loop_guard?: boolean;
 };
+
+const INTERFACE_MODES = ['ACCESS', 'TRUNK'] as const;
+const LACP_MODES = ['ACTIVE', 'PASSIVE', 'AUTO'] as const;
+const LACP_RATES = ['FAST', 'SLOW'] as const;
+const LACP_TRUNK_TYPES = [
+    'LACP',
+    'TRUNK',
+    'DT_TRUNK',
+    'MULTI_CHASSIS',
+    'MULTI_CHASSIS_STATIC',
+] as const;
+
+function mapValidationErrorsToRows(
+    errors: Record<string, string> | undefined,
+    orderedInterfaceIds: number[],
+): Map<number, Record<string, string>> {
+    const map = new Map<number, Record<string, string>>();
+    if (!errors) {
+        return map;
+    }
+    for (const [key, message] of Object.entries(errors)) {
+        const match = /^updates\.(\d+)\.(.+)$/.exec(key);
+        if (!match) {
+            continue;
+        }
+        const idx = Number(match[1]);
+        const field = match[2];
+        const id = orderedInterfaceIds[idx];
+        if (id === undefined) {
+            continue;
+        }
+        const row = map.get(id) ?? {};
+        row[field] = message;
+        map.set(id, row);
+    }
+    return map;
+}
 
 function yesNo(value: boolean): string {
     return value ? 'Yes' : 'No';
@@ -168,35 +215,147 @@ function displayStpCell(row: DeviceInterfaceRow, key: keyof StpProfileDetail): s
     return yesNo(Boolean(row.stp_profile[key]));
 }
 
-function createInterfaceColumns(
-    editing: boolean,
-    getDraftValue: <T>(row: DeviceInterfaceRow, key: keyof InterfaceDraftRow, fallback: T) => T,
-    onDraftChange: (id: number, key: keyof InterfaceDraftRow, value: unknown) => void,
-): ColumnDef<DeviceInterfaceRow>[] {
-    const textCell = (row: DeviceInterfaceRow, key: keyof InterfaceDraftRow, fallback: string | null) => {
+type InterfaceColumnOptions = {
+    editing: boolean;
+    getDraftValue: <T>(row: DeviceInterfaceRow, key: keyof InterfaceDraftRow, fallback: T) => T;
+    setDraftField: (id: number, key: keyof InterfaceDraftRow, value: unknown) => void;
+    clearDraftField: (id: number, key: keyof InterfaceDraftRow) => void;
+    fieldErrorsByInterfaceId: Map<number, Record<string, string>>;
+};
+
+function FieldWrap({
+    children,
+    error,
+    className,
+}: {
+    children: ReactNode;
+    error?: string;
+    className?: string;
+}) {
+    return (
+        <div className={cn('min-w-[6.5rem] space-y-1', className)}>
+            {children}
+            {error ? (
+                <p className="text-destructive text-xs leading-tight" role="alert">
+                    {error}
+                </p>
+            ) : null}
+        </div>
+    );
+}
+
+function createInterfaceColumns({
+    editing,
+    getDraftValue,
+    setDraftField,
+    clearDraftField,
+    fieldErrorsByInterfaceId,
+}: InterfaceColumnOptions): ColumnDef<DeviceInterfaceRow>[] {
+    const fieldErr = (interfaceId: number, field: string) =>
+        fieldErrorsByInterfaceId.get(interfaceId)?.[field];
+    const textCell = (
+        row: DeviceInterfaceRow,
+        key: keyof InterfaceDraftRow,
+        fallback: string | null,
+        field: string,
+        inputProps?: ComponentProps<typeof Input>,
+    ) => {
         if (!editing) {
             return fallback ?? '—';
         }
+        const err = fieldErr(row.id, field);
         return (
-            <input
-                className="w-full rounded border px-2 py-1 text-sm"
-                value={String(getDraftValue(row, key, fallback ?? ''))}
-                onChange={(e) => onDraftChange(row.id, key, e.target.value)}
-            />
+            <FieldWrap error={err}>
+                <Input
+                    {...inputProps}
+                    className="h-8 text-sm"
+                    aria-invalid={Boolean(err)}
+                    value={String(getDraftValue(row, key, fallback ?? ''))}
+                    onChange={(e) => setDraftField(row.id, key, e.target.value)}
+                />
+            </FieldWrap>
         );
     };
 
-    const boolCell = (row: DeviceInterfaceRow, key: keyof InterfaceDraftRow, fallback: boolean) => {
+    const boolCell = (
+        row: DeviceInterfaceRow,
+        key: keyof InterfaceDraftRow,
+        fallback: boolean,
+        field: string,
+    ) => {
         const value = Boolean(getDraftValue(row, key, fallback));
         if (!editing) {
             return yesNo(value);
         }
+        const err = fieldErr(row.id, field);
         return (
-            <input
-                type="checkbox"
-                checked={value}
-                onChange={(e) => onDraftChange(row.id, key, e.target.checked)}
-            />
+            <FieldWrap error={err} className="flex min-h-8 items-center">
+                <Checkbox
+                    checked={value}
+                    aria-invalid={Boolean(err)}
+                    onCheckedChange={(checked) =>
+                        setDraftField(row.id, key, checked === true)}
+                />
+            </FieldWrap>
+        );
+    };
+
+    const enumSelect = (
+        row: DeviceInterfaceRow,
+        key: keyof InterfaceDraftRow,
+        fallback: string | null,
+        options: readonly string[],
+        field: string,
+        placeholder: string,
+    ) => {
+        if (!editing) {
+            switch (key) {
+                case 'interface_mode':
+                    return displaySwitchPortCell(row, (sp) => sp.interface_mode);
+                case 'lacp_mode':
+                    return displayLacpCell(row, (lp) => lp.mode);
+                case 'lacp_rate':
+                    return displayLacpCell(row, (lp) => lp.rate);
+                case 'trunk_type':
+                    return displayLacpCell(row, (lp) => lp.trunk_type);
+                default:
+                    return '—';
+            }
+        }
+        const raw = getDraftValue(row, key, fallback ?? '');
+        const str = raw === null || raw === undefined ? '' : String(raw);
+        const selectValue = str === '' ? '__none__' : str;
+        const err = fieldErr(row.id, field);
+        return (
+            <FieldWrap error={err}>
+                <Select
+                    value={selectValue}
+                    onValueChange={(v) => {
+                        if (v === '__none__') {
+                            clearDraftField(row.id, key);
+                        } else {
+                            setDraftField(row.id, key, v);
+                        }
+                    }}
+                >
+                    <SelectTrigger
+                        className="h-8 w-full min-w-[6rem] text-xs"
+                        aria-invalid={Boolean(err)}
+                    >
+                        <SelectValue placeholder={placeholder} />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="__none__" className="text-muted-foreground">
+                            Unchanged
+                        </SelectItem>
+                        {options.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                                {opt}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </FieldWrap>
         );
     };
 
@@ -208,96 +367,229 @@ function createInterfaceColumns(
             enableHiding: false,
             accessorFn: (row) => formatInterfaceDisplay(row),
         },
-        { accessorKey: 'description', header: 'Description', cell: ({ row }) => textCell(row.original, 'description', row.original.description) },
-        { accessorKey: 'ip_address', header: 'IP address', cell: ({ row }) => textCell(row.original, 'ip_address', row.original.ip_address) },
-        { accessorKey: 'enable', header: 'Enabled', cell: ({ row }) => boolCell(row.original, 'enable', Boolean(row.original.enable)) },
-        { accessorKey: 'jumbo_frames', header: 'Jumbo frames', cell: ({ row }) => boolCell(row.original, 'jumbo_frames', Boolean(row.original.jumbo_frames)) },
-        { accessorKey: 'routing', header: 'Routing', cell: ({ row }) => boolCell(row.original, 'routing', Boolean(row.original.routing)) },
-        { accessorKey: 'vrf_forwarding', header: 'VRF forwarding', cell: ({ row }) => textCell(row.original, 'vrf_forwarding', row.original.vrf_forwarding) },
-        { accessorKey: 'sw_profile', header: 'Port profile', cell: ({ row }) => textCell(row.original, 'sw_profile', row.original.sw_profile) },
-        { accessorKey: 'portchannel_lag', header: 'Port-channel / LAG', cell: ({ row }) => textCell(row.original, 'portchannel_lag', row.original.portchannel_lag) },
+        {
+            accessorKey: 'description',
+            header: 'Description',
+            cell: ({ row }) =>
+                textCell(row.original, 'description', row.original.description, 'description'),
+        },
+        {
+            accessorKey: 'ip_address',
+            header: 'IP address',
+            cell: ({ row }) =>
+                textCell(row.original, 'ip_address', row.original.ip_address, 'ip_address'),
+        },
+        {
+            accessorKey: 'enable',
+            header: 'Enabled',
+            cell: ({ row }) => boolCell(row.original, 'enable', Boolean(row.original.enable), 'enable'),
+        },
+        {
+            accessorKey: 'jumbo_frames',
+            header: 'Jumbo frames',
+            cell: ({ row }) =>
+                boolCell(row.original, 'jumbo_frames', Boolean(row.original.jumbo_frames), 'jumbo_frames'),
+        },
+        {
+            accessorKey: 'routing',
+            header: 'Routing',
+            cell: ({ row }) => boolCell(row.original, 'routing', Boolean(row.original.routing), 'routing'),
+        },
+        {
+            accessorKey: 'vrf_forwarding',
+            header: 'VRF forwarding',
+            cell: ({ row }) =>
+                textCell(row.original, 'vrf_forwarding', row.original.vrf_forwarding, 'vrf_forwarding'),
+        },
+        {
+            accessorKey: 'sw_profile',
+            header: 'Port profile',
+            cell: ({ row }) => textCell(row.original, 'sw_profile', row.original.sw_profile, 'sw_profile'),
+        },
+        {
+            accessorKey: 'portchannel_lag',
+            header: 'Port-channel / LAG',
+            cell: ({ row }) =>
+                textCell(row.original, 'portchannel_lag', row.original.portchannel_lag, 'portchannel_lag'),
+        },
         {
             id: 'switch_port_mode',
             header: 'Port mode',
-            cell: ({ row }) => textCell(row.original, 'interface_mode', row.original.switch_port?.interface_mode ?? null),
+            cell: ({ row }) =>
+                enumSelect(
+                    row.original,
+                    'interface_mode',
+                    row.original.switch_port?.interface_mode ?? null,
+                    INTERFACE_MODES,
+                    'interface_mode',
+                    'Mode',
+                ),
             accessorFn: (row) => (editing ? '' : displaySwitchPortCell(row, (sp) => sp.interface_mode)),
         },
         {
             id: 'switch_port_access_vlan',
             header: 'Access VLAN',
-            cell: ({ row }) => textCell(row.original, 'access_vlan', row.original.switch_port?.access_vlan?.toString() ?? null),
+            cell: ({ row }) =>
+                textCell(
+                    row.original,
+                    'access_vlan',
+                    row.original.switch_port?.access_vlan?.toString() ?? null,
+                    'access_vlan',
+                    { type: 'number', min: 1, max: 4094 },
+                ),
             accessorFn: (row) => (editing ? '' : displaySwitchPortCell(row, (sp) => sp.access_vlan)),
         },
         {
             id: 'switch_port_native_vlan',
             header: 'Native VLAN',
-            cell: ({ row }) => textCell(row.original, 'native_vlan', row.original.switch_port?.native_vlan?.toString() ?? null),
+            cell: ({ row }) =>
+                textCell(
+                    row.original,
+                    'native_vlan',
+                    row.original.switch_port?.native_vlan?.toString() ?? null,
+                    'native_vlan',
+                    { type: 'number', min: 1, max: 4094 },
+                ),
             accessorFn: (row) => (editing ? '' : displaySwitchPortCell(row, (sp) => sp.native_vlan)),
         },
         {
             id: 'switch_port_trunk_vlan_all',
             header: 'Trunk all VLANs',
-            cell: ({ row }) => boolCell(row.original, 'trunk_vlan_all', Boolean(row.original.switch_port?.trunk_vlan_all ?? false)),
+            cell: ({ row }) =>
+                boolCell(
+                    row.original,
+                    'trunk_vlan_all',
+                    Boolean(row.original.switch_port?.trunk_vlan_all ?? false),
+                    'trunk_vlan_all',
+                ),
             accessorFn: (row) => (editing ? '' : displaySwitchPortCell(row, (sp) => sp.trunk_vlan_all)),
         },
         {
             id: 'switch_port_trunk_vlan_ranges',
             header: 'Trunk VLAN ranges',
-            cell: ({ row }) => textCell(row.original, 'trunk_vlan_ranges', row.original.switch_port?.trunk_vlan_ranges ?? null),
+            cell: ({ row }) =>
+                textCell(
+                    row.original,
+                    'trunk_vlan_ranges',
+                    row.original.switch_port?.trunk_vlan_ranges ?? null,
+                    'trunk_vlan_ranges',
+                ),
             accessorFn: (row) => (editing ? '' : displaySwitchPortCell(row, (sp) => sp.trunk_vlan_ranges)),
         },
         {
             id: 'lacp_mode',
             header: 'LACP mode',
-            cell: ({ row }) => textCell(row.original, 'lacp_mode', row.original.lacp_profile?.mode ?? null),
+            cell: ({ row }) =>
+                enumSelect(
+                    row.original,
+                    'lacp_mode',
+                    row.original.lacp_profile?.mode ?? null,
+                    LACP_MODES,
+                    'lacp_mode',
+                    'Mode',
+                ),
             accessorFn: (row) => (editing ? '' : displayLacpCell(row, (lp) => lp.mode)),
         },
         {
             id: 'lacp_port_id',
             header: 'LACP port ID',
-            cell: ({ row }) => textCell(row.original, 'lacp_port_id', row.original.lacp_profile?.port_id?.toString() ?? null),
+            cell: ({ row }) =>
+                textCell(
+                    row.original,
+                    'lacp_port_id',
+                    row.original.lacp_profile?.port_id?.toString() ?? null,
+                    'lacp_port_id',
+                    { type: 'number', min: 1 },
+                ),
             accessorFn: (row) => (editing ? '' : displayLacpCell(row, (lp) => lp.port_id)),
         },
         {
             id: 'lacp_rate',
             header: 'LACP rate',
-            cell: ({ row }) => textCell(row.original, 'lacp_rate', row.original.lacp_profile?.rate ?? null),
+            cell: ({ row }) =>
+                enumSelect(
+                    row.original,
+                    'lacp_rate',
+                    row.original.lacp_profile?.rate ?? null,
+                    LACP_RATES,
+                    'lacp_rate',
+                    'Rate',
+                ),
             accessorFn: (row) => (editing ? '' : displayLacpCell(row, (lp) => lp.rate)),
         },
         {
             id: 'lacp_trunk_type',
             header: 'LACP trunk type',
-            cell: ({ row }) => textCell(row.original, 'trunk_type', row.original.lacp_profile?.trunk_type ?? null),
+            cell: ({ row }) =>
+                enumSelect(
+                    row.original,
+                    'trunk_type',
+                    row.original.lacp_profile?.trunk_type ?? null,
+                    LACP_TRUNK_TYPES,
+                    'trunk_type',
+                    'Trunk type',
+                ),
             accessorFn: (row) => (editing ? '' : displayLacpCell(row, (lp) => lp.trunk_type)),
         },
         {
             id: 'lacp_port_list',
             header: 'LACP port list',
-            cell: ({ row }) => textCell(row.original, 'lacp_port_list', row.original.lacp_profile?.port_list.join(', ') ?? null),
+            cell: ({ row }) =>
+                textCell(
+                    row.original,
+                    'lacp_port_list',
+                    row.original.lacp_profile?.port_list.join(', ') ?? null,
+                    'lacp_port_list',
+                    { placeholder: 'e.g. 1/1/1, 1/1/2' },
+                ),
             accessorFn: (row) => (editing ? '' : displayLacpCell(row, (lp) => lp.port_list)),
         },
         {
             id: 'stp_admin_edge',
             header: 'STP admin edge',
-            cell: ({ row }) => boolCell(row.original, 'admin_edge_port', Boolean(row.original.stp_profile?.admin_edge_port ?? false)),
+            cell: ({ row }) =>
+                boolCell(
+                    row.original,
+                    'admin_edge_port',
+                    Boolean(row.original.stp_profile?.admin_edge_port ?? false),
+                    'admin_edge_port',
+                ),
             accessorFn: (row) => (editing ? '' : displayStpCell(row, 'admin_edge_port')),
         },
         {
             id: 'stp_admin_edge_trunk',
             header: 'STP admin edge trunk',
-            cell: ({ row }) => boolCell(row.original, 'admin_edge_port_trunk', Boolean(row.original.stp_profile?.admin_edge_port_trunk ?? false)),
+            cell: ({ row }) =>
+                boolCell(
+                    row.original,
+                    'admin_edge_port_trunk',
+                    Boolean(row.original.stp_profile?.admin_edge_port_trunk ?? false),
+                    'admin_edge_port_trunk',
+                ),
             accessorFn: (row) => (editing ? '' : displayStpCell(row, 'admin_edge_port_trunk')),
         },
         {
             id: 'stp_bpdu_guard',
             header: 'STP BPDU guard',
-            cell: ({ row }) => boolCell(row.original, 'bpdu_guard', Boolean(row.original.stp_profile?.bpdu_guard ?? false)),
+            cell: ({ row }) =>
+                boolCell(
+                    row.original,
+                    'bpdu_guard',
+                    Boolean(row.original.stp_profile?.bpdu_guard ?? false),
+                    'bpdu_guard',
+                ),
             accessorFn: (row) => (editing ? '' : displayStpCell(row, 'bpdu_guard')),
         },
         {
             id: 'stp_loop_guard',
             header: 'STP loop guard',
-            cell: ({ row }) => boolCell(row.original, 'loop_guard', Boolean(row.original.stp_profile?.loop_guard ?? false)),
+            cell: ({ row }) =>
+                boolCell(
+                    row.original,
+                    'loop_guard',
+                    Boolean(row.original.stp_profile?.loop_guard ?? false),
+                    'loop_guard',
+                ),
             accessorFn: (row) => (editing ? '' : displayStpCell(row, 'loop_guard')),
         },
     ];
@@ -369,16 +661,17 @@ type DeviceShowProps = {
         name: string;
     };
     interfaces: DeviceInterfaceRow[];
+    errors?: Record<string, string>;
 } & SharedData;
 
 export default function Show() {
-    const { device, deployment, current_client, interfaces } =
+    const { device, deployment, current_client, interfaces, errors } =
         usePage<DeviceShowProps>().props;
     const [isEditing, setIsEditing] = useState(false);
     const [drafts, setDrafts] = useState<Record<number, InterfaceDraftRow>>({});
     const [isSaving, setIsSaving] = useState(false);
 
-    const onDraftChange = (id: number, key: keyof InterfaceDraftRow, value: unknown) => {
+    const setDraftField = (id: number, key: keyof InterfaceDraftRow, value: unknown) => {
         setDrafts((current) => ({
             ...current,
             [id]: {
@@ -386,6 +679,24 @@ export default function Show() {
                 [key]: value,
             },
         }));
+    };
+
+    const clearDraftField = (id: number, key: keyof InterfaceDraftRow) => {
+        setDrafts((current) => {
+            const prevRow = current[id];
+            if (!prevRow) {
+                return current;
+            }
+            const row = { ...prevRow };
+            delete row[key];
+            const next = { ...current };
+            if (Object.keys(row).length === 0) {
+                delete next[id];
+            } else {
+                next[id] = row;
+            }
+            return next;
+        });
     };
 
     const getDraftValue = <T,>(row: DeviceInterfaceRow, key: keyof InterfaceDraftRow, fallback: T): T => {
@@ -396,9 +707,50 @@ export default function Show() {
         return rowDraft[key] as T;
     };
 
+    const pendingUpdates = useMemo(() => {
+        return Object.entries(drafts).map(([id, rowDraft]) => {
+            const update = { id: Number(id), ...rowDraft } as Record<string, unknown>;
+            if (typeof update.access_vlan === 'string') {
+                update.access_vlan = update.access_vlan === '' ? null : Number(update.access_vlan);
+            }
+            if (typeof update.native_vlan === 'string') {
+                update.native_vlan = update.native_vlan === '' ? null : Number(update.native_vlan);
+            }
+            if (typeof update.lacp_port_id === 'string') {
+                update.lacp_port_id = update.lacp_port_id === '' ? null : Number(update.lacp_port_id);
+            }
+            if (typeof update.lacp_port_list === 'string') {
+                update.lacp_port_list = update.lacp_port_list
+                    .split(',')
+                    .map((p) => p.trim())
+                    .filter((p) => p.length > 0);
+            }
+            return update;
+        });
+    }, [drafts]);
+
+    const fieldErrorsByInterfaceId = useMemo(
+        () =>
+            mapValidationErrorsToRows(
+                errors,
+                pendingUpdates.map((u) => u.id as number),
+            ),
+        [errors, pendingUpdates],
+    );
+
+    const batchUpdateError =
+        errors && typeof errors.updates === 'string' ? errors.updates : undefined;
+
     const interfaceColumns = useMemo(
-        () => createInterfaceColumns(isEditing, getDraftValue, onDraftChange),
-        [isEditing, drafts],
+        () =>
+            createInterfaceColumns({
+                editing: isEditing,
+                getDraftValue,
+                setDraftField,
+                clearDraftField,
+                fieldErrorsByInterfaceId,
+            }),
+        [isEditing, drafts, fieldErrorsByInterfaceId],
     );
 
     const allLeafColumnIds = useMemo(() => {
@@ -482,38 +834,25 @@ export default function Show() {
         },
     ];
 
-    const pendingUpdates = useMemo(() => {
-        return Object.entries(drafts).map(([id, rowDraft]) => {
-            const update = { id: Number(id), ...rowDraft } as Record<string, unknown>;
-            if (typeof update.access_vlan === 'string') {
-                update.access_vlan = update.access_vlan === '' ? null : Number(update.access_vlan);
-            }
-            if (typeof update.native_vlan === 'string') {
-                update.native_vlan = update.native_vlan === '' ? null : Number(update.native_vlan);
-            }
-            if (typeof update.lacp_port_id === 'string') {
-                update.lacp_port_id = update.lacp_port_id === '' ? null : Number(update.lacp_port_id);
-            }
-            if (typeof update.lacp_port_list === 'string') {
-                update.lacp_port_list = update.lacp_port_list
-                    .split(',')
-                    .map((p) => p.trim())
-                    .filter((p) => p.length > 0);
-            }
-            return update;
-        });
-    }, [drafts]);
-
     const saveDrafts = () => {
         setIsSaving(true);
-        router.patch(`/devices/${device.id}/interfaces`, { updates: pendingUpdates as any }, {
-            preserveScroll: true,
-            onFinish: () => setIsSaving(false),
-            onSuccess: () => {
-                setDrafts({});
-                setIsEditing(false);
+        router.patch(
+            `/devices/${device.id}/interfaces`,
+            { updates: pendingUpdates } as Parameters<typeof router.patch>[1],
+            {
+                preserveScroll: true,
+                onFinish: () => setIsSaving(false),
+                onSuccess: () => {
+                    setDrafts({});
+                    setIsEditing(false);
+                },
             },
-        });
+        );
+    };
+
+    const discardEdits = () => {
+        setDrafts({});
+        router.get(showDevice(device.id).url, {}, { preserveScroll: true, replace: true });
     };
 
     return (
@@ -545,7 +884,7 @@ export default function Show() {
                                         type="button"
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => setDrafts({})}
+                                        onClick={discardEdits}
                                     >
                                         Discard Changes
                                     </Button>
@@ -585,6 +924,20 @@ export default function Show() {
                             </Button>
                         </div>
                     </div>
+                    {isEditing ? (
+                        <p className="text-muted-foreground mb-2 text-sm">
+                            Enum fields use <span className="font-medium">Unchanged</span> to keep the
+                            server value for that column. VLAN and LACP port ID accept numeric input.
+                        </p>
+                    ) : null}
+                    {batchUpdateError ? (
+                        <div
+                            className="border-destructive/30 bg-destructive/10 text-destructive mb-3 rounded-md border px-3 py-2 text-sm"
+                            role="alert"
+                        >
+                            {batchUpdateError}
+                        </div>
+                    ) : null}
                     <DataTable<DeviceInterfaceRow, unknown>
                         data={interfaces}
                         columns={interfaceColumns}
