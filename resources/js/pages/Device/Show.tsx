@@ -532,11 +532,16 @@ function createInterfaceColumns({
                 textCell(
                     row.original,
                     'native_vlan',
-                    row.original.switch_port?.native_vlan?.toString() ?? null,
+                    hasIpAddress(row.original)
+                        ? null
+                        : (row.original.switch_port?.native_vlan ?? null) === 0
+                          ? null
+                          : row.original.switch_port?.native_vlan?.toString() ?? null,
                     'native_vlan',
                     { type: 'number', min: 1, max: 4094 },
                 ),
-            accessorFn: (row) => (editing ? '' : displaySwitchPortCell(row, (sp) => sp.native_vlan)),
+            accessorFn: (row) =>
+                editing ? '' : hasIpAddress(row) ? '' : displaySwitchPortCell(row, (sp) => sp.native_vlan),
         },
         {
             id: 'switch_port_trunk_vlan_all',
