@@ -486,12 +486,6 @@ function createInterfaceColumns({
             cell: ({ row }) => textCell(row.original, 'sw_profile', row.original.sw_profile, 'sw_profile'),
         },
         {
-            accessorKey: 'portchannel_lag',
-            header: 'Port-channel / LAG',
-            cell: ({ row }) =>
-                textCell(row.original, 'portchannel_lag', row.original.portchannel_lag, 'portchannel_lag'),
-        },
-        {
             id: 'switch_port_mode',
             header: 'Port mode',
             cell: ({ row }) =>
@@ -687,7 +681,6 @@ const SIMPLE_VISIBLE_COLUMN_IDS = new Set<string>([
     'enable',
     'vrf_forwarding',
     'sw_profile',
-    'portchannel_lag',
 ]);
 
 const PROFILE_COLUMN_IDS = new Set<string>([
@@ -1278,7 +1271,6 @@ export default function Show() {
                                     'routing',
                                     'vrf_forwarding',
                                     'sw_profile',
-                                    'portchannel_lag',
                                 ],
                             },
                             {
