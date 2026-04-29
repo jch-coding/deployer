@@ -120,6 +120,32 @@ function mapValidationErrorsToRows(
     return map;
 }
 
+function dismissedCellErrorKey(interfaceId: number, field: string): string {
+    return `${interfaceId}:${field}`;
+}
+
+function filterFieldErrorsByDismissed(
+    map: Map<number, Record<string, string>>,
+    dismissed: ReadonlySet<string>,
+): Map<number, Record<string, string>> {
+    if (dismissed.size === 0) {
+        return map;
+    }
+    const out = new Map<number, Record<string, string>>();
+    for (const [id, row] of map) {
+        const filtered: Record<string, string> = {};
+        for (const [field, message] of Object.entries(row)) {
+            if (!dismissed.has(dismissedCellErrorKey(id, field))) {
+                filtered[field] = message;
+            }
+        }
+        if (Object.keys(filtered).length > 0) {
+            out.set(id, filtered);
+        }
+    }
+    return out;
+}
+
 function yesNo(value: boolean): string {
     return value ? 'Yes' : 'No';
 }
@@ -670,8 +696,28 @@ export default function Show() {
     const [isEditing, setIsEditing] = useState(false);
     const [drafts, setDrafts] = useState<Record<number, InterfaceDraftRow>>({});
     const [isSaving, setIsSaving] = useState(false);
+    const [dismissedFieldErrors, setDismissedFieldErrors] = useState(() => new Set<string>());
+
+    const errorsFingerprint = useMemo(() => JSON.stringify(errors ?? {}), [errors]);
+
+    useEffect(() => {
+        setDismissedFieldErrors(new Set());
+    }, [errorsFingerprint]);
+
+    const dismissFieldErrorForCell = (interfaceId: number, field: keyof InterfaceDraftRow | string) => {
+        const key = dismissedCellErrorKey(interfaceId, String(field));
+        setDismissedFieldErrors((prev) => {
+            if (prev.has(key)) {
+                return prev;
+            }
+            const next = new Set(prev);
+            next.add(key);
+            return next;
+        });
+    };
 
     const setDraftField = (id: number, key: keyof InterfaceDraftRow, value: unknown) => {
+        dismissFieldErrorForCell(id, key);
         setDrafts((current) => ({
             ...current,
             [id]: {
@@ -682,6 +728,7 @@ export default function Show() {
     };
 
     const clearDraftField = (id: number, key: keyof InterfaceDraftRow) => {
+        dismissFieldErrorForCell(id, key);
         setDrafts((current) => {
             const prevRow = current[id];
             if (!prevRow) {
@@ -729,14 +776,13 @@ export default function Show() {
         });
     }, [drafts]);
 
-    const fieldErrorsByInterfaceId = useMemo(
-        () =>
-            mapValidationErrorsToRows(
-                errors,
-                pendingUpdates.map((u) => u.id as number),
-            ),
-        [errors, pendingUpdates],
-    );
+    const fieldErrorsByInterfaceId = useMemo(() => {
+        const raw = mapValidationErrorsToRows(
+            errors,
+            pendingUpdates.map((u) => u.id as number),
+        );
+        return filterFieldErrorsByDismissed(raw, dismissedFieldErrors);
+    }, [errors, pendingUpdates, dismissedFieldErrors]);
 
     const batchUpdateError =
         errors && typeof errors.updates === 'string' ? errors.updates : undefined;
