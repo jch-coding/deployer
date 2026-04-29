@@ -2,6 +2,9 @@
 
 use App\Models\Client;
 use App\Models\Device;
+use App\Models\DeviceInterface;
+use App\Models\LacpProfile;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
 
@@ -57,4 +60,77 @@ test('CONFIGURE_ALL_INTERFACE does not create subtasks when selected devices hav
     $response->assertRedirect(route('deployments.show', $this->deployment));
     $response->assertSessionHasErrors('devices');
     expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+});
+
+test('CONFIGURE_ALL_INTERFACE creates only eligible subtasks and keeps canonical order', function () {
+    Bus::fake();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+
+    $lacp = LacpProfile::query()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'trunk_type' => 'LACP',
+        'port_list' => '1/1/1-1/1/2',
+    ]);
+
+    // One interface per composite subtask category.
+    DeviceInterface::query()->create(['device_id' => $device->id, 'interface' => '1/1/1']);
+    DeviceInterface::query()->create(['device_id' => $device->id, 'interface' => '10', 'ip_address' => '10.0.0.1/24']);
+    DeviceInterface::query()->create(['device_id' => $device->id, 'interface' => '11', 'lacp_profile_id' => $lacp->id]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'CONFIGURE_ALL_INTERFACE',
+        'deployment_time' => 1,
+        'devices' => [['id' => $device->id]],
+    ]);
+
+    $response->assertSessionHasNoErrors();
+
+    $tasks = Task::query()
+        ->where('deployment_id', $this->deployment->id)
+        ->orderBy('composite_order')
+        ->get();
+
+    expect($tasks)->toHaveCount(3);
+    expect($tasks->pluck('task_type')->all())->toBe([
+        'CONFIGURE_LAG_INTERFACE',
+        'CONFIGURE_ETHERNET_INTERFACE',
+        'CONFIGURE_VLAN_INTERFACE',
+    ]);
+    expect($tasks->pluck('composite_order')->all())->toBe([1, 2, 3]);
+});
+
+test('CONFIGURE_ALL_INTERFACE creates only ethernet subtask when only ethernet interfaces exist', function () {
+    Bus::fake();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+
+    DeviceInterface::query()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/24',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'CONFIGURE_ALL_INTERFACE',
+        'deployment_time' => 1,
+        'devices' => [['id' => $device->id]],
+    ]);
+
+    $response->assertSessionHasNoErrors();
+
+    $tasks = Task::query()
+        ->where('deployment_id', $this->deployment->id)
+        ->orderBy('composite_order')
+        ->get();
+
+    expect($tasks)->toHaveCount(1);
+    expect($tasks->first()->task_type)->toBe('CONFIGURE_ETHERNET_INTERFACE');
+    expect($tasks->first()->composite_order)->toBe(1);
 });
