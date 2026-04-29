@@ -60,8 +60,8 @@ it('can be a routed interface', function () {
 it('can be associated with a switchport profile', function () {
     $interface = DeviceInterface::factory()->create();
     $profile = SwitchPort::factory()->create(['is_profile' => true]);
-    $interface->switchport()->associate($profile);
-    expect($interface->switchport)->toBe($profile);
+    $interface->switch_port()->associate($profile);
+    expect($interface->switch_port)->toBe($profile);
 });
 
 test('if it is a routing interface it can be associated with a vrf', function () {
@@ -74,22 +74,22 @@ test('if it is a routing interface it can be associated with a vrf', function ()
 it('can be associated to a switchport', function () {
     $interface = DeviceInterface::factory()->create();
     $switchport = SwitchPort::factory()->make();
-    $interface->switchport()->associate($switchport);
-    expect($interface->switchport)->toBe($switchport);
+    $interface->switch_port()->associate($switchport);
+    expect($interface->switch_port)->toBe($switchport);
 });
 
 it('can be associated to an LACP profile', function () {
     $interface = DeviceInterface::factory()->create();
     $lacpProfile = LacpProfile::factory()->create(['mode' => 'ACTIVE', 'port_id' => 1, 'rate' => 'FAST']);
-    $interface->lacpProfile()->associate($lacpProfile);
-    expect($interface->lacpProfile)->toBe($lacpProfile);
+    $interface->lacp_profile()->associate($lacpProfile);
+    expect($interface->lacp_profile)->toBe($lacpProfile);
 });
 
 it('can be associated with an stp profile', function () {
     $interface = DeviceInterface::factory()->create();
     $stpProfile = StpProfile::factory()->create(['admin_edge_port' => true, 'bpdu_guard' => true, 'loop_guard' => true]);
-    $interface->stpProfile()->associate($stpProfile);
-    expect($interface->stpProfile)->toBe($stpProfile);
+    $interface->stp_profile()->associate($stpProfile);
+    expect($interface->stp_profile)->toBe($stpProfile);
 });
 
 it('can be a vlan that has a static address assigned', function () {

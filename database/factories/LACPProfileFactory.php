@@ -20,6 +20,8 @@ class LACPProfileFactory extends Factory
             'mode' => fake()->randomElement(['ACTIVE', 'PASSIVE']),
             'port_id' => random_int(1, 256),
             'rate' => fake()->randomElement(['SLOW', 'FAST']),
+            'port_list' => '1/1/1&1/1/2',
+            'trunk_type' => 'LACP',
         ];
     }
 }

@@ -5,8 +5,8 @@ use App\Models\SwitchPort;
 
 it('can be associated to many interfaces', function () {
     $switchport = SwitchPort::factory()->create();
-    $interface1 = DeviceInterface::factory()->create(['switchport_id' => $switchport->id]);
-    $interface2 = DeviceInterface::factory()->create(['switchport_id' => $switchport->id]);
+    $interface1 = DeviceInterface::factory()->create(['switch_port_id' => $switchport->id]);
+    $interface2 = DeviceInterface::factory()->create(['switch_port_id' => $switchport->id]);
     expect($switchport->interfaces)->toHaveCount(2)
         ->and($switchport->interfaces->contains($interface1))->toBeTrue()
         ->and($switchport->interfaces->contains($interface2))->toBeTrue();
@@ -22,7 +22,7 @@ it('can be a switchport profile but defaults to an ethernet port', function () {
 it('can be an access port', function () {
     $switchport = SwitchPort::factory()->create(['access_vlan' => 10, 'interface_mode' => 'ACCESS']);
     expect($switchport->native_vlan)->toBeNull();
-    expect($switchport->trunk_vlan_all)->toBeNull();
+    expect($switchport->trunk_vlan_all)->toBeFalse();
     expect($switchport->trunk_vlan_ranges)->toBeNull();
 });
 

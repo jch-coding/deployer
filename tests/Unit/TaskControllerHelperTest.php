@@ -32,6 +32,9 @@ test('get_unique_sw_profiles returns a collection of unique port profiles', func
    $dev2 = $devices->last();
    $dev1->interfaces()->createMany($dev1_ints->toArray());
    $dev2->interfaces()->createMany($dev2_ints->toArray());
+   $devices->each(function ($device) {
+       $device->setRelation('interfaces_sw_profiles', $device->interfaces()->whereNotNull('sw_profile')->get());
+   });
    $expected = collect([
        $dev1->interfaces->first(),
        $dev2->interfaces->first(),
