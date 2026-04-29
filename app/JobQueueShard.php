@@ -4,11 +4,11 @@ namespace App;
 
 final class JobQueueShard
 {
-    public const MAX_SHARD_COUNT = 256;
+    public const MAX_SHARD_COUNT = 8;
 
     public static function shardCount(): int
     {
-        $configured = (int) config('task_job_queues.shard_count', 8);
+        $configured = (int) config('task_job_queues.shard_count', 4);
 
         return max(1, min(self::MAX_SHARD_COUNT, $configured));
     }

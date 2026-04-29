@@ -343,7 +343,7 @@ export default function Usage() {
                             <li>
                                 <strong>Clear Queue:</strong> runs Laravel&apos;s{' '}
                                 <code>artisan queue:clear</code> for the <strong>shard queue tied to this
-                                task</strong> (names like <code>q0</code> … <code>q63</code> by default).
+                                task</strong> (names like <code>q0</code> … <code>q3</code> by default).
                                 The app retries and checks command output before reporting success. Other
                                 tasks on <em>different</em> shards are unaffected; tasks that share the
                                 same shard can still collide, only less often than with a tiny fixed set
