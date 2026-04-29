@@ -450,8 +450,8 @@ class TaskController extends Controller
 
     public function relaunch(Task $task)
     {
-        if (! in_array($task->status, ['FAILED', 'CANCELLED'], true)) {
-            session()->flash('error', 'Only failed or cancelled tasks can be relaunched.');
+        if (! in_array($task->status, ['FAILED', 'TIMED_OUT', 'CANCELLED'], true)) {
+            session()->flash('error', 'Only failed, timed out, or cancelled tasks can be relaunched.');
 
             return back();
         }

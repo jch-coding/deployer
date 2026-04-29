@@ -38,6 +38,8 @@ function statusBadgeClass(status: string): string {
             return 'bg-emerald-100 text-emerald-800 border-emerald-200';
         case 'FAILED':
             return 'bg-red-100 text-red-800 border-red-200';
+        case 'TIMED_OUT':
+            return 'bg-orange-100 text-orange-900 border-orange-200';
         case 'CANCELLED':
             return 'bg-slate-200 text-slate-800 border-slate-300';
         case 'IN_PROGRESS':
@@ -50,7 +52,7 @@ function statusBadgeClass(status: string): string {
 }
 
 function canRelaunch(status: string): boolean {
-    return status === 'FAILED' || status === 'CANCELLED';
+    return status === 'FAILED' || status === 'TIMED_OUT' || status === 'CANCELLED';
 }
 
 const columns: ColumnDef<TaskRow>[] = [

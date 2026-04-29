@@ -70,6 +70,31 @@ test('relaunching a cancelled task sets status in progress and redirects to show
     expect($task->batch_id)->not->toBe('old-batch-id');
 });
 
+test('relaunching a timed out task sets status in progress and redirects to show', function () {
+    Bus::fake();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'TIMED_OUT',
+        'batch_id' => 'old-batch-id',
+    ]);
+
+    $task->devices()->attach($device->id, ['status' => 'TIMED_OUT']);
+
+    $this->post(route('tasks.relaunch', $task))
+        ->assertRedirect(route('tasks.show', $task));
+
+    $task->refresh();
+    expect($task->status)->toBe('IN_PROGRESS');
+    expect($task->batch_id)->not->toBeNull();
+    expect($task->batch_id)->not->toBe('old-batch-id');
+});
+
 test('relaunch rejects non-failed-and-non-cancelled task statuses', function () {
     Bus::fake();
 
@@ -88,7 +113,7 @@ test('relaunch rejects non-failed-and-non-cancelled task statuses', function () 
     $this->from(route('tasks.index'))
         ->post(route('tasks.relaunch', $task))
         ->assertRedirect(route('tasks.index'))
-        ->assertSessionHas('error', 'Only failed or cancelled tasks can be relaunched.');
+        ->assertSessionHas('error', 'Only failed, timed out, or cancelled tasks can be relaunched.');
 
     $task->refresh();
     expect($task->status)->toBe('IN_PROGRESS');
