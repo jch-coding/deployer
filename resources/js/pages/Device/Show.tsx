@@ -675,7 +675,10 @@ function createInterfaceColumns({
     ];
 }
 
-const DEVICE_SHOW_VISIBILITY_KEY = 'device-show-columns:v1';
+const DEVICE_SHOW_VISIBILITY_KEY = 'device-show-columns:v2';
+
+/** Shown only if the user turns the column on in the column picker. */
+const INTERFACE_TABLE_HIDDEN_BY_DEFAULT_IDS = new Set<string>(['id']);
 
 const SIMPLE_VISIBLE_COLUMN_IDS = new Set<string>([
     'select',
@@ -972,7 +975,11 @@ export default function Show() {
         [allLeafColumnIds],
     );
     const fullPreset = useMemo(
-        () => buildVisibilityPreset(allLeafColumnIds, new Set(allLeafColumnIds)),
+        () =>
+            buildVisibilityPreset(
+                allLeafColumnIds,
+                new Set(allLeafColumnIds.filter((id) => !INTERFACE_TABLE_HIDDEN_BY_DEFAULT_IDS.has(id))),
+            ),
         [allLeafColumnIds],
     );
 
