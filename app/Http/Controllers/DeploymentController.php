@@ -13,7 +13,7 @@ class DeploymentController extends Controller
 {
     public function index(Request $request)
     {
-        $currentClient = $request->user()->clients->where('current', true)->first();
+        $currentClient = $request->user()->currentClient();
 
         if (! $currentClient) {
             session()->flash('error', 'Please set current client to view deployments');

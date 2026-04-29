@@ -149,7 +149,6 @@ class ClientController extends Controller
             $oldCurrentClient->update(['current' => false]);
         }
         $client->update(['current' => true]);
-        Inertia::share('current_client', $client);
 
         return to_route('clients.index');
     }

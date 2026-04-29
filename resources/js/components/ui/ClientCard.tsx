@@ -14,7 +14,16 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                     {client.name}
                 </CardTitle>
                 <CardContent className="mx-auto mt-3 flex justify-items-center gap-2">
-                    <Button onClick={() => router.put(current(client.id))} disabled={ isCurrentClient }>
+                    <Button
+                        onClick={() =>
+                            router.put(current(client.id), {}, {
+                                onSuccess: () => {
+                                    router.flushAll();
+                                },
+                            })
+                        }
+                        disabled={isCurrentClient}
+                    >
                         Set Current
                     </Button>
                     <EditClientModal client={client} errors={errors} base_urls={base_urls} />
