@@ -331,9 +331,16 @@ class CentralAPIHelper
         })->toArray();
     }
 
-    public static function build_portchannel_from_device_interface(DeviceInterface $deviceInterface)
+    public static function build_portchannel_from_device_interface(DeviceInterface $deviceInterface, bool $forCreatingLAG = false)
     {
-        $switch_port_configuration = static::build_switchport_from_device_interface($deviceInterface);
+        if ($deviceInterface->sw_profile !== null && ! $forCreatingLAG) {
+            return [
+                'name' => $deviceInterface->interface,
+                'sw-profile' => $deviceInterface->sw_profile
+            ];
+        }
+
+        $switch_port_configuration = static::build_switchport_from_device_interface($deviceInterface, $forCreatingLAG);
 
         if ($deviceInterface->lacp_profile !== null) {
             $lacp_profile = [
@@ -344,14 +351,11 @@ class CentralAPIHelper
             $switch_port_configuration['port-list'] = $deviceInterface->lacp_profile->port_list;
             $switch_port_configuration['enable'] = $deviceInterface->enable;
         }
-        if ($deviceInterface->sw_profile !== null) {
-            $switch_port_configuration['sw-profile'] = $deviceInterface->sw_profile;
-        }
 
         return array_merge($switch_port_configuration, ['lacp' => $lacp_profile]);
     }
 
-    public static function build_switchport_from_device_interface(DeviceInterface $deviceInterface)
+    public static function build_switchport_from_device_interface(DeviceInterface $deviceInterface, bool $forCreatingLAG = false)
     {
         $switch_port = [];
         $stp_profile = [];
@@ -379,7 +383,7 @@ class CentralAPIHelper
         $switchport_rest_body = [
             'name' => $deviceInterface->interface,
         ];
-        if ($deviceInterface->sw_profile !== null) {
+        if ($deviceInterface->sw_profile !== null && ! $forCreatingLAG) {
             $switchport_rest_body['sw-profile'] = $deviceInterface->sw_profile;
         } else {
             $switchport_rest_body['vsx'] = ['shutdown-on-split' => (bool) $deviceInterface->shutdown_on_split];
@@ -458,7 +462,7 @@ class CentralAPIHelper
 
     public function post_interface_portchannel(DeviceInterface $deviceInterface)
     {
-        $switch_port = static::build_portchannel_from_device_interface($deviceInterface);
+        $switch_port = static::build_portchannel_from_device_interface($deviceInterface, true);
 
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
@@ -491,12 +495,20 @@ class CentralAPIHelper
     public function patch_interface_portchannel(DeviceInterface $deviceInterface, $queryParameters = [])
     {
         $switch_port = static::build_portchannel_from_device_interface($deviceInterface);
+        if (empty($queryParameters)) {
+            $queryParameters = [
+                'view-type' => 'LOCAL',
+                'object-type' => 'LOCAL',
+                'scope-id' => $deviceInterface->device->scope_id,
+                'device-function' => $deviceInterface->device->device_function,
+            ];
+        }
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
-                ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].$switch_port->name, $switch_port);
+                ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].$deviceInterface->interface, $switch_port);
 
             return $response;
         }
@@ -718,6 +730,7 @@ class CentralAPIHelper
             return $response;
         }
     }
+
     public function get_sw_port_profile($profile_name = '', $queryParameters = ['view-type' => 'LIBRARY'])
     {
         if (! $this->client->handleBearerTokenAuth()) {

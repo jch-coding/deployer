@@ -87,7 +87,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                 ) : null}
                 <CardDescription>{task_friendly_description}</CardDescription>
             </CardHeader>
-            <CardContent className="flex gap-2">
+            <CardContent className="flex flex-wrap gap-2">
                 <Dialog>
                     <DialogTrigger asChild>
                         <Button data-test="set-deployment-time"><AlarmClockIcon/>Set Duration</Button>

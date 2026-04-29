@@ -42,8 +42,19 @@ class ConfigureLagInterfaceJob extends BaseTaskJob
                 Log::error($response->json('message'));
                 $this->task->processTaskStatusLog($response->json('message'), true);
                 $this->release($this->wait_time * 60);
+
+                return;
             }
-            $status_log = $this->task->status_log;
+            if ($this->device_interface->sw_profile) {
+                $patch_response = $this->centralAPIHelper->patch_interface_portchannel($this->device_interface);
+                if (! $patch_response->ok()) {
+                    $message = 'Failed to apply port profile to interface LAG .'.$this->device_interface->interface.': '.$patch_response->json('message');
+                    $this->task->processTaskStatusLog($message, true);
+                    $this->release($this->wait_time * 60);
+
+                    return;
+                }
+            }
             $message = 'Configured LAG '.$this->device_interface->interface;
             $this->task->processTaskStatusLog($message);
             $this->task->deviceInterfaces()->find($this->device_interface)->pivot->update(['status' => 'COMPLETED']);
