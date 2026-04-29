@@ -404,42 +404,41 @@ function createInterfaceColumns({
         );
     };
 
+    const selectColumn: ColumnDef<DeviceInterfaceRow> | null = editing
+        ? {
+              id: 'select',
+              enableHiding: false,
+              header: () =>
+                  allInterfaceIds.length > 0 ? (
+                      <div className="flex justify-center px-1">
+                          <Checkbox
+                              checked={
+                                  allRowsSelected
+                                      ? true
+                                      : someRowsSelected
+                                        ? 'indeterminate'
+                                        : false
+                              }
+                              aria-label="Select all interfaces"
+                              onCheckedChange={() => toggleSelectAll()}
+                          />
+                      </div>
+                  ) : null,
+              cell: ({ row }) => (
+                  <div className="flex justify-center px-1">
+                      <Checkbox
+                          checked={selectedInterfaceIds.has(row.original.id)}
+                          aria-label={`Select ${row.original.interface}`}
+                          onCheckedChange={() => toggleSelect(row.original.id)}
+                      />
+                  </div>
+              ),
+              accessorFn: () => '',
+          }
+        : null;
+
     return [
-        {
-            id: 'select',
-            enableHiding: false,
-            header: () =>
-                editing && allInterfaceIds.length > 0 ? (
-                    <div className="flex justify-center px-1">
-                        <Checkbox
-                            checked={
-                                allRowsSelected
-                                    ? true
-                                    : someRowsSelected
-                                      ? 'indeterminate'
-                                      : false
-                            }
-                            aria-label="Select all interfaces"
-                            onCheckedChange={() => toggleSelectAll()}
-                        />
-                    </div>
-                ) : (
-                    <span className="text-muted-foreground"> </span>
-                ),
-            cell: ({ row }) =>
-                editing ? (
-                    <div className="flex justify-center px-1">
-                        <Checkbox
-                            checked={selectedInterfaceIds.has(row.original.id)}
-                            aria-label={`Select ${row.original.interface}`}
-                            onCheckedChange={() => toggleSelect(row.original.id)}
-                        />
-                    </div>
-                ) : (
-                    <span className="text-muted-foreground">—</span>
-                ),
-            accessorFn: () => '',
-        },
+        ...(selectColumn ? [selectColumn] : []),
         { accessorKey: 'id', header: 'ID' },
         {
             id: 'interface',
@@ -1236,7 +1235,7 @@ export default function Show() {
                         data={interfaces}
                         columns={interfaceColumns}
                         getRowId={(row) => String(row.id)}
-                        stickyLeftColumnIds={['select', 'interface']}
+                        stickyLeftColumnIds={isEditing ? ['select', 'interface'] : ['interface']}
                         enableColumnPicker
                         columnPickerTitle="Columns"
                         columnVisibility={columnVisibility}
