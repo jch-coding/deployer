@@ -2,6 +2,8 @@
 
 use App\Models\Client;
 use App\Models\Device;
+use App\Models\DeviceInterface;
+use App\Models\LacpProfile;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
@@ -58,6 +60,27 @@ test('creating CONFIGURE_ALL_INTERFACE stores three composite sibling tasks', fu
         'deployment_id' => $this->deployment->id,
         'client_id' => $this->client->id,
     ]);
+    $device = $devices->first();
+    $lacp = LacpProfile::query()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'trunk_type' => 'LACP',
+        'port_list' => '1/1/1-1/1/2',
+    ]);
+    DeviceInterface::query()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/1',
+    ]);
+    DeviceInterface::query()->create([
+        'device_id' => $device->id,
+        'interface' => '10',
+        'ip_address' => '10.10.10.1/24',
+    ]);
+    DeviceInterface::query()->create([
+        'device_id' => $device->id,
+        'interface' => '11',
+        'lacp_profile_id' => $lacp->id,
+    ]);
 
     $response = $this->post(route('tasks.store', $this->deployment), [
         'task_type' => 'CONFIGURE_ALL_INTERFACE',
@@ -81,6 +104,54 @@ test('creating CONFIGURE_ALL_INTERFACE stores three composite sibling tasks', fu
     $first = $tasks->firstWhere('composite_order', 1);
     expect($first)->not->toBeNull();
     $response->assertRedirect(route('tasks.show', $first));
+});
+
+test('creating CONFIGURE_ALL_INTERFACE stores only eligible composite sibling tasks', function () {
+    Bus::fake();
+
+    $devices = Device::factory(1)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+    $device = $devices->first();
+
+    DeviceInterface::query()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/1',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'CONFIGURE_ALL_INTERFACE',
+        'deployment_time' => 1,
+        'devices' => $devices->map(fn ($d) => ['id' => $d->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $tasks = $this->deployment->refresh()->tasks()->orderBy('composite_order')->get();
+    expect($tasks)->toHaveCount(1);
+    expect($tasks->pluck('task_type')->all())->toBe([
+        'CONFIGURE_ETHERNET_INTERFACE',
+    ]);
+});
+
+test('creating CONFIGURE_ALL_INTERFACE with no matching interfaces returns error and creates no tasks', function () {
+    Bus::fake();
+
+    $devices = Device::factory(1)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+
+    $response = $this->from(route('deployments.show', $this->deployment))
+        ->post(route('tasks.store', $this->deployment), [
+            'task_type' => 'CONFIGURE_ALL_INTERFACE',
+            'deployment_time' => 1,
+            'devices' => $devices->map(fn ($d) => ['id' => $d->id])->toArray(),
+        ]);
+
+    $response->assertRedirect(route('deployments.show', $this->deployment));
+    $response->assertSessionHasErrors('devices');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
 });
 
 test('composite task show uses MultiJobTask and includes sub_jobs', function () {

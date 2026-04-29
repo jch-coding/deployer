@@ -20,6 +20,7 @@ use App\Jobs\RemoveLocalOverrideStaticRouteJob;
 use App\Jobs\RemoveLocalOverrideVlansJob;
 use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
+use App\Models\Device;
 use App\Models\Deployment;
 use App\Models\Task;
 use App\TaskType;
@@ -348,50 +349,60 @@ class TaskController extends Controller
             $remove_ntp_task->update(['batch_id' => $batch]);
             $task = $remove_vlans_task;
         } elseif ($validated['task_type'] === 'CONFIGURE_ALL_INTERFACE') {
+            $selectedDeviceIds = Collection::make($validated['devices'])
+                ->pluck('id')
+                ->filter(fn ($id) => $id !== null)
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $selectedDevices = Device::query()
+                ->where('deployment_id', $deployment->id)
+                ->whereIn('id', $selectedDeviceIds)
+                ->with('interfaces')
+                ->get();
+
+            $configureDefinitions = collect([
+                ['task_type' => 'CONFIGURE_LAG_INTERFACE', 'name_prefix' => 'configure_lag_interface_for_'],
+                ['task_type' => 'CONFIGURE_ETHERNET_INTERFACE', 'name_prefix' => 'configure_ethernet_interface_for_'],
+                ['task_type' => 'CONFIGURE_VLAN_INTERFACE', 'name_prefix' => 'configure_svi_interface_for_'],
+            ])->filter(function (array $definition) use ($selectedDevices): bool {
+                return $this->getConfigureAllInterfacesForType($selectedDevices, $definition['task_type'])->isNotEmpty();
+            })->values();
+
+            if ($configureDefinitions->isEmpty()) {
+                return back()->withErrors([
+                    'devices' => 'No matching interfaces found for selected devices.',
+                ]);
+            }
+
             $compositeGroupId = (string) Str::uuid();
             $compositeKind = 'CONFIGURE_ALL_INTERFACE';
             $jobQueue = $this->allocateJobQueue($request, $shardEntropy);
-            $configure_lag_task = $deployment->tasks()->create([
-                'task_type' => 'CONFIGURE_LAG_INTERFACE',
-                'name' => 'configure_lag_interface_for_'.$deployment->name.now(),
-                'deployment_time' => $validated['deployment_time'],
-                'status' => 'IN_PROGRESS',
-                'job_queue' => $jobQueue,
-                'composite_group_id' => $compositeGroupId,
-                'composite_kind' => $compositeKind,
-                'composite_order' => 1,
-            ]);
-            $configure_ethernet_task = $deployment->tasks()->create([
-                'task_type' => 'CONFIGURE_ETHERNET_INTERFACE',
-                'name' => 'configure_ethernet_interface_for_'.$deployment->name.now(),
-                'deployment_time' => $validated['deployment_time'],
-                'status' => 'IN_PROGRESS',
-                'job_queue' => $jobQueue,
-                'composite_group_id' => $compositeGroupId,
-                'composite_kind' => $compositeKind,
-                'composite_order' => 2,
-            ]);
-            $configure_svi_task = $deployment->tasks()->create([
-                'task_type' => 'CONFIGURE_VLAN_INTERFACE',
-                'name' => 'configure_svi_interface_for_'.$deployment->name.now(),
-                'deployment_time' => $validated['deployment_time'],
-                'status' => 'IN_PROGRESS',
-                'job_queue' => $jobQueue,
-                'composite_group_id' => $compositeGroupId,
-                'composite_kind' => $compositeKind,
-                'composite_order' => 3,
-            ]);
-            $device_collection = Collection::make($validated['devices']);
-            $configure_lag_task->devices()->attach($device_collection->pluck('id'));
-            $configure_ethernet_task->devices()->attach($device_collection->pluck('id'));
-            $configure_svi_task->devices()->attach($device_collection->pluck('id'));
-            $batch = $this->dispatchJob($configure_lag_task);
-            $configure_lag_task->update(['batch_id' => $batch]);
-            $batch = $this->dispatchJob($configure_ethernet_task);
-            $configure_ethernet_task->update(['batch_id' => $batch]);
-            $batch = $this->dispatchJob($configure_svi_task);
-            $configure_svi_task->update(['batch_id' => $batch]);
-            $task = $configure_lag_task;
+            $createdConfigureTasks = collect();
+
+            foreach ($configureDefinitions as $index => $definition) {
+                $createdTask = $deployment->tasks()->create([
+                    'task_type' => $definition['task_type'],
+                    'name' => $definition['name_prefix'].$deployment->name.now(),
+                    'deployment_time' => $validated['deployment_time'],
+                    'status' => 'IN_PROGRESS',
+                    'job_queue' => $jobQueue,
+                    'composite_group_id' => $compositeGroupId,
+                    'composite_kind' => $compositeKind,
+                    'composite_order' => $index + 1,
+                ]);
+
+                $createdTask->devices()->attach($selectedDevices->pluck('id'));
+
+                $batchId = $this->dispatchJob($createdTask);
+                if ($batchId !== null) {
+                    $createdTask->forceFill(['batch_id' => $batchId])->save();
+                }
+
+                $createdConfigureTasks->push($createdTask);
+            }
+
+            $task = $createdConfigureTasks->first();
         } else {
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
@@ -542,6 +553,22 @@ class TaskController extends Controller
         return $task->refresh();
     }
 
+    protected function getConfigureAllInterfacesForType(Collection $devices, string $taskType): Collection
+    {
+        return match ($taskType) {
+            'CONFIGURE_ETHERNET_INTERFACE' => $devices->map(
+                fn ($device) => $device->interfaces->filter(fn ($interface) => str_contains($interface->interface, '/'))
+            )->collapse(),
+            'CONFIGURE_VLAN_INTERFACE' => $devices->map(
+                fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->ip_address !== null)
+            )->collapse(),
+            'CONFIGURE_LAG_INTERFACE' => $devices->map(
+                fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->lacp_profile_id !== null)
+            )->collapse(),
+            default => collect(),
+        };
+    }
+
     public function dispatchJob(Task $task): ?string
     {
         $task->loadMissing('devices', 'deviceInterfaces');
@@ -606,18 +633,18 @@ class TaskController extends Controller
 
                     return $device;
                 });
-                $task = $this->attach_interfaces($task, $devices_with_port_profiles->map(fn ($device) => $device->interfaces->filter(fn ($interface) => str_contains($interface->interface, '/')))->collapse());
+                $task = $this->attach_interfaces($task, $this->getConfigureAllInterfacesForType($devices_with_port_profiles, 'CONFIGURE_ETHERNET_INTERFACE'));
                 $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_VLAN_INTERFACE':
-                $vlan_interfaces = $task->devices->map(fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->ip_address !== null))->collapse();
+                $vlan_interfaces = $this->getConfigureAllInterfacesForType($task->devices, 'CONFIGURE_VLAN_INTERFACE');
                 $task = $this->attach_interfaces($task, $vlan_interfaces);
                 $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($vlan_interface) => new ConfigureVlanInterfaceJob($vlan_interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_LAG_INTERFACE':
-                $lag_interfaces = $task->devices->map(fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->lacp_profile !== null))->collapse();
+                $lag_interfaces = $this->getConfigureAllInterfacesForType($task->devices, 'CONFIGURE_LAG_INTERFACE');
                 $task = $this->attach_interfaces($task, $lag_interfaces);
                 $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($lag_interface) => new ConfigureLagInterfaceJob($lag_interface, $task, $centralAPIHelper))->toArray();
