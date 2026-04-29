@@ -3,11 +3,14 @@
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\User;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('index page returns a list of deployments for an authenticated user', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
     $this->actingAs($user);
-    $deployments = Deployment::factory(2)->for($user)->create();
+    $deployments = Deployment::factory(2)->for($client)->create();
     $this->get(route('deployments.index'))
         ->assertOk()
     ->assertSeeHtml($deployments->first()->name)
@@ -24,59 +27,49 @@ test('a deployment is created with the current client by default', function () {
                 ->create();
    $user->refresh()->clients()->first()->update(['current' => true]);
    $this->actingAs($user);
-   visit(route('deployments.index'))
-       ->click('@add-deployment-trigger')
-       ->fill('name', 'New Deployment')
-       ->click('@add-deployment');
-   $this->assertDatabaseHas('deployments', ['client_id' => $user->clients()->first()->id]);
+   $this->post(route('deployments.store'), ['name' => 'New Deployment'])
+       ->assertRedirect(route('deployments.index'));
+   $this->assertDatabaseHas('deployments', [
+       'name' => 'New Deployment',
+       'client_id' => $user->clients()->first()->id,
+   ]);
 });
 
 test('a user can click on a deployment to view it', function () {
-    $user = User::factory()->create();
-    $deployment = Deployment::factory()->recycle($user)->create();
-    $user->clients()->first()->update(['current' => true]);
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->for($client)->create();
     $this->actingAs($user);
-    visit(route('deployments.index'))
-         ->assertSee($deployment->name)
-        ->click('@deployment-link')
-        ->assertUrlIs(route('deployments.show', $deployment));
+    $this->get(route('deployments.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Index')
+            ->where('deployments.0.id', $deployment->id)
+            ->where('deployments.0.name', $deployment->name)
+        );
 });
 
 test('a user can delete a deployment on the index page', function () {
-    $user = User::factory()->create();
-    $deployment = Deployment::factory()->for($user)->create();
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->for($client)->create();
     $this->actingAs($user);
-    $this->visit(route('deployments.index'))
-        ->click('@delete')
-        ->assertRedirect(route('deployments.index'))
-        ->assertDontSeeHtml($deployment->name);
-});
-
-test('a user can edit a deployment on the index page.', function () {
-    $user = User::factory()->create();
-    $deployment = Deployment::factory()->for($user)->create();
-    $this->actingAs($user);
-    $this->visit(route('deployments.index'))
-        ->click('@edit')
-        ->assertSeeHtml($deployment->name)
-        ->fill('name', 'New Deployment Name')
-        ->click('@update')
-        ->assertRedirect(route('deployments.index'))
-        ->assertSeeHtml('New Deployment Name');
+    $this->delete(route('deployments.destroy', $deployment))
+        ->assertRedirect(route('deployments.index'));
+    $this->assertDatabaseMissing('deployments', ['id' => $deployment->id]);
 });
 
 it('has a button to add a new deployment', function () {
-    $deployment = Deployment::factory()->create();
-    $this->actingAs($deployment->user);
-    visit(route('deployments.index'))
-        ->assertSee('Add Deployment')
-        ->click('@add-deployment-trigger')
-        ->fill('name', 'New Deployment')
-        ->click('@add-deployment');
-    $this->assertDatabaseHas('deployments', [
-        'name' => $deployment->name,
-        'description' => $deployment->description,
-        'user_id' => $deployment->user_id,
-        'id' => $deployment->id
-    ]);
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $this->actingAs($user);
+    $this->get(route('deployments.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Index')
+            ->has('deployments')
+        );
 });

@@ -7,6 +7,7 @@ use App\Models\Task;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class DeploymentController extends Controller
@@ -88,20 +89,27 @@ class DeploymentController extends Controller
 
     public function store(Request $request)
     {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient) {
+            return redirect()->route('clients.index')->with('error', 'Please set current client before creating deployments');
+        }
+
         $data = $request->validate([
-            'name' => 'required|string|min:3|max:255',
+            'name' => [
+                'required',
+                'string',
+                'min:3',
+                'max:255',
+                Rule::unique('deployments', 'name')->where(
+                    fn ($query) => $query->where('client_id', $currentClient->id)
+                ),
+            ],
             'description' => 'nullable|string|max:255',
         ]);
 
-        if (Deployment::where('name', $data['name'])->exists()) {
-            return redirect()->back()->withErrors(['name' => 'Deployment with this name already exists']);
-        }
-
-        $client_id = $request->user()->currentClient()->id;
-
         Deployment::create([
             ...$data,
-            'client_id' => $client_id,
+            'client_id' => $currentClient->id,
         ]);
 
         return redirect()->route('deployments.index');

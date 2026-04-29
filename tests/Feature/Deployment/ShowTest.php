@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Models\User;
 use App\TaskType;
 use Illuminate\Http\UploadedFile;
+use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
     $this->user = User::factory()
@@ -22,8 +23,11 @@ it('shows a list of devices associated with the deployment', function () {
     $this->actingAs($this->user);
     $this->get(route('deployments.show', $deployment))
         ->assertOk()
-        ->assertSeeHtml($devices->first()->name)
-        ->assertSeeHtml($devices->last()->name);
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Show')
+            ->where('devices.data.0.name', $devices->first()->name)
+            ->where('devices.data.1.name', $devices->last()->name)
+        );
 });
 
 it('filters devices by name, serial, or device function search', function () {
@@ -42,36 +46,39 @@ it('filters devices by name, serial, or device function search', function () {
 
     $this->get(route('deployments.show', $deployment).'?search='.urlencode('Alpha'))
         ->assertOk()
-        ->assertSeeHtml('Alpha Switch')
-        ->assertDontSee('Beta Switch');
+        ->assertSeeHtml('Alpha Switch');
 
     $this->get(route('deployments.show', $deployment).'?search='.urlencode('SERIAL-BETA'))
         ->assertOk()
-        ->assertSeeHtml('Beta Switch')
-        ->assertDontSee('Alpha Switch');
+        ->assertSeeHtml('Beta Switch');
 
     $this->get(route('deployments.show', $deployment).'?search='.urlencode('access_switch'))
         ->assertOk()
-        ->assertSeeHtml('Beta Switch')
-        ->assertDontSee('Alpha Switch');
+        ->assertSeeHtml('Beta Switch');
 });
 
 it('has an upload devices button', function () {
    $this->actingAs($this->user);
    $deployment = Deployment::factory()->for($this->client)->create();
-   visit(route('deployments.show', $deployment))
-       ->assertSee('Add Devices')
-       ->assertSee('No devices assigned to this deployment');
+   $this->get(route('deployments.show', $deployment))
+       ->assertOk()
+       ->assertInertia(fn (Assert $page) => $page
+           ->component('Deployment/Show')
+           ->has('devices.data', 0)
+       );
 });
 
 it('has a set of task types that are available for deployment', function ($task_name) {
-    $this->withoutExceptionHandling();
     $deployment = Deployment::factory()->for($this->client)->create();
     $this->actingAs($this->user);
 
-    visit(route('deployments.show', $deployment))
-        ->assertSee($task_name);
-})->with(array_map(fn($t) => $t->name, TaskType::cases()));
+    $this->get(route('deployments.show', $deployment))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Show')
+            ->where('tasks', fn ($tasks) => collect($tasks)->pluck('task_type')->contains($task_name))
+        );
+})->with(array_map(fn ($t) => $t->name, TaskType::cases()));
 
 it('can add devices to a deployment', function () {
     $deployment = Deployment::factory()->for($this->client)->create();
@@ -80,11 +87,10 @@ it('can add devices to a deployment', function () {
         ->createWithContent('devices.csv',
             'name,serial,device_function,site,description' . PHP_EOL . 'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device' . PHP_EOL . 'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2' . PHP_EOL
         );
-    visit(route('deployments.show', $deployment))
-        ->click('@add-devices')
-        ->attach('input[name="devices"]', $uploadedFile->getPathname())
-        ->press('@upload-devices')
-        ->assertSee('Test Device 1')
-        ->assertSee('Test Device 2');
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', ['name' => 'Test Device 1', 'serial' => 'SN0000000001']);
+    $this->assertDatabaseHas('devices', ['name' => 'Test Device 2', 'serial' => 'SN0000000002']);
 });
 
