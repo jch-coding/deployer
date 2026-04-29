@@ -20,6 +20,6 @@ class DeviceChannel
      */
     public function join(User $user, string $name): array|bool
     {
-        return $user->clients->contains(Device::where('name', $name)->first()->client_id);
+        return $user->devices()->where('name', $name)->exists();
     }
 }

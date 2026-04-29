@@ -90,7 +90,15 @@ class CSVHelper
         if (empty($CSVData) || count($CSVData) == 1) {
             return [];
         }
-        $headers = $CSVData[0];
+        $headers = array_map(function ($header) {
+            $normalized = str_replace('-', '_', trim((string) $header));
+
+            return match ($normalized) {
+                'interface_description' => 'description',
+                'lag_id' => 'lacp_port_id',
+                default => $normalized,
+            };
+        }, $CSVData[0]);
         $deviceArrays = [];
         foreach (array_slice($CSVData, 1) as $row) {
             $mappedRow = [];

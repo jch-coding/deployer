@@ -18,6 +18,7 @@ class Device extends Model
         'name',
         'device_id',
         'client_id',
+        'user_id',
         'site_id',
         'deployment_id',
         'serial',
@@ -29,6 +30,11 @@ class Device extends Model
     public function client() : BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function user() : BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function tasks() : BelongsToMany

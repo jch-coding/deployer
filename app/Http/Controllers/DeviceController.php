@@ -30,6 +30,9 @@ class DeviceController extends Controller
      */
     public function store(Request $request, Deployment $deployment)
     {
+        $user = $request->user();
+        $currentClient = $user->currentClient();
+
         $data = $request->validate([
             'name' => 'required|string|min:3|max:255',
             'serial' => 'required|string|min:12',
@@ -39,15 +42,20 @@ class DeviceController extends Controller
             ],
         ]);
 
-        if ($request->user()->currentClient()->id !== $deployment->client_id) {
+        if (! $currentClient || $currentClient->id !== $deployment->client_id) {
             return redirect()->route('deployments.show', $deployment)->with('error', 'Device cannot be created for this deployment');
         }
 
-        if (Device::where('serial', $data['serial'])->exists()) {
-            $device = Device::where('serial', $data['serial'])->first();
+        $device = Device::query()
+            ->where('serial', $data['serial'])
+            ->where('user_id', $user->id)
+            ->first();
+
+        if ($device) {
             $device->update([
                 ...$data,
-                'client_id' => $request->user()->currentClient()->id,
+                'client_id' => $currentClient->id,
+                'user_id' => $user->id,
                 'deployment_id' => $deployment->id,
             ]);
 
@@ -55,7 +63,8 @@ class DeviceController extends Controller
         }
         Device::create([
             ...$data,
-            'client_id' => $request->user()->currentClient()->id,
+            'client_id' => $currentClient->id,
+            'user_id' => $user->id,
             'deployment_id' => $deployment->id,
         ]);
 
@@ -67,6 +76,13 @@ class DeviceController extends Controller
      */
     public function storeMany(Request $request, Deployment $deployment)
     {
+        $user = $request->user();
+        $currentClient = $user->currentClient();
+
+        if (! $currentClient || $currentClient->id !== $deployment->client_id) {
+            return redirect()->route('deployments.show', $deployment)->with('error', 'Devices cannot be created for this deployment');
+        }
+
         if (! $request->hasFile('devices')) {
             return back()->withErrors('No file uploaded');
         }
@@ -91,6 +107,8 @@ class DeviceController extends Controller
                 'name' => $arr['name'],
                 'serial' => $arr['serial'],
                 'device_function' => $arr['device_function'],
+                'client_id' => $currentClient->id,
+                'user_id' => $user->id,
                 'deployment_id' => $deployment->id,
                 'group' => $arr['group'] ?? null,
                 'sku' => $arr['sku'] == '' ? null : $arr['sku'],
@@ -98,7 +116,7 @@ class DeviceController extends Controller
             $unique_devices
         );
 
-        $savedDevices = $request->user()->currentClient()->devices()->upsert($withDeployment, ['serial'], ['name', 'device_function', 'deployment_id', 'group', 'sku']);
+        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku']);
 
         $errors = [];
         $unsaved_devices = [];
@@ -106,20 +124,23 @@ class DeviceController extends Controller
         $unsaved_sites = [];
 
         if ($savedDevices !== count($devices)) {
-            $unsaved_devices = array_filter($devices, fn ($device) => Device::where('serial', $device['serial'])->doesntExist());
+            $unsaved_devices = array_filter($devices, fn ($device) => Device::query()
+                ->where('serial', $device['serial'])
+                ->where('user_id', $user->id)
+                ->doesntExist());
         }
 
         if (in_array('site', $headers)) {
             $sites_with_devices = static::getSitesWithDeviceSerials($devices);
-            $saved_sites = static::saveSitesWithDevices($sites_with_devices);
+            $saved_sites = static::saveSitesWithDevices($sites_with_devices, $user->id);
             $unsaved_sites = array_filter($sites_with_devices, fn ($site) => Site::where('name', $site['name'])->doesntExist());
         }
 
         if (in_array('interface', $headers)) {
 
-            $interfaces = static::getInterfaces($devices);
+            $interfaces = static::getInterfaces($devices, $user->id);
 
-            $savedInterfaces = static::saveInterfaces($interfaces);
+            $savedInterfaces = static::saveInterfaces($interfaces, $user->id);
 
             if ($savedInterfaces !== $interfaces['total_interfaces']) {
                 $unsaved_interfaces = array_filter($interfaces,
@@ -183,13 +204,17 @@ class DeviceController extends Controller
 
     public static function expandInterfaceRangeConfig(array $interface_config)
     {
+        if (array_key_exists('lacp_port_id', $interface_config) && $interface_config['lacp_port_id'] !== null) {
+            return [$interface_config];
+        }
+
         $interface_range = static::expandInterfaceRange($interface_config['interface']);
         $interface_range_configs = array_map(fn ($range) => array_merge($interface_config, ['interface' => $range]), $interface_range);
 
         return $interface_range_configs;
     }
 
-    public static function getInterfaces($devices)
+    public static function getInterfaces($devices, ?int $userId = null)
     {
         $unique_devices = array_unique(array_column($devices, 'serial'));
         $devices_with_interface_info = array_filter($devices, fn ($device) => array_key_exists('interface', $device) && $device['interface'] !== '');
@@ -205,14 +230,14 @@ class DeviceController extends Controller
                     $current_switchport = [
                         'interface_mode' => $device['interface_mode'],
                         'access_vlan' => null,
-                        'native_vlan' => (int) $device['native_vlan'] ?? 1,
-                        'trunk_vlan_all' => (bool) $device['trunk_vlan_all'] ?? false,
+                        'native_vlan' => (int) ($device['native_vlan'] ?? 1),
+                        'trunk_vlan_all' => static::toBoolean($device['trunk_vlan_all'] ?? false),
                         'trunk_vlan_ranges' => $device['trunk_vlan_ranges'] ?? null,
                     ];
                 } else {
                     $current_switchport = [
                         'interface_mode' => $device['interface_mode'],
-                        'access_vlan' => $device['access_vlan'] ?? 1,
+                        'access_vlan' => (int) ($device['access_vlan'] ?? 1),
                         'native_vlan' => null,
                         'trunk_vlan_all' => null,
                         'trunk_vlan_ranges' => null,
@@ -229,10 +254,10 @@ class DeviceController extends Controller
         foreach ($normalized_devices as $device) {
             if (array_any($device, fn ($v, $k) => in_array($k, $stp_keys)) && $device['interface'] !== null) {
                 $current_stp = [
-                    'admin_edge_port' => $device['admin_edge_port'] ?? false,
-                    'admin_edge_port_trunk' => $device['admin_edge_port_trunk'] ?? false,
-                    'bpdu_guard' => $device['bpdu_guard'] ?? false,
-                    'loop_guard' => $device['loop_guard'] ?? false,
+                    'admin_edge_port' => static::toBoolean($device['admin_edge_port'] ?? false),
+                    'admin_edge_port_trunk' => static::toBoolean($device['admin_edge_port_trunk'] ?? false),
+                    'bpdu_guard' => static::toBoolean($device['bpdu_guard'] ?? false),
+                    'loop_guard' => static::toBoolean($device['loop_guard'] ?? false),
                 ];
                 if (! in_array($current_stp, $unique_stp)) {
                     $unique_stp[] = $current_stp;
@@ -261,7 +286,7 @@ class DeviceController extends Controller
             $unique_devices
         );
 
-        $devices_grouped_config_with_interface_ranges = array_filter($devices_grouped_config_all, fn ($device_group) => count($device_group) > 0);
+        $devices_grouped_config_with_interface_ranges = array_values(array_filter($devices_grouped_config_all, fn ($device_group) => count($device_group) > 0));
         $devices_grouped_config = array_map(fn ($device_group) => array_reduce(
             array_map(fn ($device) => static::expandInterfaceRangeConfig($device), $device_group), fn ($carry, $item) => array_merge($carry, $item), []),
             $devices_grouped_config_with_interface_ranges);
@@ -283,12 +308,21 @@ class DeviceController extends Controller
     /**
      * Save the interfaces to the device_interfaces, swich_ports and lacp_profiles tables
      */
-    public static function saveInterfaces($interfaces)
+    public static function saveInterfaces($interfaces, ?int $userId = null)
     {
         $saved_interfaces = 0;
         foreach ($interfaces['devices_grouped_config'] as $device_interfaces) {
             foreach ($device_interfaces as $device_interface) {
-                $device = Device::where('serial', $device_interface['serial'])->first();
+                $deviceQuery = Device::query()->where('serial', $device_interface['serial']);
+                if ($userId !== null) {
+                    $deviceQuery->where('user_id', $userId);
+                }
+
+                $device = $deviceQuery->first();
+                if (! $device) {
+                    continue;
+                }
+
                 $device_interface_config = [
                     'device_id' => $device->id,
                     'interface' => $device_interface['interface'],
@@ -320,7 +354,7 @@ class DeviceController extends Controller
                 'interface_mode' => 'TRUNK',
                 'access_vlan' => null,
                 'native_vlan' => (int) ($interfaceData['native_vlan'] ?? 1),
-                'trunk_vlan_all' => (bool) ($interfaceData['trunk_vlan_all'] ?? false),
+                'trunk_vlan_all' => static::toBoolean($interfaceData['trunk_vlan_all'] ?? false),
                 'trunk_vlan_ranges' => $interfaceData['trunk_vlan_ranges'] ?? null,
             ];
         }
@@ -342,16 +376,43 @@ class DeviceController extends Controller
         }
 
         return [
-            'admin_edge_port' => (bool) ($interfaceData['admin_edge_port'] ?? false),
-            'admin_edge_port_trunk' => (bool) ($interfaceData['admin_edge_port_trunk'] ?? false),
-            'bpdu_guard' => (bool) ($interfaceData['bpdu_guard'] ?? false),
-            'loop_guard' => (bool) ($interfaceData['loop_guard'] ?? false),
+            'admin_edge_port' => static::toBoolean($interfaceData['admin_edge_port'] ?? false),
+            'admin_edge_port_trunk' => static::toBoolean($interfaceData['admin_edge_port_trunk'] ?? false),
+            'bpdu_guard' => static::toBoolean($interfaceData['bpdu_guard'] ?? false),
+            'loop_guard' => static::toBoolean($interfaceData['loop_guard'] ?? false),
         ];
+    }
+
+    protected static function toBoolean(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if ($normalized === 'true' || $normalized === '1') {
+                return true;
+            }
+            if ($normalized === 'false' || $normalized === '0' || $normalized === '') {
+                return false;
+            }
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value === 1;
+        }
+
+        return (bool) $value;
     }
 
     protected static function normalizeLacpAttributes(array $interfaceData): ?array
     {
         $lacpPortList = $interfaceData['port_list'] ?? null;
+        if (($lacpPortList === null || $lacpPortList === '') && ($interfaceData['lacp_port_id'] ?? null) !== null) {
+            $lacpPortList = $interfaceData['interface'] ?? null;
+        }
+
         if ($lacpPortList === null || $lacpPortList === '') {
             return null;
         }
@@ -470,13 +531,20 @@ class DeviceController extends Controller
         return $sites_with_devices;
     }
 
-    public static function saveSitesWithDevices(array $sites_with_devices)
+    public static function saveSitesWithDevices(array $sites_with_devices, ?int $userId = null)
     {
         $saved_sites = [];
         foreach ($sites_with_devices as $site_with_devices) {
             $site = Site::firstOrCreate(['name' => $site_with_devices['name']]);
             $saved_sites[] = $site;
-            array_map(fn ($device) => Device::where('serial', $device)->get()->first()->update(['site_id' => $site->id]), $site_with_devices['devices']);
+            array_map(function ($device) use ($site, $userId): void {
+                $deviceQuery = Device::query()->where('serial', $device);
+                if ($userId !== null) {
+                    $deviceQuery->where('user_id', $userId);
+                }
+                $siteDevice = $deviceQuery->first();
+                $siteDevice?->update(['site_id' => $site->id]);
+            }, $site_with_devices['devices']);
         }
 
         return $saved_sites;
@@ -484,7 +552,7 @@ class DeviceController extends Controller
 
     public function show(Request $request, Device $device): Response
     {
-        if ($request->user()->currentClient()->id !== $device->client_id) {
+        if ($request->user()->id !== $device->user_id || $request->user()->currentClient()?->id !== $device->client_id) {
             abort(403);
         }
 
@@ -540,7 +608,7 @@ class DeviceController extends Controller
 
     public function updateInterfaces(UpdateDeviceInterfacesRequest $request, Device $device)
     {
-        if ($request->user()->currentClient()->id !== $device->client_id) {
+        if ($request->user()->id !== $device->user_id || $request->user()->currentClient()?->id !== $device->client_id) {
             abort(403);
         }
 
@@ -682,6 +750,10 @@ class DeviceController extends Controller
      */
     public function update(Request $request, Device $device)
     {
+        if ($request->user()->id !== $device->user_id || $request->user()->currentClient()?->id !== $device->client_id) {
+            abort(403);
+        }
+
         $data = [];
         if ($request->has('name')) {
             $validated_name = $request->validate(['name' => 'string|min:3|max:255']);
@@ -711,7 +783,11 @@ class DeviceController extends Controller
         $serialChanging = isset($data['serial']) && $data['serial'] !== $device->serial;
 
         if ($serialChanging) {
-            if (Device::query()->where('serial', $data['serial'])->where('id', '!=', $device->id)->exists()) {
+            if (Device::query()
+                ->where('serial', $data['serial'])
+                ->where('user_id', $device->user_id)
+                ->where('id', '!=', $device->id)
+                ->exists()) {
                 return back()->withErrors(['serial' => 'A device with this serial already exists.']);
             }
 
@@ -746,6 +822,10 @@ class DeviceController extends Controller
      */
     public function refreshScopeId(Request $request, Device $device)
     {
+        if ($request->user()->id !== $device->user_id || $request->user()->currentClient()?->id !== $device->client_id) {
+            abort(403);
+        }
+
         $centralAPIHelper = new CentralAPIHelper($request->user()->currentClient());
         $scopeId = $centralAPIHelper->getScopeIdFromCentral($device);
         if (! array_key_exists('error', $scopeId)) {
@@ -760,8 +840,12 @@ class DeviceController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Device $device)
+    public function destroy(Request $request, Device $device)
     {
+        if ($request->user()->id !== $device->user_id || $request->user()->currentClient()?->id !== $device->client_id) {
+            abort(403);
+        }
+
         $deployment = $device->deployment;
         if ($device->interfaces()->count() > 0) {
             $device->interfaces->map(fn ($interface) => $interface->tasks()->detach());

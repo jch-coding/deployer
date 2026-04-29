@@ -19,14 +19,15 @@ class DeviceFactory extends Factory
      */
     public function definition(): array
     {
-        $client = Client::factory()->create();
-        $deployment = Deployment::factory()->for($client)->create();
         return [
             'name' => fake()->name(),
             'scope_id' => fake()->uuid(),
             'serial' => fake()->uuid(),
-            'client_id' => $client,
-            'deployment_id' => $deployment,
+            'client_id' => Client::factory(),
+            'user_id' => fn (array $attributes) => Client::query()->whereKey($attributes['client_id'])->value('user_id'),
+            'deployment_id' => fn (array $attributes) => Deployment::factory()->create([
+                'client_id' => $attributes['client_id'],
+            ])->id,
             'device_function' => fake()->randomElement(DeviceFunction::cases())->name,
         ];
     }

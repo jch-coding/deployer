@@ -95,6 +95,7 @@ it('gets a list of unique profiles and interfaces separated by devices when getI
                'loop_guard' => null,
            ]
        ],
+       'unique_lacp' => [],
        'devices_grouped_config' => [
             [
                 [
@@ -156,7 +157,8 @@ it('gets a list of unique profiles and interfaces separated by devices when getI
                    'loop_guard' => null,
                ]
            ],
-       ]
+       ],
+       'total_interfaces' => 4,
    ];
 
    $interfaces = DeviceController::getInterfaces($this->processed_data);
@@ -228,6 +230,7 @@ test('get interfaces deals with interface ranges correctly', function () {
                 'loop_guard' => null,
             ]
         ],
+        'unique_lacp' => [],
         'devices_grouped_config' => [
             [
                 [
@@ -374,9 +377,12 @@ test('interfaces are saved to the database with the corresponding switchport pro
         ->where('admin_edge_port_trunk', 0)
         ->first();
 
+    $deviceOneId = Device::query()->where('serial', 'SN0000000001')->value('id');
+    $deviceTwoId = Device::query()->where('serial', 'SN0000000002')->value('id');
+
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/1',
-        'device_id' => 1,
+        'device_id' => $deviceOneId,
         'switch_port_id' => $switchport1->id,
         'stp_profile_id' => $stp1->id,
     ]);
@@ -385,7 +391,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
 
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/1',
-        'device_id' => 2,
+        'device_id' => $deviceTwoId,
         'switch_port_id' => $switchport2->id,
         'stp_profile_id' => $stp1->id,
     ]);
@@ -399,7 +405,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
 
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/2',
-        'device_id' => 1,
+        'device_id' => $deviceOneId,
         'switch_port_id' => $switchport3->id,
         'stp_profile_id' => $stp2->id,
     ]);
@@ -407,7 +413,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
     $switchport4 = Switchport::where('native_vlan',8)->first();
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/2',
-        'device_id' => 2,
+        'device_id' => $deviceTwoId,
         'switch_port_id' => $switchport4->id,
         'stp_profile_id' => $stp2->id,
     ]);
@@ -439,7 +445,7 @@ test('multiple types of devices with different device functions can be uploaded 
     $this->assertDatabaseHas('devices', [
         'name' => 'CO-AP-IDF1-001',
         'serial' => 'SN0000000002',
-        'device_function' => 'ACCESS_POINT',
+        'device_function' => 'CAMPUS_AP',
     ]);
 });
 
@@ -450,9 +456,9 @@ test('getInterfaces correctly parses trunk-vlan-ranges as arrays of strings', fu
    $expected_swp = [
        'interface_mode' => 'TRUNK',
        'access_vlan' => null,
-       'native_vlan' => '10',
+       'native_vlan' => 10,
        'trunk_vlan_all' => false,
-       'trunk_vlan_ranges' => ['8', '10-20'],
+       'trunk_vlan_ranges' => '8&10-20',
    ];
    expect($interfaces['unique_switchports'][0])->toEqual($expected_swp);
 });
@@ -464,15 +470,15 @@ test('configure ethernet trunk interfaces configures trunk-vlan-all and trunk-vl
     $expected_swp = [
         'interface_mode' => 'TRUNK',
         'access_vlan' => null,
-        'native_vlan' => '10',
+        'native_vlan' => 10,
         'trunk_vlan_all' => false,
-        'trunk_vlan_ranges' => ['8', '10-20'],
+        'trunk_vlan_ranges' => '8&10-20',
     ];
     $expected_swp2 = [
         'interface_mode' => 'TRUNK',
         'access_vlan' => null,
-        'native_vlan' => '10',
-        'trunk_vlan_all' => 'true',
+        'native_vlan' => 10,
+        'trunk_vlan_all' => true,
         'trunk_vlan_ranges' => null,
     ];
     expect($interfaces['unique_switchports'][0])->toEqual($expected_swp);
@@ -565,6 +571,7 @@ test('port profiles are saved correctly when the port_profile column is present 
             'loop_guard' => 'true',
                 ]
         ],
+        'unique_lacp' => [],
         'devices_grouped_config' => [
             [
                 [
