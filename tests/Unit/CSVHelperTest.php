@@ -190,9 +190,9 @@ it('keeps missing optional columns absent from mapped rows', function () {
     expect($deviceArrays[0])->not()->toHaveKeys(['group', 'sku', 'site', 'interface', 'description', 'ip_address']);
 });
 
-it('normalizes shutdown-on-split CSV header to shutdown_on_split key', function () {
+it('maps shutdown_on_split CSV header directly', function () {
     $csvData = [
-        ['name', 'serial', 'device_function', 'interface', 'shutdown-on-split'],
+        ['name', 'serial', 'device_function', 'interface', 'shutdown_on_split'],
         ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1', 'true'],
     ];
 
