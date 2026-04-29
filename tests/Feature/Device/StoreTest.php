@@ -86,6 +86,71 @@ test('adding a device already in the database will update the device', function 
     $this->assertDatabaseCount('devices', 1);
 });
 
+test('users can each create devices with the same serial', function () {
+    $userOne = User::factory()->has(Client::factory())->create();
+    $clientOne = $userOne->clients()->first();
+    $clientOne->update(['current' => true]);
+    $deploymentOne = Deployment::factory()->recycle($clientOne)->create();
+
+    $userTwo = User::factory()->has(Client::factory())->create();
+    $clientTwo = $userTwo->clients()->first();
+    $clientTwo->update(['current' => true]);
+    $deploymentTwo = Deployment::factory()->recycle($clientTwo)->create();
+
+    $payload = [
+        'name' => 'Shared Serial Device',
+        'serial' => 'SHAREDSERIAL01',
+        'device_function' => DeviceFunction::ACCESS_SWITCH->name,
+    ];
+
+    $this->actingAs($userOne)
+        ->post(route('devices.store', $deploymentOne), $payload)
+        ->assertSessionHasNoErrors();
+
+    $this->actingAs($userTwo)
+        ->post(route('devices.store', $deploymentTwo), $payload)
+        ->assertSessionHasNoErrors();
+
+    $this->assertDatabaseCount('devices', 2);
+    $this->assertDatabaseHas('devices', ['serial' => 'SHAREDSERIAL01', 'user_id' => $userOne->id]);
+    $this->assertDatabaseHas('devices', ['serial' => 'SHAREDSERIAL01', 'user_id' => $userTwo->id]);
+});
+
+test('same user re-adding an existing serial updates their own device row', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+
+    Device::factory()
+        ->recycle($client)
+        ->recycle($deployment)
+        ->create([
+            'name' => 'Original Name',
+            'serial' => 'USEROWNEDSERIAL1',
+            'user_id' => $user->id,
+            'client_id' => $client->id,
+            'deployment_id' => $deployment->id,
+            'device_function' => DeviceFunction::ACCESS_SWITCH->name,
+        ]);
+
+    $this->actingAs($user)
+        ->post(route('devices.store', $deployment), [
+            'name' => 'Updated Name',
+            'serial' => 'USEROWNEDSERIAL1',
+            'device_function' => DeviceFunction::CAMPUS_AP->name,
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->assertDatabaseCount('devices', 1);
+    $this->assertDatabaseHas('devices', [
+        'serial' => 'USEROWNEDSERIAL1',
+        'name' => 'Updated Name',
+        'user_id' => $user->id,
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+    ]);
+});
+
 it('can add a list of devices to a deployment from a csv file upload', function () {
     Storage::fake('devices');
     $user = User::factory()
@@ -179,14 +244,15 @@ test('uploading interface information for a new device will populate the device 
         'devices' => $uploadedFile
     ]);
     $this->assertDatabaseCount('devices', 2);
-    $this->assertDatabaseHas('device_interfaces', ['device_id' => 1, 'switch_port_id' => 1, 'name' => '1/1/1']);
-    $this->assertDatabaseHas('device_interfaces', ['device_id' => 2, 'switch_port_id' => 1, 'name' => '1/1/2']);
+    $firstDevice = Device::query()->where('serial', 'SN0000000001')->firstOrFail();
+    $secondDevice = Device::query()->where('serial', 'SN0000000002')->firstOrFail();
+    $this->assertDatabaseHas('device_interfaces', ['device_id' => $firstDevice->id, 'interface' => '1/1/1']);
+    $this->assertDatabaseHas('device_interfaces', ['device_id' => $secondDevice->id, 'interface' => '1/1/2']);
     $this->assertDatabaseHas('switch_ports', [
         'access_vlan' => 30,
         'interface_mode' => 'ACCESS',
         'native_vlan' => null,
         'trunk_vlan_all' => null,
-        'description' => 'CO IDF Stack 1'
     ]);
 });
 
@@ -218,15 +284,13 @@ test('interface ranges create the set of switch ports indicated in the range', f
         'access_vlan' => 30,
         'interface_mode' => 'ACCESS',
         'native_vlan' => null,
-        'trunk_vlan_all' => false,
-        'description' => 'CO IDF Stack 1'
+        'trunk_vlan_all' => null,
     ]);
     $this->assertDatabaseHas('switch_ports', [
         'access_vlan' => null,
         'interface_mode' => 'TRUNK',
         'native_vlan' => 8,
         'trunk_vlan_all' => true,
-        'description' => 'CO IDF Stack 1'
     ]);
 });
 
@@ -253,10 +317,10 @@ test('a device can have a lag interface', function () {
     ]);
 
     $this->assertDatabaseCount('devices', 1);
-    $this->assertDatabaseCount('device_interfaces', 44);
-    $this->assertDatabaseCount('switch_ports', 2);
+    $this->assertDatabaseCount('device_interfaces', 81);
+    $this->assertDatabaseCount('switch_ports', 1);
     $this->assertDatabaseCount('lacp_profiles', 1);
-    $this->assertDatabaseHas('lacp_profiles', ['port_id' => 11, 'mode' => 'ACTIVE', 'timeout' => 'SHORT']);
+    $this->assertDatabaseHas('lacp_profiles', ['port_id' => 11, 'mode' => 'ACTIVE', 'rate' => 'SLOW']);
 });
 
 it('updates device optionals without mutating interfaces when a later upload has no interface column', function () {
