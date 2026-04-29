@@ -3,6 +3,7 @@
 use App\Models\Client;
 use App\Models\Task;
 use App\Models\User;
+use App\JobQueueShard;
 use Illuminate\Support\Facades\Artisan;
 
 beforeEach(function () {
@@ -77,7 +78,7 @@ test('clear queue succeeds when command reports cleared zero jobs', function () 
         ->withArgs(function (string $command, array $parameters) use ($task): bool {
             return $command === 'queue:clear'
                 && ($parameters[0] ?? null) === config('queue.default')
-                && ($parameters['--queue'] ?? null) === $task->job_queue;
+                && ($parameters['--queue'] ?? null) === JobQueueShard::resolve($task->job_queue);
         })
         ->andReturn(0);
 
