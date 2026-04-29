@@ -21,7 +21,10 @@ it('shows the device page with interface rows for the current client', function 
         'deployment_id' => $deployment->id,
         'client_id' => $this->client->id,
     ]);
-    DeviceInterface::factory()->for($device)->create(['interface' => '0/0/1']);
+    DeviceInterface::factory()->for($device)->create([
+        'interface' => '0/0/1',
+        'shutdown_on_split' => true,
+    ]);
 
     $this->actingAs($this->user)
         ->get(route('devices.show', $device))
@@ -38,7 +41,36 @@ it('shows the device page with interface rows for the current client', function 
             ->has('interfaces', fn (Assert $list) => $list
                 ->has(0, fn (Assert $row) => $row
                     ->where('interface', '0/0/1')
+                    ->where('shutdown_on_split', true)
                     ->etc())));
+});
+
+it('updates shutdown_on_split from the interface edit endpoint', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+    ]);
+    $interface = DeviceInterface::factory()->for($device)->create([
+        'shutdown_on_split' => false,
+    ]);
+
+    $this->actingAs($this->user)
+        ->patch(route('devices.interfaces.update', $device), [
+            'updates' => [
+                [
+                    'id' => $interface->id,
+                    'shutdown_on_split' => true,
+                ],
+            ],
+        ])
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('device_interfaces', [
+        'id' => $interface->id,
+        'shutdown_on_split' => true,
+    ]);
 });
 
 it('returns forbidden when the device belongs to another client', function () {

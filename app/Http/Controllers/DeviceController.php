@@ -574,6 +574,7 @@ class DeviceController extends Controller
                 'enable' => $interface->enable,
                 'jumbo_frames' => (bool) $interface->jumbo_frames,
                 'routing' => (bool) $interface->routing,
+                'shutdown_on_split' => (bool) $interface->shutdown_on_split,
                 'vrf_forwarding' => $interface->vrf_forwarding,
                 'sw_profile' => $interface->sw_profile,
                 'portchannel_lag' => $interface->portchannel_lag,
@@ -643,6 +644,7 @@ class DeviceController extends Controller
                 $interface->enable = $resolved['enable'];
                 $interface->jumbo_frames = $resolved['jumbo_frames'];
                 $interface->routing = $resolved['routing'];
+                $interface->shutdown_on_split = $resolved['shutdown_on_split'];
                 $interface->vrf_forwarding = $resolved['vrf_forwarding'];
                 $interface->sw_profile = $resolved['sw_profile'];
                 $interface->portchannel_lag = $resolved['portchannel_lag'];
@@ -723,6 +725,7 @@ class DeviceController extends Controller
             'enable' => array_key_exists('enable', $update) ? (bool) $update['enable'] : (bool) $interface->enable,
             'jumbo_frames' => array_key_exists('jumbo_frames', $update) ? (bool) $update['jumbo_frames'] : (bool) $interface->jumbo_frames,
             'routing' => array_key_exists('routing', $update) ? (bool) $update['routing'] : (bool) $interface->routing,
+            'shutdown_on_split' => array_key_exists('shutdown_on_split', $update) ? (bool) $update['shutdown_on_split'] : (bool) $interface->shutdown_on_split,
             'vrf_forwarding' => array_key_exists('vrf_forwarding', $update) ? $update['vrf_forwarding'] : $interface->vrf_forwarding,
             'sw_profile' => array_key_exists('sw_profile', $update) ? $update['sw_profile'] : $interface->sw_profile,
             'portchannel_lag' => array_key_exists('portchannel_lag', $update) ? $update['portchannel_lag'] : $interface->portchannel_lag,

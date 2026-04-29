@@ -58,6 +58,7 @@ export type DeviceInterfaceRow = {
     enable: boolean;
     jumbo_frames: boolean;
     routing: boolean;
+    shutdown_on_split: boolean;
     vrf_forwarding: string;
     sw_profile: string | null;
     portchannel_lag: string | null;
@@ -72,6 +73,7 @@ type InterfaceDraftRow = {
     enable?: boolean;
     jumbo_frames?: boolean;
     routing?: boolean;
+    shutdown_on_split?: boolean;
     vrf_forwarding?: string | null;
     sw_profile?: string | null;
     portchannel_lag?: string | null;
@@ -475,6 +477,17 @@ function createInterfaceColumns({
             cell: ({ row }) => boolCell(row.original, 'routing', Boolean(row.original.routing), 'routing'),
         },
         {
+            accessorKey: 'shutdown_on_split',
+            header: 'Shutdown on split',
+            cell: ({ row }) =>
+                boolCell(
+                    row.original,
+                    'shutdown_on_split',
+                    Boolean(row.original.shutdown_on_split),
+                    'shutdown_on_split',
+                ),
+        },
+        {
             accessorKey: 'vrf_forwarding',
             header: 'VRF forwarding',
             cell: ({ row }) =>
@@ -666,6 +679,7 @@ const SIMPLE_VISIBLE_COLUMN_IDS = new Set<string>([
     'description',
     'ip_address',
     'enable',
+    'shutdown_on_split',
     'vrf_forwarding',
     'sw_profile',
 ]);
@@ -750,6 +764,7 @@ export default function Show() {
     const [bulkEnableChoice, setBulkEnableChoice] = useState<string>(BULK_BOOL_NOOP);
     const [bulkJumboChoice, setBulkJumboChoice] = useState<string>(BULK_BOOL_NOOP);
     const [bulkRoutingChoice, setBulkRoutingChoice] = useState<string>(BULK_BOOL_NOOP);
+    const [bulkShutdownOnSplitChoice, setBulkShutdownOnSplitChoice] = useState<string>(BULK_BOOL_NOOP);
     const [bulkTrunkAllChoice, setBulkTrunkAllChoice] = useState<string>(BULK_BOOL_NOOP);
     const [bulkAdminEdgeChoice, setBulkAdminEdgeChoice] = useState<string>(BULK_BOOL_NOOP);
     const [bulkAdminEdgeTrunkChoice, setBulkAdminEdgeTrunkChoice] = useState<string>(BULK_BOOL_NOOP);
@@ -784,6 +799,7 @@ export default function Show() {
             setBulkEnableChoice(BULK_BOOL_NOOP);
             setBulkJumboChoice(BULK_BOOL_NOOP);
             setBulkRoutingChoice(BULK_BOOL_NOOP);
+            setBulkShutdownOnSplitChoice(BULK_BOOL_NOOP);
             setBulkTrunkAllChoice(BULK_BOOL_NOOP);
             setBulkAdminEdgeChoice(BULK_BOOL_NOOP);
             setBulkAdminEdgeTrunkChoice(BULK_BOOL_NOOP);
@@ -1257,6 +1273,21 @@ export default function Show() {
                                             </Select>
                                         </FieldWrap>
                                         <FieldWrap className="min-w-0 space-y-1">
+                                            <span className="text-muted-foreground text-xs">Shutdown on split</span>
+                                            <Select value={bulkShutdownOnSplitChoice} onValueChange={(v) => {
+                                                if (v === BULK_BOOL_NOOP) return;
+                                                applyFieldToSelected('shutdown_on_split', v === 'true');
+                                                setBulkShutdownOnSplitChoice(BULK_BOOL_NOOP);
+                                            }}>
+                                                <SelectTrigger className="h-8 w-[10rem] text-xs"><SelectValue placeholder="No change" /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value={BULK_BOOL_NOOP} className="text-muted-foreground">No change</SelectItem>
+                                                    <SelectItem value="true">Yes</SelectItem>
+                                                    <SelectItem value="false">No</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </FieldWrap>
+                                        <FieldWrap className="min-w-0 space-y-1">
                                             <span className="text-muted-foreground text-xs">Description</span>
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <Input className="h-8 min-w-[10rem] flex-1 text-sm" value={bulkDescriptionText} onChange={(e) => setBulkDescriptionText(e.target.value)} placeholder="Same for all selected" />
@@ -1519,6 +1550,7 @@ export default function Show() {
                                     'enable',
                                     'jumbo_frames',
                                     'routing',
+                                    'shutdown_on_split',
                                     'vrf_forwarding',
                                     'sw_profile',
                                 ],
