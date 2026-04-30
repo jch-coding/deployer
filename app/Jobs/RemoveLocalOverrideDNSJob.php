@@ -48,14 +48,24 @@ class RemoveLocalOverrideDNSJob extends BaseTaskJob
         //remove local dns
         $dns_response = $this->centralAPIHelper->get_dns_profiles($query_parameters);
         if ($dns_response->ok()) {
-            $dns_profile_name = array_pop($dns_response->json()['profile'])['name'];
-            $delete_dns_response = $this->centralAPIHelper->delete_dns_profile($dns_profile_name, $query_parameters);
-            if (! $delete_dns_response->ok()) {
-                $message = "\nFailed to delete dns profile: {$delete_dns_response->json()['message']}";
-                $this->task->processTaskStatusLog($message, true);
-                $this->release($this->wait_time * 60);
+            if (key_exists('profile', $dns_response->json())) {
+                $dns_profile_name = array_pop($dns_response->json()['profile'])['name'];
+                $delete_dns_response = $this->centralAPIHelper->delete_dns_profile($dns_profile_name, $query_parameters);
+                if (! $delete_dns_response->ok()) {
+                    $message = "\nFailed to delete dns profile: {$delete_dns_response->json()['message']}";
+                    $this->task->processTaskStatusLog($message, true);
+                    $this->release($this->wait_time * 60);
+                } else {
+                    $message = "\nDeleted dns profile: {$dns_profile_name}";
+                    $this->task->processTaskStatusLog($message);
+                    $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
+                    $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
+                    if ($completed_devices->count() === $this->task->devices->count()) {
+                        $this->task->update(['status' => 'COMPLETED']);
+                    }
+                }
             } else {
-                $message = "\nDeleted dns profile: {$dns_profile_name}";
+                $message = "\nNo local override dns profiles found.";
                 $this->task->processTaskStatusLog($message);
                 $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                 $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
