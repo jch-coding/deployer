@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Deployment;
 use App\Models\Task;
+use App\Services\FinalizeExpiredTasksService;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -29,9 +30,12 @@ class DeploymentController extends Controller
         ]);
     }
 
-    public function show(Request $request, Deployment $deployment)
+    public function show(Request $request, Deployment $deployment, FinalizeExpiredTasksService $finalizeExpiredTasks)
     {
         $deployment->load('devices');
+
+        $finalizeExpiredTasks->run((int) $deployment->id);
+
         $latest_tasks = $deployment->tasks()->withCount('devices')->latest()->take(5)->get()
             ->map(function ($task) {
                 if ($task->status !== 'COMPLETED') {

@@ -4,6 +4,7 @@ use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\Task;
 use App\Models\User;
 use App\TaskType;
 use Illuminate\Http\UploadedFile;
@@ -57,15 +58,35 @@ it('filters devices by name, serial, or device function search', function () {
         ->assertSeeHtml('Beta Switch');
 });
 
+it('finalizes expired in-progress tasks when viewing the deployment', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $task = Task::factory()->for($deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+        'deployment_time' => 1,
+    ]);
+    $task->timestamps = false;
+    $task->update(['created_at' => now()->subMinutes(10)]);
+
+    $device = Device::factory()->for($deployment)->create();
+    $task->devices()->attach($device->id, ['status' => 'PENDING']);
+
+    $this->actingAs($this->user);
+    $this->get(route('deployments.show', $deployment))
+        ->assertOk();
+
+    expect($task->fresh()->status)->toBe('TIMED_OUT');
+});
+
 it('has an upload devices button', function () {
-   $this->actingAs($this->user);
-   $deployment = Deployment::factory()->for($this->client)->create();
-   $this->get(route('deployments.show', $deployment))
-       ->assertOk()
-       ->assertInertia(fn (Assert $page) => $page
-           ->component('Deployment/Show')
-           ->has('devices.data', 0)
-       );
+    $this->actingAs($this->user);
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $this->get(route('deployments.show', $deployment))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Show')
+            ->has('devices.data', 0)
+        );
 });
 
 it('has a set of task types that are available for deployment', function ($task_name) {
@@ -85,7 +106,7 @@ it('can add devices to a deployment', function () {
     $this->actingAs($this->user);
     $uploadedFile = UploadedFile::fake()
         ->createWithContent('devices.csv',
-            'name,serial,device_function,site,description' . PHP_EOL . 'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device' . PHP_EOL . 'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2' . PHP_EOL
+            'name,serial,device_function,site,description'.PHP_EOL.'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device'.PHP_EOL.'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2'.PHP_EOL
         );
     $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
         ->assertRedirect(route('deployments.show', $deployment));
@@ -93,4 +114,3 @@ it('can add devices to a deployment', function () {
     $this->assertDatabaseHas('devices', ['name' => 'Test Device 1', 'serial' => 'SN0000000001']);
     $this->assertDatabaseHas('devices', ['name' => 'Test Device 2', 'serial' => 'SN0000000002']);
 });
-

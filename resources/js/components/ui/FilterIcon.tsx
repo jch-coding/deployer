@@ -1,17 +1,30 @@
 import React from 'react';
 
+type FilterIconProps = {
+    size?: number;
+    color?: string;
+    strokeWidth?: number;
+    background?: string;
+    opacity?: number;
+    rotation?: number;
+    shadow?: number;
+    flipHorizontal?: boolean;
+    flipVertical?: boolean;
+    padding?: number;
+};
+
 const FilterIcon = ({
-                        size = undefined,
-                        color = '#000000',
-                        strokeWidth = 2,
-                        background = 'transparent',
-                        opacity = 1,
-                        rotation = 0,
-                        shadow = 0,
-                        flipHorizontal = false,
-                        flipVertical = false,
-                        padding = 0
-                    }) => {
+    size,
+    color = '#000000',
+    strokeWidth = 2,
+    background = 'transparent',
+    opacity = 1,
+    rotation = 0,
+    shadow = 0,
+    flipHorizontal = false,
+    flipVertical = false,
+    padding = 0,
+}: FilterIconProps) => {
     const transforms = [];
     if (rotation !== 0) transforms.push(`rotate(${rotation}deg)`);
     if (flipHorizontal) transforms.push('scaleX(-1)');

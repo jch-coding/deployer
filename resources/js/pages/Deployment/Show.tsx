@@ -127,7 +127,7 @@ export default function Show() {
                     preserveState: true,
                     preserveScroll: true,
                     replace: true,
-                    only: ['devices', 'device_search'],
+                    only: ['devices', 'device_search', 'latest_tasks'],
                 },
             );
         }, 350);

@@ -6,6 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
@@ -92,9 +97,24 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
                 <Dialog>
-                    <DialogTrigger asChild>
-                        <Button data-test="set-deployment-time"><AlarmClockIcon/>Set Duration</Button>
-                    </DialogTrigger>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <DialogTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    className="rounded-full"
+                                    data-test="set-deployment-time"
+                                    aria-label="Set duration"
+                                >
+                                    <AlarmClockIcon className="size-4" aria-hidden />
+                                </Button>
+                            </DialogTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            <p>Set duration</p>
+                        </TooltipContent>
+                    </Tooltip>
                     <DialogContent>
                         <DialogTitle>Set Task Duration</DialogTitle>
                         <DialogDescription>
@@ -136,11 +156,27 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                     </DialogContent>
                 </Dialog>
                 <Dialog>
-                    <DialogTrigger asChild>
-                        <Button data-test="associate-devices-with-task" aria-description="Filter Devices">
-                            <FilterIcon/>
-                            Filter</Button>
-                    </DialogTrigger>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <DialogTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="associate-devices-with-task"
+                                    aria-label="Filter devices"
+                                >
+                                    <span className="inline-flex size-4 items-center justify-center [&_svg]:size-full">
+                                        <FilterIcon color="currentColor" />
+                                    </span>
+                                </Button>
+                            </DialogTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            <p>Filter devices</p>
+                        </TooltipContent>
+                    </Tooltip>
                     <DialogContent>
                         <DialogTitle>Associate Devices</DialogTitle>
                         <DialogDescription>
@@ -187,13 +223,47 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                     </DialogContent>
                 </Dialog>
                 <Dialog>
-                    <DialogTrigger asChild>
-                        {
-                            taskDevices.length > 0 && taskDevices.length < devices.length ?
-                                <Button onClick={() => dispatch_task_with_devices(task, devices)}><BoltIcon/>Deploy Selected</Button> :
-                                <Button onClick={() => dispatch_task_with_devices(task, devices, true)}><BoltIcon/>Deploy All</Button>
-                        }
-                    </DialogTrigger>
+                    {
+                        taskDevices.length > 0 && taskDevices.length < devices.length ? (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <DialogTrigger asChild>
+                                        <Button
+                                            type="button"
+                                            size="icon"
+                                            className="rounded-full"
+                                            aria-label="Deploy selected devices"
+                                            onClick={() => dispatch_task_with_devices(task, devices)}
+                                        >
+                                            <BoltIcon className="size-4" aria-hidden />
+                                        </Button>
+                                    </DialogTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    <p>Deploy selected</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        ) : (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <DialogTrigger asChild>
+                                        <Button
+                                            type="button"
+                                            size="icon"
+                                            className="rounded-full"
+                                            aria-label="Deploy all devices"
+                                            onClick={() => dispatch_task_with_devices(task, devices, true)}
+                                        >
+                                            <BoltIcon className="size-4" aria-hidden />
+                                        </Button>
+                                    </DialogTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    <p>Deploy all</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        )
+                    }
                     <DialogContent>
                         <DialogTitle>{task} Progress</DialogTitle>
                         <DialogDescription>
