@@ -27,6 +27,12 @@ export default function Show() {
     const [isCancelling, setIsCancelling] = useState(false);
     const [isClearingQueue, setIsClearingQueue] = useState(false);
 
+    const formatColumnLabel = (column: string) =>
+        column
+            .split('_')
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: current_client?.name ?? 'Clients',
@@ -116,6 +122,12 @@ export default function Show() {
                             Devices Provisioned
                         </CardHeader>
                         <CardContent>
+                            <div className="mb-3 grid grid-cols-4 gap-2 border-b pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                <span>Device</span>
+                                <span>Interface</span>
+                                <span>Task Field</span>
+                                <span>Status</span>
+                            </div>
                             {interfaces.map((device_interface) => {
                                 const deviceForInterface = devices.find(
                                     (device) =>
@@ -126,23 +138,20 @@ export default function Show() {
                                     <div
                                         key={device_interface.id}
                                         className={cn(
-                                            'mb-2 flex items-center justify-between text-sm',
+                                            'mb-2 grid grid-cols-4 gap-2 text-sm',
                                             device_interface.pivot.status ===
                                                 'COMPLETED' && 'text-green-500',
                                         )}
                                     >
                                         <span>{deviceForInterface.name}</span>
-                                        <span>
-                                            {device_interface.interface}
+                                        <span>{device_interface.interface}</span>
+                                        <span className="truncate">
+                                            {displayColumns
+                                                .map((column: string) =>
+                                                    `${formatColumnLabel(column)}: ${String(device_interface[column] ?? 'N/A')}`)
+                                                .join(' | ')}
                                         </span>
-                                        {displayColumns.map((column) => (
-                                            <span key={column}>
-                                                {device_interface[column]}
-                                            </span>
-                                        ))}
-                                        <span>
-                                            {device_interface.pivot.status}
-                                        </span>
+                                        <span>{device_interface.pivot.status}</span>
                                     </div>
                                 );
                             })}

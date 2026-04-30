@@ -63,6 +63,12 @@ type PageProps = {
     sub_jobs: SubJob[];
 } & SharedData;
 
+const formatColumnLabel = (column: string) =>
+    column
+        .split('_')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+
 function SubJobLog({ status_log }: { status_log: string }) {
     const lines = status_log.split('\\n').filter((line) => line.length > 0);
 
@@ -220,30 +226,34 @@ export default function MultiJobTask() {
                                         </h3>
                                         {sub.is_device_based ? (
                                             <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+                                                <div className="mb-3 grid grid-cols-4 gap-2 border-b pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                                    <span>Name</span>
+                                                    <span>Serial</span>
+                                                    <span>Task Field</span>
+                                                    <span>Status</span>
+                                                </div>
                                                 {sub.devices.map((device) => (
                                                     <div
                                                         key={device.id}
                                                         className={cn(
-                                                            'flex flex-wrap items-center justify-between gap-2 text-sm',
+                                                            'grid grid-cols-4 gap-2 text-sm',
                                                             device.pivot.status ===
                                                                 'COMPLETED' &&
                                                                 'text-green-600 dark:text-green-400',
                                                         )}
                                                     >
                                                         <span>{device.name}</span>
-                                                        <span className="text-muted-foreground">
-                                                            {device.serial}
+                                                        <span className="text-muted-foreground">{device.serial}</span>
+                                                        <span className="truncate">
+                                                            {sub.task_type === 'CONFIGURE_LAG_INTERFACE'
+                                                                ? String(device.lacp_profile?.port_list ?? 'N/A')
+                                                                : sub.display_columns
+                                                                      .map(
+                                                                          (column) =>
+                                                                              `${formatColumnLabel(column)}: ${String(device[column] ?? 'N/A')}`,
+                                                                      )
+                                                                      .join(' | ')}
                                                         </span>
-                                                        {sub.display_columns.map(
-                                                            (column) => (
-                                                                <span key={column}>
-                                                                    {String(
-                                                                        device[column] ??
-                                                                            '',
-                                                                    )}
-                                                                </span>
-                                                            ),
-                                                        )}
                                                         <span>
                                                             {device.pivot.status}
                                                         </span>
@@ -252,6 +262,12 @@ export default function MultiJobTask() {
                                             </div>
                                         ) : (
                                             <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+                                                <div className="mb-3 grid grid-cols-4 gap-2 border-b pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                                    <span>Device</span>
+                                                    <span>Interface</span>
+                                                    <span>Task Field</span>
+                                                    <span>Status</span>
+                                                </div>
                                                 {sub.interfaces.map(
                                                     (device_interface) => {
                                                         const deviceForInterface =
@@ -266,7 +282,7 @@ export default function MultiJobTask() {
                                                                     device_interface.id
                                                                 }
                                                                 className={cn(
-                                                                    'flex flex-wrap items-center justify-between gap-2 text-sm',
+                                                                    'grid grid-cols-4 gap-2 text-sm',
                                                                     device_interface
                                                                         .pivot
                                                                         .status ===
@@ -283,22 +299,14 @@ export default function MultiJobTask() {
                                                                         device_interface.interface
                                                                     }
                                                                 </span>
-                                                                {sub.display_columns.map(
-                                                                    (column) => (
-                                                                        <span
-                                                                            key={
-                                                                                column
-                                                                            }
-                                                                        >
-                                                                            {String(
-                                                                                device_interface[
-                                                                                    column
-                                                                                ] ??
-                                                                                    '',
-                                                                            )}
-                                                                        </span>
-                                                                    ),
-                                                                )}
+                                                                <span className="truncate">
+                                                                    {sub.display_columns
+                                                                        .map(
+                                                                            (column) =>
+                                                                                `${formatColumnLabel(column)}: ${String(device_interface[column] ?? 'N/A')}`,
+                                                                        )
+                                                                        .join(' | ')}
+                                                                </span>
                                                                 <span>
                                                                     {
                                                                         device_interface

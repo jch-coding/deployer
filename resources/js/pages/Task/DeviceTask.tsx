@@ -14,18 +14,39 @@ import type { BreadcrumbItem, SharedData } from '@/types';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
+type TaskDevice = {
+    id: number;
+    name: string;
+    serial: string;
+    pivot: { status: string };
+    lacp_profile?: { port_list?: string };
+    [key: string]: unknown;
+};
+
+type DeviceTaskPageProps = SharedData & {
+    task: { id: number; task_type: string; status_log: string };
+    task_friendly_name: string;
+    devices: TaskDevice[];
+    display_columns?: string[];
+    deployment: { id: number; name: string };
+};
+
 export default function Show() {
-    const { current_client, flash } = usePage<SharedData>().props;
-    const task = usePage().props.task
-    const task_friendly_name = usePage().props.task_friendly_name
-    const devices = usePage().props.devices
-    const displayColumns = usePage().props.display_columns ?? []
-    const deployment = usePage().props.deployment
+    const { current_client, flash, task, task_friendly_name, devices, display_columns, deployment } =
+        usePage<DeviceTaskPageProps>().props;
+    const displayColumns = display_columns ?? [];
     const completedDevices= devices.filter(
         (device) => device.pivot.status === 'COMPLETED',
     );
     const [isCancelling, setIsCancelling] = useState(false);
     const [isClearingQueue, setIsClearingQueue] = useState(false);
+    const isLagTask = task.task_type === 'CONFIGURE_LAG_INTERFACE';
+
+    const formatColumnLabel = (column: string) =>
+        column
+            .split('_')
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -116,33 +137,32 @@ export default function Show() {
                             Devices Provisioned
                         </CardHeader>
                         <CardContent>
+                            <div className="mb-3 grid grid-cols-4 gap-2 border-b pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                <span>Name</span>
+                                <span>Serial</span>
+                                <span>Task Field</span>
+                                <span>Status</span>
+                            </div>
                             {devices.map((device) => (
                                 <div
                                     key={device.id}
                                     className={cn(
-                                        'mb-2 flex items-center justify-between text-sm',
+                                        'mb-2 grid grid-cols-4 gap-2 text-sm',
                                         device.pivot.status === 'COMPLETED' &&
                                             'text-green-500',
                                     )}
                                 >
                                     <span>{device.name}</span>
-                                    <span>
-                                        {device.serial}
+                                    <span>{device.serial}</span>
+                                    <span className="truncate">
+                                        {isLagTask
+                                            ? device.lacp_profile?.port_list
+                                            : displayColumns
+                                                  .map((column: string) =>
+                                                      `${formatColumnLabel(column)}: ${device[column] ?? 'N/A'}`)
+                                                  .join(' | ')}
                                     </span>
-                                    {displayColumns.map((column) => (
-                                        <span>
-                                            {device[column]}
-                                        </span>
-                                    ))}
-                                    {
-                                        task.task_type === 'CONFIGURE_LAG_INTERFACE' &&
-                                        <span>
-                                            {device.lacp_profile.port_list}
-                                        </span>
-                                    }
-                                    <span>
-                                        {device.pivot.status}
-                                    </span>
+                                    <span>{device.pivot.status}</span>
                                 </div>
                             ))}
                         </CardContent>
