@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import { KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import DeleteModal from '@/components/ui/DeleteModal';
 import EditClientModal from '@/components/ui/EditClientModal';
 import { testCentralCreds } from '@/actions/App/Http/Controllers/ClientController';
@@ -29,22 +30,36 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                         Set Current
                     </Button>
                     <div className="flex flex-row flex-nowrap items-center gap-2">
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => router.post(testCentralCreds(client.id).url, { type: 'classic' })}
-                        >
-                            <KeyRound />
-                            Classic
-                        </Button>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => router.post(testCentralCreds(client.id).url, { type: 'central' })}
-                        >
-                            <KeyRound />
-                            New
-                        </Button>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => router.post(testCentralCreds(client.id).url, { type: 'classic' })}
+                                >
+                                    <KeyRound />
+                                    Classic
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                Verify Classic Central credentials (legacy client ID, secret, and user login) for this client.
+                            </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => router.post(testCentralCreds(client.id).url, { type: 'central' })}
+                                >
+                                    <KeyRound />
+                                    New
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                Verify Central credentials (client ID and secret) for this client.
+                            </TooltipContent>
+                        </Tooltip>
                     </div>
                     <EditClientModal client={client} errors={errors} base_urls={base_urls} />
                     <DeleteModal client={client} />
