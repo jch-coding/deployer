@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -25,58 +26,109 @@ class AssociateDeviceToSiteJob extends BaseTaskJob
     {
         $this->handleSafely(function (): void {
             $device_type = $this->get_device_type($this->device->device_function);
-            $this->populate_classic_site_id();
+            if (! $this->populate_classic_site_id()) {
+                return;
+            }
+
+            $this->device->load('site');
+
             $device_site_association_body = [
                 'site_id' => $this->device->site->classic_id,
                 'device_type' => $device_type,
                 'device_id' => $this->device->serial,
             ];
             $response = $this->centralAPIHelper->classic_associate_device_to_site($device_site_association_body);
-            if (! $response->ok()) {
-                Log::error('Failed to associate devices to site');
+            if (is_array($response) || ! $response instanceof Response || ! $response->ok()) {
+                $detail = $this->formatClassicAssociateError($response);
+                Log::error('Failed to associate device to site: '.$detail);
+                $this->task->processTaskStatusLog('Failed to associate device '.$this->device->name.' to site', true);
                 $this->release($this->wait_time * 60);
-            } else {
-                $status_log = $this->task->status_log;
-                $new_log = $status_log.'\nDevice '.$this->device->name.' associated to site '.$this->site->name;
-                $this->task->update(['status_log' => $new_log]);
+
+                return;
+            }
+
+            $siteName = $this->device->site?->name ?? 'site';
+            $status_log = $this->task->status_log;
+            $new_log = $status_log.'\nDevice '.$this->device->name.' associated to site '.$siteName;
+            $this->task->update(['status_log' => $new_log]);
+
+            $this->task->devices()->find($this->device)?->pivot?->update(['status' => 'COMPLETED']);
+            $this->task->load('devices');
+            if ($this->task->allTrackedItemsCompleted()) {
+                $this->task->update(['status' => 'COMPLETED']);
             }
         }, 'Associate device to site');
     }
 
-    public function get_device_type($device_function)
+    public function get_device_type($device_function): string
     {
-        switch ($device_function) {
-            case str_contains($device_function, 'SWITCH'):
-                return 'SWITCH';
-            case str_contains($device_function, 'AP'):
-                return 'IAP';
-            default: return 'CONTROLLER';
+        if (str_contains((string) $device_function, 'SWITCH')) {
+            return 'SWITCH';
         }
+        if (str_contains((string) $device_function, 'AP')) {
+            return 'IAP';
+        }
+
+        return 'CONTROLLER';
     }
 
-    public function populate_classic_site_id()
+    /**
+     * Ensure {@see Device::$site} has {@see Site::$classic_id} from Classic Central when missing.
+     *
+     * @return bool False when lookup failed and the job should stop (queue fail was signaled).
+     */
+    public function populate_classic_site_id(): bool
     {
         if ($this->device->site->classic_id) {
-            return;
+            return true;
         }
+
         $sites = $this->centralAPIHelper->classic_get_sites();
-        if (! $sites->ok()) {
-            Log::error($sites->json('message'));
-            $this->fail();
-        } else {
-            $site_list = $sites->json('sites');
-            $classic_site = array_find($site_list, fn ($site) => $site['site_name'] == $this->device->site->name);
-            if (! $classic_site) {
-                $error_message = 'Site '.$this->device->site->name.' not found in classic';
-                Log::error($error_message);
-                $this->fail($error_message);
-            } else {
-                $this->device->site->update(['classic_id' => $classic_site['site_id']]);
-            }
+        if (is_array($sites) || ! $sites instanceof Response || ! $sites->ok()) {
+            $detail = is_array($sites)
+                ? ($sites['error'] ?? json_encode($sites))
+                : ($sites->json('message') ?? 'Classic sites request failed');
+            Log::error($detail);
+            $this->fail(is_string($detail) ? $detail : 'Failed to load classic sites from Central');
+
+            return false;
         }
+
+        $site_list = $sites->json('sites') ?? [];
+        $classic_site = array_find($site_list, fn ($site) => $site['site_name'] == $this->device->site->name);
+        if (! $classic_site) {
+            $error_message = 'Site '.$this->device->site->name.' not found in classic';
+            Log::error($error_message);
+            $this->fail($error_message);
+
+            return false;
+        }
+
+        $this->device->site->update(['classic_id' => $classic_site['site_id']]);
+        $this->device->site->refresh();
+
+        return true;
     }
 
-    public function failed(?Throwable $exception)
+    private function formatClassicAssociateError(mixed $response): string
+    {
+        if (is_array($response)) {
+            return $response['error'] ?? json_encode($response);
+        }
+
+        if ($response instanceof Response) {
+            $json = $response->json();
+            if (is_array($json) && isset($json['message'])) {
+                return (string) $json['message'];
+            }
+
+            return $response->body();
+        }
+
+        return 'unknown error';
+    }
+
+    public function failed(?Throwable $exception): void
     {
         $this->logFailedException($exception);
         $this->failDeviceAndTaskIfNeeded($this->device);
