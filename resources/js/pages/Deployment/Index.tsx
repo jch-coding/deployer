@@ -1,6 +1,6 @@
 import { Field } from '@headlessui/react';
 import { Form, Link, router, usePage } from '@inertiajs/react';
-import { TrashIcon } from 'lucide-react';
+import { Rocket, TrashIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/DeploymentController';
 import { Button } from '@/components/ui/button';
@@ -68,13 +68,21 @@ export default function Index() {
                                             : `${deployment.devices_count} devices`}
                                     </p>
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <Link
-                                            href={showDeployment(deployment.id).url}
-                                            className="text-primary text-sm font-medium hover:underline"
+                                        <Button
+                                            asChild
+                                            variant="outline"
+                                            size="sm"
+                                            className="gap-1.5"
                                             data-test="deployment-link"
                                         >
-                                            View deployment
-                                        </Link>
+                                            <Link href={showDeployment(deployment.id).url}>
+                                                <Rocket
+                                                    className="size-4 shrink-0"
+                                                    aria-hidden
+                                                />
+                                                View deployment
+                                            </Link>
+                                        </Button>
                                         <Button
                                             type="button"
                                             variant="ghost"
