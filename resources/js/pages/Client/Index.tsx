@@ -1,4 +1,6 @@
 import { Head, usePage } from '@inertiajs/react';
+import { useEffect } from 'react';
+import { toast } from 'sonner';
 import ClientCard from '@/components/ui/ClientCard';
 import CreateClientModal from '@/components/ui/CreateClientModal';
 import {
@@ -25,6 +27,16 @@ export default function Index() {
     const base_urls = usePage<ClientPageProps>().props.base_urls
     const current_client = usePage<ClientPageProps>().props.current_client
     const errors = usePage<ClientPageProps>().props.errors
+    const flash = usePage<ClientPageProps>().props.flash
+
+    useEffect(() => {
+        if (flash?.success) {
+            toast.success(flash.success, { id: 'client-index-flash-success' });
+        }
+        if (flash?.error) {
+            toast.error(flash.error, { id: 'client-index-flash-error' });
+        }
+    }, [flash?.success, flash?.error]);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -48,7 +60,6 @@ export default function Index() {
                                 client={ client }
                                 errors={ errors }
                                 base_urls={ base_urls }
-                                index={ client.client_id }
                                 isCurrentClient={client.id === current_client?.id}
                             />
                                 )

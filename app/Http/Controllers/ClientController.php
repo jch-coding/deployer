@@ -27,26 +27,31 @@ class ClientController extends Controller
      */
     public function testCentralCreds(Request $request, Client $client)
     {
-        $data = $request->validate([
-            'name' => 'required|string|min:3|max:255',
-            'client_id' => 'required|string|min:12|max:255',
-            'client_secret' => 'required|string|min:12|max:255',
-            'customer_id' => 'required|string|min:12|max:255',
-            'base_url' => ['required', Rule::enum(BaseURL::class)],
-        ]);
-
-        $access_token = CentralController::getAccessToken($data['client_id'], $data['client_secret']);
-
-        if ($access_token === 'failed_to_get_token') {
-            session()->flash('error', 'Failed to get access token from central.');
-
-            return back();
+        if ($request->user()->cannot('update', $client)) {
+            abort(403);
         }
 
-        $data = array_merge($data, ['bearer_token' => $access_token]);
-        session()->flash('success', 'Successfully got access token from central. Client created successfully.');
+        $type = $request->validate([
+            'type' => ['required', Rule::in(['central', 'classic'])],
+        ])['type'];
 
-        return to_route('clients.index');
+        if ($type === 'classic') {
+            if (! $client->hasClassicCentralCredentials()) {
+                return to_route('clients.index')->with('error', 'Classic credentials are not configured for this client.');
+            }
+
+            if (! $client->handleClassicBearerToken(true)) {
+                return to_route('clients.index')->with('error', 'Failed to validate Classic Central credentials.');
+            }
+
+            return to_route('clients.index')->with('success', 'Classic Central credentials validated successfully.');
+        }
+
+        if (! $client->handleBearerTokenAuth(true)) {
+            return to_route('clients.index')->with('error', 'Failed to validate Central credentials.');
+        }
+
+        return to_route('clients.index')->with('success', 'Central credentials validated successfully.');
     }
 
     /**

@@ -5,6 +5,10 @@ type Client = {
     customer_id: string;
     id: number;
     base_url: typeof base_urls[number];
+    classic_client_id?: string | null;
+    classic_client_secret?: string | null;
+    classic_username?: string | null;
+    classic_password?: string | null;
 }
 
 const base_urls = ["ae1", "au1", "ca1", "de1", "de2", "de3", "gb1", "in", "jp1", "us1", "us2", "us4", "us5", "us6"] as const
