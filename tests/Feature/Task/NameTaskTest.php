@@ -29,7 +29,7 @@ it('queries Central for the device scope-id if the scope-id is missing', functio
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
     $successResponse = Mockery::mock(Response::class);
-    $successResponse->shouldReceive('status')->andReturn(200);
+    $successResponse->shouldReceive('successful')->andReturn(true);
     $centralApi->shouldReceive('getScopeIdFromCentral')->once()->with($device)->andReturn([['scopeId' => '1234567890']]);
     $centralApi->shouldReceive('updateSystemInfo')->once()->with($device)->andReturn($successResponse);
 
@@ -38,6 +38,7 @@ it('queries Central for the device scope-id if the scope-id is missing', functio
 
     expect($device->fresh()->scope_id)->toBe('1234567890');
     expect((string) $task->fresh()->status_log)->toContain("System info for {$device->name} updated successfully");
+    expect($task->fresh()->status)->toBe('COMPLETED');
 });
 
 it('does not fetch scope-id when the device already has one', function () {
@@ -54,7 +55,7 @@ it('does not fetch scope-id when the device already has one', function () {
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
     $successResponse = Mockery::mock(Response::class);
-    $successResponse->shouldReceive('status')->andReturn(200);
+    $successResponse->shouldReceive('successful')->andReturn(true);
     $centralApi->shouldReceive('getScopeIdFromCentral')->never();
     $centralApi->shouldReceive('updateSystemInfo')->once()->with($device)->andReturn($successResponse);
 
@@ -63,6 +64,7 @@ it('does not fetch scope-id when the device already has one', function () {
 
     expect($device->fresh()->scope_id)->toBe('existing-scope-id');
     expect((string) $task->fresh()->status_log)->toContain("System info for {$device->name} updated successfully");
+    expect($task->fresh()->status)->toBe('COMPLETED');
 });
 
 it('keeps device pivot pending when system info update fails', function () {
@@ -79,8 +81,9 @@ it('keeps device pivot pending when system info update fails', function () {
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
     $failureResponse = Mockery::mock(Response::class);
-    $failureResponse->shouldReceive('status')->andReturn(500);
+    $failureResponse->shouldReceive('successful')->andReturn(false);
     $failureResponse->shouldReceive('json')->with('message')->andReturn('boom');
+    $failureResponse->shouldReceive('body')->andReturn('');
     $centralApi->shouldReceive('getScopeIdFromCentral')->never();
     $centralApi->shouldReceive('updateSystemInfo')->once()->with($device)->andReturn($failureResponse);
 
@@ -89,4 +92,3 @@ it('keeps device pivot pending when system info update fails', function () {
 
     expect($task->devices()->find($device->id)->pivot->status)->toBe('PENDING');
 });
-
