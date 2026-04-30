@@ -63,16 +63,29 @@ class AssociateSiteAndNameJob extends BaseTaskJob
                     // now name the device through new Central. Get the device scope id.
                     sleep(5);
                 }
-                $scope_id_object = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
-                if (array_key_exists('error', $scope_id_object)) {
-                    $message = 'Failed to get scope id for device '.$this->device->name;
+                $retry_count = 3;
+                while ($retry_count > 0) {
+                    $scope_id_object = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
+                    if (array_key_exists('error', $scope_id_object)) {
+                        $message = 'Failed to get scope id for device '.$this->device->name.'. Retrying in 5 seconds.';
+                        Log::error($message);
+                        $this->task->processTaskStatusLog($message, true);
+                        sleep(5);
+                    } else {
+                        $scope_id = $scope_id_object[0]['scopeId'];
+                        $this->device->scope_id = $scope_id;
+                        $this->device->save();
+                        break;
+                    }
+                    $retry_count--;
+                }
+                if ($retry_count === 0) {
+                    $message = 'Failed to get scope id for device '.$this->device->name.' after 3 attempts.';
                     Log::error($message);
                     $this->task->processTaskStatusLog($message, true);
                     $this->release(60 * $this->wait_time);
-                } else {
-                    $scope_id = $scope_id_object[0]['scopeId'];
-                    $this->device->scope_id = $scope_id;
-                    $this->device->save();
+
+                    return;
                 }
             }
             // name the device through new Central.
