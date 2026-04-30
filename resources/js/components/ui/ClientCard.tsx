@@ -13,11 +13,11 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
     return (
         <Card key={client.client_id} className={isCurrentClient ? "border-2 border-orange-400 shadow-slate-400" : ""}>
             <CardHeader>
-                <CardTitle className="mx-auto">
-                    {client.name}
-                </CardTitle>
-                <CardContent className="mx-auto mt-3 flex flex-wrap justify-center gap-2">
+                <CardTitle className="mx-auto flex items-center gap-2">
+                    <span>{client.name}</span>
                     <Button
+                        size="sm"
+                        className="rounded-full"
                         onClick={() =>
                             router.put(current(client.id), {}, {
                                 onSuccess: () => {
@@ -29,6 +29,8 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                     >
                         Set Current
                     </Button>
+                </CardTitle>
+                <CardContent className="mx-auto mt-3 flex flex-wrap justify-center gap-2">
                     <div className="flex flex-row flex-nowrap items-center gap-2">
                         <Tooltip>
                             <TooltipTrigger asChild>
