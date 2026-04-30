@@ -1,5 +1,5 @@
 import { router } from '@inertiajs/react';
-import { Check } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import DeleteModal from '@/components/ui/DeleteModal';
@@ -34,7 +34,7 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                             size="sm"
                             onClick={() => router.post(testCentralCreds(client.id).url, { type: 'classic' })}
                         >
-                            <Check />
+                            <KeyRound />
                             Classic
                         </Button>
                         <Button
@@ -42,8 +42,8 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                             size="sm"
                             onClick={() => router.post(testCentralCreds(client.id).url, { type: 'central' })}
                         >
-                            <Check />
-                            Check New
+                            <KeyRound />
+                            New
                         </Button>
                     </div>
                     <EditClientModal client={client} errors={errors} base_urls={base_urls} />
