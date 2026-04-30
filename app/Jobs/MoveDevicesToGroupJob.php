@@ -3,17 +3,19 @@
 namespace App\Jobs;
 
 use App\Helper\CentralAPIHelper;
-use App\Models\Device;
 use App\Models\Task;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class MoveDevicesToGroupJob extends BaseTaskJob
 {
+    private const SERIALS_PER_REQUEST = 25;
+
     /**
      * Create a new job instance.
      */
-    public function __construct(public string $group_name, public array $devices, public Task $task, public CentralAPIHelper $centralAPIHelper)
+    public function __construct(public array $devices, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
     }
@@ -24,50 +26,90 @@ class MoveDevicesToGroupJob extends BaseTaskJob
     public function handle(): void
     {
         $this->handleSafely(function (): void {
-            $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
-            $this->moveDevicesToGroup($device_serials);
+            $this->moveDevicesToGroup();
         }, 'Move devices to group');
     }
 
-    public function moveDevicesToGroup($devices): void
+    public function moveDevicesToGroup(): void
     {
-        // check if group exists
         $groups_response = $this->centralAPIHelper->classic_get_groups();
-        if (! $groups_response->ok()) {
-            $message = 'Failed to preprovision devices to group. Group not found.';
-            Log::error($groups_response->json('detail'));
+        if (is_array($groups_response) || ! $groups_response instanceof Response || ! $groups_response->ok()) {
+            $message = 'Failed to move devices to group. Could not load groups from Central.';
+            $detail = is_array($groups_response)
+                ? ($groups_response['error'] ?? json_encode($groups_response))
+                : ($groups_response instanceof Response ? $groups_response->json('detail') : 'unknown');
+            Log::error($detail);
             $this->task->processTaskStatusLog($message);
 
             return;
-        } else {
-            // try to find the group within the list of groups
-            $group_found = collect($groups_response->json('data'))->collapse()->filter(fn ($item) => $item === $this->group_name);
-            if ($group_found->isEmpty()) {
-                $message = 'Group not found in Central. Double check the group name.';
-                Log::error($message);
-                $this->task->processTaskStatusLog($message);
+        }
 
-                return;
+        $group_found = collect($groups_response->json('data'))->collapse()->filter(fn ($item) => $item === $this->group_name);
+        if ($group_found->isEmpty()) {
+            $message = 'Group not found in Central. Double check the group name.';
+            Log::error($message);
+            $this->task->processTaskStatusLog($message);
+
+            return;
+        }
+
+        $chunks = array_chunk($this->devices, self::SERIALS_PER_REQUEST);
+
+        foreach ($chunks as $chunk) {
+            $serials = array_map(fn ($device) => $device['serial'], $chunk);
+            $response = $this->centralAPIHelper->move_devices_to_group($this->group_name, $serials);
+            $ok = ! is_array($response) && $response instanceof Response && $response->ok();
+
+            if ($ok) {
+                foreach ($chunk as $device) {
+                    $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
+                }
+                $message = array_reduce(
+                    $serials,
+                    fn (string $carry, string $serial) => $carry."\nDevice ".$serial.' moved to group '.$this->group_name,
+                    ''
+                );
+                $this->task->processTaskStatusLog($message);
+            } else {
+                foreach ($chunk as $device) {
+                    $this->markDeviceFailed($device['id']);
+                }
+                $errorDetail = $this->formatMoveToGroupError($response);
+                Log::error('Failed to move devices to group with error '.$errorDetail);
+                $message = array_reduce(
+                    $serials,
+                    fn (string $carry, string $serial) => $carry."\nFailed Device ".$serial.' move to group '.$this->group_name,
+                    ''
+                );
+                $this->task->processTaskStatusLog($message);
             }
         }
-        $response = $this->centralAPIHelper->move_devices_to_group($this->group_name, $devices);
-        $message = '';
-        if (! $response->ok()) {
-            Log::error('Failed to move devices to group with error '.$response->json()['message']);
-            array_reduce($devices, function ($carry, $item) {
-                $carry .= "\nFailed Device ".$item.' move to group '.$this->group_name;
 
-                return $carry;
-            }, $message);
-            $this->task->processTaskStatusLog($message);
-        } else {
-            array_reduce($devices, function ($carry, $item) {
-                $carry .= "\nDevice ".$item.' moved to group '.$this->group_name;
+        $this->task->load('devices');
 
-                return $carry;
-            }, $message);
-            $this->task->processTaskStatusLog($message);
+        if ($this->task->allTrackedItemsCompleted()) {
+            $this->task->update(['status' => 'COMPLETED']);
+        } elseif ($this->allTaskDevicesFailed()) {
+            $this->failTask('All devices failed to move to group.');
         }
+    }
+
+    private function formatMoveToGroupError(mixed $response): string
+    {
+        if (is_array($response)) {
+            return $response['error'] ?? json_encode($response);
+        }
+
+        if ($response instanceof Response) {
+            $json = $response->json();
+            if (is_array($json) && isset($json['message'])) {
+                return (string) $json['message'];
+            }
+
+            return $response->body();
+        }
+
+        return 'unknown error';
     }
 
     public function failed(?Throwable $exception): void
