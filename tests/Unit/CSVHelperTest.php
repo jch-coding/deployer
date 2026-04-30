@@ -122,6 +122,32 @@ it('processes portchannel and non-portchannel interfaces from one CSV file', fun
             'trunk_vlan_ranges' => '10-20',
         ],
     ]);
+
+    expect($result)->toHaveCount(2)
+        ->and($result[0])->toMatchArray([
+            'name' => 'ACC-SWITCH-1',
+            'serial' => 'SN0000000001',
+            'device_function' => 'ACCESS_SWITCH',
+            'interface' => '1',
+            'interface_mode' => 'TRUNK',
+            'native_vlan' => '10',
+            'trunk_vlan_all' => 'true',
+            'trunk_type' => 'LACP',
+            'port_list' => '1/1/1-1/1/2&2/1/1-2/1/2',
+        ])
+        ->and($result[1])->toMatchArray([
+            'name' => 'ACC-SWITCH-1',
+            'serial' => 'SN0000000001',
+            'device_function' => 'ACCESS_SWITCH',
+            'interface' => '1/1/3',
+            'interface_mode' => 'TRUNK',
+            'native_vlan' => '10',
+            'trunk_vlan_ranges' => '10-20',
+            'port_list' => null,
+            'trunk_type' => null,
+        ])
+        ->and($result[1]['port_list'])->toBeNull()
+        ->and($result[1]['trunk_type'])->toBeNull();
 });
 
 it('maps device optional columns when creating device arrays', function () {
