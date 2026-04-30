@@ -12,7 +12,10 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
-import { columns, type DeviceDef } from '@/components/ui/devices-columns';
+import {
+    deploymentShowColumns,
+    type DeviceDef,
+} from '@/components/ui/devices-columns';
 import { Input } from '@/components/ui/input';
 import {
     Dialog,
@@ -226,7 +229,7 @@ export default function Show() {
                             </div>
                             <DataTable<DeviceDef, unknown>
                                 data={devicesFromServer as DeviceDef[]}
-                                columns={columns}
+                                columns={deploymentShowColumns}
                                 getRowId={(row) => String(row.id)}
                             />
                             {devicesPaginator.total >

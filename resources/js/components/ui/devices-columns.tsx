@@ -173,11 +173,7 @@ function DeviceScopeAndDeleteActions({ id }: { id: number }) {
     );
 }
 
-export const columns: ColumnDef<DeviceDef>[] = [
-    {
-        accessorKey: 'id',
-        header: 'ID',
-    },
+const deploymentShowColumnsBase: ColumnDef<DeviceDef>[] = [
     {
         accessorKey: 'name',
         header: 'Name',
@@ -236,4 +232,16 @@ export const columns: ColumnDef<DeviceDef>[] = [
             <DeviceScopeAndDeleteActions id={row.original.id} />
         ),
     },
-]
+];
+
+export const columns: ColumnDef<DeviceDef>[] = [
+    {
+        accessorKey: 'id',
+        header: 'ID',
+    },
+    ...deploymentShowColumnsBase,
+];
+
+/** Device table columns without the numeric ID (e.g. deployment show page). */
+export const deploymentShowColumns: ColumnDef<DeviceDef>[] =
+    deploymentShowColumnsBase;
