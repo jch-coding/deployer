@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -25,21 +26,59 @@ class AssignDeviceFunctionJob extends BaseTaskJob
         $this->handleSafely(function (): void {
             $device_serials = array_map(fn ($device) => $device['serial'], $this->devices);
             $response = $this->centralAPIHelper->assignDeviceFunction($device_serials, $this->device_function);
-            if (! $response->ok()) {
-                Log::error($response->json('message'));
-                $this->fail();
-            } else {
-                array_map(fn ($device) => $this->task->devices()->find($device['id'])->pivot->update(['status' => 'COMPLETED']), $this->devices);
-                $status_log = $this->task->status_log;
-                array_reduce($this->devices, fn ($carry, $device) => $carry . "\nDevice " . $device['name'] . ' assigned to ' . $device['device_function'], $status_log);
-                $this->task->update(['status_log' => $status_log]);
+
+            if (is_array($response) || ! $response instanceof Response || ! $response->ok()) {
+                $detail = $this->formatAssignDeviceFunctionError($response);
+                Log::error($detail);
+                $this->fail(is_string($detail) && $detail !== '' ? $detail : 'Assign device function failed');
+
+                return;
             }
+
+            foreach ($this->devices as $device) {
+                $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
+            }
+
+            $this->task->refresh();
+            $status_log = $this->task->status_log;
+            $new_log = array_reduce(
+                $this->devices,
+                fn (string $carry, array $device) => $carry."\nDevice ".$device['name'].' assigned to '.$this->device_function,
+                $status_log
+            );
+
+            $this->task->load('devices');
+            $payload = ['status_log' => $new_log];
+            if ($this->task->allTrackedItemsCompleted()) {
+                $payload['status'] = 'COMPLETED';
+            }
+            $this->task->update($payload);
         }, 'Assign device function');
     }
 
-    public function failed(?Throwable $exception)
+    private function formatAssignDeviceFunctionError(mixed $response): string
+    {
+        if (is_array($response)) {
+            return $response['error'] ?? json_encode($response);
+        }
+
+        if ($response instanceof Response) {
+            $json = $response->json();
+            if (is_array($json) && isset($json['message'])) {
+                return (string) $json['message'];
+            }
+
+            return $response->body();
+        }
+
+        return 'unknown error';
+    }
+
+    public function failed(?Throwable $exception): void
     {
         $this->logFailedException($exception);
-        $this->failDeviceAndTaskIfNeeded($this->devices[0]['id']);
+        if ($this->devices !== [] && isset($this->devices[0]['id'])) {
+            $this->failDeviceAndTaskIfNeeded($this->devices[0]['id']);
+        }
     }
 }
