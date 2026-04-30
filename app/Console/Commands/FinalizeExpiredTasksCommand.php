@@ -32,6 +32,16 @@ class FinalizeExpiredTasksCommand extends Command
                     }
 
                     $totals = $task->trackedItemTotals();
+
+                    if ($task->allTrackedItemsFailed()) {
+                        $message = 'Task failed: all devices or interfaces failed before the deployment window ended.';
+                        $task->update(['status' => 'FAILED']);
+                        $task->processTaskStatusLog($message, true);
+                        $timedOutCount++;
+
+                        continue;
+                    }
+
                     $message = sprintf(
                         'Task expired before completion (%d/%d completed).',
                         $totals['completed'],

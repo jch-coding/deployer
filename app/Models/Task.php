@@ -235,6 +235,33 @@ class Task extends Model
         return $totals['completed'] === $total;
     }
 
+    public function allTrackedItemsFailed(): bool
+    {
+        $category = $this->getTaskCategory($this->task_type);
+
+        if ($category === 'INTERFACE') {
+            $total = $this->deviceInterfaces()->count();
+            if ($total === 0) {
+                return false;
+            }
+            $failed = $this->deviceInterfaces()->wherePivot('status', 'FAILED')->count();
+
+            return $failed === $total;
+        }
+
+        if ($category === 'DEVICE') {
+            $total = $this->devices()->count();
+            if ($total === 0) {
+                return false;
+            }
+            $failed = $this->devices()->wherePivot('status', 'FAILED')->count();
+
+            return $failed === $total;
+        }
+
+        return false;
+    }
+
     public function effectiveDeploymentMinutes(int $defaultMinutes = 3): int
     {
         return $this->deployment_time !== null && $this->deployment_time > 0

@@ -17,7 +17,9 @@ abstract class BaseTaskJob implements ShouldQueue
     use Batchable, HandlesUncaughtTaskExceptions, Queueable;
 
     public int $tries = 1;
+
     protected int $deployment_time = 3;
+
     protected int $wait_time = 1;
 
     protected function resolvePositiveInt(?int $value, int $default): int
@@ -69,6 +71,8 @@ abstract class BaseTaskJob implements ShouldQueue
 
     protected function allTaskDevicesFailed(): bool
     {
+        $this->task->load('devices');
+
         $devices = $this->task->devices;
         $total = $devices->count();
         if ($total === 0) {
@@ -80,6 +84,8 @@ abstract class BaseTaskJob implements ShouldQueue
 
     protected function allTaskInterfacesFailed(?callable $totalFilter = null, ?callable $failedFilter = null): bool
     {
+        $this->task->load('deviceInterfaces');
+
         /** @var Collection<int, mixed> $interfaces */
         $interfaces = $this->task->deviceInterfaces;
         $totalInterfaces = $totalFilter ? $interfaces->filter($totalFilter) : $interfaces;

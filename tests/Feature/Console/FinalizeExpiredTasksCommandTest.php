@@ -31,6 +31,26 @@ it('marks expired in-progress device task as timed out when partially completed'
     expect($task->devices()->where('devices.id', $deviceTwo->id)->first()->pivot->status)->toBe('TIMED_OUT');
 });
 
+it('marks expired in-progress device task as failed when all devices already failed', function () {
+    $task = Task::factory()->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+        'deployment_time' => 1,
+    ]);
+    expireTask($task);
+
+    $deviceOne = Device::factory()->create();
+    $deviceTwo = Device::factory()->create();
+    $task->devices()->attach($deviceOne->id, ['status' => 'FAILED']);
+    $task->devices()->attach($deviceTwo->id, ['status' => 'FAILED']);
+
+    Artisan::call('tasks:finalize-expired');
+
+    expect($task->fresh()->status)->toBe('FAILED');
+    expect($task->devices()->where('devices.id', $deviceOne->id)->first()->pivot->status)->toBe('FAILED');
+    expect($task->devices()->where('devices.id', $deviceTwo->id)->first()->pivot->status)->toBe('FAILED');
+});
+
 it('marks expired in-progress interface task as timed out when partially completed', function () {
     $task = Task::factory()->create([
         'task_type' => 'CONFIGURE_VLAN_INTERFACE',
