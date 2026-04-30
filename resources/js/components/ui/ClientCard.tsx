@@ -1,4 +1,5 @@
 import { router } from '@inertiajs/react';
+import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import DeleteModal from '@/components/ui/DeleteModal';
@@ -27,18 +28,24 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                     >
                         Set Current
                     </Button>
-                    <Button
-                        variant="secondary"
-                        onClick={() => router.post(testCentralCreds(client.id).url, { type: 'central' })}
-                    >
-                        Check Central Creds
-                    </Button>
-                    <Button
-                        variant="secondary"
-                        onClick={() => router.post(testCentralCreds(client.id).url, { type: 'classic' })}
-                    >
-                        Check Classic Creds
-                    </Button>
+                    <div className="flex flex-row flex-nowrap items-center gap-2">
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => router.post(testCentralCreds(client.id).url, { type: 'classic' })}
+                        >
+                            <Check />
+                            Classic
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => router.post(testCentralCreds(client.id).url, { type: 'central' })}
+                        >
+                            <Check />
+                            Check New
+                        </Button>
+                    </div>
                     <EditClientModal client={client} errors={errors} base_urls={base_urls} />
                     <DeleteModal client={client} />
                 </CardContent>
