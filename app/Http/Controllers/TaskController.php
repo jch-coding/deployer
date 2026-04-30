@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\TestEvent;
 use App\Helper\CentralAPIHelper;
 use App\JobQueueShard;
 use App\Jobs\AssignDeviceFunctionJob;
@@ -18,13 +17,11 @@ use App\Jobs\RemoveLocalOverrideDNSJob;
 use App\Jobs\RemoveLocalOverrideNTPJob;
 use App\Jobs\RemoveLocalOverrideStaticRouteJob;
 use App\Jobs\RemoveLocalOverrideVlansJob;
-use App\Jobs\TestJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Device;
 use App\Models\Deployment;
 use App\Models\Task;
 use App\TaskType;
-use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -63,7 +60,6 @@ class TaskController extends Controller
         'MOVE_DEVICE_TO_GROUP' => [
             'group',
         ],
-        'TEST_TASK' => [],
         'REMOVE_LOCAL_OVERRIDE_VLANS' => [],
         'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE' => [],
         'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE' => [],
@@ -653,15 +649,6 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($device) => new AssociateSiteAndNameJob($device, $task, $centralAPIHelper))->toArray();
                 break;
-            case 'TEST_TASK':
-                $jobs[] = $task->devices->map(fn ($device) => new TestJob([
-                    'device_name' => $device->id,
-                    'task_id' => $task->id,
-                    'message' => 'message '.random_int(1, 10),
-                    'task_type' => $task->task_type,
-                    'deployment_name' => $task->deployment->name,
-                ]))->toArray();
-                break;
         }
 
         $pendingBatches = [];
@@ -696,18 +683,4 @@ class TaskController extends Controller
         return $devices->map(fn ($device) => $device->interfaces_sw_profiles->unique('sw_profile'))->collapse()->unique('sw_profile');
     }
 
-    public function test()
-    {
-        $numJobs = request()->input('numJobs') ?? 20;
-        $batch = Bus::batch(array_map(fn () => new TestJob('test job '.now()), range(1, $numJobs)))
-            ->progress(function (Batch $batch) {
-                TestEvent::dispatch($batch->progress());
-            })
-            ->finally(function (Batch $batch) {
-                TestEvent::dispatch($batch->processedJobs().' jobs');
-            })
-            ->dispatch();
-
-        return back()->with(['job_batch_id' => $batch->id, 'message' => 'dispatched']);
-    }
 }

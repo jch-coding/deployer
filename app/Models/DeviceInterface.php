@@ -13,23 +13,6 @@ class DeviceInterface extends Model
     /** @use HasFactory<\Database\Factories\DeviceInterfaceFactory> */
     use HasFactory;
 
-    protected $fillable = [
-        'interface',
-        'description',
-        'ip_address',
-        'enable',
-        'jumbo_frames',
-        'routing',
-        'vrf_forwarding',
-        'device_id',
-        'lacp_profile_id',
-        'switch_port_id',
-        'stp_profile_id',
-        'sw_profile',
-        'portchannel_lag',
-        'shutdown_on_split',
-    ];
-
     protected $casts = [
         'enable' => 'boolean',
         'shutdown_on_split' => 'boolean',

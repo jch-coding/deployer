@@ -12,13 +12,6 @@ class StpProfile extends Model
     /** @use HasFactory<\Database\Factories\StpProfileFactory> */
     use HasFactory;
 
-    protected $fillable = [
-        'admin_edge_port',
-        'admin_edge_port_trunk',
-        'bpdu_guard',
-        'loop_guard'
-    ];
-
     protected $casts = [
         'admin_edge_port' => 'boolean',
         'admin_edge_port_trunk' => 'boolean',

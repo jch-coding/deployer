@@ -12,14 +12,6 @@ class LacpProfile extends Model
     /** @use HasFactory<\Database\Factories\LACPProfileFactory> */
     use HasFactory;
 
-    protected $fillable = [
-        'mode',
-        'port_id',
-        'rate',
-        'port_list',
-        'trunk_type',
-    ];
-
     public function deviceInterfaces() : HasMany
     {
         return $this->hasMany(DeviceInterface::class);

@@ -14,16 +14,6 @@ class Client extends Model
     /** @use HasFactory<\Database\Factories\ClientFactory> */
     use HasFactory;
 
-    protected $fillable = [
-        'name',
-        'client_id',
-        'client_secret',
-        'customer_id',
-        'current',
-        'base_url',
-        'bearer_token',
-    ];
-
     protected $auth_url = 'https://sso.common.cloud.hpe.com/as/token.oauth2';
 
     public function user(): BelongsTo

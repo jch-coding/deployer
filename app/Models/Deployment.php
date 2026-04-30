@@ -11,8 +11,6 @@ class Deployment extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'description', 'client_id'];
-
     public function devices() : HasMany
     {
         return $this->hasMany(Device::class);

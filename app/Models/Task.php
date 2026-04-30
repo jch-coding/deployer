@@ -13,18 +13,6 @@ class Task extends Model
     /** @use HasFactory<\Database\Factories\TaskFactory> */
     use HasFactory;
 
-    protected $fillable = [
-        'name',
-        'task_type',
-        'deployment_time',
-        'batch_id',
-        'status',
-        'composite_group_id',
-        'composite_kind',
-        'composite_order',
-        'job_queue',
-    ];
-
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class);
@@ -114,8 +102,6 @@ class Task extends Model
                 return 'Move Devices to Device Group';
             case 'ASSIGN_DEVICE_FUNCTION':
                 return 'Assign Device Function to Devices';
-            case 'TEST_TASK':
-                return 'Test Task';
             default:
                 return 'Unknown Task';
         }
@@ -156,8 +142,6 @@ class Task extends Model
                 return 'Move devices to a device group';
             case 'ASSIGN_DEVICE_FUNCTION':
                 return 'Assign device function to devices';
-            case 'TEST_TASK':
-                return 'Test Task';
             default:
                 return 'Unknown Task';
         }
@@ -190,8 +174,6 @@ class Task extends Model
                 return ['name', 'serial', 'device_function', 'group'];
             case 'ASSIGN_DEVICE_FUNCTION':
                 return ['name', 'serial', 'device_function'];
-            case 'TEST_TASK':
-                return [];
             default:
                 return [];
         }

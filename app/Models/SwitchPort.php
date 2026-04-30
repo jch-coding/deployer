@@ -13,15 +13,6 @@ class SwitchPort extends Model
     /** @use HasFactory<\Database\Factories\SwitchPortFactory> */
     use HasFactory;
 
-    protected $fillable = [
-        'access_vlan',
-        'interface_mode',
-        'is_profile',
-        'native_vlan',
-        'trunk_vlan_all',
-        'trunk_vlan_ranges'
-    ];
-
     protected $casts = [
         'trunk_vlan_all' => 'boolean',
         'is_profile' => 'boolean',

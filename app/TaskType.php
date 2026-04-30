@@ -16,5 +16,4 @@ enum TaskType
     case PREPROVISION_DEVICE_TO_GROUP;
     case MOVE_DEVICE_TO_GROUP;
     case ASSIGN_DEVICE_FUNCTION;
-    case TEST_TASK;
 }

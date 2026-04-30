@@ -14,19 +14,6 @@ class Device extends Model
     /** @use HasFactory<\Database\Factories\DeviceFactory> */
     use HasFactory;
 
-    protected $fillable = [
-        'name',
-        'device_id',
-        'client_id',
-        'user_id',
-        'site_id',
-        'deployment_id',
-        'serial',
-        'device_function',
-        'scope_id',
-        'stack_id',
-    ];
-
     public function client() : BelongsTo
     {
         return $this->belongsTo(Client::class);
