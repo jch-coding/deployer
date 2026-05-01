@@ -1,4 +1,4 @@
-import { Head, usePage } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 import ClientCard from '@/components/ui/ClientCard';
@@ -29,14 +29,29 @@ export default function Index() {
     const errors = usePage<ClientPageProps>().props.errors
     const flash = usePage<ClientPageProps>().props.flash
 
+    // Full document load: router `success` is not fired for the initial page.
     useEffect(() => {
         if (flash?.success) {
-            toast.success(flash.success, { id: 'client-index-flash-success' });
+            toast.success(flash.success);
         }
         if (flash?.error) {
-            toast.error(flash.error, { id: 'client-index-flash-error' });
+            toast.error(flash.error);
         }
-    }, [flash?.success, flash?.error]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- only show session flash once on first paint
+    }, []);
+
+    useEffect(() => {
+        return router.on('success', (event) => {
+            const page = event.detail.page;
+            const f = page.props.flash as SharedData['flash'];
+            if (f?.success) {
+                toast.success(f.success);
+            }
+            if (f?.error) {
+                toast.error(f.error);
+            }
+        });
+    }, []);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
