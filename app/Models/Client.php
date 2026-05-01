@@ -76,7 +76,7 @@ class Client extends Model
             return false;
         } elseif ($this->classic_refresh_token !== null && now() < $this->classic_expires_in) {
             return true;
-        } elseif ($force || $this->classic_refresh_token !== null && now() > $this->classic_expires_in) {
+        } elseif (($force && $this->classic_refresh_token !== null) || $this->classic_refresh_token !== null && now() > $this->classic_expires_in) {
             $response = $this->refreshClassicCentralBearerToken();
             if (! $response->ok()) {
                 return false;
