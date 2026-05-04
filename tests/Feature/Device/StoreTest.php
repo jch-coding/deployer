@@ -15,9 +15,9 @@ test('must be authenticated to store a device', function () {
     $this->post(route('devices.store', $deployment), [
         'name' => 'Test Device',
         'serial' => 'TEST123',
-        'device_function' => 'CAMPUS_AP'
+        'device_function' => 'CAMPUS_AP',
     ])
-         ->assertRedirect(route('login'));
+        ->assertRedirect(route('login'));
 });
 
 test('a device must have a name, serial and device function', function (array $value, array $errors) {
@@ -46,27 +46,27 @@ test('a device must have a name, serial and device function', function (array $v
 
 test('a device is associated with the current client for the authenticated user by default', function () {
     $this->withoutExceptionHandling();
-   $user = User::factory()
-                ->has(Client::factory())
-                ->create();
-   $client = $user->clients()->first();
-   $client->update(['current' => true]);
-   $client->deployments()->create(['name' => 'Test Deployment']);
-   $this->actingAs($user);
-   $this->post(route('devices.store', $client->deployments()->first()), [
-       'name' => 'Test Device',
-       'serial' => 'TEST12356789',
-           'device_function' => DeviceFunction::CAMPUS_AP->name
-       ]
-   )
-       ->assertRedirect(route('deployments.show', $client->deployments()->first()));
-   $this->assertDatabaseHas('devices', [
-       'name' => 'Test Device',
-       'serial' => 'TEST12356789',
-       'device_function' => DeviceFunction::CAMPUS_AP,
-       'client_id' => $user->clients()->first()->id,
-       'deployment_id' => $client->deployments()->first()->id
-   ]);
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $client->deployments()->create(['name' => 'Test Deployment']);
+    $this->actingAs($user);
+    $this->post(route('devices.store', $client->deployments()->first()), [
+        'name' => 'Test Device',
+        'serial' => 'TEST12356789',
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+    ]
+    )
+        ->assertRedirect(route('deployments.show', $client->deployments()->first()));
+    $this->assertDatabaseHas('devices', [
+        'name' => 'Test Device',
+        'serial' => 'TEST12356789',
+        'device_function' => DeviceFunction::CAMPUS_AP,
+        'client_id' => $user->clients()->first()->id,
+        'deployment_id' => $client->deployments()->first()->id,
+    ]);
 });
 
 test('adding a device already in the database will update the device', function () {
@@ -82,7 +82,7 @@ test('adding a device already in the database will update the device', function 
     $this->travelTo(now()->addHour());
     $this->actingAs($user);
     $this->post(route('devices.store', $deployment), $device->toArray())
-       ->assertSessionHasNoErrors();
+        ->assertSessionHasNoErrors();
     $this->assertDatabaseCount('devices', 1);
 });
 
@@ -162,10 +162,10 @@ it('can add a list of devices to a deployment from a csv file upload', function 
     $this->actingAs($user);
     $uploadedFile = UploadedFile::fake()
         ->createWithContent('devices.csv',
-            'name,serial,device_function' . PHP_EOL . 'Test Device 1,SN0000000001,CAMPUS_AP' . PHP_EOL . 'Test Device 2,SN0000000002,CAMPUS_AP' . PHP_EOL
-            );
+            'name,serial,device_function'.PHP_EOL.'Test Device 1,SN0000000001,CAMPUS_AP'.PHP_EOL.'Test Device 2,SN0000000002,CAMPUS_AP'.PHP_EOL
+        );
     $this->post(route('devices.store-many', $deployment), [
-        'devices' => $uploadedFile
+        'devices' => $uploadedFile,
     ])
         ->assertRedirect(route('deployments.show', $deployment));
     $this->assertDatabaseCount('devices', 2);
@@ -182,10 +182,10 @@ it('selectively saves only required fields when adding a list of devices from a 
     $this->actingAs($user);
     $uploadedFile = UploadedFile::fake()
         ->createWithContent('devices.csv',
-            'name,serial,device_function,site,description' . PHP_EOL . 'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device' . PHP_EOL . 'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2' . PHP_EOL
+            'name,serial,device_function,site,description'.PHP_EOL.'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device'.PHP_EOL.'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2'.PHP_EOL
         );
     $this->post(route('devices.store-many', $deployment), [
-        'devices' => $uploadedFile
+        'devices' => $uploadedFile,
     ]);
     $this->assertDatabaseCount('devices', 2);
     $this->assertDatabaseHas('devices', ['name' => 'Test Device 1', 'serial' => 'SN0000000001', 'device_function' => DeviceFunction::CAMPUS_AP]);
@@ -212,10 +212,10 @@ it('uploading an existing device with different information will update it in th
     $this->actingAs($user);
     $uploadedFile = UploadedFile::fake()
         ->createWithContent('devices.csv',
-            'name,serial,device_function,site,description' . PHP_EOL . 'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device' . PHP_EOL . 'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2' . PHP_EOL
+            'name,serial,device_function,site,description'.PHP_EOL.'Test Device 1,SN0000000001,CAMPUS_AP,CO Warehouse,First Test Device'.PHP_EOL.'Test Device 2,SN0000000002,CAMPUS_AP,CO Warehouse,Test Device 2'.PHP_EOL
         );
     $this->post(route('devices.store-many', $deployment), [
-        'devices' => $uploadedFile
+        'devices' => $uploadedFile,
     ]);
     $this->assertDatabaseCount('devices', 2);
     $this->assertDatabaseHas('devices', ['name' => 'Test Device 1', 'serial' => 'SN0000000001', 'device_function' => DeviceFunction::CAMPUS_AP]);
@@ -234,14 +234,14 @@ test('uploading interface information for a new device will populate the device 
     $uploadedFile = UploadedFile::fake()
         ->createWithContent('devices.csv',
             'name,serial,device_function,interface,access-vlan,interface-mode,native-vlan,trunk-vlan-all,interface_description'
-            . PHP_EOL .
+            .PHP_EOL.
             'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/1,30,ACCESS,,,to AP'
-            . PHP_EOL .
+            .PHP_EOL.
             'CO-IDF-SW2,SN0000000002,ACCESS_SWITCH,1/1/2,30,ACCESS,,,to AP'
-            . PHP_EOL
+            .PHP_EOL
         );
     $this->post(route('devices.store-many', $deployment), [
-        'devices' => $uploadedFile
+        'devices' => $uploadedFile,
     ]);
     $this->assertDatabaseCount('devices', 2);
     $firstDevice = Device::query()->where('serial', 'SN0000000001')->firstOrFail();
@@ -268,14 +268,14 @@ test('interface ranges create the set of switch ports indicated in the range', f
     $uploadedFile = UploadedFile::fake()
         ->createWithContent('devices.csv',
             'name,serial,device_function,interface,access-vlan,interface-mode,native-vlan,trunk-vlan-all,interface_description'
-            . PHP_EOL .
+            .PHP_EOL.
             'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/1-1/1/8&2/1/1-2/1/8,30,ACCESS,,,to AP'
-            . PHP_EOL .
+            .PHP_EOL.
             'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/9-1/1/48&2/1/9-2/1/48,,TRUNK,8,true,voice and data'
-            . PHP_EOL
+            .PHP_EOL
         );
     $this->post(route('devices.store-many', $deployment), [
-        'devices' => $uploadedFile
+        'devices' => $uploadedFile,
     ]);
     $this->assertDatabaseCount('devices', 1);
     $this->assertDatabaseCount('device_interfaces', 96);
@@ -306,14 +306,14 @@ test('a device can have a lag interface', function () {
     $uploadedFile = UploadedFile::fake()
         ->createWithContent('devices.csv',
             'name,serial,device_function,interface,access-vlan,interface-mode,native-vlan,trunk-vlan-all,interface_description,lag_id'
-            . PHP_EOL .
+            .PHP_EOL.
             'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/51&2/1/51&3/1/52&4/1/52,,TRUNK,8,true,LAG to Core,11'
-            . PHP_EOL .
+            .PHP_EOL.
             'CO-IDF-SW1,SN0000000001,ACCESS_SWITCH,1/1/9-1/1/48&2/1/9-2/1/48,,TRUNK,8,true,voice and data'
-            . PHP_EOL
+            .PHP_EOL
         );
     $this->post(route('devices.store-many', $deployment), [
-        'devices' => $uploadedFile
+        'devices' => $uploadedFile,
     ]);
 
     $this->assertDatabaseCount('devices', 1);
@@ -419,4 +419,20 @@ it('does not create interfaces when optional interface column is present but bla
 
     $this->assertDatabaseHas('devices', ['serial' => 'SNBLANKINT01']);
     $this->assertDatabaseMissing('device_interfaces', ['description' => 'Should Be Ignored']);
+});
+
+it('rejects a csv with an invalid device_function value', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $user->clients()->first()->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($user->clients()->first())->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function'.PHP_EOL.
+        'Bad Name,SN0000000001,INVALID_DEVICE_FUNCTION'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertSessionHasErrors();
 });

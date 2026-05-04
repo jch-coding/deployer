@@ -1,6 +1,7 @@
 <?php
 
 use App\Helper\CSVHelper;
+use Illuminate\Validation\ValidationException;
 
 it('processes a CSV file and returns an array of device data', function () {
     $result = CSVHelper::processCSVFile('tests/Unit/testcsvs/test.csv');
@@ -131,7 +132,7 @@ it('processes portchannel and non-portchannel interfaces from one CSV file', fun
             'interface' => '1',
             'interface_mode' => 'TRUNK',
             'native_vlan' => '10',
-            'trunk_vlan_all' => 'true',
+            'trunk_vlan_all' => true,
             'trunk_type' => 'LACP',
             'port_list' => '1/1/1-1/1/2&2/1/1-2/1/2',
         ])
@@ -194,10 +195,10 @@ it('maps interface, stp, and lacp optional columns when present', function () {
             'ip_address' => '10.0.0.1/24',
             'interface_mode' => 'TRUNK',
             'native_vlan' => '10',
-            'trunk_vlan_all' => 'false',
+            'trunk_vlan_all' => false,
             'trunk_vlan_ranges' => '10-20',
-            'admin_edge_port' => 'true',
-            'bpdu_guard' => 'true',
+            'admin_edge_port' => true,
+            'bpdu_guard' => true,
             'lacp_mode' => 'ACTIVE',
             'trunk_type' => 'LACP',
             'port_list' => '1/1/1-1/1/2',
@@ -226,7 +227,7 @@ it('maps shutdown_on_split CSV header directly', function () {
 
     expect($deviceArrays)->toHaveCount(1)
         ->and($deviceArrays[0])->toHaveKey('shutdown_on_split')
-        ->and($deviceArrays[0]['shutdown_on_split'])->toBe('true');
+        ->and($deviceArrays[0]['shutdown_on_split'])->toBeTrue();
 });
 
 it('retains blank optional column values so downstream handlers can normalize them', function () {
@@ -243,4 +244,33 @@ it('retains blank optional column values so downstream handlers can normalize th
         'interface' => '1/1/1',
         'description' => '',
     ]);
+});
+
+it('normalizes enums and booleans case-insensitively', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'interface_mode', 'trunk_vlan_all', 'lacp_mode', 'sku'],
+        ['SW-1', 'SN0000000001', 'access_switch', 'trunk', 'TRUE', 'active', 'jl660a'],
+    ];
+
+    $out = CSVHelper::createDeviceArrays($csvData);
+
+    expect($out[0]['device_function'])->toBe('ACCESS_SWITCH')
+        ->and($out[0]['interface_mode'])->toBe('TRUNK')
+        ->and($out[0]['trunk_vlan_all'])->toBeTrue()
+        ->and($out[0]['lacp_mode'])->toBe('ACTIVE')
+        ->and($out[0]['sku'])->toBe('JL660A');
+});
+
+it('throws when device_function is not a valid enum', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function'],
+        ['SW-1', 'SN0000000001', 'NOT_A_REAL_FUNCTION'],
+    ]))->toThrow(ValidationException::class);
+});
+
+it('throws when a boolean cell is not recognized', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'trunk_vlan_all'],
+        ['SW-1', 'SN0000000001', 'CAMPUS_AP', 'maybe'],
+    ]))->toThrow(ValidationException::class);
 });

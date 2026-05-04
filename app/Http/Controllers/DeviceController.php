@@ -3,12 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\DeviceFunction;
+use App\Helper\BooleanHelper;
 use App\Helper\CentralAPIHelper;
+use App\Helper\CSVHelper;
 use App\Http\Requests\UpdateDeviceInterfacesRequest;
 use App\Http\Resources\LacpProfileResource;
 use App\Http\Resources\StpProfileResource;
 use App\Http\Resources\SwitchPortResource;
-use App\Helper\CSVHelper;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -18,8 +19,8 @@ use App\Models\StpProfile;
 use App\Models\SwitchPort;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -89,7 +90,11 @@ class DeviceController extends Controller
 
         $file = $request->file('devices');
         $csvData = CSVHelper::processCSVFile($file->getPathname());
-        $devices = CSVHelper::createDeviceArrays($csvData);
+        try {
+            $devices = CSVHelper::createDeviceArrays($csvData);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors());
+        }
 
         if (count($devices) === 0) {
             return back()->withErrors('No devices found in CSV file');
@@ -231,7 +236,7 @@ class DeviceController extends Controller
                         'interface_mode' => $device['interface_mode'],
                         'access_vlan' => null,
                         'native_vlan' => (int) ($device['native_vlan'] ?? 1),
-                        'trunk_vlan_all' => static::toBoolean($device['trunk_vlan_all'] ?? false),
+                        'trunk_vlan_all' => BooleanHelper::toBoolean($device['trunk_vlan_all'] ?? false),
                         'trunk_vlan_ranges' => $device['trunk_vlan_ranges'] ?? null,
                     ];
                 } else {
@@ -254,10 +259,10 @@ class DeviceController extends Controller
         foreach ($normalized_devices as $device) {
             if (array_any($device, fn ($v, $k) => in_array($k, $stp_keys)) && $device['interface'] !== null) {
                 $current_stp = [
-                    'admin_edge_port' => static::toBoolean($device['admin_edge_port'] ?? false),
-                    'admin_edge_port_trunk' => static::toBoolean($device['admin_edge_port_trunk'] ?? false),
-                    'bpdu_guard' => static::toBoolean($device['bpdu_guard'] ?? false),
-                    'loop_guard' => static::toBoolean($device['loop_guard'] ?? false),
+                    'admin_edge_port' => BooleanHelper::toBoolean($device['admin_edge_port'] ?? false),
+                    'admin_edge_port_trunk' => BooleanHelper::toBoolean($device['admin_edge_port_trunk'] ?? false),
+                    'bpdu_guard' => BooleanHelper::toBoolean($device['bpdu_guard'] ?? false),
+                    'loop_guard' => BooleanHelper::toBoolean($device['loop_guard'] ?? false),
                 ];
                 if (! in_array($current_stp, $unique_stp)) {
                     $unique_stp[] = $current_stp;
@@ -329,7 +334,7 @@ class DeviceController extends Controller
                     'description' => $device_interface['description'] ?? null,
                     'ip_address' => $device_interface['ip_address'] ?? null,
                     'sw_profile' => $device_interface['port_profile'] ?? null,
-                    'shutdown_on_split' => static::toBoolean($device_interface['shutdown_on_split'] ?? false),
+                    'shutdown_on_split' => BooleanHelper::toBoolean($device_interface['shutdown_on_split'] ?? false),
                     'switch_port_id' => static::resolveSwitchPortId($device_interface),
                     'stp_profile_id' => static::resolveStpProfileId($device_interface),
                     'lacp_profile_id' => static::resolveLacpProfileId($device_interface),
@@ -355,7 +360,7 @@ class DeviceController extends Controller
                 'interface_mode' => 'TRUNK',
                 'access_vlan' => null,
                 'native_vlan' => (int) ($interfaceData['native_vlan'] ?? 1),
-                'trunk_vlan_all' => static::toBoolean($interfaceData['trunk_vlan_all'] ?? false),
+                'trunk_vlan_all' => BooleanHelper::toBoolean($interfaceData['trunk_vlan_all'] ?? false),
                 'trunk_vlan_ranges' => $interfaceData['trunk_vlan_ranges'] ?? null,
             ];
         }
@@ -377,34 +382,11 @@ class DeviceController extends Controller
         }
 
         return [
-            'admin_edge_port' => static::toBoolean($interfaceData['admin_edge_port'] ?? false),
-            'admin_edge_port_trunk' => static::toBoolean($interfaceData['admin_edge_port_trunk'] ?? false),
-            'bpdu_guard' => static::toBoolean($interfaceData['bpdu_guard'] ?? false),
-            'loop_guard' => static::toBoolean($interfaceData['loop_guard'] ?? false),
+            'admin_edge_port' => BooleanHelper::toBoolean($interfaceData['admin_edge_port'] ?? false),
+            'admin_edge_port_trunk' => BooleanHelper::toBoolean($interfaceData['admin_edge_port_trunk'] ?? false),
+            'bpdu_guard' => BooleanHelper::toBoolean($interfaceData['bpdu_guard'] ?? false),
+            'loop_guard' => BooleanHelper::toBoolean($interfaceData['loop_guard'] ?? false),
         ];
-    }
-
-    protected static function toBoolean(mixed $value): bool
-    {
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        if (is_string($value)) {
-            $normalized = strtolower(trim($value));
-            if ($normalized === 'true' || $normalized === '1') {
-                return true;
-            }
-            if ($normalized === 'false' || $normalized === '0' || $normalized === '') {
-                return false;
-            }
-        }
-
-        if (is_numeric($value)) {
-            return (int) $value === 1;
-        }
-
-        return (bool) $value;
     }
 
     protected static function normalizeLacpAttributes(array $interfaceData): ?array

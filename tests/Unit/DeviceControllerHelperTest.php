@@ -50,53 +50,53 @@ it('replaces empty strings with null values', function () {
 });
 
 it('gets a list of unique profiles and interfaces separated by devices when getInterfaces is called', function () {
-   $expected_result = [
-       'unique_switchports' => [
-           [
-               'interface_mode' => 'ACCESS',
-               'access_vlan' => '10',
-               'native_vlan' => null,
-               'trunk_vlan_all' => null,
-               'trunk_vlan_ranges' => null,
-           ],
-           [
-               'interface_mode' => 'TRUNK',
-               'access_vlan' => null,
-               'native_vlan' => '10',
-               'trunk_vlan_all' => 'true',
-               'trunk_vlan_ranges' => null,
-           ],
-           [
-               'interface_mode' => 'ACCESS',
-               'access_vlan' => '8',
-               'native_vlan' => null,
-               'trunk_vlan_all' => null,
-               'trunk_vlan_ranges' => null,
-           ],
-           [
-               'interface_mode' => 'TRUNK',
-               'access_vlan' => null,
-               'native_vlan' => '8',
-               'trunk_vlan_all' => 'true',
-               'trunk_vlan_ranges' => null,
-           ],
-       ],
-       'unique_stp' => [
-           [
-               'admin_edge_port' => 'true',
-               'admin_edge_port_trunk' => null,
-               'bpdu_guard' => 'true',
-               'loop_guard' => 'true',
-           ],
-           [
-               'admin_edge_port' => null,
-               'admin_edge_port_trunk' => 'true',
-               'bpdu_guard' => null,
-               'loop_guard' => null,
-           ]
-       ],
-       'unique_lacp' => [],
-       'devices_grouped_config' => [
+    $expected_result = [
+        'unique_switchports' => [
+            [
+                'interface_mode' => 'ACCESS',
+                'access_vlan' => '10',
+                'native_vlan' => null,
+                'trunk_vlan_all' => null,
+                'trunk_vlan_ranges' => null,
+            ],
+            [
+                'interface_mode' => 'TRUNK',
+                'access_vlan' => null,
+                'native_vlan' => '10',
+                'trunk_vlan_all' => 'true',
+                'trunk_vlan_ranges' => null,
+            ],
+            [
+                'interface_mode' => 'ACCESS',
+                'access_vlan' => '8',
+                'native_vlan' => null,
+                'trunk_vlan_all' => null,
+                'trunk_vlan_ranges' => null,
+            ],
+            [
+                'interface_mode' => 'TRUNK',
+                'access_vlan' => null,
+                'native_vlan' => '8',
+                'trunk_vlan_all' => 'true',
+                'trunk_vlan_ranges' => null,
+            ],
+        ],
+        'unique_stp' => [
+            [
+                'admin_edge_port' => 'true',
+                'admin_edge_port_trunk' => null,
+                'bpdu_guard' => 'true',
+                'loop_guard' => 'true',
+            ],
+            [
+                'admin_edge_port' => null,
+                'admin_edge_port_trunk' => 'true',
+                'bpdu_guard' => null,
+                'loop_guard' => null,
+            ],
+        ],
+        'unique_lacp' => [],
+        'devices_grouped_config' => [
             [
                 [
                     'name' => 'CO-IDF1-SW1',
@@ -125,51 +125,51 @@ it('gets a list of unique profiles and interfaces separated by devices when getI
                     'admin_edge_port_trunk' => 'true',
                     'bpdu_guard' => null,
                     'loop_guard' => null,
-                ]
+                ],
             ],
-           [
-               [
-                   'name' => 'CO-IDF2-SW1',
-                   'serial' => 'SN0000000002',
-                   'device_function' => 'ACCESS_SWITCH',
-                   'interface' => '1/1/1',
-                   'access_vlan' => '8',
-                   'interface_mode' => 'ACCESS',
-                   'native_vlan' => null,
-                   'trunk_vlan_all' => null,
-                   'admin_edge_port' => 'true',
-                   'admin_edge_port_trunk' => null,
-                   'bpdu_guard' => 'true',
-                   'loop_guard' => 'true',
-               ],
-               [
-                   'name' => 'CO-IDF2-SW1',
-                   'serial' => 'SN0000000002',
-                   'device_function' => 'ACCESS_SWITCH',
-                   'interface' => '1/1/2',
-                   'access_vlan' => null,
-                   'interface_mode' => 'TRUNK',
-                   'native_vlan' => '8',
-                   'trunk_vlan_all' => 'true',
-                   'admin_edge_port' => null,
-                   'admin_edge_port_trunk' => 'true',
-                   'bpdu_guard' => null,
-                   'loop_guard' => null,
-               ]
-           ],
-       ],
-       'total_interfaces' => 4,
-   ];
+            [
+                [
+                    'name' => 'CO-IDF2-SW1',
+                    'serial' => 'SN0000000002',
+                    'device_function' => 'ACCESS_SWITCH',
+                    'interface' => '1/1/1',
+                    'access_vlan' => '8',
+                    'interface_mode' => 'ACCESS',
+                    'native_vlan' => null,
+                    'trunk_vlan_all' => null,
+                    'admin_edge_port' => 'true',
+                    'admin_edge_port_trunk' => null,
+                    'bpdu_guard' => 'true',
+                    'loop_guard' => 'true',
+                ],
+                [
+                    'name' => 'CO-IDF2-SW1',
+                    'serial' => 'SN0000000002',
+                    'device_function' => 'ACCESS_SWITCH',
+                    'interface' => '1/1/2',
+                    'access_vlan' => null,
+                    'interface_mode' => 'TRUNK',
+                    'native_vlan' => '8',
+                    'trunk_vlan_all' => 'true',
+                    'admin_edge_port' => null,
+                    'admin_edge_port_trunk' => 'true',
+                    'bpdu_guard' => null,
+                    'loop_guard' => null,
+                ],
+            ],
+        ],
+        'total_interfaces' => 4,
+    ];
 
-   $interfaces = DeviceController::getInterfaces($this->processed_data);
-   expect($interfaces)->toEqual($expected_result);
+    $interfaces = DeviceController::getInterfaces($this->processed_data);
+    expect($interfaces)->toEqual($expected_result);
 });
 
 test('expand range of interfaces to array of interfaces expands a range correctly', function () {
-   $interface_range = '1/1/1-1/1/2&2/1/1-2/1/2';
-   $expected_result = ['1/1/1', '1/1/2', '2/1/1', '2/1/2'];
-   $actual_result = DeviceController::expandInterfaceRange($interface_range);
-   expect($actual_result)->toEqual($expected_result);
+    $interface_range = '1/1/1-1/1/2&2/1/1-2/1/2';
+    $expected_result = ['1/1/1', '1/1/2', '2/1/1', '2/1/2'];
+    $actual_result = DeviceController::expandInterfaceRange($interface_range);
+    expect($actual_result)->toEqual($expected_result);
 });
 
 test('get interfaces returns an array of interfaces when an interface range is provided', function () {
@@ -228,7 +228,7 @@ test('get interfaces deals with interface ranges correctly', function () {
                 'admin_edge_port_trunk' => 'true',
                 'bpdu_guard' => null,
                 'loop_guard' => null,
-            ]
+            ],
         ],
         'unique_lacp' => [],
         'devices_grouped_config' => [
@@ -276,22 +276,22 @@ test('get interfaces deals with interface ranges correctly', function () {
                     'loop_guard' => null,
                 ],
                 [
-                'name' => 'CO-IDF1-SW1',
-                'serial' => 'SN0000000001',
-                'device_function' => 'ACCESS_SWITCH',
-                'interface' => '1/1/4',
-                'access_vlan' => null,
-                'interface_mode' => 'TRUNK',
-                'native_vlan' => '10',
-                'trunk_vlan_all' => 'true',
-                'admin_edge_port' => null,
-                'admin_edge_port_trunk' => 'true',
-                'bpdu_guard' => null,
-                'loop_guard' => null,
-                    ],
+                    'name' => 'CO-IDF1-SW1',
+                    'serial' => 'SN0000000001',
+                    'device_function' => 'ACCESS_SWITCH',
+                    'interface' => '1/1/4',
+                    'access_vlan' => null,
+                    'interface_mode' => 'TRUNK',
+                    'native_vlan' => '10',
+                    'trunk_vlan_all' => 'true',
+                    'admin_edge_port' => null,
+                    'admin_edge_port_trunk' => 'true',
+                    'bpdu_guard' => null,
+                    'loop_guard' => null,
+                ],
             ],
         ],
-    'total_interfaces' => 4,
+        'total_interfaces' => 4,
     ];
     $csv_raw = CSVHelper::processCSVFile('tests/Unit/testcsvs/device_interface_range.csv');
     $processed_data = CSVHelper::createDeviceArrays($csv_raw);
@@ -299,20 +299,20 @@ test('get interfaces deals with interface ranges correctly', function () {
     expect($interfaces)->toEqual($expected_result);
 });
 
-test("save switchports only saves unique switchports to the database", function () {
-   $interfaces = DeviceController::getInterfaces($this->processed_data);
-   $switchports = $interfaces['unique_switchports'];
-   DeviceController::saveSwitchports($switchports);
+test('save switchports only saves unique switchports to the database', function () {
+    $interfaces = DeviceController::getInterfaces($this->processed_data);
+    $switchports = $interfaces['unique_switchports'];
+    DeviceController::saveSwitchports($switchports);
 
-   $this->assertDatabaseCount('switch_ports', 4);
+    $this->assertDatabaseCount('switch_ports', 4);
 
-   $this->assertDatabaseHas('switch_ports', [
-       'access_vlan' => 10,
-       'interface_mode' => 'ACCESS',
-       'native_vlan' => null,
-       'trunk_vlan_all' => null,
-       'trunk_vlan_ranges' => null,
-   ]);
+    $this->assertDatabaseHas('switch_ports', [
+        'access_vlan' => 10,
+        'interface_mode' => 'ACCESS',
+        'native_vlan' => null,
+        'trunk_vlan_all' => null,
+        'trunk_vlan_ranges' => null,
+    ]);
     $this->assertDatabaseHas('switch_ports', [
         'access_vlan' => 8,
         'interface_mode' => 'ACCESS',
@@ -324,39 +324,44 @@ test("save switchports only saves unique switchports to the database", function 
         'access_vlan' => null,
         'interface_mode' => 'TRUNK',
         'native_vlan' => 10,
-        'trunk_vlan_all' => "true",
+        'trunk_vlan_all' => true,
         'trunk_vlan_ranges' => null,
     ]);
     $this->assertDatabaseHas('switch_ports', [
         'access_vlan' => null,
         'interface_mode' => 'TRUNK',
         'native_vlan' => 8,
-        'trunk_vlan_all' => "true",
+        'trunk_vlan_all' => true,
         'trunk_vlan_ranges' => null,
-        ]);
+    ]);
 });
 
 test('it saves unique stp profiles to the database', function () {
-  $stp_profiles = DeviceController::getInterfaces($this->processed_data)['unique_stp'];
+    $stp_profiles = DeviceController::getInterfaces($this->processed_data)['unique_stp'];
 
-  StpProfile::factory()->create(['admin_edge_port' => 'true', 'bpdu_guard' => 'true', 'loop_guard' => 'true', 'admin_edge_port_trunk' => false]);
+    StpProfile::factory()->create([
+        'admin_edge_port' => true,
+        'bpdu_guard' => true,
+        'loop_guard' => true,
+        'admin_edge_port_trunk' => false,
+    ]);
 
-  DeviceController::saveStp($stp_profiles);
+    DeviceController::saveStp($stp_profiles);
 
-  $this->assertDatabaseCount('stp_profiles', 2);
+    $this->assertDatabaseCount('stp_profiles', 2);
 
-  $this->assertDatabaseHas('stp_profiles', [
-      'admin_edge_port' => 'true',
-      'admin_edge_port_trunk' => 0,
-      'bpdu_guard' => 'true',
-      'loop_guard' => 'true',
-  ]);
-  $this->assertDatabaseHas('stp_profiles', [
-      'admin_edge_port' => 0,
-      'admin_edge_port_trunk' => 'true',
-      'bpdu_guard' => 0,
-      'loop_guard' => 0,
-  ]);
+    $this->assertDatabaseHas('stp_profiles', [
+        'admin_edge_port' => true,
+        'admin_edge_port_trunk' => false,
+        'bpdu_guard' => true,
+        'loop_guard' => true,
+    ]);
+    $this->assertDatabaseHas('stp_profiles', [
+        'admin_edge_port' => false,
+        'admin_edge_port_trunk' => true,
+        'bpdu_guard' => false,
+        'loop_guard' => false,
+    ]);
 });
 
 test('interfaces are saved to the database with the corresponding switchport profile, device and stp profile', function () {
@@ -370,11 +375,11 @@ test('interfaces are saved to the database with the corresponding switchport pro
 
     $this->assertDatabaseCount('device_interfaces', 4);
 
-    $switchport1 = Switchport::where('access_vlan',10)->first();
-    $stp1 = StpProfile::where('admin_edge_port', 'true')
-        ->where('bpdu_guard', 'true')
-        ->where('loop_guard', 'true')
-        ->where('admin_edge_port_trunk', 0)
+    $switchport1 = Switchport::where('access_vlan', 10)->first();
+    $stp1 = StpProfile::where('admin_edge_port', true)
+        ->where('bpdu_guard', true)
+        ->where('loop_guard', true)
+        ->where('admin_edge_port_trunk', false)
         ->first();
 
     $deviceOneId = Device::query()->where('serial', 'SN0000000001')->value('id');
@@ -387,7 +392,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
         'stp_profile_id' => $stp1->id,
     ]);
 
-    $switchport2 = Switchport::where('access_vlan',8)->first();
+    $switchport2 = Switchport::where('access_vlan', 8)->first();
 
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/1',
@@ -396,11 +401,11 @@ test('interfaces are saved to the database with the corresponding switchport pro
         'stp_profile_id' => $stp1->id,
     ]);
 
-    $switchport3 = Switchport::where('native_vlan',10)->first();
-    $stp2 = StpProfile::where('admin_edge_port', 0)
-        ->where('bpdu_guard', 0)
-        ->where('loop_guard', 0)
-        ->where('admin_edge_port_trunk', 'true')
+    $switchport3 = Switchport::where('native_vlan', 10)->first();
+    $stp2 = StpProfile::where('admin_edge_port', false)
+        ->where('bpdu_guard', false)
+        ->where('loop_guard', false)
+        ->where('admin_edge_port_trunk', true)
         ->first();
 
     $this->assertDatabaseHas('device_interfaces', [
@@ -410,7 +415,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
         'stp_profile_id' => $stp2->id,
     ]);
 
-    $switchport4 = Switchport::where('native_vlan',8)->first();
+    $switchport4 = Switchport::where('native_vlan', 8)->first();
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/2',
         'device_id' => $deviceTwoId,
@@ -422,7 +427,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
 test('multiple types of devices with different device functions can be uploaded and saved to the database', function () {
     $raw_csv = CSVHelper::processCSVFile('tests/Unit/testcsvs/devices_different_types_test.csv');
     $processed_data = CSVHelper::createDeviceArrays($raw_csv);
-    array_map(fn($name, $serial, $device_function) => Device::factory()->create([
+    array_map(fn ($name, $serial, $device_function) => Device::factory()->create([
         'name' => $name,
         'serial' => $serial,
         'device_function' => $device_function,
@@ -450,17 +455,17 @@ test('multiple types of devices with different device functions can be uploaded 
 });
 
 test('getInterfaces correctly parses trunk-vlan-ranges as arrays of strings', function () {
-   $raw_csv = CSVHelper::processCSVFile('tests/Unit/testcsvs/diff_trunk_options.csv');
-   $processed_data = CSVHelper::createDeviceArrays($raw_csv);
-   $interfaces = DeviceController::getInterfaces($processed_data);
-   $expected_swp = [
-       'interface_mode' => 'TRUNK',
-       'access_vlan' => null,
-       'native_vlan' => 10,
-       'trunk_vlan_all' => false,
-       'trunk_vlan_ranges' => '8&10-20',
-   ];
-   expect($interfaces['unique_switchports'][0])->toEqual($expected_swp);
+    $raw_csv = CSVHelper::processCSVFile('tests/Unit/testcsvs/diff_trunk_options.csv');
+    $processed_data = CSVHelper::createDeviceArrays($raw_csv);
+    $interfaces = DeviceController::getInterfaces($processed_data);
+    $expected_swp = [
+        'interface_mode' => 'TRUNK',
+        'access_vlan' => null,
+        'native_vlan' => 10,
+        'trunk_vlan_all' => false,
+        'trunk_vlan_ranges' => '8&10-20',
+    ];
+    expect($interfaces['unique_switchports'][0])->toEqual($expected_swp);
 });
 
 test('configure ethernet trunk interfaces configures trunk-vlan-all and trunk-vlan-ranges as mutually exclusive configs', function () {
@@ -485,7 +490,7 @@ test('configure ethernet trunk interfaces configures trunk-vlan-all and trunk-vl
     expect($interfaces['unique_switchports'][1])->toEqual($expected_swp2);
 });
 
-test ('get sites returns an array of sites and their associated devices by serial number', function () {
+test('get sites returns an array of sites and their associated devices by serial number', function () {
     $csv_raw = CSVHelper::processCSVFile('tests/Unit/testcsvs/sites.csv');
     $processed_data = CSVHelper::createDeviceArrays($csv_raw);
     $sites = DeviceController::getSitesWithDeviceSerials($processed_data);
@@ -495,14 +500,14 @@ test ('get sites returns an array of sites and their associated devices by seria
             'devices' => [
                 'SN0000000001',
                 'SN0000000002',
-            ]
+            ],
         ],
         [
             'name' => 'Site B',
             'devices' => [
                 'SN0000000003',
                 'SN0000000004',
-            ]
+            ],
         ],
     ];
     $sites_a_devices = $sites[0]['devices'];
@@ -514,29 +519,29 @@ test ('get sites returns an array of sites and their associated devices by seria
 });
 
 test('save sites saves sites with their devices associated', function () {
-   $devices_site_a = Device::factory()->count(2)->create();
-   $devices_site_b = Device::factory()->count(2)->create();
-   $sites = [
-       [
-           'name' => 'Site A',
-           'devices' => $devices_site_a->pluck('serial')->toArray(),
-       ],
-       [
-           'name' => 'Site B',
-           'devices' => $devices_site_b->pluck('serial')->toArray(),
-       ]
-   ];
-   $saved_sites = DeviceController::saveSitesWithDevices($sites);
-   $collected_saved_sites = collect($saved_sites);
-   $this->assertDatabaseCount('sites', 2);
-   $this->assertDatabaseHas('sites', [
-       'name' => 'Site A',
-   ]);
+    $devices_site_a = Device::factory()->count(2)->create();
+    $devices_site_b = Device::factory()->count(2)->create();
+    $sites = [
+        [
+            'name' => 'Site A',
+            'devices' => $devices_site_a->pluck('serial')->toArray(),
+        ],
+        [
+            'name' => 'Site B',
+            'devices' => $devices_site_b->pluck('serial')->toArray(),
+        ],
+    ];
+    $saved_sites = DeviceController::saveSitesWithDevices($sites);
+    $collected_saved_sites = collect($saved_sites);
+    $this->assertDatabaseCount('sites', 2);
+    $this->assertDatabaseHas('sites', [
+        'name' => 'Site A',
+    ]);
     $this->assertDatabaseHas('sites', [
         'name' => 'Site B',
     ]);
 
-   $site_a = $collected_saved_sites->first();
+    $site_a = $collected_saved_sites->first();
     $site_b = $collected_saved_sites->last();
     expect($site_a->devices)->toHaveCount(2);
     expect($site_b->devices)->toHaveCount(2);
@@ -565,31 +570,31 @@ test('port profiles are saved correctly when the port_profile column is present 
         ],
         'unique_stp' => [
             [
-            'admin_edge_port' => 'true',
-            'admin_edge_port_trunk' => false,
-            'bpdu_guard' => 'true',
-            'loop_guard' => 'true',
-                ]
+                'admin_edge_port' => 'true',
+                'admin_edge_port_trunk' => false,
+                'bpdu_guard' => 'true',
+                'loop_guard' => 'true',
+            ],
         ],
         'unique_lacp' => [],
         'devices_grouped_config' => [
             [
                 [
-            'name' => 'CO-IDF1-SW1',
-            'serial' => 'SN0000000001',
-            'device_function' => 'ACCESS_SWITCH',
-            'interface' => '1/1/1',
-            'port_profile' => 'portProfile1',
-            'interface_mode' => 'ACCESS',
-            'access_vlan' => '10',
-            'native_vlan' => null,
-            'trunk_vlan_all' => null,
-            'admin_edge_port' => 'true',
-            'admin_edge_port_trunk' => null,
-            'bpdu_guard' => 'true',
-            'loop_guard' => 'true',
-                    ]
-                ]
+                    'name' => 'CO-IDF1-SW1',
+                    'serial' => 'SN0000000001',
+                    'device_function' => 'ACCESS_SWITCH',
+                    'interface' => '1/1/1',
+                    'port_profile' => 'portProfile1',
+                    'interface_mode' => 'ACCESS',
+                    'access_vlan' => '10',
+                    'native_vlan' => null,
+                    'trunk_vlan_all' => null,
+                    'admin_edge_port' => 'true',
+                    'admin_edge_port_trunk' => null,
+                    'bpdu_guard' => 'true',
+                    'loop_guard' => 'true',
+                ],
+            ],
         ],
         'total_interfaces' => 1,
     ];
@@ -604,7 +609,7 @@ test('port profiles are saved correctly when the port_profile column is present 
     ]);
 });
 
-test("it saves portchannel interfaces from a csv", function () {
+test('it saves portchannel interfaces from a csv', function () {
     $csv_raw = CSVHelper::processCSVFile('tests/Unit/testcsvs/portchannels.csv');
     $processed_data = CSVHelper::createDeviceArrays($csv_raw);
     $device_info = $processed_data[0];
@@ -622,10 +627,10 @@ test("it saves portchannel interfaces from a csv", function () {
         'interface' => '5',
     ]);
     $this->assertDatabaseHas('lacp_profiles', [
-        'port_list' => '1/1/14-1/1/15'
+        'port_list' => '1/1/14-1/1/15',
     ]);
     $interface = DeviceInterface::first();
-    $this->assertEquals($interface->lacp_profile->port_list, ['1/1/14','1/1/15']);
+    $this->assertEquals($interface->lacp_profile->port_list, ['1/1/14', '1/1/15']);
     $this->assertEquals($interface->switch_port->interface_mode, 'TRUNK');
     $this->assertEquals($interface->switch_port->native_vlan, 10);
     $this->assertEquals($interface->switch_port->trunk_vlan_all, true);
