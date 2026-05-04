@@ -1,6 +1,7 @@
 import { Form, router, useForm, usePage } from '@inertiajs/react';
 import { Download, Search } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import { toast } from 'sonner';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
@@ -36,18 +37,17 @@ import { show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import type { Paginator } from '@/types/deployer';
 
-type Device = {
-    id: string;
+/** Matches deployment payload from DeploymentController::show (devices used by task cards). */
+type DeploymentSummary = {
+    id: number;
     name: string;
-    serial?: string | number;
-    device_function?: string;
+    devices: Array<{
+        id: number;
+        name: string;
+        serial?: string | number;
+        device_function?: string;
+    }>;
 };
-
-type Deployment = {
-    id: string;
-    name: string;
-    devices: Device[];
-}
 
 type Task = {
     id: number;
@@ -61,31 +61,46 @@ type Task = {
     friendly_name: string;
     friendly_description: string;
     required_columns: string[];
-}
+};
 
 type DeploymentPageProps = {
-    devices: Paginator<Device>;
+    devices: Paginator<DeviceDef>;
     device_search?: string;
     base_urls: string[];
-    deployment: Deployment;
+    deployment: DeploymentSummary;
     tasks: Task[];
     latest_tasks: Task[];
 } & SharedData;
 export default function Show() {
-    const { deployment, current_client, flash, device_search = '' } =
-        usePage<DeploymentPageProps>().props;
-    const devicesPaginator = usePage<DeploymentPageProps>().props
-        .devices as Paginator<Device>;
+    const {
+        deployment,
+        current_client,
+        flash,
+        device_search = '',
+    } = usePage<DeploymentPageProps>().props;
+    const devicesPaginator = usePage<DeploymentPageProps>().props.devices;
     const devicesFromServer = devicesPaginator.data;
     const deploymentId = Number(deployment.id);
 
     const [deviceTableSearch, setDeviceTableSearch] = useState(device_search);
     const previousDeploymentIdRef = useRef(deploymentId);
 
-    const allDevices = deployment.devices;
-    const { setData, post, progress, errors } = useForm({
+    const devicesForTasks = useMemo(
+        () =>
+            deployment.devices.map((d) => ({
+                id: d.id,
+                name: d.name,
+                completed: false,
+                device_function: d.device_function ?? '',
+                serial: d.serial,
+            })),
+        [deployment.devices],
+    );
+    const { setData, post, progress, errors } = useForm<{
+        devices: File | null;
+    }>({
         devices: null,
-    })
+    });
     const tasks = usePage<DeploymentPageProps>().props.tasks;
     const latest_tasks = usePage<DeploymentPageProps>().props.latest_tasks;
     const [submitting, setSubmitting] = useState(false);
@@ -153,18 +168,21 @@ export default function Show() {
     ];
 
     const isDeviceBasedTask = (task_type: string) => {
-        return task_type in [
-            'UPDATE_SYSTEM_INFO',
-            'ASSIGN_DEVICE_FUNCTION',
-            'PREPROVISION_DEVICE_TO_GROUP',
-            'ASSOCIATE_SITE_AND_NAME',
-            'CREATE_VSF_PROFILE',
-        ]
-    }
+        return (
+            task_type in
+            [
+                'UPDATE_SYSTEM_INFO',
+                'ASSIGN_DEVICE_FUNCTION',
+                'PREPROVISION_DEVICE_TO_GROUP',
+                'ASSOCIATE_SITE_AND_NAME',
+                'CREATE_VSF_PROFILE',
+            ]
+        );
+    };
 
-    function handleSubmit(e ) {
-        e.preventDefault()
-        post(storeMany(deployment.id).url)
+    function handleSubmit(e: FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        post(storeMany(deployment.id).url);
     }
 
     return (
@@ -179,8 +197,8 @@ export default function Show() {
                     </h2>
                     {latest_tasks.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-2">
-                            {latest_tasks.map((task, index) => (
-                                <Card index={index} className="max-w-sm px-2">
+                            {latest_tasks.map((task) => (
+                                <Card key={task.id} className="max-w-sm px-2">
                                     <CardTitle className="text-center text-xs">
                                         {task.friendly_name}
                                     </CardTitle>
@@ -228,16 +246,16 @@ export default function Show() {
                                 </div>
                             </div>
                             <DataTable<DeviceDef, unknown>
-                                data={devicesFromServer as DeviceDef[]}
+                                data={devicesFromServer}
                                 columns={deploymentShowColumns}
                                 getRowId={(row) => String(row.id)}
                             />
                             {devicesPaginator.total >
-                                    devicesPaginator.per_page && (
-                                    <LaravelPaginator
-                                        TPaginator={devicesPaginator}
-                                    />
-                                )}
+                                devicesPaginator.per_page && (
+                                <LaravelPaginator
+                                    TPaginator={devicesPaginator}
+                                />
+                            )}
                         </div>
                     ) : (
                         <p>No devices assigned to this deployment</p>
@@ -246,17 +264,28 @@ export default function Show() {
                 <div>
                     <div className="mt-6 flex flex-wrap justify-center gap-2">
                         {tasks.map((task) => {
-                            const TaskComponent = isDeviceBasedTask(task.task_type) ? TaskCard : TaskItemsCard;
+                            const TaskComponent = isDeviceBasedTask(
+                                task.task_type,
+                            )
+                                ? TaskCard
+                                : TaskItemsCard;
                             return (
                                 <TaskComponent
                                     key={task.task_type}
                                     task={task.task_type}
                                     task_friendly_name={task.friendly_name}
-                                    task_friendly_description={task.friendly_description}
+                                    task_friendly_description={
+                                        task.friendly_description
+                                    }
                                     required_columns={task.required_columns}
-                                    devices={allDevices}
-                                    deployment={deployment}
-                                    requiresClassicCentral={classicCentralTaskTypes.has(task.task_type)}
+                                    devices={devicesForTasks}
+                                    deployment={{
+                                        id: deployment.id,
+                                        name: deployment.name,
+                                    }}
+                                    requiresClassicCentral={classicCentralTaskTypes.has(
+                                        task.task_type,
+                                    )}
                                 />
                             );
                         })}
@@ -275,9 +304,7 @@ export default function Show() {
                     </Button>
                     <Dialog>
                         <DialogTrigger asChild>
-                            <Button data-test="add-devices">
-                                Add Devices
-                            </Button>
+                            <Button data-test="add-devices">Add Devices</Button>
                         </DialogTrigger>
                         <DialogContent>
                             <DialogTitle>Add Device</DialogTitle>
@@ -308,9 +335,11 @@ export default function Show() {
                                 <input
                                     type="file"
                                     name="devices"
-                                    onChange={(e) =>
-                                        setData('devices', e.target.files[0])
-                                    }
+                                    onChange={(e) => {
+                                        const file =
+                                            e.target.files?.[0] ?? null;
+                                        setData('devices', file);
+                                    }}
                                     className="block cursor-pointer rounded-lg border border-gray-300 bg-gray-50 p-2 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:placeholder-gray-400"
                                     disabled={submitting}
                                 />
