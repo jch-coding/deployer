@@ -130,10 +130,10 @@ export default function MultiJobTask() {
 
     useEffect(() => {
         if (flash?.success) {
-            toast.success(flash.success, { id: 'task-flash-success' });
+            toast.success(flash.success);
         }
         if (flash?.error) {
-            toast.error(flash.error, { id: 'task-flash-error' });
+            toast.error(flash.error);
         }
     }, [flash?.success, flash?.error]);
 

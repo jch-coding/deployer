@@ -98,10 +98,10 @@ export default function Show() {
 
     useEffect(() => {
         if (flash?.success) {
-            toast.success(flash.success, { id: 'deployment-flash-success' });
+            toast.success(flash.success);
         }
         if (flash?.error) {
-            toast.error(flash.error, { id: 'deployment-flash-error' });
+            toast.error(flash.error);
         }
     }, [flash?.success, flash?.error]);
 
