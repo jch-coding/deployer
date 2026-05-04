@@ -1,6 +1,6 @@
 import { Link, router } from '@inertiajs/react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { MoreHorizontal, Pencil, RefreshCw, TrashIcon } from 'lucide-react';
+import { Eye, MoreHorizontal, Pencil, RefreshCw, TrashIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -59,13 +59,7 @@ function EditableDeviceNameCell({ id, name }: { id: number; name: string }) {
         />
     ) : (
         <p className="group flex items-baseline justify-between gap-2">
-            <Link
-                href={showDevice(id).url}
-                className="text-primary font-medium hover:underline"
-                data-test="device-show-link"
-            >
-                {name}
-            </Link>
+            <span className="font-medium">{name}</span>
             <span className="shrink-0">
                 <Button
                     type="button"
@@ -135,6 +129,21 @@ function DeviceScopeAndDeleteActions({ id }: { id: number }) {
 
     return (
         <div className="flex items-center justify-end gap-1">
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        asChild
+                        variant="outline"
+                        aria-label="View device"
+                        data-test="device-show-link"
+                    >
+                        <Link href={showDevice(id).url}>
+                            <Eye className="size-4" aria-hidden />
+                        </Link>
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>View device</TooltipContent>
+            </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <span className="inline-flex">
