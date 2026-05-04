@@ -217,6 +217,15 @@ it('keeps missing optional columns absent from mapped rows', function () {
     expect($deviceArrays[0])->not()->toHaveKeys(['group', 'sku', 'site', 'interface', 'description', 'ip_address']);
 });
 
+it('strips leading zeros from numeric segments in the interface column', function () {
+    $out = CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'interface'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '01/01/01'],
+    ]);
+
+    expect($out[0]['interface'])->toBe('1/1/1');
+});
+
 it('maps shutdown_on_split CSV header directly', function () {
     $csvData = [
         ['name', 'serial', 'device_function', 'interface', 'shutdown_on_split'],

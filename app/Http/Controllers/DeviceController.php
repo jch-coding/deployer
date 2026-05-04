@@ -6,6 +6,7 @@ use App\DeviceFunction;
 use App\Helper\BooleanHelper;
 use App\Helper\CentralAPIHelper;
 use App\Helper\CSVHelper;
+use App\Helper\InterfaceHelper;
 use App\Http\Requests\UpdateDeviceInterfacesRequest;
 use App\Http\Resources\LacpProfileResource;
 use App\Http\Resources\StpProfileResource;
@@ -190,6 +191,7 @@ class DeviceController extends Controller
 
     public static function expandInterfaceRange(string $range)
     {
+        $range = InterfaceHelper::normalizeInterfaceString($range);
         $interface_pairs = array_map(fn ($pair) => explode('-', $pair), explode('&', $range));
         $expanded_ranges = [];
         foreach ($interface_pairs as $pair) {
@@ -223,7 +225,14 @@ class DeviceController extends Controller
     {
         $unique_devices = array_unique(array_column($devices, 'serial'));
         $devices_with_interface_info = array_filter($devices, fn ($device) => array_key_exists('interface', $device) && $device['interface'] !== '');
-        $normalized_devices = array_map(fn ($device) => array_map(fn ($v) => $v === '' ? null : $v, $device), $devices_with_interface_info);
+        $normalized_devices = array_map(function (array $device) {
+            $mapped = array_map(fn ($v) => $v === '' ? null : $v, $device);
+            if (array_key_exists('interface', $mapped) && $mapped['interface'] !== null && $mapped['interface'] !== '') {
+                $mapped['interface'] = InterfaceHelper::normalizeInterfaceString((string) $mapped['interface']);
+            }
+
+            return $mapped;
+        }, $devices_with_interface_info);
 
         $unique_switchports = [];
         foreach ($normalized_devices as $device) {

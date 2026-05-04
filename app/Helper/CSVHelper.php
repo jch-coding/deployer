@@ -244,6 +244,18 @@ class CSVHelper
             }
         }
 
+        if (array_key_exists('interface', $row)) {
+            $raw = $row['interface'];
+            if ($raw !== null && (is_string($raw) || is_numeric($raw))) {
+                $trimmed = trim((string) $raw);
+                if ($trimmed === '') {
+                    $row['interface'] = is_string($raw) ? $raw : '';
+                } else {
+                    $row['interface'] = InterfaceHelper::normalizeInterfaceString($trimmed);
+                }
+            }
+        }
+
         return $row;
     }
 
