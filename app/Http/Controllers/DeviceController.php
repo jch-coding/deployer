@@ -643,6 +643,40 @@ class DeviceController extends Controller
         return back()->with('success', 'Interface updates saved successfully.');
     }
 
+    /**
+     * Remove a device interface row and optionally delete orphan profile records.
+     */
+    public function destroyInterface(Request $request, Device $device, DeviceInterface $deviceInterface)
+    {
+        if ($request->user()->id !== $device->user_id || $request->user()->currentClient()?->id !== $device->client_id) {
+            abort(403);
+        }
+
+        if ($deviceInterface->device_id !== $device->id) {
+            abort(404);
+        }
+
+        $switchPortId = $deviceInterface->switch_port_id;
+        $lacpProfileId = $deviceInterface->lacp_profile_id;
+        $stpProfileId = $deviceInterface->stp_profile_id;
+
+        DB::transaction(function () use ($deviceInterface, $switchPortId, $lacpProfileId, $stpProfileId): void {
+            $deviceInterface->delete();
+
+            if ($switchPortId !== null && ! DeviceInterface::query()->where('switch_port_id', $switchPortId)->exists()) {
+                SwitchPort::query()->whereKey($switchPortId)->delete();
+            }
+            if ($lacpProfileId !== null && ! DeviceInterface::query()->where('lacp_profile_id', $lacpProfileId)->exists()) {
+                LacpProfile::query()->whereKey($lacpProfileId)->delete();
+            }
+            if ($stpProfileId !== null && ! DeviceInterface::query()->where('stp_profile_id', $stpProfileId)->exists()) {
+                StpProfile::query()->whereKey($stpProfileId)->delete();
+            }
+        });
+
+        return back()->with('success', 'Interface removed from this device.');
+    }
+
     protected function resolveInterfaceUpdateData(DeviceInterface $interface, array $update, int $index): array
     {
         $mode = $update['interface_mode'] ?? $interface->switch_port?->interface_mode;

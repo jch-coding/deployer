@@ -54,6 +54,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::get('/devices/{device}', 'show')->name('devices.show');
         Route::patch('/devices/{device}/interfaces', 'updateInterfaces')->name('devices.interfaces.update');
+        Route::delete('/devices/{device}/interfaces/{deviceInterface}', 'destroyInterface')->name('devices.interfaces.destroy');
         Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
         Route::put('/devices/refresh-scope-id/{device}', 'refreshScopeId')->name('devices.refresh-scope-id');
         Route::delete('/devices/{device}', 'destroy')->name('devices.destroy');

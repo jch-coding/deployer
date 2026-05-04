@@ -1,5 +1,6 @@
 import { router, usePage } from '@inertiajs/react';
 import { type ColumnDef, type VisibilityState } from '@tanstack/react-table';
+import { Trash2 } from 'lucide-react';
 import {
     type ComponentProps,
     type ReactNode,
@@ -21,13 +22,13 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
 import AppLayout from '@/layouts/app-layout';
+import { cn } from '@/lib/utils';
 import { index as clientsIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
 import { show as showDevice } from '@/routes/devices';
-import type { Paginator } from '@/types/deployer';
 import type { BreadcrumbItem, SharedData } from '@/types';
+import type { Paginator } from '@/types/deployer';
 
 export type SwitchPortDetail = {
     access_vlan: number | null;
@@ -265,6 +266,9 @@ type InterfaceColumnOptions = {
     toggleSelectAll: () => void;
     allRowsSelected: boolean;
     someRowsSelected: boolean;
+    onDeleteInterface?: (row: DeviceInterfaceRow) => void;
+    deletingInterfaceId?: number | null;
+    isSavingInterfaces?: boolean;
 };
 
 function FieldWrap({
@@ -300,6 +304,9 @@ function createInterfaceColumns({
     toggleSelectAll,
     allRowsSelected,
     someRowsSelected,
+    onDeleteInterface,
+    deletingInterfaceId,
+    isSavingInterfaces,
 }: InterfaceColumnOptions): ColumnDef<DeviceInterfaceRow>[] {
     const fieldErr = (interfaceId: number, field: string) => getFieldError(interfaceId, field);
     const textCell = (
@@ -672,6 +679,33 @@ function createInterfaceColumns({
                 ),
             accessorFn: (row) => (editing ? '' : displayStpCell(row, 'loop_guard')),
         },
+        ...(editing || !onDeleteInterface
+            ? []
+            : [
+                  {
+                      id: 'actions',
+                      header: '',
+                      enableHiding: false,
+                      cell: ({ row }) => (
+                          <div className="flex justify-end">
+                              <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-destructive hover:text-destructive h-8 w-8"
+                                  disabled={
+                                      Boolean(isSavingInterfaces) || deletingInterfaceId !== null
+                                  }
+                                  aria-label={`Remove interface ${row.original.interface}`}
+                                  onClick={() => onDeleteInterface(row.original)}
+                              >
+                                  <Trash2 className="h-4 w-4" />
+                              </Button>
+                          </div>
+                      ),
+                      accessorFn: () => '',
+                  } satisfies ColumnDef<DeviceInterfaceRow>,
+              ]),
     ];
 }
 
@@ -683,6 +717,7 @@ const INTERFACE_TABLE_HIDDEN_BY_DEFAULT_IDS = new Set<string>(['id']);
 const SIMPLE_VISIBLE_COLUMN_IDS = new Set<string>([
     'select',
     'interface',
+    'actions',
     'description',
     'ip_address',
     'enable',
@@ -757,6 +792,7 @@ export default function Show() {
     const [drafts, setDrafts] = useState<Record<number, InterfaceDraftRow>>({});
     const [selectedInterfaceIds, setSelectedInterfaceIds] = useState<Set<number>>(() => new Set());
     const [isSaving, setIsSaving] = useState(false);
+    const [deletingInterfaceId, setDeletingInterfaceId] = useState<number | null>(null);
     const [dismissedFieldErrors, setDismissedFieldErrors] = useState(() => new Set<string>());
     const [bulkDescriptionText, setBulkDescriptionText] = useState('');
     const [bulkIpAddressText, setBulkIpAddressText] = useState('');
@@ -1010,6 +1046,24 @@ export default function Show() {
         return fieldErrorsRef.current.get(interfaceId)?.[field];
     }, []);
 
+    const deleteInterfaceRow = useCallback(
+        (iface: DeviceInterfaceRow) => {
+            if (
+                !window.confirm(
+                    `Remove interface ${iface.interface} from this device? This cannot be undone.`,
+                )
+            ) {
+                return;
+            }
+            setDeletingInterfaceId(iface.id);
+            router.delete(`/devices/${device.id}/interfaces/${iface.id}`, {
+                preserveScroll: true,
+                onFinish: () => setDeletingInterfaceId(null),
+            });
+        },
+        [device.id],
+    );
+
     const batchUpdateError =
         errors && typeof errors.updates === 'string' ? errors.updates : undefined;
 
@@ -1027,6 +1081,9 @@ export default function Show() {
                 toggleSelectAll,
                 allRowsSelected,
                 someRowsSelected,
+                onDeleteInterface: deleteInterfaceRow,
+                deletingInterfaceId,
+                isSavingInterfaces: isSaving,
             }),
         [
             isEditing,
@@ -1040,6 +1097,9 @@ export default function Show() {
             toggleSelectAll,
             allRowsSelected,
             someRowsSelected,
+            deleteInterfaceRow,
+            deletingInterfaceId,
+            isSaving,
         ],
     );
 
