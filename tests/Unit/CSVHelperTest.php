@@ -274,3 +274,149 @@ it('throws when a boolean cell is not recognized', function () {
         ['SW-1', 'SN0000000001', 'CAMPUS_AP', 'maybe'],
     ]))->toThrow(ValidationException::class);
 });
+
+it('throws when sku is not a valid SKU', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'sku'],
+            ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'NOT_A_REAL_SKU'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('Row 2: sku')
+            ->and($e->errors()['Row 2: sku'][0])->toContain('not a valid SKU');
+    }
+});
+
+it('throws when interface_mode is not valid', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'interface_mode'],
+            ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'HYBRID'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('Row 2: interface_mode')
+            ->and($e->errors()['Row 2: interface_mode'][0])->toContain('Allowed values: ACCESS, TRUNK');
+    }
+});
+
+it('throws when trunk_type is not valid', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'trunk_type'],
+            ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'BOND'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('Row 2: trunk_type')
+            ->and($e->errors()['Row 2: trunk_type'][0])->toContain('MULTI_CHASSIS_STATIC');
+    }
+});
+
+it('throws when lacp_mode is not valid', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'lacp_mode'],
+            ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'ON'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('Row 2: lacp_mode')
+            ->and($e->errors()['Row 2: lacp_mode'][0])->toContain('ACTIVE, PASSIVE, AUTO');
+    }
+});
+
+it('throws when lacp_rate is not valid', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'lacp_rate'],
+            ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1G'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('Row 2: lacp_rate')
+            ->and($e->errors()['Row 2: lacp_rate'][0])->toContain('FAST, SLOW');
+    }
+});
+
+it('throws when admin_edge_port is not a valid boolean', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'admin_edge_port'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'sometimes'],
+    ]))->toThrow(ValidationException::class);
+});
+
+it('throws when admin_edge_port_trunk is not a valid boolean', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'admin_edge_port_trunk'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '2'],
+    ]))->toThrow(ValidationException::class);
+});
+
+it('throws when bpdu_guard is not a valid boolean', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'bpdu_guard'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'yep'],
+    ]))->toThrow(ValidationException::class);
+});
+
+it('throws when loop_guard is not a valid boolean', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'loop_guard'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'nope'],
+    ]))->toThrow(ValidationException::class);
+});
+
+it('throws when shutdown_on_split is not a valid boolean', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'interface', 'shutdown_on_split'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1', 'unknown'],
+    ]))->toThrow(ValidationException::class);
+});
+
+it('aggregates multiple validation errors for a single row', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'sku', 'interface_mode', 'lacp_rate'],
+            ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'BAD_SKU', 'INVALID_MODE', 'MEGAFAST'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKeys([
+            'Row 2: sku',
+            'Row 2: interface_mode',
+            'Row 2: lacp_rate',
+        ]);
+    }
+});
+
+it('maps interface_description and lag_id CSV headers to description and lacp_port_id', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'interface', 'interface_description', 'lag_id'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1', 'to core', '12'],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0])->toMatchArray([
+            'description' => 'to core',
+            'lacp_port_id' => '12',
+        ])
+        ->and($deviceArrays[0])->not()->toHaveKeys(['interface_description', 'lag_id']);
+});
+
+it('normalizes hyphenated headers before mapping interface_description and lag_id aliases', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'interface', 'interface-description', 'lag-id'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1', 'uplink', '3'],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays[0])->toMatchArray([
+        'description' => 'uplink',
+        'lacp_port_id' => '3',
+    ]);
+});
