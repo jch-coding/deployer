@@ -89,6 +89,55 @@ test('it processes portchannel interfaces', function () {
     expect($actual)->toEqual($expected);
 });
 
+test('build_portchannel_from_device_interface includes switchport when creating LAG and interface has a description', function () {
+    $lacp_profile = LacpProfile::factory()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'port_list' => '1/1/1-1/1/2&2/1/1-2/1/2',
+        'trunk_type' => 'LACP',
+    ]);
+    $switch_port = SwitchPort::factory()->create([
+        'interface_mode' => 'TRUNK',
+        'access_vlan' => null,
+        'native_vlan' => 10,
+        'trunk_vlan_all' => 'true',
+        'trunk_vlan_ranges' => null,
+    ]);
+    $deviceInterface = DeviceInterface::factory()
+        ->create([
+            'interface' => '1',
+            'switch_port_id' => $switch_port->id,
+            'lacp_profile_id' => $lacp_profile->id,
+            'description' => 'LAG uplink to core',
+        ]);
+
+    $expected = [
+        'name' => $deviceInterface->interface,
+        'vsx' => [
+            'shutdown-on-split' => false,
+        ],
+        'description' => 'LAG uplink to core',
+        'switchport' => [
+            'access-vlan' => null,
+            'interface-mode' => 'TRUNK',
+            'native-vlan' => 10,
+            'trunk-vlan-all' => true,
+            'trunk-vlan-ranges' => null,
+        ],
+        'lacp' => [
+            'mode' => 'ACTIVE',
+            'rate' => 'SLOW',
+        ],
+        'trunk-type' => 'LACP',
+        'port-list' => ['1/1/1', '1/1/2', '2/1/1', '2/1/2'],
+        'enable' => true,
+    ];
+
+    $actual = CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface, true);
+
+    expect($actual)->toEqual($expected);
+});
+
 test('the categorize_interfaces function takes a list of device interfaces and returns an array categorized by ethernet, vlan and portchannel sub-arrays', function () {
     $lacp_profile = LacpProfile::factory()->create([
         'mode' => 'ACTIVE',

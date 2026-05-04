@@ -342,15 +342,17 @@ class CentralAPIHelper
 
         $switch_port_configuration = static::build_switchport_from_device_interface($deviceInterface, $forCreatingLAG);
 
-        if ($deviceInterface->lacp_profile !== null) {
-            $lacp_profile = [
-                'mode' => $deviceInterface->lacp_profile->mode,
-                'rate' => $deviceInterface->lacp_profile->rate,
-            ];
-            $switch_port_configuration['trunk-type'] = $deviceInterface->lacp_profile->trunk_type;
-            $switch_port_configuration['port-list'] = $deviceInterface->lacp_profile->port_list;
-            $switch_port_configuration['enable'] = $deviceInterface->enable;
+        if ($deviceInterface->lacp_profile === null) {
+            return $switch_port_configuration;
         }
+
+        $lacp_profile = [
+            'mode' => $deviceInterface->lacp_profile->mode,
+            'rate' => $deviceInterface->lacp_profile->rate,
+        ];
+        $switch_port_configuration['trunk-type'] = $deviceInterface->lacp_profile->trunk_type;
+        $switch_port_configuration['port-list'] = $deviceInterface->lacp_profile->port_list;
+        $switch_port_configuration['enable'] = $deviceInterface->enable;
 
         return array_merge($switch_port_configuration, ['lacp' => $lacp_profile]);
     }
@@ -389,14 +391,14 @@ class CentralAPIHelper
             $switchport_rest_body['vsx'] = ['shutdown-on-split' => (bool) $deviceInterface->shutdown_on_split];
             if ($deviceInterface->description !== null) {
                 $switchport_rest_body['description'] = $deviceInterface->description;
-            } elseif ($deviceInterface->portchannel_lag !== null) {
-                $switchport_rest_body['portchannel-lag'] = $deviceInterface->portchannel_lag;
-            } else {
-                $switchport_rest_body = array_merge($switchport_rest_body, [
-                    'switchport' => $switch_port,
-                    'stp' => $stp_profile,
-                ]);
             }
+            if ($deviceInterface->portchannel_lag !== null) {
+                $switchport_rest_body['portchannel-lag'] = $deviceInterface->portchannel_lag;
+            }
+            $switchport_rest_body = array_merge($switchport_rest_body, [
+                'switchport' => $switch_port,
+                'stp' => $stp_profile,
+            ]);
         }
 
         return array_filter($switchport_rest_body, fn ($value) => $value !== []);
