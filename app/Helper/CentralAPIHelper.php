@@ -404,10 +404,43 @@ class CentralAPIHelper
         return array_filter($switchport_rest_body, fn ($value) => $value !== []);
     }
 
+    public static function is_ethernet_interface_part_of_any_lag(DeviceInterface $deviceInterface): bool
+    {
+        $device = $deviceInterface->device;
+        if ($device === null) {
+            return false;
+        }
+
+        $lag_interfaces = $device->interfaces()
+            ->whereNotNull('lacp_profile_id')
+            ->with('lacp_profile')
+            ->get();
+
+        foreach ($lag_interfaces as $lag_interface) {
+            if (in_array($deviceInterface->interface, $lag_interface->lacp_profile?->port_list ?? [], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function build_ethernet_interface_patch_body(DeviceInterface $deviceInterface): array
+    {
+        if (static::is_ethernet_interface_part_of_any_lag($deviceInterface)) {
+            return array_filter([
+                'name' => $deviceInterface->interface,
+                'description' => $deviceInterface->description,
+            ], fn ($value) => $value !== null);
+        }
+
+        return static::build_switchport_from_device_interface($deviceInterface);
+    }
+
     public function patch_ethernet_interface(DeviceInterface $deviceInterface, array $patch_body = [])
     {
         if (empty($patch_body)) {
-            $interface_rest_body = static::build_switchport_from_device_interface($deviceInterface);
+            $interface_rest_body = static::build_ethernet_interface_patch_body($deviceInterface);
         } else {
             $interface_rest_body = $patch_body;
         }

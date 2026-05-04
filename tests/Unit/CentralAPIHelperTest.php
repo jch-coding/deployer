@@ -138,6 +138,87 @@ test('build_portchannel_from_device_interface includes switchport when creating 
     expect($actual)->toEqual($expected);
 });
 
+test('build_ethernet_interface_patch_body returns only name and description for LAG members', function () {
+    $device = Device::factory()->create();
+    $lacp_profile = LacpProfile::factory()->create([
+        'port_list' => '1/1/1&1/1/2',
+    ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => 'lag10',
+        'lacp_profile_id' => $lacp_profile->id,
+    ]);
+    $member_interface = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/1',
+        'description' => 'Member link description',
+        'shutdown_on_split' => true,
+    ]);
+
+    $actual = CentralAPIHelper::build_ethernet_interface_patch_body($member_interface);
+
+    expect($actual)->toEqual([
+        'name' => '1/1/1',
+        'description' => 'Member link description',
+    ]);
+});
+
+test('build_ethernet_interface_patch_body returns only name for LAG members without description', function () {
+    $device = Device::factory()->create();
+    $lacp_profile = LacpProfile::factory()->create([
+        'port_list' => '1/1/1&1/1/2',
+    ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => 'lag20',
+        'lacp_profile_id' => $lacp_profile->id,
+    ]);
+    $member_interface = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/2',
+        'description' => null,
+        'shutdown_on_split' => true,
+    ]);
+
+    $actual = CentralAPIHelper::build_ethernet_interface_patch_body($member_interface);
+
+    expect($actual)->toEqual([
+        'name' => '1/1/2',
+    ]);
+});
+
+test('build_ethernet_interface_patch_body uses full switchport payload for non-member even with portchannel_lag set', function () {
+    $device = Device::factory()->create();
+    $lacp_profile = LacpProfile::factory()->create([
+        'port_list' => '1/1/1&1/1/2',
+    ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => 'lag30',
+        'lacp_profile_id' => $lacp_profile->id,
+    ]);
+    $switch_port = SwitchPort::factory()->create([
+        'interface_mode' => 'ACCESS',
+        'access_vlan' => 100,
+        'native_vlan' => null,
+        'trunk_vlan_all' => null,
+        'trunk_vlan_ranges' => null,
+    ]);
+    $non_member_interface = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/3',
+        'description' => 'Non-member',
+        'portchannel_lag' => '999',
+        'switch_port_id' => $switch_port->id,
+    ]);
+
+    $actual = CentralAPIHelper::build_ethernet_interface_patch_body($non_member_interface);
+    $expected = CentralAPIHelper::build_switchport_from_device_interface($non_member_interface);
+
+    expect($actual)->toEqual($expected);
+    expect($actual)->toHaveKey('vsx');
+});
+
 test('the categorize_interfaces function takes a list of device interfaces and returns an array categorized by ethernet, vlan and portchannel sub-arrays', function () {
     $lacp_profile = LacpProfile::factory()->create([
         'mode' => 'ACTIVE',
