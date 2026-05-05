@@ -167,6 +167,7 @@ function formatDeviceMetadata(device: {
     site: string | null;
     group: string | null;
     serial: string | null;
+    sku: string | null;
     scope_id: string | null;
     device_function: string | null;
 }): string | null {
@@ -184,6 +185,7 @@ function formatDeviceMetadata(device: {
     pushLabeled('Site', device.site);
     pushLabeled('Group', device.group);
     pushLabeled('Serial', device.serial);
+    pushLabeled('SKU', device.sku);
     pushLabeled('Scope ID', device.scope_id);
     if (device.device_function != null) {
         const fn = String(device.device_function).trim();
@@ -771,6 +773,7 @@ type DeviceShowProps = {
         site: string | null;
         group: string | null;
         serial: string | null;
+        sku: string | null;
         scope_id: string | null;
         device_function: string | null;
     };

@@ -658,6 +658,7 @@ class DeviceController extends Controller
                 'site' => $device->site?->name,
                 'group' => $device->group,
                 'serial' => $device->serial,
+                'sku' => $device->sku,
                 'scope_id' => $device->scope_id,
                 'device_function' => $device->device_function,
             ],

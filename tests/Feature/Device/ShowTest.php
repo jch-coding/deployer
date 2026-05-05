@@ -5,6 +5,7 @@ use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\User;
+use App\SwitchSKU;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -54,6 +55,24 @@ it('shows the device page with interface rows for the current client', function 
                     ->where('shutdown_on_split', true)
                     ->etc())
                 ->has('links')
+                ->etc()));
+});
+
+it('includes sku in device props when set', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+        'sku' => SwitchSKU::JL660A,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('devices.show', $device))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Device/Show')
+            ->has('device', fn (Assert $d) => $d
+                ->where('sku', 'JL660A')
                 ->etc()));
 });
 
