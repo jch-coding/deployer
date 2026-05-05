@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\DB;
 
 class Task extends Model
 {
@@ -31,6 +32,24 @@ class Task extends Model
     public function deployment(): BelongsTo
     {
         return $this->belongsTo(Deployment::class);
+    }
+
+    /**
+     * Set all non-completed device/interface pivot rows back to PENDING (e.g. before relaunch or force restart).
+     */
+    public function resetIncompletePivotRowsToPending(): void
+    {
+        $now = now();
+
+        DB::table('device_task')
+            ->where('task_id', $this->id)
+            ->where('status', '!=', 'COMPLETED')
+            ->update(['status' => 'PENDING', 'updated_at' => $now]);
+
+        DB::table('device_interface_task')
+            ->where('task_id', $this->id)
+            ->where('status', '!=', 'COMPLETED')
+            ->update(['status' => 'PENDING', 'updated_at' => $now]);
     }
 
     public function getTaskCategory($task_type)

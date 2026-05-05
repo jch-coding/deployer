@@ -32,7 +32,7 @@ class UpdateSystemInfo extends BaseTaskJob
                 return;
             }
 
-            if (! $this->device->scope_id || $pivotForDevice->status === 'FAILED') {
+            if (! $this->device->scope_id || in_array($pivotForDevice->status, ['FAILED', 'TIMED_OUT'], true)) {
                 $scope_id_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
                 if (array_key_exists('error', $scope_id_response)) {
                     Log::error('Failed to retrieve scope ID for device '.$this->device->name);

@@ -32,7 +32,7 @@ test('relaunching a failed task sets status in progress, updates batch id, and d
     ]);
 
     $task->devices()->attach($devices[0]->id, ['status' => 'COMPLETED']);
-    $task->devices()->attach($devices[1]->id, ['status' => 'PENDING']);
+    $task->devices()->attach($devices[1]->id, ['status' => 'FAILED']);
 
     $this->post(route('tasks.relaunch', $task))
         ->assertRedirect(route('tasks.show', $task));
@@ -43,6 +43,10 @@ test('relaunching a failed task sets status in progress, updates batch id, and d
     expect($task->batch_id)->not->toBe('old-batch-id');
 
     Bus::assertBatched(fn (PendingBatch $batch) => count($batch->jobs) === 1);
+
+    $task->load('devices');
+    expect($task->devices->firstWhere('id', $devices[0]->id)->pivot->status)->toBe('COMPLETED');
+    expect($task->devices->firstWhere('id', $devices[1]->id)->pivot->status)->toBe('PENDING');
 });
 
 test('relaunching a cancelled task sets status in progress and redirects to show', function () {
@@ -93,6 +97,9 @@ test('relaunching a timed out task sets status in progress and redirects to show
     expect($task->status)->toBe('IN_PROGRESS');
     expect($task->batch_id)->not->toBeNull();
     expect($task->batch_id)->not->toBe('old-batch-id');
+
+    $task->load('devices');
+    expect($task->devices->first()->pivot->status)->toBe('PENDING');
 });
 
 test('relaunch rejects non-failed-and-non-cancelled task statuses', function () {

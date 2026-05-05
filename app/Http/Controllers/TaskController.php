@@ -435,6 +435,7 @@ class TaskController extends Controller
             $this->performCancelSingle($t);
         }
         foreach ($group as $t) {
+            $t->resetIncompletePivotRowsToPending();
             $t->update(['status' => 'IN_PROGRESS']);
             $batchId = $this->dispatchJob($t);
             if ($batchId !== null) {
@@ -453,6 +454,7 @@ class TaskController extends Controller
             return back();
         }
 
+        $task->resetIncompletePivotRowsToPending();
         $task->update(['status' => 'IN_PROGRESS']);
         $batchId = $this->dispatchJob($task);
 
@@ -568,7 +570,10 @@ class TaskController extends Controller
 
     public function dispatchJob(Task $task): ?string
     {
-        $task->loadMissing('devices', 'deviceInterfaces');
+        $task->loadMissing('deployment');
+        $task->unsetRelation('devices');
+        $task->unsetRelation('deviceInterfaces');
+        $task->load(['devices', 'deviceInterfaces']);
 
         $queueName = JobQueueShard::resolve($task->job_queue);
 
