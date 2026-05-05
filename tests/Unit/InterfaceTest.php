@@ -1,10 +1,11 @@
 <?php
 
+use App\InterfaceKind;
 use App\Models\Device;
 use App\Models\DeviceInterface;
-use App\Models\SwitchPort;
 use App\Models\LacpProfile;
 use App\Models\StpProfile;
+use App\Models\SwitchPort;
 use Illuminate\Database\UniqueConstraintViolationException;
 
 it('has a device that it belongs to', function () {
@@ -16,11 +17,11 @@ it('has a device that it belongs to', function () {
 });
 
 it('has a name that is unique to a device', function () {
-   $device = Device::factory()->create();
-   DeviceInterface::factory()->create(['device_id' => $device->id, 'interface' => '1/1/1']);
-   $interface2 = DeviceInterface::factory()->make(['device_id' => $device->id, 'interface' => '1/1/1']);
-   $this->assertDatabaseHas('device_interfaces', ['interface' => '1/1/1', 'device_id' => $device->id]);
-   $interface2->save();
+    $device = Device::factory()->create();
+    DeviceInterface::factory()->create(['device_id' => $device->id, 'interface' => '1/1/1']);
+    $interface2 = DeviceInterface::factory()->make(['device_id' => $device->id, 'interface' => '1/1/1']);
+    $this->assertDatabaseHas('device_interfaces', ['interface' => '1/1/1', 'device_id' => $device->id]);
+    $interface2->save();
 })->throws(UniqueConstraintViolationException::class);
 
 it('can be enabled or not enabled', function () {
@@ -35,13 +36,13 @@ it('can be configured with a description', function () {
     expect($interface->description)->toBe('Test interface');
 });
 
-//it('can have an mtu between 46 and 9198', function ($mtu) {
+// it('can have an mtu between 46 and 9198', function ($mtu) {
 //    $interface = DeviceInterface::factory()->make(['mtu' => $mtu]);
 //    expect($interface->save())->toThrow(QueryException::class);
-//})->with([
+// })->with([
 //    45,
 //    9199
-//]);
+// ]);
 
 it('can have jumbo frames enabled or not enabled', function () {
     $interface = DeviceInterface::factory()->create();
@@ -96,6 +97,7 @@ it('can be a vlan that has a static address assigned', function () {
     $interface = DeviceInterface::factory()->create([
         'interface' => 'vlan30',
         'ip_address' => '10.10.30.11/24',
+        'interface_kind' => InterfaceKind::VLAN,
     ]);
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => 'vlan30',
@@ -109,4 +111,3 @@ it('can be assigned to a portchannel_lag', function () {
     expect($interface->portchannel_lag)->toBe('10');
     $this->assertDatabaseHas('device_interfaces', ['portchannel_lag' => '10']);
 });
-

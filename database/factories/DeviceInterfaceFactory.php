@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
+use App\InterfaceKind;
 use App\Models\Device;
-use App\Models\SwitchPort;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -19,7 +19,8 @@ class DeviceInterfaceFactory extends Factory
     public function definition(): array
     {
         return [
-            'interface' => random_int(1,9) . '/1/' . random_int(1,52),
+            'interface' => random_int(1, 9).'/1/'.random_int(1, 52),
+            'interface_kind' => InterfaceKind::ETHERNET,
             'description' => fake()->sentence(),
             'enable' => true,
             'jumbo_frames' => false,

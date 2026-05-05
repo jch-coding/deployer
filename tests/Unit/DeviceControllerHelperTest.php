@@ -2,6 +2,7 @@
 
 use App\Helper\CSVHelper;
 use App\Http\Controllers\DeviceController;
+use App\InterfaceKind;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -42,6 +43,7 @@ it('replaces empty strings with null values', function () {
         'admin_edge_port_trunk' => null,
         'bpdu_guard' => 'true',
         'loop_guard' => 'true',
+        'interface_kind' => InterfaceKind::ETHERNET,
     ];
 
     expect($interfaces['devices_grouped_config'][0][0])->toEqual($expected_interface);
@@ -111,6 +113,7 @@ it('gets a list of unique profiles and interfaces separated by devices when getI
                     'admin_edge_port_trunk' => null,
                     'bpdu_guard' => 'true',
                     'loop_guard' => 'true',
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
                 [
                     'name' => 'CO-IDF1-SW1',
@@ -125,6 +128,7 @@ it('gets a list of unique profiles and interfaces separated by devices when getI
                     'admin_edge_port_trunk' => 'true',
                     'bpdu_guard' => null,
                     'loop_guard' => null,
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
             ],
             [
@@ -141,6 +145,7 @@ it('gets a list of unique profiles and interfaces separated by devices when getI
                     'admin_edge_port_trunk' => null,
                     'bpdu_guard' => 'true',
                     'loop_guard' => 'true',
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
                 [
                     'name' => 'CO-IDF2-SW1',
@@ -155,6 +160,7 @@ it('gets a list of unique profiles and interfaces separated by devices when getI
                     'admin_edge_port_trunk' => 'true',
                     'bpdu_guard' => null,
                     'loop_guard' => null,
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
             ],
         ],
@@ -187,6 +193,7 @@ test('get interfaces returns an array of interfaces when an interface range is p
                 'admin_edge_port_trunk' => null,
                 'bpdu_guard' => 'true',
                 'loop_guard' => 'true',
+                'interface_kind' => InterfaceKind::ETHERNET,
             ];
     $expected = [
         [...$interface_range, 'interface' => '1/1/1'],
@@ -246,6 +253,7 @@ test('get interfaces deals with interface ranges correctly', function () {
                     'admin_edge_port_trunk' => null,
                     'bpdu_guard' => 'true',
                     'loop_guard' => 'true',
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
                 [
                     'name' => 'CO-IDF1-SW1',
@@ -260,6 +268,7 @@ test('get interfaces deals with interface ranges correctly', function () {
                     'admin_edge_port_trunk' => null,
                     'bpdu_guard' => 'true',
                     'loop_guard' => 'true',
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
                 [
                     'name' => 'CO-IDF1-SW1',
@@ -274,6 +283,7 @@ test('get interfaces deals with interface ranges correctly', function () {
                     'admin_edge_port_trunk' => 'true',
                     'bpdu_guard' => null,
                     'loop_guard' => null,
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
                 [
                     'name' => 'CO-IDF1-SW1',
@@ -288,6 +298,7 @@ test('get interfaces deals with interface ranges correctly', function () {
                     'admin_edge_port_trunk' => 'true',
                     'bpdu_guard' => null,
                     'loop_guard' => null,
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
             ],
         ],
@@ -387,6 +398,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
 
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/1',
+        'interface_kind' => 'ETHERNET',
         'device_id' => $deviceOneId,
         'switch_port_id' => $switchport1->id,
         'stp_profile_id' => $stp1->id,
@@ -396,6 +408,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
 
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/1',
+        'interface_kind' => 'ETHERNET',
         'device_id' => $deviceTwoId,
         'switch_port_id' => $switchport2->id,
         'stp_profile_id' => $stp1->id,
@@ -410,6 +423,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
 
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/2',
+        'interface_kind' => 'ETHERNET',
         'device_id' => $deviceOneId,
         'switch_port_id' => $switchport3->id,
         'stp_profile_id' => $stp2->id,
@@ -418,6 +432,7 @@ test('interfaces are saved to the database with the corresponding switchport pro
     $switchport4 = Switchport::where('native_vlan', 8)->first();
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/2',
+        'interface_kind' => 'ETHERNET',
         'device_id' => $deviceTwoId,
         'switch_port_id' => $switchport4->id,
         'stp_profile_id' => $stp2->id,
@@ -593,6 +608,7 @@ test('port profiles are saved correctly when the port_profile column is present 
                     'admin_edge_port_trunk' => null,
                     'bpdu_guard' => 'true',
                     'loop_guard' => 'true',
+                    'interface_kind' => InterfaceKind::ETHERNET,
                 ],
             ],
         ],
@@ -606,6 +622,7 @@ test('port profiles are saved correctly when the port_profile column is present 
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '1/1/1',
         'sw_profile' => 'portProfile1',
+        'interface_kind' => 'ETHERNET',
     ]);
 });
 
@@ -625,6 +642,7 @@ test('it saves portchannel interfaces from a csv', function () {
     $this->assertDatabaseCount('device_interfaces', 1);
     $this->assertDatabaseHas('device_interfaces', [
         'interface' => '5',
+        'interface_kind' => 'LAG',
     ]);
     $this->assertDatabaseHas('lacp_profiles', [
         'port_list' => '1/1/14-1/1/15',
@@ -634,6 +652,55 @@ test('it saves portchannel interfaces from a csv', function () {
     $this->assertEquals($interface->switch_port->interface_mode, 'TRUNK');
     $this->assertEquals($interface->switch_port->native_vlan, 10);
     $this->assertEquals($interface->switch_port->trunk_vlan_all, true);
+});
+
+test('saveInterfaces keeps SVI and LAG rows distinct when they share the same numeric interface id', function () {
+    $deployment = Deployment::factory()->create();
+    $device = Device::factory()->for($deployment)->create([
+        'name' => 'SW-COLLISION',
+        'serial' => 'SN-COLLISION-001',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $devices = [
+        [
+            'name' => $device->name,
+            'serial' => $device->serial,
+            'device_function' => 'ACCESS_SWITCH',
+            'interface' => '1',
+            'ip_address' => '192.168.1.1/24',
+        ],
+        [
+            'name' => $device->name,
+            'serial' => $device->serial,
+            'device_function' => 'ACCESS_SWITCH',
+            'interface' => '1',
+            'interface_mode' => 'TRUNK',
+            'native_vlan' => '10',
+            'trunk_vlan_all' => 'true',
+            'admin_edge_port' => 'true',
+            'port_list' => '1/1/14-1/1/15',
+        ],
+    ];
+
+    $interfaces = DeviceController::getInterfaces($devices);
+    expect($interfaces['devices_grouped_config'][0][0]['interface_kind'])->toBe(InterfaceKind::VLAN);
+    expect($interfaces['devices_grouped_config'][0][1]['interface_kind'])->toBe(InterfaceKind::LAG);
+
+    DeviceController::saveInterfaces($interfaces);
+
+    $this->assertDatabaseCount('device_interfaces', 2);
+    $this->assertDatabaseHas('device_interfaces', [
+        'device_id' => $device->id,
+        'interface' => '1',
+        'interface_kind' => 'VLAN',
+        'ip_address' => '192.168.1.1/24',
+    ]);
+    $this->assertDatabaseHas('device_interfaces', [
+        'device_id' => $device->id,
+        'interface' => '1',
+        'interface_kind' => 'LAG',
+    ]);
 });
 
 test('saveInterfaces updates existing interface optional fields for the same device and interface', function () {
@@ -656,6 +723,7 @@ test('saveInterfaces updates existing interface optional fields for the same dev
                 'ip_address' => '10.0.0.1/24',
                 'port_profile' => 'old-profile',
                 'shutdown_on_split' => false,
+                'interface_kind' => InterfaceKind::ETHERNET,
             ],
         ]],
         'total_interfaces' => 1,
@@ -675,6 +743,7 @@ test('saveInterfaces updates existing interface optional fields for the same dev
                 'ip_address' => '10.0.0.2/24',
                 'port_profile' => 'new-profile',
                 'shutdown_on_split' => true,
+                'interface_kind' => InterfaceKind::ETHERNET,
             ],
         ]],
         'total_interfaces' => 1,
@@ -686,6 +755,7 @@ test('saveInterfaces updates existing interface optional fields for the same dev
     $this->assertDatabaseHas('device_interfaces', [
         'device_id' => $device->id,
         'interface' => '1/1/1',
+        'interface_kind' => 'ETHERNET',
         'description' => 'new description',
         'ip_address' => '10.0.0.2/24',
         'sw_profile' => 'new-profile',
@@ -737,6 +807,7 @@ test('saveInterfaces links switchport, stp, and lacp profiles from optional colu
                 'trunk_type' => 'LACP',
                 'port_list' => '1/1/1-1/1/2',
                 'lacp_rate' => 'FAST',
+                'interface_kind' => InterfaceKind::LAG,
             ],
         ]],
         'total_interfaces' => 1,
@@ -751,6 +822,7 @@ test('saveInterfaces links switchport, stp, and lacp profiles from optional colu
     $this->assertDatabaseHas('device_interfaces', [
         'device_id' => $device->id,
         'interface' => '10',
+        'interface_kind' => 'LAG',
         'switch_port_id' => $switchPort->id,
         'stp_profile_id' => $stp->id,
         'lacp_profile_id' => $lacp->id,

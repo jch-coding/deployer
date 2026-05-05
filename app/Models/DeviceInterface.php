@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Casts\Attribute;
+use App\InterfaceKind;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,31 +16,31 @@ class DeviceInterface extends Model
     protected $casts = [
         'enable' => 'boolean',
         'shutdown_on_split' => 'boolean',
+        'interface_kind' => InterfaceKind::class,
     ];
 
-    public function device() : BelongsTo
+    public function device(): BelongsTo
     {
         return $this->belongsTo(Device::class);
     }
 
-    public function switch_port() : BelongsTo
+    public function switch_port(): BelongsTo
     {
         return $this->belongsTo(SwitchPort::class);
     }
 
-    public function lacp_profile() : BelongsTo
+    public function lacp_profile(): BelongsTo
     {
         return $this->belongsTo(LacpProfile::class);
     }
 
-    public function stp_profile() : BelongsTo
+    public function stp_profile(): BelongsTo
     {
         return $this->belongsTo(StpProfile::class);
     }
 
-    public function tasks() : BelongsToMany
+    public function tasks(): BelongsToMany
     {
         return $this->belongsToMany(Task::class)->withPivot('status')->withTimestamps();
     }
-
 }

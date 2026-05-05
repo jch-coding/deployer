@@ -11,6 +11,7 @@ use App\Http\Requests\UpdateDeviceInterfacesRequest;
 use App\Http\Resources\LacpProfileResource;
 use App\Http\Resources\StpProfileResource;
 use App\Http\Resources\SwitchPortResource;
+use App\InterfaceKind;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -149,10 +150,32 @@ class DeviceController extends Controller
             $savedInterfaces = static::saveInterfaces($interfaces, $user->id);
 
             if ($savedInterfaces !== $interfaces['total_interfaces']) {
-                $unsaved_interfaces = array_filter($interfaces,
-                    fn ($interface) => DeviceInterface::where('interface', $interface['interface'])
-                        ->where('device_id', $interface['device_id'])
-                        ->doesntExist());
+                $unsaved_interfaces = [];
+                foreach ($interfaces['devices_grouped_config'] as $device_interfaces) {
+                    foreach ($device_interfaces as $row) {
+                        $deviceQuery = Device::query()->where('serial', $row['serial']);
+                        if ($userId !== null) {
+                            $deviceQuery->where('user_id', $userId);
+                        }
+                        $device = $deviceQuery->first();
+                        if ($device === null) {
+                            $unsaved_interfaces[] = $row;
+
+                            continue;
+                        }
+                        $kindValue = $row['interface_kind'] instanceof InterfaceKind
+                            ? $row['interface_kind']->value
+                            : $row['interface_kind'];
+                        $exists = DeviceInterface::query()
+                            ->where('device_id', $device->id)
+                            ->where('interface', $row['interface'])
+                            ->where('interface_kind', $kindValue)
+                            ->exists();
+                        if (! $exists) {
+                            $unsaved_interfaces[] = $row;
+                        }
+                    }
+                }
             }
         }
 
@@ -221,6 +244,36 @@ class DeviceController extends Controller
         return $interface_range_configs;
     }
 
+    /**
+     * Determine logical interface kind for CSV/import rows (persists alongside numeric interface ids).
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public static function detectInterfaceKind(array $row): InterfaceKind
+    {
+        $iface = isset($row['interface']) ? (string) $row['interface'] : '';
+        if (str_contains($iface, '/')) {
+            return InterfaceKind::ETHERNET;
+        }
+
+        $lacpPortId = $row['lacp_port_id'] ?? null;
+        if ($lacpPortId !== null && trim((string) $lacpPortId) !== '') {
+            return InterfaceKind::LAG;
+        }
+
+        $portList = $row['port_list'] ?? null;
+        if ($portList !== null && trim((string) $portList) !== '') {
+            return InterfaceKind::LAG;
+        }
+
+        $ipAddress = $row['ip_address'] ?? null;
+        if ($ipAddress !== null && trim((string) $ipAddress) !== '') {
+            return InterfaceKind::VLAN;
+        }
+
+        return InterfaceKind::ETHERNET;
+    }
+
     public static function getInterfaces($devices, ?int $userId = null)
     {
         $unique_devices = array_unique(array_column($devices, 'serial'));
@@ -233,6 +286,12 @@ class DeviceController extends Controller
 
             return $mapped;
         }, $devices_with_interface_info);
+
+        $normalized_devices = array_map(function (array $device) {
+            $device['interface_kind'] = static::detectInterfaceKind($device);
+
+            return $device;
+        }, $normalized_devices);
 
         $unique_switchports = [];
         foreach ($normalized_devices as $device) {
@@ -337,9 +396,13 @@ class DeviceController extends Controller
                     continue;
                 }
 
+                $kind = $device_interface['interface_kind'] ?? InterfaceKind::ETHERNET;
+                $kindValue = $kind instanceof InterfaceKind ? $kind->value : (string) $kind;
+
                 $device_interface_config = [
                     'device_id' => $device->id,
                     'interface' => $device_interface['interface'],
+                    'interface_kind' => $kindValue,
                     'description' => $device_interface['description'] ?? null,
                     'ip_address' => $device_interface['ip_address'] ?? null,
                     'sw_profile' => $device_interface['port_profile'] ?? null,
@@ -349,7 +412,11 @@ class DeviceController extends Controller
                     'lacp_profile_id' => static::resolveLacpProfileId($device_interface),
                 ];
 
-                DeviceInterface::upsert($device_interface_config, ['interface', 'device_id'], ['sw_profile', 'shutdown_on_split', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address']);
+                DeviceInterface::upsert(
+                    $device_interface_config,
+                    ['interface', 'device_id', 'interface_kind'],
+                    ['sw_profile', 'shutdown_on_split', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address', 'interface_kind']
+                );
                 $saved_interfaces++;
             }
         }

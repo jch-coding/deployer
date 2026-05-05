@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
+use App\InterfaceKind;
 use App\JobQueueShard;
 use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssociateDeviceToSiteJob;
@@ -18,8 +19,8 @@ use App\Jobs\RemoveLocalOverrideNTPJob;
 use App\Jobs\RemoveLocalOverrideStaticRouteJob;
 use App\Jobs\RemoveLocalOverrideVlansJob;
 use App\Jobs\UpdateSystemInfo;
-use App\Models\Device;
 use App\Models\Deployment;
+use App\Models\Device;
 use App\Models\Task;
 use App\TaskType;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -553,13 +554,13 @@ class TaskController extends Controller
     {
         return match ($taskType) {
             'CONFIGURE_ETHERNET_INTERFACE' => $devices->map(
-                fn ($device) => $device->interfaces->filter(fn ($interface) => str_contains($interface->interface, '/'))
+                fn ($device) => $device->interfaces->filter(fn ($interface) => $interface->interface_kind === InterfaceKind::ETHERNET)
             )->collapse(),
             'CONFIGURE_VLAN_INTERFACE' => $devices->map(
-                fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->ip_address !== null)
+                fn ($device) => $device->interfaces->filter(fn ($interface) => $interface->interface_kind === InterfaceKind::VLAN)
             )->collapse(),
             'CONFIGURE_LAG_INTERFACE' => $devices->map(
-                fn ($device) => $device->interfaces->filter(fn ($interface) => ! str_contains($interface->interface, '/') && $interface->lacp_profile_id !== null)
+                fn ($device) => $device->interfaces->filter(fn ($interface) => $interface->interface_kind === InterfaceKind::LAG)
             )->collapse(),
             default => collect(),
         };
@@ -682,5 +683,4 @@ class TaskController extends Controller
     {
         return $devices->map(fn ($device) => $device->interfaces_sw_profiles->unique('sw_profile'))->collapse()->unique('sw_profile');
     }
-
 }

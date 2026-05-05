@@ -1,5 +1,6 @@
 <?php
 
+use App\InterfaceKind;
 use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -70,16 +71,19 @@ test('creating CONFIGURE_ALL_INTERFACE stores three composite sibling tasks', fu
     DeviceInterface::query()->create([
         'device_id' => $device->id,
         'interface' => '1/1/1',
+        'interface_kind' => InterfaceKind::ETHERNET,
     ]);
     DeviceInterface::query()->create([
         'device_id' => $device->id,
         'interface' => '10',
         'ip_address' => '10.10.10.1/24',
+        'interface_kind' => InterfaceKind::VLAN,
     ]);
     DeviceInterface::query()->create([
         'device_id' => $device->id,
         'interface' => '11',
         'lacp_profile_id' => $lacp->id,
+        'interface_kind' => InterfaceKind::LAG,
     ]);
 
     $response = $this->post(route('tasks.store', $this->deployment), [
@@ -118,6 +122,7 @@ test('creating CONFIGURE_ALL_INTERFACE stores only eligible composite sibling ta
     DeviceInterface::query()->create([
         'device_id' => $device->id,
         'interface' => '1/1/1',
+        'interface_kind' => InterfaceKind::ETHERNET,
     ]);
 
     $response = $this->post(route('tasks.store', $this->deployment), [

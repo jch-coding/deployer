@@ -1,10 +1,10 @@
 <?php
 
 use App\Helper\CentralAPIHelper;
+use App\InterfaceKind;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\LacpProfile;
-use App\Models\StpProfile;
 use App\Models\SwitchPort;
 
 test('build_switchport_from_device_interface returns a switchport array with subarrays that are not empty', function () {
@@ -38,9 +38,9 @@ test('build_switchport_from_device_interface returns a switchport array for a po
         'vsx' => [
             'shutdown-on-split' => false,
         ],
-        'portchannel-lag' => '10'
+        'portchannel-lag' => '10',
     ];
-    $actual =  CentralAPIHelper::build_switchport_from_device_interface($deviceInterface);
+    $actual = CentralAPIHelper::build_switchport_from_device_interface($deviceInterface);
     expect($actual)->toEqual($expected);
 });
 
@@ -49,7 +49,7 @@ test('it processes portchannel interfaces', function () {
         'mode' => 'ACTIVE',
         'rate' => 'SLOW',
         'port_list' => '1/1/1-1/1/2&2/1/1-2/1/2',
-        'trunk_type' => 'LACP'
+        'trunk_type' => 'LACP',
     ]);
     $switch_port = SwitchPort::factory()->create([
         'interface_mode' => 'TRUNK',
@@ -60,11 +60,12 @@ test('it processes portchannel interfaces', function () {
     ]);
     $deviceInterface = DeviceInterface::factory()
         ->create([
-        'interface' => '1',
+            'interface' => '1',
             'switch_port_id' => $switch_port->id,
             'lacp_profile_id' => $lacp_profile->id,
             'description' => null,
-    ]);
+            'interface_kind' => InterfaceKind::LAG,
+        ]);
     $expected = [
         'name' => $deviceInterface->interface,
         'vsx' => [
@@ -82,7 +83,7 @@ test('it processes portchannel interfaces', function () {
             'rate' => 'SLOW',
         ],
         'trunk-type' => 'LACP',
-        'port-list' => ['1/1/1','1/1/2','2/1/1','2/1/2'],
+        'port-list' => ['1/1/1', '1/1/2', '2/1/1', '2/1/2'],
         'enable' => true,
     ];
     $actual = CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface);
@@ -109,6 +110,7 @@ test('build_portchannel_from_device_interface includes switchport when creating 
             'switch_port_id' => $switch_port->id,
             'lacp_profile_id' => $lacp_profile->id,
             'description' => 'LAG uplink to core',
+            'interface_kind' => InterfaceKind::LAG,
         ]);
 
     $expected = [
@@ -147,12 +149,14 @@ test('build_ethernet_interface_patch_body returns only name and description for 
         'device_id' => $device->id,
         'interface' => 'lag10',
         'lacp_profile_id' => $lacp_profile->id,
+        'interface_kind' => InterfaceKind::LAG,
     ]);
     $member_interface = DeviceInterface::factory()->create([
         'device_id' => $device->id,
         'interface' => '1/1/1',
         'description' => 'Member link description',
         'shutdown_on_split' => true,
+        'interface_kind' => InterfaceKind::ETHERNET,
     ]);
 
     $actual = CentralAPIHelper::build_ethernet_interface_patch_body($member_interface);
@@ -172,12 +176,14 @@ test('build_ethernet_interface_patch_body returns only name for LAG members with
         'device_id' => $device->id,
         'interface' => 'lag20',
         'lacp_profile_id' => $lacp_profile->id,
+        'interface_kind' => InterfaceKind::LAG,
     ]);
     $member_interface = DeviceInterface::factory()->create([
         'device_id' => $device->id,
         'interface' => '1/1/2',
         'description' => null,
         'shutdown_on_split' => true,
+        'interface_kind' => InterfaceKind::ETHERNET,
     ]);
 
     $actual = CentralAPIHelper::build_ethernet_interface_patch_body($member_interface);
@@ -196,6 +202,7 @@ test('build_ethernet_interface_patch_body uses full switchport payload for non-m
         'device_id' => $device->id,
         'interface' => 'lag30',
         'lacp_profile_id' => $lacp_profile->id,
+        'interface_kind' => InterfaceKind::LAG,
     ]);
     $switch_port = SwitchPort::factory()->create([
         'interface_mode' => 'ACCESS',
@@ -210,6 +217,7 @@ test('build_ethernet_interface_patch_body uses full switchport payload for non-m
         'description' => 'Non-member',
         'portchannel_lag' => '999',
         'switch_port_id' => $switch_port->id,
+        'interface_kind' => InterfaceKind::ETHERNET,
     ]);
 
     $actual = CentralAPIHelper::build_ethernet_interface_patch_body($non_member_interface);
@@ -224,7 +232,7 @@ test('the categorize_interfaces function takes a list of device interfaces and r
         'mode' => 'ACTIVE',
         'rate' => 'SLOW',
         'port_list' => '1/1/1-1/1/2&2/1/1-2/1/2',
-        'trunk_type' => 'LACP'
+        'trunk_type' => 'LACP',
     ]);
     $switch_port = SwitchPort::factory()->create([
         'interface_mode' => 'TRUNK',
@@ -233,11 +241,11 @@ test('the categorize_interfaces function takes a list of device interfaces and r
         'trunk_vlan_all' => 'true',
         'trunk_vlan_ranges' => null,
     ]);
-    $devInt1 = DeviceInterface::factory()->create(['interface' => '1', 'switch_port_id' => $switch_port->id, 'lacp_profile_id' => $lacp_profile->id]);
-    $devInt2 = DeviceInterface::factory()->create(['interface' => '1/1/3', 'switch_port_id' => $switch_port->id]);
+    $devInt1 = DeviceInterface::factory()->create(['interface' => '1', 'switch_port_id' => $switch_port->id, 'lacp_profile_id' => $lacp_profile->id, 'interface_kind' => InterfaceKind::LAG]);
+    $devInt2 = DeviceInterface::factory()->create(['interface' => '1/1/3', 'switch_port_id' => $switch_port->id, 'interface_kind' => InterfaceKind::ETHERNET]);
     $expected = [
         'ethernet_interfaces' => [
-            array_merge($devInt2->toArray(),['lacp_profile' => null]),
+            array_merge($devInt2->toArray(), ['lacp_profile' => null]),
         ],
         'portchannel_interfaces' => [
             $devInt1->load('lacp_profile')->toArray(),
@@ -249,80 +257,80 @@ test('the categorize_interfaces function takes a list of device interfaces and r
 
 test('the conductor serial number is used to find the stack_id of a stack in mrt', function () {
     $response_json = [
-        'items' =>   [
+        'items' => [
             [
-            "deployment" => "Stack",
-            "firmwareVersion" => "FL.10.15.1010",
-            "publicIp" => "64.73.160.102",
-            "id" => "SG20KN309L",
-            "stackId" => "41bbc334-749b-4924-bf91-c4377a323536",
-            "stackMemberId" => 2,
-            "switchType" => "cx",
-            "uptimeInMillis" => 27381482771,
-            "lastSeenAt" => 0,
-            "ipv4" => "10.89.52.15",
-            "siteName" => "CDW LAB",
-            "ipv6" => null,
-            "switchRole" => "Standby",
-            "switchTrends" => [
-                [
-                    "cpuUtilization" => 6,
-                    "memoryUtilization" => 11,
-                    "systemTemperature" => 24,
-                    "poeAvailable" => 0,
-                    "poeConsumption" => 0,
-                    "powerConsumption" => 49.330001831055,
-                    "totalPowerConsumption" => 49.33,
-                    "upLinkPorts" => null,
-                    "usage" => 24898.05,
+                'deployment' => 'Stack',
+                'firmwareVersion' => 'FL.10.15.1010',
+                'publicIp' => '64.73.160.102',
+                'id' => 'SG20KN309L',
+                'stackId' => '41bbc334-749b-4924-bf91-c4377a323536',
+                'stackMemberId' => 2,
+                'switchType' => 'cx',
+                'uptimeInMillis' => 27381482771,
+                'lastSeenAt' => 0,
+                'ipv4' => '10.89.52.15',
+                'siteName' => 'CDW LAB',
+                'ipv6' => null,
+                'switchRole' => 'Standby',
+                'switchTrends' => [
+                    [
+                        'cpuUtilization' => 6,
+                        'memoryUtilization' => 11,
+                        'systemTemperature' => 24,
+                        'poeAvailable' => 0,
+                        'poeConsumption' => 0,
+                        'powerConsumption' => 49.330001831055,
+                        'totalPowerConsumption' => 49.33,
+                        'upLinkPorts' => null,
+                        'usage' => 24898.05,
+                    ],
                 ],
+                'type' => 'network-monitoring/switch-monitoring',
+                'siteId' => '266035542831',
+                'jNumber' => 'JL664A',
+                'macAddress' => '0c:97:5f:bd:76:80',
+                'serialNumber' => 'SG20KN309L',
+                'model' => 'CX-6300M',
+                'deviceName' => 'vht2509-as6300m',
+                'status' => 'Online',
             ],
-            "type" => "network-monitoring/switch-monitoring",
-            "siteId" => "266035542831",
-            "jNumber" => "JL664A",
-            "macAddress" => "0c:97:5f:bd:76:80",
-            "serialNumber" => "SG20KN309L",
-            "model" => "CX-6300M",
-            "deviceName" => "vht2509-as6300m",
-            "status" => "Online",
-        ],
-        [
-            "deployment" => "Stack",
-            "firmwareVersion" => "FL.10.15.1010",
-            "publicIp" => "64.73.160.102",
-            "id" => "SG20KN309V",
-            "stackId" => "41bbc334-749b-4924-bf91-c4377a323536",
-            "stackMemberId" => 1,
-            "switchType" => "cx",
-            "uptimeInMillis" => 27381482771,
-            "lastSeenAt" => 0,
-            "ipv4" => "10.89.52.15",
-            "siteName" => "CDW LAB",
-            "ipv6" => null,
-            "switchRole" => "Conductor",
-            "switchTrends" => [
-                [
-                    "cpuUtilization" => 12,
-                    "memoryUtilization" => 21,
-                    "systemTemperature" => 23.5,
-                    "poeAvailable" => 0,
-                    "poeConsumption" => 0,
-                    "powerConsumption" => 49.029998779297,
-                    "totalPowerConsumption" => 49.03,
-                    "upLinkPorts" => null,
-                    "usage" => 67234.71,
+            [
+                'deployment' => 'Stack',
+                'firmwareVersion' => 'FL.10.15.1010',
+                'publicIp' => '64.73.160.102',
+                'id' => 'SG20KN309V',
+                'stackId' => '41bbc334-749b-4924-bf91-c4377a323536',
+                'stackMemberId' => 1,
+                'switchType' => 'cx',
+                'uptimeInMillis' => 27381482771,
+                'lastSeenAt' => 0,
+                'ipv4' => '10.89.52.15',
+                'siteName' => 'CDW LAB',
+                'ipv6' => null,
+                'switchRole' => 'Conductor',
+                'switchTrends' => [
+                    [
+                        'cpuUtilization' => 12,
+                        'memoryUtilization' => 21,
+                        'systemTemperature' => 23.5,
+                        'poeAvailable' => 0,
+                        'poeConsumption' => 0,
+                        'powerConsumption' => 49.029998779297,
+                        'totalPowerConsumption' => 49.03,
+                        'upLinkPorts' => null,
+                        'usage' => 67234.71,
+                    ],
                 ],
+                'type' => 'network-monitoring/switch-monitoring',
+                'siteId' => '266035542831',
+                'jNumber' => 'JL664A',
+                'macAddress' => '0c:97:5f:bd:c4:80',
+                'serialNumber' => 'SG20KN309V',
+                'model' => 'CX-6300M',
+                'deviceName' => 'vht2509-as6300m',
+                'status' => 'Online',
             ],
-            "type" => "network-monitoring/switch-monitoring",
-            "siteId" => "266035542831",
-            "jNumber" => "JL664A",
-            "macAddress" => "0c:97:5f:bd:c4:80",
-            "serialNumber" => "SG20KN309V",
-            "model" => "CX-6300M",
-            "deviceName" => "vht2509-as6300m",
-            "status" => "Online",
         ],
-            ],
         'count' => 2,
         'total' => 2,
         'next' => null,
@@ -330,7 +338,7 @@ test('the conductor serial number is used to find the stack_id of a stack in mrt
 
     $device = Device::factory()->create([
         'serial' => 'SG20KN309V',
-        'name' => "vht2507-as6300m-stk06",
+        'name' => 'vht2507-as6300m-stk06',
         'device_function' => 'ACCESS_SWITCH',
         'scope_id' => null,
         'stack_id' => null,

@@ -1,5 +1,6 @@
 <?php
 
+use App\InterfaceKind;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
@@ -31,10 +32,12 @@ test('CONFIGURE_ALL_INTERFACE creates lag subtask before ethernet subtask', func
         'device_id' => $this->device->id,
         'interface' => '10',
         'lacp_profile_id' => $lacpProfile->id,
+        'interface_kind' => InterfaceKind::LAG,
     ]);
     DeviceInterface::query()->create([
         'device_id' => $this->device->id,
         'interface' => '1/1/1',
+        'interface_kind' => InterfaceKind::ETHERNET,
     ]);
 
     $response = $this->post(route('tasks.store', $this->deployment), [
