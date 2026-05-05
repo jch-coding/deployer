@@ -6,6 +6,7 @@ use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\Task;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Throwable;
 
 class CreateVSFProfileJob extends BaseTaskJob
@@ -26,11 +27,9 @@ class CreateVSFProfileJob extends BaseTaskJob
         $this->handleSafely(function (): void {
             if (! $this->device->scope_id) {
                 $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
-                if (array_key_exists('error', $scopeid_response)) {
+                if (! $this->applyScopeIdFromHierarchyResponse($scopeid_response)) {
                     return;
                 }
-                $this->device->scope_id = $scopeid_response[0]['scopeId'];
-                $this->device->save();
             }
             if (! $this->device->sku) {
                 $error_message = 'SKU not found for device: '.$this->device->name;
@@ -56,6 +55,13 @@ class CreateVSFProfileJob extends BaseTaskJob
                     $this->task->processTaskStatusLog($message, true);
                     $this->release($this->wait_time * 60);
                 } else {
+                    Sleep::for(10)->seconds();
+                    $scope_id_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
+                    if (! $this->applyScopeIdFromHierarchyResponse($scope_id_response)) {
+                        $message = 'VSF profile created but could not refresh scope ID for '.$this->device->name;
+                        Log::error($message);
+                        $this->task->processTaskStatusLog($message);
+                    }
                     $success_message = '\nVSF profile created for stack: '.$this->device->name.'-STACK';
                     Log::info($success_message);
                     $this->task->processTaskStatusLog($success_message);
@@ -70,5 +76,25 @@ class CreateVSFProfileJob extends BaseTaskJob
         $this->logFailedException($exception);
         $this->markDeviceFailed($this->device);
         $this->failTask('VSF profile creation timed out or failed.', true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $scope_id_response
+     */
+    private function applyScopeIdFromHierarchyResponse(array $scope_id_response): bool
+    {
+        if (array_key_exists('error', $scope_id_response)) {
+            return false;
+        }
+
+        $scopeEntries = array_values($scope_id_response);
+        if ($scopeEntries === [] || ! isset($scopeEntries[0]['scopeId'])) {
+            return false;
+        }
+
+        $this->device->scope_id = $scopeEntries[0]['scopeId'];
+        $this->device->save();
+
+        return true;
     }
 }
