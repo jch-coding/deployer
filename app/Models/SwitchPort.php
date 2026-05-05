@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use App\Support\TrunkVlanRanges;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SwitchPort extends Model
@@ -17,12 +17,13 @@ class SwitchPort extends Model
         'trunk_vlan_all' => 'boolean',
         'is_profile' => 'boolean',
     ];
-    public function interfaces() : HasMany
+
+    public function interfaces(): HasMany
     {
         return $this->HasMany(DeviceInterface::class);
     }
 
-    protected function trunkVlanRanges() : Attribute
+    protected function trunkVlanRanges(): Attribute
     {
         return Attribute::make(
             get: function ($value) {
@@ -32,6 +33,9 @@ class SwitchPort extends Model
 
                 return explode('&', $value);
             },
+            set: fn ($value) => [
+                'trunk_vlan_ranges' => TrunkVlanRanges::normalizeForStorage($value),
+            ],
         );
     }
 }

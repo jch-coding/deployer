@@ -19,6 +19,7 @@ use App\Models\LacpProfile;
 use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
+use App\Support\TrunkVlanRanges;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -305,7 +306,7 @@ class DeviceController extends Controller
                         'access_vlan' => null,
                         'native_vlan' => (int) ($device['native_vlan'] ?? 1),
                         'trunk_vlan_all' => BooleanHelper::toBoolean($device['trunk_vlan_all'] ?? false),
-                        'trunk_vlan_ranges' => $device['trunk_vlan_ranges'] ?? null,
+                        'trunk_vlan_ranges' => TrunkVlanRanges::normalizeForStorage($device['trunk_vlan_ranges'] ?? null),
                     ];
                 } else {
                     $current_switchport = [
@@ -437,7 +438,7 @@ class DeviceController extends Controller
                 'access_vlan' => null,
                 'native_vlan' => (int) ($interfaceData['native_vlan'] ?? 1),
                 'trunk_vlan_all' => BooleanHelper::toBoolean($interfaceData['trunk_vlan_all'] ?? false),
-                'trunk_vlan_ranges' => $interfaceData['trunk_vlan_ranges'] ?? null,
+                'trunk_vlan_ranges' => TrunkVlanRanges::normalizeForStorage($interfaceData['trunk_vlan_ranges'] ?? null),
             ];
         }
 
@@ -780,11 +781,22 @@ class DeviceController extends Controller
                     ]);
                 }
 
+                $rangesMessageKey = "updates.{$index}.trunk_vlan_ranges";
+                $existingRangesRaw = $interface->switch_port?->getRawOriginal('trunk_vlan_ranges');
+                if (array_key_exists('trunk_vlan_ranges', $update)) {
+                    $trunkVlanRanges = TrunkVlanRanges::normalizeForStorage($update['trunk_vlan_ranges'], $rangesMessageKey);
+                } else {
+                    $trunkVlanRanges = TrunkVlanRanges::normalizeForStorage(
+                        ($existingRangesRaw !== null && $existingRangesRaw !== '') ? $existingRangesRaw : null,
+                        $rangesMessageKey
+                    );
+                }
+
                 $switchPortData = [
                     'interface_mode' => 'TRUNK',
                     'native_vlan' => (int) $nativeVlan,
                     'trunk_vlan_all' => (bool) ($update['trunk_vlan_all'] ?? $interface->switch_port?->trunk_vlan_all ?? false),
-                    'trunk_vlan_ranges' => $update['trunk_vlan_ranges'] ?? $interface->switch_port?->trunk_vlan_ranges,
+                    'trunk_vlan_ranges' => $trunkVlanRanges,
                 ];
             }
         }

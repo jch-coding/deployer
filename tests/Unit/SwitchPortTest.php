@@ -36,5 +36,11 @@ it('can be a trunk port', function () {
 
 it('retrieves the trunk-vlan-ranges attribute as an array', function () {
     $switchport = SwitchPort::factory()->create(['trunk_vlan_ranges' => '10&20-25&30']);
-    expect($switchport->trunk_vlan_ranges)->toBe(['10','20-25','30']);
+    expect($switchport->trunk_vlan_ranges)->toBe(['10', '20-25', '30']);
+});
+
+it('collapses contiguous VLAN segments when saving', function () {
+    $switchport = SwitchPort::factory()->create(['trunk_vlan_ranges' => '10&11&12']);
+    expect($switchport->trunk_vlan_ranges)->toBe(['10-12'])
+        ->and($switchport->getRawOriginal('trunk_vlan_ranges'))->toBe('10-12');
 });

@@ -267,6 +267,10 @@ it('updates multiple interfaces with all supported payload columns', function ()
         ->and($first->lacp_profile_id)->not->toBeNull()
         ->and($first->stp_profile_id)->not->toBeNull();
 
+    $first->load('switch_port');
+    expect($first->switch_port)->not->toBeNull()
+        ->and($first->switch_port->getRawOriginal('trunk_vlan_ranges'))->toBe('100&200-220');
+
     expect($second->description)->toBe('Bulk B')
         ->and($second->enable)->toBeFalse()
         ->and($second->jumbo_frames)->toBeFalse()

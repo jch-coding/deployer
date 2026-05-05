@@ -23,6 +23,10 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
+import {
+    formatTrunkVlanRangesForDisplay,
+    trunkVlanRangesInputToCanonical,
+} from '@/lib/trunk-vlan-ranges';
 import { cn } from '@/lib/utils';
 import { index as clientsIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
@@ -35,7 +39,7 @@ export type SwitchPortDetail = {
     interface_mode: string;
     native_vlan: number | null;
     trunk_vlan_all: boolean | null;
-    trunk_vlan_ranges: string | null;
+    trunk_vlan_ranges: string | string[] | null;
 };
 
 export type LacpProfileDetail = {
@@ -569,14 +573,14 @@ function createInterfaceColumns({
         {
             id: 'switch_port_trunk_vlan_ranges',
             header: 'Trunk VLAN ranges',
-            cell: ({ row }) =>
-                textCell(
-                    row.original,
-                    'trunk_vlan_ranges',
-                    row.original.switch_port?.trunk_vlan_ranges ?? null,
-                    'trunk_vlan_ranges',
-                ),
-            accessorFn: (row) => (editing ? '' : displaySwitchPortCell(row, (sp) => sp.trunk_vlan_ranges)),
+            cell: ({ row }) => {
+                const formatted =
+                    formatTrunkVlanRangesForDisplay(row.original.switch_port?.trunk_vlan_ranges ?? null) ||
+                    null;
+                return textCell(row.original, 'trunk_vlan_ranges', formatted, 'trunk_vlan_ranges');
+            },
+            accessorFn: (row) =>
+                editing ? '' : formatTrunkVlanRangesForDisplay(row.switch_port?.trunk_vlan_ranges ?? null),
         },
         {
             id: 'lacp_mode',
@@ -1029,6 +1033,13 @@ export default function Show() {
                     .split(',')
                     .map((p) => p.trim())
                     .filter((p) => p.length > 0);
+            }
+            if (typeof update.trunk_vlan_ranges === 'string') {
+                try {
+                    update.trunk_vlan_ranges = trunkVlanRangesInputToCanonical(update.trunk_vlan_ranges);
+                } catch {
+                    /* invalid input: leave string for server ValidationException */
+                }
             }
             return update;
         });
