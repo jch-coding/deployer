@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -51,23 +50,24 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
             }
         }
         $response = $this->centralAPIHelper->preprovision_devices_to_group($this->group_name, $devices);
-        $message = '';
-        if (! $response->status() !== 201) {
-            Log::error('Failed to preprovision devices to group');
-            array_reduce($devices, function ($carry, $item) {
-                $carry .= "\nFailed Device ".$item.' preprovisioned to group '.$this->group_name;
-
-                return $carry;
-            }, $message);
+        if ($response->status() !== 201) {
+            Log::error('Failed to preprovision devices to group', ['status' => $response->status(), 'body' => $response->body()]);
+            $message = array_reduce(
+                $devices,
+                fn (string $carry, string $item): string => $carry."\nFailed to preprovision device ".$item.' to group '.$this->group_name,
+                ''
+            );
             $this->task->processTaskStatusLog($message);
-        } else {
-            array_reduce($devices, function ($carry, $item) {
-                $carry .= "\nDevice ".$item.' preprovisioned to group '.$this->group_name;
 
-                return $carry;
-            }, $message);
-            $this->task->processTaskStatusLog($message);
+            return;
         }
+
+        $message = array_reduce(
+            $devices,
+            fn (string $carry, string $item): string => $carry."\nDevice ".$item.' preprovisioned to group '.$this->group_name,
+            ''
+        );
+        $this->task->processTaskStatusLog($message);
     }
 
     public function failed(?Throwable $exception): void

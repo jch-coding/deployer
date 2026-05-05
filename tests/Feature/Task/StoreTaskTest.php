@@ -1,6 +1,7 @@
 <?php
 
 use App\InterfaceKind;
+use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -17,6 +18,37 @@ beforeEach(function () {
     $this->client->update(['current' => true]);
     $this->deployment = $this->client->deployments()->create(['name' => 'Test Deployment']);
     $this->actingAs($this->user);
+});
+
+test('PREPROVISION_DEVICE_TO_GROUP dispatches a single batch containing every chunk job', function () {
+    Bus::fake();
+
+    $devices = Device::factory(26)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'group' => 'central-group',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'PREPROVISION_DEVICE_TO_GROUP',
+        'deployment_time' => 1,
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('PREPROVISION_DEVICE_TO_GROUP')
+        ->and($task->batch_id)->not()->toBeNull();
+
+    Bus::assertBatchCount(1);
+    Bus::assertBatched(function ($batch): bool {
+        if ($batch->jobs->count() !== 2) {
+            return false;
+        }
+
+        return $batch->jobs->every(fn ($job) => $job instanceof PreprovisionDevicesToGroupJob);
+    });
 });
 
 test('creating a task with devices stores the task and attaches the devices', function () {

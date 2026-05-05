@@ -584,21 +584,22 @@ class TaskController extends Controller
                 $devices_by_group = $in_progress->groupBy('group');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
                 $devices_by_group_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, PreprovisionDevicesToGroupJob::class);
-                $jobs = array_merge($jobs, $devices_by_group_jobs);
+                // One batch segment so all chunk jobs dispatch together (avoids Bus::chain of batches and preserves batch_id).
+                $jobs[] = $devices_by_group_jobs;
                 break;
             case 'MOVE_DEVICE_TO_GROUP':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $devices_by_group = $in_progress->groupBy('group');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
                 $devices_by_group_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, MoveDevicesToGroupJob::class);
-                $jobs = array_merge($jobs, $devices_by_group_jobs);
+                $jobs[] = $devices_by_group_jobs;
                 break;
             case 'ASSIGN_DEVICE_FUNCTION':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $devices_by_device_function = $in_progress->groupBy('device_function');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_device_function);
                 $devices_by_device_function_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, AssignDeviceFunctionJob::class);
-                $jobs = array_merge($jobs, $devices_by_device_function_jobs);
+                $jobs[] = $devices_by_device_function_jobs;
                 break;
             case 'ASSIGN_DEVICE_TO_SITE':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
