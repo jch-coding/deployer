@@ -422,6 +422,57 @@ class TaskController extends Controller
         return to_route('tasks.show', $task);
     }
 
+    public function checkCentralGroup(Request $request, Deployment $deployment)
+    {
+        $request->validate([
+            'task_type' => ['required', Rule::in(['PREPROVISION_DEVICE_TO_GROUP', 'MOVE_DEVICE_TO_GROUP'])],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before checking groups.');
+
+            return back();
+        }
+
+        $deviceGroups = Device::query()
+            ->where('deployment_id', $deployment->id)
+            ->pluck('group')
+            ->map(fn ($g) => is_string($g) ? trim($g) : '')
+            ->filter(fn ($g) => $g !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($deviceGroups === []) {
+            session()->flash('error', 'No group names are set on devices in this deployment.');
+
+            return back();
+        }
+
+        $helper = new CentralAPIHelper($deployment->client);
+        $result = $helper->classic_collect_all_group_names();
+        if (isset($result['error'])) {
+            session()->flash('error', 'Could not load groups from Central.');
+
+            return back();
+        }
+
+        $centralSet = array_flip($result['names']);
+        $missing = array_values(array_filter(
+            $deviceGroups,
+            fn (string $g): bool => ! array_key_exists($g, $centralSet)
+        ));
+
+        if ($missing === []) {
+            session()->flash('success', 'All group names exist in Central.');
+        } else {
+            session()->flash('error', 'These groups were not found in Central: '.implode(', ', $missing).'.');
+        }
+
+        return back();
+    }
+
     public function destroy(Task $task)
     {
         $task->devices()->detach();

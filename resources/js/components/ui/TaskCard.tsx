@@ -11,11 +11,10 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { store } from '@/routes/tasks';
+import { check_central_group, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
-import { AlarmClockIcon,
-    BoltIcon} from 'lucide-react';
+import { AlarmClockIcon, BoltIcon, CircleCheck } from 'lucide-react';
 
 type DeviceType = {
     id: number;
@@ -222,6 +221,30 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                             </div>
                     </DialogContent>
                 </Dialog>
+                {(task === 'PREPROVISION_DEVICE_TO_GROUP' || task === 'MOVE_DEVICE_TO_GROUP') && (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                className="rounded-full"
+                                data-test="check-central-groups"
+                                aria-label="Verify groups in Central"
+                                onClick={() => {
+                                    router.post(check_central_group(deployment.id).url, {
+                                        task_type: task,
+                                    });
+                                }}
+                            >
+                                <CircleCheck className="size-4" aria-hidden />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            <p>Verify groups in Central</p>
+                        </TooltipContent>
+                    </Tooltip>
+                )}
                 <Dialog>
                     {
                         taskDevices.length > 0 && taskDevices.length < devices.length ? (

@@ -336,7 +336,7 @@ class CentralAPIHelper
         if ($deviceInterface->sw_profile !== null && ! $forCreatingLAG) {
             return [
                 'name' => $deviceInterface->interface,
-                'sw-profile' => $deviceInterface->sw_profile
+                'sw-profile' => $deviceInterface->sw_profile,
             ];
         }
 
@@ -914,6 +914,55 @@ class CentralAPIHelper
 
             return $response;
         }
+    }
+
+    /**
+     * Page through Classic Central configuration groups and collect all group name strings.
+     *
+     * @return array{names: array<int, string>}|array{error: string}
+     */
+    public function classic_collect_all_group_names(): array
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $names = [];
+        $limit = 100;
+        $offset = 0;
+
+        while (true) {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->withQueryParameters(['limit' => $limit, 'offset' => $offset])
+                ->get($this->client->classic_base_url.$this->classic_configuration['groups']);
+
+            if (! $response->ok()) {
+                return ['error' => 'Could not load groups from Central.'];
+            }
+
+            $data = $response->json('data');
+            if (! is_array($data) || $data === []) {
+                break;
+            }
+
+            $pageNames = collect($data)->collapse()->filter(fn ($item) => is_string($item) && $item !== '')->values();
+            if ($pageNames->isEmpty()) {
+                break;
+            }
+
+            $countBefore = count($names);
+            foreach ($pageNames as $name) {
+                $names[$name] = true;
+            }
+
+            if (count($names) === $countBefore) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        return ['names' => array_keys($names)];
     }
 
     public function move_devices_to_group(string $group, array $device_serials)
