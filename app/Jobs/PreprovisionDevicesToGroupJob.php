@@ -34,7 +34,7 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
         // check if group exists
         $groups_response = $this->centralAPIHelper->classic_get_groups();
         if (is_array($groups_response) || ! $groups_response instanceof Response || ! $groups_response->ok()) {
-            $message = 'Failed to preprovision devices to group. Could not load groups from Central.';
+            $message = "\nFailed to preprovision devices to group. Could not load groups from Central.";
             $detail = is_array($groups_response)
                 ? ($groups_response['error'] ?? json_encode($groups_response))
                 : ($groups_response instanceof Response ? $groups_response->json('detail') : 'unknown');
@@ -48,7 +48,7 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
             // try to find the group within the list of groups
             $group_found = collect($groups_response->json('data'))->collapse()->filter(fn ($item) => $item === $this->group_name);
             if ($group_found->isEmpty()) {
-                $message = 'Group not found in Central. Double check the group name.';
+                $message = "\nGroup not found in Central. Double check the group name.";
                 Log::error($message);
                 $this->task->processTaskStatusLog($message);
                 $this->markAllDevicesFailed();
