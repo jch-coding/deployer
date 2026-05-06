@@ -94,7 +94,8 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                 ) : null}
                 <CardDescription>{task_friendly_description}</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
+            <CardContent className="flex w-full flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                 <Dialog>
                     <Tooltip>
                         <TooltipTrigger asChild>
@@ -221,30 +222,6 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                             </div>
                     </DialogContent>
                 </Dialog>
-                {(task === 'PREPROVISION_DEVICE_TO_GROUP' || task === 'MOVE_DEVICE_TO_GROUP') && (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                type="button"
-                                size="icon"
-                                variant="outline"
-                                className="rounded-full"
-                                data-test="check-central-groups"
-                                aria-label="Verify groups in Central"
-                                onClick={() => {
-                                    router.post(check_central_group(deployment.id).url, {
-                                        task_type: task,
-                                    });
-                                }}
-                            >
-                                <CircleCheck className="size-4" aria-hidden />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                            <p>Verify groups in Central</p>
-                        </TooltipContent>
-                    </Tooltip>
-                )}
                 <Dialog>
                     {
                         taskDevices.length > 0 && taskDevices.length < devices.length ? (
@@ -307,6 +284,33 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                         </div>
                     </DialogContent>
                 </Dialog>
+                </div>
+                {(task === 'PREPROVISION_DEVICE_TO_GROUP' || task === 'MOVE_DEVICE_TO_GROUP') && (
+                    <div className="ml-auto flex shrink-0 items-center">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="check-central-groups"
+                                    aria-label="Verify groups in Central"
+                                    onClick={() => {
+                                        router.post(check_central_group(deployment.id).url, {
+                                            task_type: task,
+                                        });
+                                    }}
+                                >
+                                    <CircleCheck className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Verify groups in Central</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </div>
+                )}
             </CardContent>
         </Card>
     )
