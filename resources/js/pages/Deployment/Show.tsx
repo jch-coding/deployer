@@ -167,18 +167,17 @@ export default function Show() {
         },
     ];
 
-    const isDeviceBasedTask = (task_type: string) => {
-        return (
-            task_type in
-            [
-                'UPDATE_SYSTEM_INFO',
-                'ASSIGN_DEVICE_FUNCTION',
-                'PREPROVISION_DEVICE_TO_GROUP',
-                'ASSOCIATE_SITE_AND_NAME',
-                'CREATE_VSF_PROFILE',
-            ]
-        );
-    };
+    const deviceBasedTaskTypes = new Set([
+        'UPDATE_SYSTEM_INFO',
+        'ASSIGN_DEVICE_FUNCTION',
+        'PREPROVISION_DEVICE_TO_GROUP',
+        'MOVE_DEVICE_TO_GROUP',
+        'ASSOCIATE_SITE_AND_NAME',
+        'CREATE_VSF_PROFILE',
+    ]);
+
+    const isDeviceBasedTask = (task_type: string) =>
+        deviceBasedTaskTypes.has(task_type);
 
     function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
