@@ -36,6 +36,7 @@ test('tasks index shows only tasks for the current client', function () {
             ->component('Task/Index')
             ->has('tasks.data', 1)
             ->where('tasks.data.0.id', $visibleTask->id)
+            ->has('tasks.data.0.human_updated_at')
         );
 });
 

@@ -23,6 +23,7 @@ use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\Task;
 use App\TaskType;
+use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -142,6 +143,7 @@ class TaskController extends Controller
                     'client_name' => $task->deployment?->client?->name,
                     'status' => $task->status,
                     'item_count' => $category === 'INTERFACE' ? $task->device_interfaces_count : $task->devices_count,
+                    'human_updated_at' => Carbon::parse($task->updated_at)->diffForHumans(),
                 ];
             });
 

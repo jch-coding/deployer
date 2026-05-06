@@ -20,6 +20,7 @@ type TaskRow = {
     client_name: string | null;
     status: string;
     item_count: number;
+    human_updated_at: string;
 };
 
 type TaskIndexProps = {
@@ -84,6 +85,10 @@ const columns: ColumnDef<TaskRow>[] = [
                 {row.original.status}
             </Badge>
         ),
+    },
+    {
+        accessorKey: 'human_updated_at',
+        header: 'Last updated',
     },
     {
         accessorKey: 'item_count',
