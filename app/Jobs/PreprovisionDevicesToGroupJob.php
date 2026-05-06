@@ -59,6 +59,15 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
         }
         $response = $this->centralAPIHelper->preprovision_devices_to_group($this->group_name, $devices);
         $ok = ! is_array($response) && $response instanceof Response && $response->status() === 201;
+        $shouldFallbackToMove = $response instanceof Response
+            && $response->status() === 400
+            && str_contains((string) $response->json('description'), 'Following Devices are already connected to Central');
+
+        if ($shouldFallbackToMove) {
+            $moveResponse = $this->centralAPIHelper->move_devices_to_group($this->group_name, $devices);
+            $ok = ! is_array($moveResponse) && $moveResponse instanceof Response && $moveResponse->ok();
+            $response = $moveResponse;
+        }
 
         if (! $ok) {
             foreach ($this->devices as $device) {
@@ -82,11 +91,17 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
                 $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
             }
 
-            $message = array_reduce(
-                $devices,
-                fn (string $carry, string $item): string => $carry."\nDevice ".$item.' preprovisioned to group '.$this->group_name,
-                ''
-            );
+            $message = $shouldFallbackToMove
+                ? array_reduce(
+                    $devices,
+                    fn (string $carry, string $item): string => $carry."\nDevice ".$item.' moved to group '.$this->group_name.' (fallback from preprovision)',
+                    ''
+                )
+                : array_reduce(
+                    $devices,
+                    fn (string $carry, string $item): string => $carry."\nDevice ".$item.' preprovisioned to group '.$this->group_name,
+                    ''
+                );
             $this->task->processTaskStatusLog($message);
         }
 
