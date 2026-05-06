@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Helper\CentralAPIHelper;
 use App\Models\Task;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -32,10 +33,15 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
     {
         // check if group exists
         $groups_response = $this->centralAPIHelper->classic_get_groups();
-        if (! $groups_response->ok()) {
-            $message = 'Failed to preprovision devices to group. Group not found.';
-            Log::error($groups_response->json('detail'));
+        if (is_array($groups_response) || ! $groups_response instanceof Response || ! $groups_response->ok()) {
+            $message = 'Failed to preprovision devices to group. Could not load groups from Central.';
+            $detail = is_array($groups_response)
+                ? ($groups_response['error'] ?? json_encode($groups_response))
+                : ($groups_response instanceof Response ? $groups_response->json('detail') : 'unknown');
+            Log::error($detail);
             $this->task->processTaskStatusLog($message);
+            $this->markAllDevicesFailed();
+            $this->failTask('Failed preprovisioning devices to group.');
 
             return;
         } else {
@@ -45,13 +51,22 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
                 $message = 'Group not found in Central. Double check the group name.';
                 Log::error($message);
                 $this->task->processTaskStatusLog($message);
+                $this->markAllDevicesFailed();
+                $this->failTask('Failed preprovisioning devices to group.');
 
                 return;
             }
         }
         $response = $this->centralAPIHelper->preprovision_devices_to_group($this->group_name, $devices);
-        if ($response->status() !== 201) {
-            Log::error('Failed to preprovision devices to group', ['status' => $response->status(), 'body' => $response->body()]);
+        $ok = ! is_array($response) && $response instanceof Response && $response->status() === 201;
+
+        if (! $ok) {
+            foreach ($this->devices as $device) {
+                $this->markDeviceFailed($device['id']);
+            }
+            $status = $response instanceof Response ? $response->status() : 'unknown';
+            $body = $response instanceof Response ? $response->body() : json_encode($response);
+            Log::error('Failed to preprovision devices to group', ['status' => $status, 'body' => $body]);
             $message = array_reduce(
                 $devices,
                 fn (string $carry, string $item): string => $carry."\nFailed to preprovision device ".$item.' to group '.$this->group_name,
@@ -59,15 +74,26 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
             );
             $this->task->processTaskStatusLog($message);
 
-            return;
+            if ($this->allTaskDevicesFailed()) {
+                $this->failTask('All devices failed to preprovision to group.');
+            }
+        } else {
+            foreach ($this->devices as $device) {
+                $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
+            }
+
+            $message = array_reduce(
+                $devices,
+                fn (string $carry, string $item): string => $carry."\nDevice ".$item.' preprovisioned to group '.$this->group_name,
+                ''
+            );
+            $this->task->processTaskStatusLog($message);
         }
 
-        $message = array_reduce(
-            $devices,
-            fn (string $carry, string $item): string => $carry."\nDevice ".$item.' preprovisioned to group '.$this->group_name,
-            ''
-        );
-        $this->task->processTaskStatusLog($message);
+        $this->task->load('devices');
+        if ($this->task->allTrackedItemsCompleted()) {
+            $this->task->update(['status' => 'COMPLETED']);
+        }
     }
 
     public function failed(?Throwable $exception): void
