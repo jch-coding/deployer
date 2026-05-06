@@ -1,6 +1,8 @@
 <?php
 
 use App\InterfaceKind;
+use App\Jobs\AssignDeviceFunctionJob;
+use App\Jobs\MoveDevicesToGroupJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Models\Client;
 use App\Models\Device;
@@ -48,6 +50,81 @@ test('PREPROVISION_DEVICE_TO_GROUP dispatches a single batch containing every ch
         }
 
         return $batch->jobs->every(fn ($job) => $job instanceof PreprovisionDevicesToGroupJob);
+    });
+});
+
+test('MOVE_DEVICE_TO_GROUP dispatches a single batch containing every chunk job', function () {
+    Bus::fake();
+
+    $devices = Device::factory(26)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'group' => 'target-group',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'MOVE_DEVICE_TO_GROUP',
+        'deployment_time' => 1,
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('MOVE_DEVICE_TO_GROUP')
+        ->and($task->batch_id)->not()->toBeNull();
+
+    Bus::assertBatchCount(1);
+    Bus::assertBatched(function ($batch): bool {
+        if ($batch->jobs->count() !== 2) {
+            return false;
+        }
+
+        return $batch->jobs->every(fn ($job) => $job instanceof MoveDevicesToGroupJob);
+    });
+});
+
+test('ASSIGN_DEVICE_FUNCTION dispatches grouped chunks for each device function', function () {
+    Bus::fake();
+
+    $accessDevices = Device::factory(26)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $coreDevice = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'CORE_SWITCH',
+    ]);
+
+    $allDevices = $accessDevices->concat([$coreDevice]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_DEVICE_FUNCTION',
+        'deployment_time' => 1,
+        'devices' => $allDevices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('ASSIGN_DEVICE_FUNCTION')
+        ->and($task->batch_id)->not()->toBeNull();
+
+    Bus::assertBatchCount(1);
+    Bus::assertBatched(function ($batch): bool {
+        if ($batch->jobs->count() !== 3) {
+            return false;
+        }
+
+        if (! $batch->jobs->every(fn ($job) => $job instanceof AssignDeviceFunctionJob)) {
+            return false;
+        }
+
+        $deviceFunctions = $batch->jobs->map(fn ($job) => $job->device_function)->sort()->values()->all();
+
+        return $deviceFunctions === ['ACCESS_SWITCH', 'ACCESS_SWITCH', 'CORE_SWITCH'];
     });
 });
 

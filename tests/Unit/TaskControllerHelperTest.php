@@ -2,6 +2,8 @@
 
 use App\Helper\CentralAPIHelper;
 use App\Http\Controllers\TaskController;
+use App\Jobs\AssignDeviceFunctionJob;
+use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Models\Client;
 use App\Models\Task;
 use App\Models\User;
@@ -69,8 +71,97 @@ test('create_jobs_by_grouped_chunks creates a flat array of jobs from the groupe
     $group2_devices = array_map(fn($n) => ['name' => 'dev'.$n, 'group' => 'group2'], range(1, 55));
     $devices_by_group = collect(array_merge($group1_devices, $group2_devices))->groupBy('group');
     $chunked_devices = $task_controller->chunk_devices($devices_by_group);
-    $actual = $task_controller->create_jobs_by_grouped_chunks($chunked_devices, $task, $helper, \App\Jobs\PreprovisionDevicesToGroupJob::class);
+    $actual = $task_controller->create_jobs_by_grouped_chunks($chunked_devices, $task, $helper, PreprovisionDevicesToGroupJob::class);
     expect($actual)->toBeArray();
     expect($actual)->tohaveCount(7);
+    expect($actual)->each->toBeInstanceOf(PreprovisionDevicesToGroupJob::class);
+});
 
+test('create_jobs_by_grouped_chunks returns an empty array on empty input', function () {
+    $task = Task::factory()->create();
+    $user = User::factory()->create();
+    $client = Client::factory()->for($user)->create();
+    $user->clients->first()->update(['current' => true]);
+    $helper = new CentralAPIHelper($client->refresh());
+    $task_controller = new TaskController();
+
+    $empty = [
+        'keys' => [],
+        'chunked_devices_by_group' => [],
+    ];
+
+    $actual = $task_controller->create_jobs_by_grouped_chunks($empty, $task, $helper, PreprovisionDevicesToGroupJob::class);
+    expect($actual)->toBeArray()->toBeEmpty();
+});
+
+test('create_jobs_by_grouped_chunks keeps key to chunk alignment and job payload integrity', function () {
+    $task = Task::factory()->create();
+    $user = User::factory()->create();
+    $client = Client::factory()->for($user)->create();
+    $user->clients->first()->update(['current' => true]);
+    $helper = new CentralAPIHelper($client->refresh());
+    $task_controller = new TaskController();
+
+    $payload = [
+        'keys' => ['alpha-group', 'beta-group'],
+        'chunked_devices_by_group' => [
+            [
+                [
+                    ['id' => 1, 'serial' => 'CN111', 'name' => 'device-1'],
+                    ['id' => 2, 'serial' => 'CN222', 'name' => 'device-2'],
+                ],
+            ],
+            [
+                [
+                    ['id' => 3, 'serial' => 'CN333', 'name' => 'device-3'],
+                ],
+                [
+                    ['id' => 4, 'serial' => 'CN444', 'name' => 'device-4'],
+                ],
+            ],
+        ],
+    ];
+
+    $actual = $task_controller->create_jobs_by_grouped_chunks($payload, $task, $helper, PreprovisionDevicesToGroupJob::class);
+
+    expect($actual)->toHaveCount(3)
+        ->and($actual[0])->toBeInstanceOf(PreprovisionDevicesToGroupJob::class)
+        ->and($actual[0]->group_name)->toBe('alpha-group')
+        ->and($actual[0]->devices)->toHaveCount(2)
+        ->and($actual[0]->devices[0]['serial'])->toBe('CN111')
+        ->and($actual[0]->task->is($task))->toBeTrue()
+        ->and($actual[0]->centralAPIHelper)->toBe($helper)
+        ->and($actual[1]->group_name)->toBe('beta-group')
+        ->and($actual[1]->devices)->toHaveCount(1)
+        ->and($actual[1]->devices[0]['serial'])->toBe('CN333')
+        ->and($actual[2]->group_name)->toBe('beta-group')
+        ->and($actual[2]->devices)->toHaveCount(1)
+        ->and($actual[2]->devices[0]['serial'])->toBe('CN444');
+});
+
+test('create_jobs_by_grouped_chunks supports assign device function jobs', function () {
+    $task = Task::factory()->create();
+    $user = User::factory()->create();
+    $client = Client::factory()->for($user)->create();
+    $user->clients->first()->update(['current' => true]);
+    $helper = new CentralAPIHelper($client->refresh());
+    $task_controller = new TaskController();
+
+    $payload = [
+        'keys' => ['ACCESS'],
+        'chunked_devices_by_group' => [
+            [
+                [
+                    ['id' => 10, 'serial' => 'CNACCESS1', 'name' => 'switch-a'],
+                ],
+            ],
+        ],
+    ];
+
+    $actual = $task_controller->create_jobs_by_grouped_chunks($payload, $task, $helper, AssignDeviceFunctionJob::class);
+
+    expect($actual)->toHaveCount(1)
+        ->and($actual[0])->toBeInstanceOf(AssignDeviceFunctionJob::class)
+        ->and($actual[0]->device_function)->toBe('ACCESS')
+        ->and($actual[0]->devices[0]['serial'])->toBe('CNACCESS1');
 });
