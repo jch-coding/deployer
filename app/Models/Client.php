@@ -36,9 +36,11 @@ class Client extends Model
         return [
             'current' => 'boolean',
             'client_secret' => 'encrypted',
+            'bearer_token' => 'encrypted',
             'classic_client_secret' => 'encrypted',
             'classic_password' => 'encrypted',
             'classic_access_token' => 'encrypted',
+            'classic_refresh_token' => 'encrypted',
         ];
     }
 
