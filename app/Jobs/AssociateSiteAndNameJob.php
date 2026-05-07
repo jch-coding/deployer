@@ -27,18 +27,14 @@ class AssociateSiteAndNameJob extends BaseTaskJob
         $this->handleSafely(function (): void {
             // check that site has a classic central id
             if (! $this->device->site->classic_id) {
-                // get the classic central id
-                $classic_sites = $this->centralAPIHelper->classic_get_sites();
-                if (is_array($classic_sites) || ! $classic_sites instanceof Response || ! $classic_sites->ok()) {
-                    $detail = is_array($classic_sites)
-                        ? ($classic_sites['error'] ?? json_encode($classic_sites))
-                        : ($classic_sites->json('message') ?? 'Classic sites request failed');
-                    Log::error($detail);
-                    $this->fail(is_string($detail) ? $detail : 'Failed to load classic sites from Central');
+                $sites_result = $this->centralAPIHelper->classic_collect_all_sites();
+                if (isset($sites_result['error'])) {
+                    Log::error($sites_result['error']);
+                    $this->fail($sites_result['error']);
 
                     return;
                 }
-                $site_list = $classic_sites->json('sites') ?? [];
+                $site_list = $sites_result['sites'];
                 $found_site = array_find($site_list, fn ($classic_site) => $classic_site['site_name'] === $this->device->site->name);
                 if (! $found_site) {
                     Log::error('Site '.$this->device->site->name.' not found in classic central');

@@ -881,6 +881,57 @@ class CentralAPIHelper
         }
     }
 
+    /**
+     * Page through Classic Central sites and merge all entries (deduped by site_id).
+     *
+     * @return array{sites: array<int, array<string, mixed>>}|array{error: string}
+     */
+    public function classic_collect_all_sites(): array
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $sitesById = [];
+        $limit = 100;
+        $offset = 0;
+
+        while (true) {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->withQueryParameters(['limit' => $limit, 'offset' => $offset])
+                ->get($this->client->classic_base_url.$this->classic_monitoring['sites']);
+
+            if (! $response->ok()) {
+                return ['error' => 'Could not load sites from Central.'];
+            }
+
+            $pageSites = $response->json('sites');
+            if (! is_array($pageSites) || $pageSites === []) {
+                break;
+            }
+
+            $countBefore = count($sitesById);
+            foreach ($pageSites as $site) {
+                if (! is_array($site)) {
+                    continue;
+                }
+                $siteId = $site['site_id'] ?? null;
+                if ($siteId === null) {
+                    continue;
+                }
+                $sitesById[$siteId] = $site;
+            }
+
+            if (count($sitesById) === $countBefore) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        return ['sites' => array_values($sitesById)];
+    }
+
     public function classic_associate_devices_to_site($device_to_site_body)
     {
         if (! $this->client->handleClassicBearerToken()) {

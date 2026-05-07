@@ -59,7 +59,7 @@ it('maps device function strings to classic central device types', function (str
     [DeviceFunction::VPNC->name, 'CONTROLLER'],
 ]);
 
-it('fails the queue job when classic_get_sites returns a token error array', function () {
+it('fails the queue job when classic_collect_all_sites returns a token error array', function () {
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
@@ -69,7 +69,7 @@ it('fails the queue job when classic_get_sites returns a token error array', fun
 
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_sites')->once()->andReturn(['error' => 'failed to get access token from central.']);
+    $helper->shouldReceive('classic_collect_all_sites')->once()->andReturn(['error' => 'failed to get access token from central.']);
 
     $job = new AssociateSiteAndNameJob($device->fresh(['site']), $task->fresh(), $helper);
     $job->withFakeQueueInteractions();
@@ -78,7 +78,7 @@ it('fails the queue job when classic_get_sites returns a token error array', fun
     $job->assertFailed();
 });
 
-it('fails the queue job when classic_get_sites response is not successful', function () {
+it('fails the queue job when classic_collect_all_sites reports load failure', function () {
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
@@ -88,7 +88,7 @@ it('fails the queue job when classic_get_sites response is not successful', func
 
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_sites')->once()->andReturn(associateJobJsonResponse(['message' => 'upstream error'], 502));
+    $helper->shouldReceive('classic_collect_all_sites')->once()->andReturn(['error' => 'Could not load sites from Central.']);
 
     $job = new AssociateSiteAndNameJob($device->fresh(['site']), $task->fresh(), $helper);
     $job->withFakeQueueInteractions();
@@ -107,8 +107,8 @@ it('fails the queue job when the deployment site is not present in classic centr
 
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_sites')->once()->andReturn(
-        associateJobJsonResponse(['sites' => [['site_name' => 'Other Site', 'site_id' => 1]]], 200)
+    $helper->shouldReceive('classic_collect_all_sites')->once()->andReturn(
+        ['sites' => [['site_name' => 'Other Site', 'site_id' => 1]]]
     );
 
     $job = new AssociateSiteAndNameJob($device->fresh(['site']), $task->fresh(), $helper);
@@ -130,8 +130,8 @@ it('persists classic_id from classic central then stops when associate fails wit
 
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_sites')->once()->andReturn(
-        associateJobJsonResponse(['sites' => [['site_name' => 'Rome', 'site_id' => 4242]]], 200)
+    $helper->shouldReceive('classic_collect_all_sites')->once()->andReturn(
+        ['sites' => [['site_name' => 'Rome', 'site_id' => 4242]]]
     );
     $helper->shouldReceive('classic_associate_device_to_site')->once()->andReturn(
         associateJobJsonResponse(['message' => 'associate failed'], 400)
@@ -160,7 +160,7 @@ it('releases the job when associate fails and device already has classic site id
 
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_sites')->never();
+    $helper->shouldReceive('classic_collect_all_sites')->never();
     $helper->shouldReceive('classic_associate_device_to_site')->once()->andReturn(
         associateJobJsonResponse(['message' => 'bad'], 500)
     );
@@ -186,7 +186,7 @@ it('completes device pivot when scope id already exists and postSystemInfo succe
 
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_sites')->never();
+    $helper->shouldReceive('classic_collect_all_sites')->never();
     $helper->shouldReceive('classic_associate_device_to_site')->never();
     $helper->shouldReceive('getScopeIdFromCentral')->never();
     $helper->shouldReceive('postSystemInfo')->once()->with(\Mockery::type(Device::class))->andReturn(
@@ -236,7 +236,7 @@ it('runs associate then scope lookup then postSystemInfo when starting without s
 
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_sites')->never();
+    $helper->shouldReceive('classic_collect_all_sites')->never();
     $helper->shouldReceive('classic_associate_device_to_site')->once()->andReturn(associateJobJsonResponse([], 200));
     $helper->shouldReceive('getScopeIdFromCentral')->once()->andReturn([['scopeId' => 'scope-from-central']]);
     $helper->shouldReceive('postSystemInfo')->once()->andReturn(associateJobJsonResponse([], 200));

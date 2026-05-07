@@ -83,18 +83,15 @@ class AssociateDeviceToSiteJob extends BaseTaskJob
             return true;
         }
 
-        $sites = $this->centralAPIHelper->classic_get_sites();
-        if (is_array($sites) || ! $sites instanceof Response || ! $sites->ok()) {
-            $detail = is_array($sites)
-                ? ($sites['error'] ?? json_encode($sites))
-                : ($sites->json('message') ?? 'Classic sites request failed');
-            Log::error($detail);
-            $this->fail(is_string($detail) ? $detail : 'Failed to load classic sites from Central');
+        $sites_result = $this->centralAPIHelper->classic_collect_all_sites();
+        if (isset($sites_result['error'])) {
+            Log::error($sites_result['error']);
+            $this->fail($sites_result['error']);
 
             return false;
         }
 
-        $site_list = $sites->json('sites') ?? [];
+        $site_list = $sites_result['sites'];
         $classic_site = array_find($site_list, fn ($site) => $site['site_name'] == $this->device->site->name);
         if (! $classic_site) {
             $error_message = 'Site '.$this->device->site->name.' not found in classic';
