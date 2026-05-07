@@ -32,20 +32,16 @@ class MoveDevicesToGroupJob extends BaseTaskJob
 
     public function moveDevicesToGroup(): void
     {
-        $groups_response = $this->centralAPIHelper->classic_get_groups();
-        if (is_array($groups_response) || ! $groups_response instanceof Response || ! $groups_response->ok()) {
+        $groups_result = $this->centralAPIHelper->classic_collect_all_group_names();
+        if (isset($groups_result['error'])) {
             $message = 'Failed to move devices to group. Could not load groups from Central.';
-            $detail = is_array($groups_response)
-                ? ($groups_response['error'] ?? json_encode($groups_response))
-                : ($groups_response instanceof Response ? $groups_response->json('detail') : 'unknown');
-            Log::error($detail);
+            Log::error($groups_result['error']);
             $this->task->processTaskStatusLog($message);
 
             return;
         }
 
-        $group_found = collect($groups_response->json('data'))->collapse()->filter(fn ($item) => $item === $this->group_name);
-        if ($group_found->isEmpty()) {
+        if (! in_array($this->group_name, $groups_result['names'], true)) {
             $message = 'Group not found in Central. Double check the group name.';
             Log::error($message);
             $this->task->processTaskStatusLog($message);

@@ -31,31 +31,25 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
 
     public function preprovisionDevices($devices): void
     {
-        // check if group exists
-        $groups_response = $this->centralAPIHelper->classic_get_groups();
-        if (is_array($groups_response) || ! $groups_response instanceof Response || ! $groups_response->ok()) {
+        $groups_result = $this->centralAPIHelper->classic_collect_all_group_names();
+        if (isset($groups_result['error'])) {
             $message = "\nFailed to preprovision devices to group. Could not load groups from Central.";
-            $detail = is_array($groups_response)
-                ? ($groups_response['error'] ?? json_encode($groups_response))
-                : ($groups_response instanceof Response ? $groups_response->json('detail') : 'unknown');
-            Log::error($detail);
+            Log::error($groups_result['error']);
             $this->task->processTaskStatusLog($message);
             $this->markAllDevicesFailed();
             $this->failTask('Failed preprovisioning devices to group.');
 
             return;
-        } else {
-            // try to find the group within the list of groups
-            $group_found = collect($groups_response->json('data'))->collapse()->filter(fn ($item) => $item === $this->group_name);
-            if ($group_found->isEmpty()) {
-                $message = "\nGroup not found in Central. Double check the group name.";
-                Log::error($message);
-                $this->task->processTaskStatusLog($message);
-                $this->markAllDevicesFailed();
-                $this->failTask('Failed preprovisioning devices to group.');
+        }
 
-                return;
-            }
+        if (! in_array($this->group_name, $groups_result['names'], true)) {
+            $message = "\nGroup not found in Central. Double check the group name.";
+            Log::error($message);
+            $this->task->processTaskStatusLog($message);
+            $this->markAllDevicesFailed();
+            $this->failTask('Failed preprovisioning devices to group.');
+
+            return;
         }
         $response = $this->centralAPIHelper->preprovision_devices_to_group($this->group_name, $devices);
         $ok = ! is_array($response) && $response instanceof Response && $response->status() === 201;

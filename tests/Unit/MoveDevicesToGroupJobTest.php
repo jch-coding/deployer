@@ -13,12 +13,9 @@ use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
-function moveJobFakeGroupsResponse(string $groupName = 'TestGroup', bool $ok = true): Response
+function moveJobCollectGroupNamesResult(string $groupName = 'TestGroup'): array
 {
-    $payload = ['data' => [[$groupName, 'Other']]];
-    $status = $ok ? 200 : 422;
-
-    return new Response(new Psr7Response($status, ['Content-Type' => 'application/json'], json_encode($payload)));
+    return ['names' => [$groupName, 'Other']];
 }
 
 function moveJobHttpJsonResponse(array $json, int $status = 200): Response
@@ -55,7 +52,7 @@ it('partitions move requests and updates pivots per chunk, continuing when a chu
     $centralClient->shouldReceive('handleClassicBearerToken')->andReturn(true);
 
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_groups')->once()->andReturn(moveJobFakeGroupsResponse('TestGroup'));
+    $helper->shouldReceive('classic_collect_all_group_names')->once()->andReturn(moveJobCollectGroupNamesResult('TestGroup'));
 
     $helper->shouldReceive('move_devices_to_group')
         ->once()
@@ -107,7 +104,7 @@ it('sets task to completed when every partition succeeds', function () {
     $centralClient->shouldReceive('handleClassicBearerToken')->andReturn(true);
 
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_groups')->once()->andReturn(moveJobFakeGroupsResponse('TestGroup'));
+    $helper->shouldReceive('classic_collect_all_group_names')->once()->andReturn(moveJobCollectGroupNamesResult('TestGroup'));
 
     $helper->shouldReceive('move_devices_to_group')
         ->once()
@@ -150,7 +147,7 @@ it('fails the task when every partition fails', function () {
     $centralClient->shouldReceive('handleClassicBearerToken')->andReturn(true);
 
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_groups')->once()->andReturn(moveJobFakeGroupsResponse('TestGroup'));
+    $helper->shouldReceive('classic_collect_all_group_names')->once()->andReturn(moveJobCollectGroupNamesResult('TestGroup'));
 
     $helper->shouldReceive('move_devices_to_group')
         ->once()
@@ -186,7 +183,7 @@ it('treats token failure array response from move_devices_to_group as a failed c
     $centralClient->shouldReceive('handleClassicBearerToken')->andReturn(true);
 
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_get_groups')->once()->andReturn(moveJobFakeGroupsResponse('TestGroup'));
+    $helper->shouldReceive('classic_collect_all_group_names')->once()->andReturn(moveJobCollectGroupNamesResult('TestGroup'));
 
     $helper->shouldReceive('move_devices_to_group')
         ->once()
@@ -251,5 +248,5 @@ it('batches move requests using Http fake for classic API calls', function () {
         ->and($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(1)
         ->and($task->fresh()->status)->toBe('IN_PROGRESS');
 
-    Http::assertSentCount(3);
+    Http::assertSentCount(4);
 });
