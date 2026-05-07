@@ -12,11 +12,10 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { store } from '@/routes/tasks';
+import { check_central_sites, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
-import { AlarmClockIcon,
-    BoltIcon} from 'lucide-react';
+import { AlarmClockIcon, BoltIcon, CircleCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
 type DeviceType = {
@@ -92,7 +91,8 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                 ) : null}
                 <CardDescription>{task_friendly_description}</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
+            <CardContent className="flex w-full flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                 <Dialog>
                     <Tooltip>
                         <TooltipTrigger asChild>
@@ -252,6 +252,33 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                         </Tooltip>
                     )
                 }
+                </div>
+                {task === 'ASSOCIATE_DEVICE_TO_SITE' && (
+                    <div className="ml-auto flex shrink-0 items-center">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="check-central-sites"
+                                    aria-label="Verify sites in Central"
+                                    onClick={() => {
+                                        router.post(check_central_sites(deployment.id).url, {
+                                            task_type: task,
+                                        });
+                                    }}
+                                >
+                                    <CircleCheck className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Verify sites in Central</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </div>
+                )}
             </CardContent>
         </Card>
     )

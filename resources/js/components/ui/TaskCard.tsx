@@ -11,7 +11,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_group, store } from '@/routes/tasks';
+import { check_central_group, check_central_sites, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon, BoltIcon, CircleCheck } from 'lucide-react';
@@ -307,6 +307,32 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                             </TooltipTrigger>
                             <TooltipContent side="top">
                                 <p>Verify groups in Central</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </div>
+                )}
+                {task === 'ASSOCIATE_SITE_AND_NAME' && (
+                    <div className="ml-auto flex shrink-0 items-center">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="check-central-sites"
+                                    aria-label="Verify sites in Central"
+                                    onClick={() => {
+                                        router.post(check_central_sites(deployment.id).url, {
+                                            task_type: task,
+                                        });
+                                    }}
+                                >
+                                    <CircleCheck className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Verify sites in Central</p>
                             </TooltipContent>
                         </Tooltip>
                     </div>

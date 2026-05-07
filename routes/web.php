@@ -68,6 +68,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/tasks', 'index')->name('tasks.index');
         Route::get('/tasks/{task}', 'show')->name('tasks.show');
         Route::post('/tasks/deployment/{deployment}/check-central-group', 'checkCentralGroup')->name('tasks.check_central_group');
+        Route::post('/tasks/deployment/{deployment}/check-central-sites', 'checkCentralSites')->name('tasks.check_central_sites');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');
         Route::post('/tasks/{task}/relaunch', 'relaunch')->name('tasks.relaunch');

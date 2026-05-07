@@ -473,6 +473,78 @@ class TaskController extends Controller
         return back();
     }
 
+    public function checkCentralSites(Request $request, Deployment $deployment)
+    {
+        $request->validate([
+            'task_type' => ['required', Rule::in(['ASSOCIATE_DEVICE_TO_SITE', 'ASSOCIATE_SITE_AND_NAME'])],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before checking sites.');
+
+            return back();
+        }
+
+        $devices = Device::query()
+            ->where('deployment_id', $deployment->id)
+            ->with('site')
+            ->get();
+
+        $withoutSite = $devices->filter(fn (Device $device): bool => $device->site_id === null || $device->site === null);
+        if ($withoutSite->isNotEmpty()) {
+            $names = $withoutSite->pluck('name')->filter()->values()->all();
+            session()->flash('error', 'These devices have no site assigned: '.implode(', ', $names).'.');
+
+            return back();
+        }
+
+        $siteNames = $devices
+            ->map(fn (Device $device): string => trim((string) $device->site->name))
+            ->filter(fn (string $name): bool => $name !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($siteNames === []) {
+            session()->flash('error', 'No valid site names are set for devices in this deployment.');
+
+            return back();
+        }
+
+        $helper = new CentralAPIHelper($deployment->client);
+        $result = $helper->classic_collect_all_sites();
+        if (isset($result['error'])) {
+            session()->flash('error', 'Could not load sites from Central.');
+
+            return back();
+        }
+
+        $centralNames = [];
+        foreach ($result['sites'] as $centralSite) {
+            if (! is_array($centralSite)) {
+                continue;
+            }
+            $siteName = $centralSite['site_name'] ?? null;
+            if (is_string($siteName) && trim($siteName) !== '') {
+                $centralNames[trim($siteName)] = true;
+            }
+        }
+
+        $missing = array_values(array_filter(
+            $siteNames,
+            fn (string $name): bool => ! array_key_exists($name, $centralNames)
+        ));
+
+        if ($missing === []) {
+            session()->flash('success', 'All site names exist in Central.');
+        } else {
+            session()->flash('error', 'These sites were not found in Central: '.implode(', ', $missing).'.');
+        }
+
+        return back();
+    }
+
     public function destroy(Task $task)
     {
         $task->devices()->detach();
@@ -659,7 +731,7 @@ class TaskController extends Controller
                 $devices_by_device_function_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, AssignDeviceFunctionJob::class);
                 $jobs[] = $devices_by_device_function_jobs;
                 break;
-            case 'ASSIGN_DEVICE_TO_SITE':
+            case 'ASSOCIATE_DEVICE_TO_SITE':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($device) => new AssociateDeviceToSiteJob($device, $task, $centralAPIHelper))->toArray();
                 break;
