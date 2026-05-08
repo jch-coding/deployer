@@ -45,6 +45,7 @@ class CentralAPIHelper
         'interface_portchannel' => 'network-config/v1alpha1/portchannels/',
         'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles/',
         'interface_vlan' => 'network-config/v1alpha1/vlan-interfaces/',
+        'interface_loopback' => 'network-config/v1alpha1/loopback-interfaces/'
     ];
 
     public array $vlans_and_networks = [
@@ -813,6 +814,28 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters
                 )->get($this->client->base_url.$this->interfaces['switch_port_profile']);
+
+            return $response;
+        }
+    }
+
+    /***
+     * @param array $loopback_interface [ 'id' => LOOPBACK_ID, 'ipv4-prefix' => IPV4_ADRESS/PREFIX]
+     */
+
+    public function post_interface_loopback(array $loopback_interface, Device $device)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'view-type' => 'LOCAL',
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->scope_id,
+                    'device-function' => $device->device_function,
+                ])
+                ->post($this->client->base_url.$this->interfaces['interface_loopback'].'/'.$loopback_interface['id'], $loopback_interface);
 
             return $response;
         }
