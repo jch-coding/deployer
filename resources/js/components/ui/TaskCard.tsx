@@ -54,11 +54,16 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
+    const [vlanSitePrefix, setVlanSitePrefix] = useState('')
+
+    const vlanPrefixTrimmed = vlanSitePrefix.trim()
+    const isAddVlansWithPrefix =
+        task === 'ADD_VLANS_TO_DEVICE_GROUP' && vlanPrefixTrimmed !== ''
 
     const handleCheckboxChange = (deviceId : number, checked : boolean) => {
         const newDevice = devices.find(device => device.id === deviceId)
-        if (checked) {
-            setTaskDevices([...taskDevices, {...newDevice, completed: false}])
+        if (checked && newDevice) {
+            setTaskDevices([...taskDevices, { ...newDevice, completed: false }])
         } else {
             if (taskDevices.find(device => device.id === deviceId)) {
                 setTaskDevices(taskDevices.filter(device => device.id !== deviceId))
@@ -66,18 +71,25 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
         }
     }
 
-    const dispatch_task_with_devices = (task, devices, allDevices = false) => {
-        const devices_for_task= allDevices ? devices : devices.filter(device => taskDevices.find(dev => device.id === dev.id) !== undefined)
+    const dispatch_task_with_devices = (taskStr: string, devicesList: DeviceType[], allDevices = false) => {
+        const vlanPrefixMode = taskStr === 'ADD_VLANS_TO_DEVICE_GROUP' && vlanPrefixTrimmed !== ''
+        const devices_for_task = vlanPrefixMode
+            ? []
+            : allDevices
+              ? devicesList
+              : devicesList.filter((device) => taskDevices.find((dev) => device.id === dev.id) !== undefined)
         // const devices_with_completed_status = devices_for_task.map(device => ({...device, completed: false}))
         setTaskDevices(devices_for_task)
         const deploymentTimeTotalMinutes = deploymentTimeHours * 60 + deploymentTimeMinutes
-        const taskData = {
-            task_type: task,
+        router.post(store(deployment.id).url, {
+            task_type: taskStr,
             devices: devices_for_task,
             deployment_time: deploymentTimeTotalMinutes,
             wait_time: waitTimeMinutes,
-        }
-        router.post(store(deployment.id).url, taskData)
+            ...(taskStr === 'ADD_VLANS_TO_DEVICE_GROUP'
+                ? { vlan_site_prefix: vlanPrefixTrimmed }
+                : {}),
+        })
     }
 
     const resetCompletedDevices = () => setCompletedDevices([])
@@ -93,6 +105,28 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                     </Badge>
                 ) : null}
                 <CardDescription>{task_friendly_description}</CardDescription>
+                {task === 'ADD_VLANS_TO_DEVICE_GROUP' ? (
+                    <div className="mt-3 space-y-1">
+                        <label htmlFor="vlan-site-prefix" className="text-sm font-medium">
+                            Site prefix (optional)
+                        </label>
+                        <Input
+                            id="vlan-site-prefix"
+                            type="text"
+                            placeholder="e.g. SAC"
+                            value={vlanSitePrefix}
+                            onChange={(e) => setVlanSitePrefix(e.target.value)}
+                            className="max-w-[12rem]"
+                            autoComplete="off"
+                            data-test="vlan-site-prefix"
+                            aria-describedby="vlan-site-prefix-hint"
+                        />
+                        <p id="vlan-site-prefix-hint" className="text-muted-foreground text-xs">
+                            When set, VLANs are pushed to WHSE-{'{prefix}'}-ACCESS, CORE, MGMT, DMZ, and SERVER without
+                            using device rows. Leave blank to use each selected device&apos;s group.
+                        </p>
+                    </div>
+                ) : null}
             </CardHeader>
             <CardContent className="flex w-full flex-wrap items-center gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -223,8 +257,9 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                     </DialogContent>
                 </Dialog>
                 <Dialog>
-                    {
-                        taskDevices.length > 0 && taskDevices.length < devices.length ? (
+                    {taskDevices.length > 0 &&
+                    taskDevices.length < devices.length &&
+                    !isAddVlansWithPrefix ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <DialogTrigger asChild>
@@ -259,7 +294,11 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                                     </DialogTrigger>
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
-                                    <p>Deploy all</p>
+                                    <p>
+                                        {isAddVlansWithPrefix
+                                            ? 'Deploy to WHSE-prefixed groups in Central'
+                                            : 'Deploy all'}
+                                    </p>
                                 </TooltipContent>
                             </Tooltip>
                         )
@@ -285,7 +324,9 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                     </DialogContent>
                 </Dialog>
                 </div>
-                {(task === 'PREPROVISION_DEVICE_TO_GROUP' || task === 'MOVE_DEVICE_TO_GROUP') && (
+                {(task === 'PREPROVISION_DEVICE_TO_GROUP' ||
+                    task === 'MOVE_DEVICE_TO_GROUP' ||
+                    task === 'ADD_VLANS_TO_DEVICE_GROUP') && (
                     <div className="ml-auto flex shrink-0 items-center">
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -299,6 +340,10 @@ export default function TaskCard({ task, task_friendly_name, task_friendly_descr
                                     onClick={() => {
                                         router.post(check_central_group(deployment.id).url, {
                                             task_type: task,
+                                            vlan_site_prefix:
+                                                task === 'ADD_VLANS_TO_DEVICE_GROUP'
+                                                    ? vlanPrefixTrimmed || undefined
+                                                    : undefined,
                                         });
                                     }}
                                 >

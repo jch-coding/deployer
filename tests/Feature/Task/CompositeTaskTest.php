@@ -1,6 +1,7 @@
 <?php
 
 use App\InterfaceKind;
+use App\Jobs\AddVlansToDeviceGroup;
 use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -206,4 +207,78 @@ test('composite task show uses MultiJobTask and includes sub_jobs', function () 
                 ->where('total_count', 1)
                 ->etc())
         );
+});
+
+test('creating ADD_VLANS_TO_DEVICE_GROUP stores one composite sub-task per unique device group', function () {
+    Bus::fake();
+
+    $d1 = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'group' => 'Site-A-CORE',
+    ]);
+    $d2 = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'group' => 'Site-A-ACCESS',
+    ]);
+    $d3 = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'group' => 'Site-A-CORE',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'deployment_time' => 1,
+        'devices' => [
+            ['id' => $d1->id],
+            ['id' => $d2->id],
+            ['id' => $d3->id],
+        ],
+        'vlan_site_prefix' => '',
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $tasks = $this->deployment->refresh()->tasks()->orderBy('composite_order')->get();
+    expect($tasks)->toHaveCount(2);
+    expect($tasks->pluck('composite_group_id')->unique())->toHaveCount(1);
+    expect($tasks->every(fn (Task $t) => $t->composite_kind === 'ADD_VLANS_TO_DEVICE_GROUP'))->toBeTrue();
+    expect($tasks->pluck('task_type')->unique()->values()->all())->toBe(['ADD_VLANS_FOR_DEVICE_GROUP']);
+
+    $groups = $tasks->pluck('vlan_target_device_group')->sort()->values()->all();
+    expect($groups)->toBe(['Site-A-ACCESS', 'Site-A-CORE']);
+
+    expect($tasks->firstWhere('vlan_target_device_group', 'Site-A-CORE')?->devices)->toHaveCount(2);
+    expect($tasks->firstWhere('vlan_target_device_group', 'Site-A-ACCESS')?->devices)->toHaveCount(1);
+
+    Bus::assertBatchCount(2);
+    Bus::assertBatched(function ($batch): bool {
+        return $batch->jobs->count() === 1 && $batch->jobs->first() instanceof AddVlansToDeviceGroup;
+    });
+});
+
+test('creating ADD_VLANS_TO_DEVICE_GROUP with site prefix stores five sub-tasks without device pivots', function () {
+    Bus::fake();
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'deployment_time' => 1,
+        'devices' => [],
+        'vlan_site_prefix' => 'SAC',
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $tasks = $this->deployment->refresh()->tasks()->orderBy('composite_order')->get();
+    expect($tasks)->toHaveCount(5);
+    expect($tasks->pluck('vlan_target_device_group')->all())->toBe([
+        'WHSE-SAC-ACCESS',
+        'WHSE-SAC-CORE',
+        'WHSE-SAC-MGMT',
+        'WHSE-SAC-DMZ',
+        'WHSE-SAC-SERVER',
+    ]);
+    expect($tasks->every(fn (Task $t) => $t->devices()->count() === 0))->toBeTrue();
+
+    Bus::assertBatchCount(5);
 });

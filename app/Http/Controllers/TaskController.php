@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helper\CentralAPIHelper;
 use App\InterfaceKind;
 use App\JobQueueShard;
+use App\Jobs\AddVlansToDeviceGroup;
 use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssociateDeviceToSiteJob;
 use App\Jobs\AssociateSiteAndNameJob;
@@ -66,6 +67,9 @@ class TaskController extends Controller
         'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE' => [],
         'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE' => [],
         'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE' => [],
+        'ADD_VLANS_FOR_DEVICE_GROUP' => [
+            'group',
+        ],
     ];
 
     private $core_vlans = [
@@ -150,6 +154,48 @@ class TaskController extends Controller
         ['vlan' => 42, 'name' => 'RF'],
         ['vlan' => 60, 'name' => 'TEMPSENSOR'],
     ];
+
+    /**
+     * @return array<int, string>
+     */
+    protected function vlanWarehouseGroupsFromPrefix(string $prefix): array
+    {
+        $prefix = trim($prefix);
+
+        return [
+            'WHSE-'.$prefix.'-ACCESS',
+            'WHSE-'.$prefix.'-CORE',
+            'WHSE-'.$prefix.'-MGMT',
+            'WHSE-'.$prefix.'-DMZ',
+            'WHSE-'.$prefix.'-SERVER',
+        ];
+    }
+
+    /**
+     * VLAN template set from device group name (MGMT overrides other role tokens).
+     *
+     * @return array<int, array{vlan: int, name: string}>
+     */
+    protected function resolveVlansForDeviceGroupName(string $deviceGroup): array
+    {
+        if (str_contains($deviceGroup, 'MGMT')) {
+            return $this->mgmt_vlans;
+        }
+        if (str_contains($deviceGroup, 'CORE')) {
+            return $this->core_vlans;
+        }
+        if (str_contains($deviceGroup, 'ACCESS')) {
+            return $this->access_vlans;
+        }
+        if (str_contains($deviceGroup, 'DMZ')) {
+            return $this->dmz_vlans;
+        }
+        if (str_contains($deviceGroup, 'SERVER')) {
+            return $this->svr_vlans;
+        }
+
+        return [];
+    }
 
     public function index(Request $request)
     {
@@ -365,9 +411,25 @@ class TaskController extends Controller
     {
         $validated = $request->validate([
             'task_type' => ['required', Rule::in(array_map(fn ($task) => $task->name, TaskType::cases()))],
-            'devices' => 'required|array',
-            'deployment_time' => 'required|integer',
+            'devices' => ['nullable', 'array'],
+            'deployment_time' => ['required', 'integer'],
+            'vlan_site_prefix' => ['nullable', 'string', 'max:64'],
         ]);
+
+        $isAddVlans = $validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP';
+        $vlanSitePrefix = trim((string) ($validated['vlan_site_prefix'] ?? ''));
+
+        if (! $isAddVlans) {
+            if (! isset($validated['devices']) || $validated['devices'] === []) {
+                return back()->withErrors(['devices' => 'Select at least one device.']);
+            }
+        } elseif ($vlanSitePrefix !== '') {
+            if (! preg_match('/^[A-Za-z0-9_-]+$/', $vlanSitePrefix)) {
+                return back()->withErrors(['vlan_site_prefix' => 'Use only letters, numbers, hyphens, or underscores.']);
+            }
+        } elseif (! isset($validated['devices']) || $validated['devices'] === []) {
+            return back()->withErrors(['devices' => 'Select at least one device with a group set, or enter a site prefix.']);
+        }
 
         $shardEntropy = (string) Str::uuid();
 
@@ -485,6 +547,72 @@ class TaskController extends Controller
             }
 
             $task = $createdConfigureTasks->first();
+        } elseif ($validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP') {
+            $compositeGroupId = (string) Str::uuid();
+            $compositeKind = 'ADD_VLANS_TO_DEVICE_GROUP';
+            $jobQueue = $this->allocateJobQueue($request, $shardEntropy);
+            $createdVlanTasks = collect();
+            $selectedDevices = collect();
+
+            if ($vlanSitePrefix !== '') {
+                $groups = $this->vlanWarehouseGroupsFromPrefix($vlanSitePrefix);
+            } else {
+                $selectedDeviceIds = Collection::make($validated['devices'])
+                    ->pluck('id')
+                    ->filter(fn ($id) => $id !== null)
+                    ->map(fn ($id) => (int) $id)
+                    ->values();
+
+                $selectedDevices = Device::query()
+                    ->where('deployment_id', $deployment->id)
+                    ->whereIn('id', $selectedDeviceIds)
+                    ->get();
+
+                $missingGroup = $selectedDevices->filter(fn (Device $device): bool => trim((string) $device->group) === '');
+                if ($missingGroup->isNotEmpty()) {
+                    return back()->withErrors(['devices' => 'Every selected device must have a group set on the device row.']);
+                }
+
+                $groups = $selectedDevices
+                    ->map(fn (Device $device): string => trim((string) $device->group))
+                    ->unique()
+                    ->values()
+                    ->all();
+            }
+
+            if ($groups === []) {
+                return back()->withErrors(['devices' => 'No device groups found for the selection.']);
+            }
+
+            foreach ($groups as $index => $groupName) {
+                $createdTask = $deployment->tasks()->create([
+                    'task_type' => 'ADD_VLANS_FOR_DEVICE_GROUP',
+                    'name' => 'add_vlans_'.$groupName.'_'.now(),
+                    'deployment_time' => $validated['deployment_time'],
+                    'status' => 'IN_PROGRESS',
+                    'job_queue' => $jobQueue,
+                    'composite_group_id' => $compositeGroupId,
+                    'composite_kind' => $compositeKind,
+                    'composite_order' => $index + 1,
+                    'vlan_target_device_group' => $groupName,
+                ]);
+
+                if ($vlanSitePrefix === '' && $selectedDevices->isNotEmpty()) {
+                    $deviceIdsForGroup = $selectedDevices
+                        ->filter(fn (Device $device): bool => trim((string) $device->group) === $groupName)
+                        ->pluck('id');
+                    $createdTask->devices()->attach($deviceIdsForGroup);
+                }
+
+                $batchId = $this->dispatchJob($createdTask);
+                if ($batchId !== null) {
+                    $createdTask->forceFill(['batch_id' => $batchId])->save();
+                }
+
+                $createdVlanTasks->push($createdTask);
+            }
+
+            $task = $createdVlanTasks->first();
         } else {
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
@@ -508,7 +636,8 @@ class TaskController extends Controller
     public function checkCentralGroup(Request $request, Deployment $deployment)
     {
         $request->validate([
-            'task_type' => ['required', Rule::in(['PREPROVISION_DEVICE_TO_GROUP', 'MOVE_DEVICE_TO_GROUP'])],
+            'task_type' => ['required', Rule::in(['PREPROVISION_DEVICE_TO_GROUP', 'MOVE_DEVICE_TO_GROUP', 'ADD_VLANS_TO_DEVICE_GROUP'])],
+            'vlan_site_prefix' => ['nullable', 'string', 'max:64'],
         ]);
 
         $currentClient = $request->user()->currentClient();
@@ -518,14 +647,25 @@ class TaskController extends Controller
             return back();
         }
 
-        $deviceGroups = Device::query()
-            ->where('deployment_id', $deployment->id)
-            ->pluck('group')
-            ->map(fn ($g) => is_string($g) ? trim($g) : '')
-            ->filter(fn ($g) => $g !== '')
-            ->unique()
-            ->values()
-            ->all();
+        $prefix = trim((string) $request->input('vlan_site_prefix', ''));
+
+        if ($request->input('task_type') === 'ADD_VLANS_TO_DEVICE_GROUP' && $prefix !== '') {
+            if (! preg_match('/^[A-Za-z0-9_-]+$/', $prefix)) {
+                session()->flash('error', 'Invalid site prefix.');
+
+                return back();
+            }
+            $deviceGroups = $this->vlanWarehouseGroupsFromPrefix($prefix);
+        } else {
+            $deviceGroups = Device::query()
+                ->where('deployment_id', $deployment->id)
+                ->pluck('group')
+                ->map(fn ($g) => is_string($g) ? trim($g) : '')
+                ->filter(fn ($g) => $g !== '')
+                ->unique()
+                ->values()
+                ->all();
+        }
 
         if ($deviceGroups === []) {
             session()->flash('error', 'No group names are set on devices in this deployment.');
@@ -863,6 +1003,15 @@ class TaskController extends Controller
             case 'ASSOCIATE_SITE_AND_NAME':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($device) => new AssociateSiteAndNameJob($device, $task, $centralAPIHelper))->toArray();
+                break;
+            case 'ADD_VLANS_FOR_DEVICE_GROUP':
+                $group = $task->vlan_target_device_group;
+                if (! is_string($group) || trim($group) === '') {
+                    break;
+                }
+                $group = trim($group);
+                $vlans = $this->resolveVlansForDeviceGroupName($group);
+                $jobs[] = [new AddVlansToDeviceGroup($group, $vlans, $task, $centralAPIHelper)];
                 break;
         }
 

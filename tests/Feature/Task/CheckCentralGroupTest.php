@@ -102,6 +102,40 @@ test('check central group flashes error when no group names on deployment device
     Http::assertNothingSent();
 });
 
+test('check central group uses prefixed WHSE groups for ADD_VLANS_TO_DEVICE_GROUP', function () {
+    Http::fake([
+        '*configuration/v2/groups*' => Http::sequence()
+            ->push(['data' => [[
+                'WHSE-SAC-ACCESS',
+                'WHSE-SAC-CORE',
+                'WHSE-SAC-MGMT',
+                'WHSE-SAC-DMZ',
+                'WHSE-SAC-SERVER',
+            ]]], 200)
+            ->push(['data' => []], 200),
+    ]);
+
+    $this->post(route('tasks.check_central_group', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'vlan_site_prefix' => 'SAC',
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success', 'All group names exist in Central.');
+});
+
+test('check central group rejects invalid vlan_site_prefix for ADD_VLANS_TO_DEVICE_GROUP', function () {
+    Http::fake();
+
+    $this->post(route('tasks.check_central_group', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'vlan_site_prefix' => 'BAD PREFIX',
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('error', 'Invalid site prefix.');
+
+    Http::assertNothingSent();
+});
+
 test('check central group rejects when current client does not match deployment', function () {
     Http::fake();
 

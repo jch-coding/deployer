@@ -74,6 +74,7 @@ class Task extends Model
             'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE',
             'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
             'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
+            'ADD_VLANS_FOR_DEVICE_GROUP',
         ];
 
         if (in_array($task_type, $interface_based, true)) {
@@ -121,6 +122,10 @@ class Task extends Model
                 return 'Move Devices to Device Group';
             case 'ASSIGN_DEVICE_FUNCTION':
                 return 'Assign Device Function to Devices';
+            case 'ADD_VLANS_TO_DEVICE_GROUP':
+                return 'Add VLANs to device groups';
+            case 'ADD_VLANS_FOR_DEVICE_GROUP':
+                return 'Add VLANs to device group (single group)';
             default:
                 return 'Unknown Task';
         }
@@ -161,6 +166,10 @@ class Task extends Model
                 return 'Move devices to a device group';
             case 'ASSIGN_DEVICE_FUNCTION':
                 return 'Assign device function to devices';
+            case 'ADD_VLANS_TO_DEVICE_GROUP':
+                return 'Add VLAN templates to Central device groups by group name, or use a site prefix to target WHSE-{prefix}-ACCESS/CORE/MGMT/DMZ/SERVER.';
+            case 'ADD_VLANS_FOR_DEVICE_GROUP':
+                return 'Adds VLAN definitions to one Central device group.';
             default:
                 return 'Unknown Task';
         }
@@ -193,6 +202,10 @@ class Task extends Model
                 return ['name', 'serial', 'device_function', 'group'];
             case 'ASSIGN_DEVICE_FUNCTION':
                 return ['name', 'serial', 'device_function'];
+            case 'ADD_VLANS_TO_DEVICE_GROUP':
+                return ['group'];
+            case 'ADD_VLANS_FOR_DEVICE_GROUP':
+                return ['group'];
             default:
                 return [];
         }

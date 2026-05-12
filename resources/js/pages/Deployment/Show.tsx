@@ -109,6 +109,7 @@ export default function Show() {
         'ASSOCIATE_SITE_AND_NAME',
         'PREPROVISION_DEVICE_TO_GROUP',
         'MOVE_DEVICE_TO_GROUP',
+        'ADD_VLANS_TO_DEVICE_GROUP',
     ]);
 
     useEffect(() => {
@@ -174,6 +175,7 @@ export default function Show() {
         'MOVE_DEVICE_TO_GROUP',
         'ASSOCIATE_SITE_AND_NAME',
         'CREATE_VSF_PROFILE',
+        'ADD_VLANS_TO_DEVICE_GROUP',
     ]);
 
     const isDeviceBasedTask = (task_type: string) =>
