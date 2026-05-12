@@ -1,5 +1,6 @@
 <?php
 
+use App\ClassicBaseUrl;
 use App\InterfaceKind;
 use App\Jobs\AddVlansToDeviceGroup;
 use App\Models\Client;
@@ -8,9 +9,34 @@ use App\Models\DeviceInterface;
 use App\Models\LacpProfile;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Bus\ChainedBatch;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+
+function configureClientForClassicCentral(Client $client): void
+{
+    $client->update([
+        'classic_base_url' => ClassicBaseUrl::US1->value,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+    ]);
+}
+
+function fakeClassicCentralGroupListPages(array $firstPageRow): void
+{
+    Http::fake([
+        '*configuration/v2/groups*' => Http::sequence()
+            ->push(['data' => [$firstPageRow]], 200)
+            ->push(['data' => []], 200),
+    ]);
+}
 
 beforeEach(function () {
     $this->user = User::factory()
@@ -211,6 +237,8 @@ test('composite task show uses MultiJobTask and includes sub_jobs', function () 
 
 test('creating ADD_VLANS_TO_DEVICE_GROUP stores one composite sub-task per unique device group', function () {
     Bus::fake();
+    configureClientForClassicCentral($this->client);
+    fakeClassicCentralGroupListPages(['Site-A-CORE', 'Site-A-ACCESS']);
 
     $d1 = Device::factory()->create([
         'deployment_id' => $this->deployment->id,
@@ -260,6 +288,14 @@ test('creating ADD_VLANS_TO_DEVICE_GROUP stores one composite sub-task per uniqu
 
 test('creating ADD_VLANS_TO_DEVICE_GROUP with site prefix stores five sub-tasks without device pivots', function () {
     Bus::fake();
+    configureClientForClassicCentral($this->client);
+    fakeClassicCentralGroupListPages([
+        'WHSE-SAC-ACCESS',
+        'WHSE-SAC-CORE',
+        'WHSE-SAC-MGMT',
+        'WHSE-SAC-DMZ',
+        'WHSE-SAC-SERVER',
+    ]);
 
     $response = $this->post(route('tasks.store', $this->deployment), [
         'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
@@ -281,4 +317,70 @@ test('creating ADD_VLANS_TO_DEVICE_GROUP with site prefix stores five sub-tasks 
     expect($tasks->every(fn (Task $t) => $t->devices()->count() === 0))->toBeTrue();
 
     Bus::assertBatchCount(5);
+});
+
+test('creating ADD_VLANS_TO_DEVICE_GROUP adds prerequisite create task when group is missing in Central', function () {
+    Bus::fake();
+    configureClientForClassicCentral($this->client);
+    fakeClassicCentralGroupListPages(['SomeOtherGroup']);
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'group' => 'MissingInCentral',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'deployment_time' => 1,
+        'devices' => [['id' => $device->id]],
+        'vlan_site_prefix' => '',
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $tasks = $this->deployment->refresh()->tasks()->orderBy('composite_order')->get();
+    expect($tasks)->toHaveCount(2);
+    expect($tasks->pluck('task_type')->all())->toBe([
+        'CREATE_NEW_CENTRAL_CX_GROUP',
+        'ADD_VLANS_FOR_DEVICE_GROUP',
+    ]);
+
+    $vlanTask = $tasks->firstWhere('task_type', 'ADD_VLANS_FOR_DEVICE_GROUP');
+    $createTask = $tasks->firstWhere('task_type', 'CREATE_NEW_CENTRAL_CX_GROUP');
+    expect($vlanTask)->not->toBeNull();
+    expect($createTask)->not->toBeNull();
+    expect($vlanTask->central_group_creation_task_id)->toBe($createTask->id);
+    expect($createTask->devices)->toHaveCount(1);
+
+    Bus::assertDispatchedTimes(ChainedBatch::class, 1);
+});
+
+test('force_restart ADD_VLANS_TO_DEVICE_GROUP does not standalone-dispatch CREATE_NEW_CENTRAL_CX_GROUP rows', function () {
+    Bus::fake();
+    configureClientForClassicCentral($this->client);
+    fakeClassicCentralGroupListPages(['SomeOtherGroup']);
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'group' => 'MissingInCentral',
+    ]);
+
+    $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'deployment_time' => 1,
+        'devices' => [['id' => $device->id]],
+        'vlan_site_prefix' => '',
+    ])->assertSessionHasNoErrors();
+
+    Bus::assertDispatchedTimes(ChainedBatch::class, 1);
+
+    $vlanTask = Task::query()
+        ->where('deployment_id', $this->deployment->id)
+        ->where('task_type', 'ADD_VLANS_FOR_DEVICE_GROUP')
+        ->firstOrFail();
+
+    $this->post(route('tasks.force_restart', $vlanTask))->assertRedirect();
+
+    Bus::assertDispatchedTimes(ChainedBatch::class, 2);
 });

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 
 class Task extends Model
@@ -32,6 +33,16 @@ class Task extends Model
     public function deployment(): BelongsTo
     {
         return $this->belongsTo(Deployment::class);
+    }
+
+    public function centralGroupCreationTask(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'central_group_creation_task_id');
+    }
+
+    public function vlanTasksAfterCentralGroupCreation(): HasMany
+    {
+        return $this->hasMany(self::class, 'central_group_creation_task_id');
     }
 
     /**
@@ -75,6 +86,7 @@ class Task extends Model
             'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
             'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
             'ADD_VLANS_FOR_DEVICE_GROUP',
+            'CREATE_NEW_CENTRAL_CX_GROUP',
         ];
 
         if (in_array($task_type, $interface_based, true)) {
@@ -126,6 +138,8 @@ class Task extends Model
                 return 'Add VLANs to device groups';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Add VLANs to device group (single group)';
+            case 'CREATE_NEW_CENTRAL_CX_GROUP':
+                return 'Create Central CX device group';
             default:
                 return 'Unknown Task';
         }
@@ -170,6 +184,8 @@ class Task extends Model
                 return 'Add VLAN templates to Central device groups by group name, or use a site prefix to target WHSE-{prefix}-ACCESS/CORE/MGMT/DMZ/SERVER.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Adds VLAN definitions to one Central device group.';
+            case 'CREATE_NEW_CENTRAL_CX_GROUP':
+                return 'Creates a new AOS-CX switch group in Aruba Central (Classic).';
             default:
                 return 'Unknown Task';
         }
@@ -205,6 +221,8 @@ class Task extends Model
             case 'ADD_VLANS_TO_DEVICE_GROUP':
                 return ['group'];
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
+                return ['group'];
+            case 'CREATE_NEW_CENTRAL_CX_GROUP':
                 return ['group'];
             default:
                 return [];

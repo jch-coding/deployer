@@ -12,6 +12,7 @@ use App\Jobs\AssociateSiteAndNameJob;
 use App\Jobs\ConfigureEthernetInterface;
 use App\Jobs\ConfigureLagInterfaceJob;
 use App\Jobs\ConfigureVlanInterfaceJob;
+use App\Jobs\CreateNewCentralCXGroup;
 use App\Jobs\CreateVSFProfileJob;
 use App\Jobs\MoveDevicesToGroupJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
@@ -68,6 +69,9 @@ class TaskController extends Controller
         'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE' => [],
         'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE' => [],
         'ADD_VLANS_FOR_DEVICE_GROUP' => [
+            'group',
+        ],
+        'CREATE_NEW_CENTRAL_CX_GROUP' => [
             'group',
         ],
     ];
@@ -584,7 +588,53 @@ class TaskController extends Controller
                 return back()->withErrors(['devices' => 'No device groups found for the selection.']);
             }
 
-            foreach ($groups as $index => $groupName) {
+            $currentClient = $request->user()->currentClient();
+            if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+                session()->flash('error', 'Please set current client to match this deployment before adding VLANs to device groups.');
+
+                return back();
+            }
+
+            $centralHelper = new CentralAPIHelper($deployment->client);
+            $groupNamesResult = $centralHelper->classic_collect_all_group_names();
+            if (isset($groupNamesResult['error'])) {
+                session()->flash('error', 'Could not load groups from Central.');
+
+                return back();
+            }
+
+            $centralSet = array_flip($groupNamesResult['names']);
+            $compositeOrder = 0;
+
+            foreach ($groups as $groupName) {
+                $deviceIdsForGroup = collect();
+                if ($vlanSitePrefix === '' && $selectedDevices->isNotEmpty()) {
+                    $deviceIdsForGroup = $selectedDevices
+                        ->filter(fn (Device $device): bool => trim((string) $device->group) === $groupName)
+                        ->pluck('id');
+                }
+
+                $centralGroupCreationTaskId = null;
+                if (! array_key_exists($groupName, $centralSet)) {
+                    $compositeOrder++;
+                    $createTask = $deployment->tasks()->create([
+                        'task_type' => 'CREATE_NEW_CENTRAL_CX_GROUP',
+                        'name' => 'create_central_group_'.$groupName.'_'.now(),
+                        'deployment_time' => $validated['deployment_time'],
+                        'status' => 'IN_PROGRESS',
+                        'job_queue' => $jobQueue,
+                        'composite_group_id' => $compositeGroupId,
+                        'composite_kind' => $compositeKind,
+                        'composite_order' => $compositeOrder,
+                        'vlan_target_device_group' => $groupName,
+                    ]);
+                    if ($deviceIdsForGroup->isNotEmpty()) {
+                        $createTask->devices()->attach($deviceIdsForGroup);
+                    }
+                    $centralGroupCreationTaskId = $createTask->id;
+                }
+
+                $compositeOrder++;
                 $createdTask = $deployment->tasks()->create([
                     'task_type' => 'ADD_VLANS_FOR_DEVICE_GROUP',
                     'name' => 'add_vlans_'.$groupName.'_'.now(),
@@ -593,14 +643,12 @@ class TaskController extends Controller
                     'job_queue' => $jobQueue,
                     'composite_group_id' => $compositeGroupId,
                     'composite_kind' => $compositeKind,
-                    'composite_order' => $index + 1,
+                    'composite_order' => $compositeOrder,
                     'vlan_target_device_group' => $groupName,
+                    'central_group_creation_task_id' => $centralGroupCreationTaskId,
                 ]);
 
-                if ($vlanSitePrefix === '' && $selectedDevices->isNotEmpty()) {
-                    $deviceIdsForGroup = $selectedDevices
-                        ->filter(fn (Device $device): bool => trim((string) $device->group) === $groupName)
-                        ->pluck('id');
+                if ($deviceIdsForGroup->isNotEmpty()) {
                     $createdTask->devices()->attach($deviceIdsForGroup);
                 }
 
@@ -785,6 +833,9 @@ class TaskController extends Controller
         foreach ($group as $t) {
             $t->resetIncompletePivotRowsToPending();
             $t->update(['status' => 'IN_PROGRESS']);
+            if ($t->composite_kind === 'ADD_VLANS_TO_DEVICE_GROUP' && $t->task_type === 'CREATE_NEW_CENTRAL_CX_GROUP') {
+                continue;
+            }
             $batchId = $this->dispatchJob($t);
             if ($batchId !== null) {
                 $t->forceFill(['batch_id' => $batchId])->save();
@@ -1004,6 +1055,13 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($device) => new AssociateSiteAndNameJob($device, $task, $centralAPIHelper))->toArray();
                 break;
+            case 'CREATE_NEW_CENTRAL_CX_GROUP':
+                $group = $task->vlan_target_device_group;
+                if (! is_string($group) || trim($group) === '') {
+                    break;
+                }
+                $jobs[] = [new CreateNewCentralCXGroup(trim($group), $task, $centralAPIHelper)];
+                break;
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 $group = $task->vlan_target_device_group;
                 if (! is_string($group) || trim($group) === '') {
@@ -1011,6 +1069,18 @@ class TaskController extends Controller
                 }
                 $group = trim($group);
                 $vlans = $this->resolveVlansForDeviceGroupName($group);
+                $prereqId = $task->central_group_creation_task_id;
+                if ($prereqId !== null) {
+                    $prereq = Task::query()
+                        ->where('deployment_id', $task->deployment_id)
+                        ->find($prereqId);
+                    if ($prereq !== null && $prereq->status !== 'COMPLETED') {
+                        $prereqGroup = $prereq->vlan_target_device_group;
+                        if (is_string($prereqGroup) && trim($prereqGroup) !== '') {
+                            $jobs[] = [new CreateNewCentralCXGroup(trim($prereqGroup), $prereq, $centralAPIHelper)];
+                        }
+                    }
+                }
                 $jobs[] = [new AddVlansToDeviceGroup($group, $vlans, $task, $centralAPIHelper)];
                 break;
         }
