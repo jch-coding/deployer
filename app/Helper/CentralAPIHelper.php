@@ -68,6 +68,7 @@ class CentralAPIHelper
         'move_devices_to_group' => 'configuration/v1/devices/move',
         'preprovision_devices_to_group' => 'configuration/v1/preassign',
         'groups' => 'configuration/v2/groups',
+        'groupsv3' => 'configuration/v3/groups',
     ];
 
     public function __construct(public Client $client) {}
@@ -999,6 +1000,40 @@ class CentralAPIHelper
 
             return $response;
         }
+    }
+
+    public function classic_make_new_central_group(string $group_name, bool $allow_switches = true, bool $allow_aps = false)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+        $allowedDevTypes = [];
+        $properties = ['MonitorOnly' => [], 'NewCentral' => true];
+        $template_info = [];
+        if ($allow_switches) {
+            $allowedDevTypes[] = 'Switches';
+            $properties['AllowedSwitchTypes'] = [ 'AOS_CX'];
+            $template_info['Wired'] = false;
+        }
+        if ($allow_aps) {
+            $allowedDevTypes[] = 'AccessPoints';
+            $properties['Architecture'] = 'AOS10';
+            $properties['ApNetworkRole'] = 'Standard';
+            $template_info['Wireless'] = false;
+        }
+        $properties['AllowedDevTypes'] = $allowedDevTypes;
+        $body = [
+            'group' => $group_name,
+            'group_attributes' => [
+                'template_info' => $template_info,
+                'group_properties' => $properties
+            ]
+        ];
+
+        $response = Http::withToken($this->client->classic_access_token)
+            ->withQueryParameters(['group' => $group_name])
+            ->post($this->client->classic_base_url.$this->classic_configuration['groupsv3'], $body);
+        return $response;
     }
 
     /**
