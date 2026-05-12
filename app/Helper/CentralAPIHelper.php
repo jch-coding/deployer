@@ -45,7 +45,7 @@ class CentralAPIHelper
         'interface_portchannel' => 'network-config/v1alpha1/portchannels/',
         'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles/',
         'interface_vlan' => 'network-config/v1alpha1/vlan-interfaces/',
-        'interface_loopback' => 'network-config/v1alpha1/loopback-interfaces/'
+        'interface_loopback' => 'network-config/v1alpha1/loopback-interfaces/',
     ];
 
     public array $vlans_and_networks = [
@@ -1012,7 +1012,7 @@ class CentralAPIHelper
         $template_info = [];
         if ($allow_switches) {
             $allowedDevTypes[] = 'Switches';
-            $properties['AllowedSwitchTypes'] = [ 'AOS_CX'];
+            $properties['AllowedSwitchTypes'] = ['AOS_CX'];
             $template_info['Wired'] = false;
         }
         if ($allow_aps) {
@@ -1026,13 +1026,14 @@ class CentralAPIHelper
             'group' => $group_name,
             'group_attributes' => [
                 'template_info' => $template_info,
-                'group_properties' => $properties
-            ]
+                'group_properties' => $properties,
+            ],
         ];
 
         $response = Http::withToken($this->client->classic_access_token)
             ->withQueryParameters(['group' => $group_name])
             ->post($this->client->classic_base_url.$this->classic_configuration['groupsv3'], $body);
+
         return $response;
     }
 
