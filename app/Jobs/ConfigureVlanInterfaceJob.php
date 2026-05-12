@@ -50,7 +50,13 @@ class ConfigureVlanInterfaceJob extends BaseTaskJob
                 return;
             } else {
                 // do a device level override of the vlan
-                $override_response = $this->centralAPIHelper->post_l2_vlan($device, ['vlan' => $this->deviceInterface->interface]);
+                $query_params = [
+                    'view-type' => 'LOCAL',
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->scope_id,
+                    'device-function' => $device->device_function,
+                ];
+                $override_response = $this->centralAPIHelper->post_l2_vlan($query_params, ['vlan' => $this->deviceInterface->interface]);
                 if (! $override_response->ok()) {
                     // check if there is already a local override of the vlan
                     if (str_contains($override_response->json()['message'], 'Cannot create duplicate config')) {

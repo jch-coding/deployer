@@ -654,18 +654,13 @@ class CentralAPIHelper
      * @return \GuzzleHttp\Promise\PromiseInterface|\Illuminate\Http\Client\Promises\LazyPromise|\Illuminate\Http\Client\Response|string[]
      * @throws \Illuminate\Http\Client\ConnectionException
      */
-    public function post_l2_vlan(Device $device, array $l2_vlan)
+    public function post_l2_vlan(array $query_params, array $l2_vlan)
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
-                ->withQueryParameters([
-                    'view-type' => 'LOCAL',
-                    'object-type' => 'LOCAL',
-                    'scope-id' => $device->scope_id,
-                    'device-function' => $device->device_function,
-                ])
+                ->withQueryParameters($query_params)
                 ->post($this->client->base_url.$this->vlans_and_networks['l2_vlans'].$l2_vlan['vlan'], $l2_vlan);
 
             return $response;

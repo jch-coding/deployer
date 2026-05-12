@@ -68,6 +68,89 @@ class TaskController extends Controller
         'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE' => [],
     ];
 
+    private $core_vlans = [
+        ['vlan' => 2, 'name' => 'Voice'],
+        ['vlan' => 3, 'name' => 'Visitor'],
+        ['vlan' => 4, 'name' => 'Freezer_Voice'],
+        ['vlan' => 6, 'name' => 'WCDAGV'],
+        ['vlan' => 7, 'name' => 'AGVMGMT'],
+        ['vlan' => 8, 'name' => 'WCDLAN'],
+        ['vlan' => 10, 'name' => 'WCDWLAN'],
+        ['vlan' => 12, 'name' => 'WCDTM'],
+        ['vlan' => 14, 'name' => 'WCDLOG'],
+        ['vlan' => 16, 'name' => 'TJLAN'],
+        ['vlan' => 17, 'name' => 'TJWLAN'],
+        ['vlan' => 20, 'name' => 'AccessControl'],
+        ['vlan' => 21, 'name' => 'ProdMGMT'],
+        ['vlan' => 22, 'name' => 'WCDSVR'],
+        ['vlan' => 23, 'name' => 'WCD_PI'],
+        ['vlan' => 24, 'name' => 'WCDKitchen'],
+        ['vlan' => 25, 'name' => 'BCP_Hub'],
+        ['vlan' => 30, 'name' => 'APMGMT'],
+        ['vlan' => 40, 'name' => 'RFID'],
+        ['vlan' => 42, 'name' => 'RF'],
+        ['vlan' => 60, 'name' => 'TEMPSENSOR'],
+    ];
+
+    private $access_vlans = [
+        ['vlan' => 2, 'name' => 'Voice'],
+        ['vlan' => 3, 'name' => 'Visitor'],
+        ['vlan' => 4, 'name' => 'Freezer_Voice'],
+        ['vlan' => 8, 'name' => 'WCDLAN'],
+        ['vlan' => 10, 'name' => 'WCDWLAN'],
+        ['vlan' => 12, 'name' => 'WCDTM'],
+        ['vlan' => 14, 'name' => 'WCDLOG'],
+        ['vlan' => 16, 'name' => 'TJLAN'],
+        ['vlan' => 17, 'name' => 'TJWLAN'],
+        ['vlan' => 20, 'name' => 'AccessControl'],
+        ['vlan' => 30, 'name' => 'APMGMT'],
+        ['vlan' => 40, 'name' => 'RFID'],
+        ['vlan' => 42, 'name' => 'RF'],
+        ['vlan' => 60, 'name' => 'TEMPSENSOR'],
+    ];
+
+    private $dmz_vlans = [
+        ['vlan' => 700, 'name' => 'WAN'],
+        ['vlan' => 815, 'name' => 'Internet 1'],
+        ['vlan' => 816, 'name' => 'Internet 2'],
+        ['vlan' => 915, 'name' => 'Internet 3'],
+        ['vlan' => 916, 'name' => 'Internet 4'],
+    ];
+
+    private $svr_vlans = [
+        ['vlan' => 6, 'name' => 'WCDAGV'],
+        ['vlan' => 7, 'name' => 'AGVMGMT'],
+        ['vlan' => 20, 'name' => 'AccessControl'],
+        ['vlan' => 21, 'name' => 'ProdMGMT'],
+        ['vlan' => 22, 'name' => 'WCDSVR'],
+        ['vlan' => 25, 'name' => 'BCP_Hub'],
+        ['vlan' => 199, 'name' => 'vMotion'],
+    ];
+
+    private $mgmt_vlans = [
+        ['vlan' => 2, 'name' => 'Voice'],
+        ['vlan' => 3, 'name' => 'Visitor'],
+        ['vlan' => 4, 'name' => 'Freezer_Voice'],
+        ['vlan' => 6, 'name' => 'WCDAGV'],
+        ['vlan' => 7, 'name' => 'AGVMGMT'],
+        ['vlan' => 8, 'name' => 'WCDLAN'],
+        ['vlan' => 10, 'name' => 'WCDWLAN'],
+        ['vlan' => 12, 'name' => 'WCDTM'],
+        ['vlan' => 14, 'name' => 'WCDLOG'],
+        ['vlan' => 16, 'name' => 'TJLAN'],
+        ['vlan' => 17, 'name' => 'TJWLAN'],
+        ['vlan' => 20, 'name' => 'AccessControl'],
+        ['vlan' => 21, 'name' => 'ProdMGMT'],
+        ['vlan' => 22, 'name' => 'WCDSVR'],
+        ['vlan' => 23, 'name' => 'WCD_PI'],
+        ['vlan' => 24, 'name' => 'WCDKitchen'],
+        ['vlan' => 25, 'name' => 'BCP_Hub'],
+        ['vlan' => 30, 'name' => 'APMGMT'],
+        ['vlan' => 40, 'name' => 'RFID'],
+        ['vlan' => 42, 'name' => 'RF'],
+        ['vlan' => 60, 'name' => 'TEMPSENSOR'],
+    ];
+
     public function index(Request $request)
     {
         $currentClient = $request->user()?->currentClient();
