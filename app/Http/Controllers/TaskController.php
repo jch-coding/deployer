@@ -330,12 +330,73 @@ class TaskController extends Controller
     }
 
     /**
+     * Progress counts for composite sub-jobs that are not tracked via device/interface pivots.
+     *
+     * @return array{completed: int, total: int}|null
+     */
+    protected function compositeSubJobProgressForDisplay(Task $sub): ?array
+    {
+        if ($sub->task_type === 'CREATE_NEW_CENTRAL_CX_GROUP') {
+            return [
+                'completed' => $sub->status === 'COMPLETED' ? 1 : 0,
+                'total' => 1,
+            ];
+        }
+
+        if ($sub->task_type !== 'ADD_VLANS_FOR_DEVICE_GROUP') {
+            return null;
+        }
+
+        $name = $sub->vlan_target_device_group;
+        if (! is_string($name) || trim($name) === '') {
+            return ['completed' => 0, 'total' => 0];
+        }
+
+        $total = count($this->resolveVlansForDeviceGroupName(trim($name)));
+        if ($total === 0) {
+            return [
+                'completed' => $sub->status === 'COMPLETED' ? 1 : 0,
+                'total' => 1,
+            ];
+        }
+
+        if ($sub->status === 'COMPLETED') {
+            return ['completed' => $total, 'total' => $total];
+        }
+
+        $log = (string) ($sub->status_log ?? '');
+        $fromLog = substr_count($log, 'Added vlan ')
+            + substr_count($log, 'already exists in device group');
+
+        return ['completed' => min($fromLog, $total), 'total' => $total];
+    }
+
+    /**
      * @param  \Illuminate\Support\Collection<int, Task>  $siblings
      * @return array<int, array<string, mixed>>
      */
     protected function buildSubJobsForCompositePage(Collection $siblings): array
     {
         return $siblings->map(function (Task $sub) {
+            $progressOverride = $this->compositeSubJobProgressForDisplay($sub);
+            if ($progressOverride !== null) {
+                $devices = $sub->devices;
+
+                return [
+                    'id' => $sub->id,
+                    'task_type' => $sub->task_type,
+                    'status' => $sub->status,
+                    'status_log' => $sub->status_log ?? '',
+                    'friendly_label' => Task::getTaskFriendlyName($sub->task_type),
+                    'completed_count' => $progressOverride['completed'],
+                    'total_count' => $progressOverride['total'],
+                    'is_device_based' => true,
+                    'devices' => $devices,
+                    'interfaces' => [],
+                    'display_columns' => $this->display_columns[$sub->task_type] ?? [],
+                ];
+            }
+
             $isDeviceBased = $sub->getTaskCategory($sub->task_type) === 'DEVICE';
             if ($isDeviceBased) {
                 $devices = $sub->devices;
