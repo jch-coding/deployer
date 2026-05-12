@@ -226,6 +226,7 @@ class CentralAPIHelper
             'platform' => $this->convert_sku_to_platform($device->sku),
             'name' => $stack_name,
             'auto-stack' => true,
+            'split-detection-method' => 'MGMT',
             'members' => [
                 [
                     'id' => 1,
