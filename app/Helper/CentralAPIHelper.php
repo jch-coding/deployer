@@ -880,6 +880,21 @@ class CentralAPIHelper
         }
     }
 
+    public function get_scopeid_for_device_group(string $device_group)
+    {
+        $device_groups = $this->get_device_groups();
+        if (array_key_exists('items', $device_groups->json())) {
+            $found_device_group = collect($device_groups->json()['items'])->firstWhere('scopeName', $device_group);
+            if ($found_device_group) {
+                return $found_device_group['scopeId'];
+            } else {
+                return null;
+            }
+        } else {
+            return ['error' => 'failed to retrieve device groups from Central.'];
+        }
+    }
+
     public function get_site_collections()
     {
         if (! $this->client->handleBearerTokenAuth()) {
