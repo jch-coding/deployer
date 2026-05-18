@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Helper\CentralAPIHelper;
+use App\InterfaceKind;
 use App\Models\DeviceInterface;
 use App\Models\Task;
 use Illuminate\Support\Facades\Log;
@@ -96,8 +97,8 @@ class ConfigureVlanInterfaceJob extends BaseTaskJob
                 else {
                     $success_message = '\nSuccessfully patched vlan interface for .'.$this->deviceInterface->device;
                     $this->task->processTaskStatusLog($success_message);
-                    $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
-                    
+                    $this->markInterfaceCompleted();
+
                     return;
                 }
             }
@@ -109,14 +110,27 @@ class ConfigureVlanInterfaceJob extends BaseTaskJob
             $success_message = '\nVLAN interface posted successfully for VLAN '.$this->deviceInterface->interface;
             Log::info($success_message);
             $this->task->processTaskStatusLog($success_message);
-            $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
+            $this->markInterfaceCompleted();
         }
         }, 'Configure VLAN interface');
+    }
+
+    protected function markInterfaceCompleted(): void
+    {
+        $this->task->deviceInterfaces()->find($this->deviceInterface)?->pivot?->update(['status' => 'COMPLETED']);
+        $this->task->load('deviceInterfaces');
+        if ($this->task->allTrackedItemsCompleted()) {
+            $this->task->update(['status' => 'COMPLETED']);
+        }
     }
 
     public function failed(?Throwable $exception): void
     {
         $this->logFailedException($exception);
-        $this->markInterfaceFailed($this->deviceInterface);
+        $this->failInterfaceAndTaskIfNeeded(
+            $this->deviceInterface,
+            fn ($interface) => $interface->interface_kind === InterfaceKind::VLAN,
+            fn ($interface) => $interface->pivot->status === 'FAILED' && $interface->interface_kind === InterfaceKind::VLAN
+        );
     }
 }
