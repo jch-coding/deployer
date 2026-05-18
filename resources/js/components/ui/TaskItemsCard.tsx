@@ -12,10 +12,10 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_sites, store } from '@/routes/tasks';
+import { check_central_sites, force_update_site_scope_ids, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
-import { AlarmClockIcon, BoltIcon, CircleCheck } from 'lucide-react';
+import { AlarmClockIcon, BoltIcon, CircleCheck, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 type DeviceType = {
@@ -254,7 +254,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                 }
                 </div>
                 {task === 'ASSOCIATE_DEVICE_TO_SITE' && (
-                    <div className="ml-auto flex shrink-0 items-center">
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -275,6 +275,28 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                             </TooltipTrigger>
                             <TooltipContent side="top">
                                 <p>Verify sites in Central</p>
+                            </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="force-update-site-scope-ids"
+                                    aria-label="Force update site scope IDs"
+                                    onClick={() => {
+                                        router.post(force_update_site_scope_ids(deployment.id).url, {
+                                            task_type: task,
+                                        });
+                                    }}
+                                >
+                                    <RefreshCw className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Force update site scope IDs</p>
                             </TooltipContent>
                         </Tooltip>
                     </div>

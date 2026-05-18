@@ -905,6 +905,63 @@ class TaskController extends Controller
         return back();
     }
 
+    public function forceUpdateSiteScopeIds(Request $request, Deployment $deployment)
+    {
+        $request->validate([
+            'task_type' => ['required', Rule::in(['ASSOCIATE_DEVICE_TO_SITE', 'ASSOCIATE_SITE_AND_NAME'])],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before updating site scope IDs.');
+
+            return back();
+        }
+
+        $devices = Device::query()
+            ->where('deployment_id', $deployment->id)
+            ->with('site')
+            ->get();
+
+        $withoutSite = $devices->filter(fn (Device $device): bool => $device->site_id === null || $device->site === null);
+        if ($withoutSite->isNotEmpty()) {
+            $names = $withoutSite->pluck('name')->filter()->values()->all();
+            session()->flash('error', 'These devices have no site assigned: '.implode(', ', $names).'.');
+
+            return back();
+        }
+
+        $sitesToSync = $devices
+            ->map(fn (Device $device) => $device->site)
+            ->unique('id')
+            ->filter(fn (Site $site): bool => trim((string) $site->name) !== '')
+            ->values();
+
+        if ($sitesToSync->isEmpty()) {
+            session()->flash('error', 'No valid site names are set for devices in this deployment.');
+
+            return back();
+        }
+
+        $helper = new CentralAPIHelper($deployment->client);
+        $syncResult = $helper->syncScopeIdsForSites($sitesToSync);
+
+        if ($syncResult['error'] !== null) {
+            session()->flash('error', $syncResult['error']);
+
+            return back();
+        }
+
+        $updated = $syncResult['updated'];
+        if ($updated === 1) {
+            session()->flash('success', 'Updated scope ID for 1 site.');
+        } else {
+            session()->flash('success', "Updated scope IDs for {$updated} sites.");
+        }
+
+        return back();
+    }
+
     public function destroy(Task $task)
     {
         $task->devices()->detach();
