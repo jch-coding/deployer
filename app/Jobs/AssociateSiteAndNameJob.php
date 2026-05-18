@@ -27,7 +27,7 @@ class AssociateSiteAndNameJob extends BaseTaskJob
         $this->handleSafely(function (): void {
             // check that site has a classic central id
             if (! $this->device->site->classic_id) {
-                $sites_result = $this->centralAPIHelper->classic_collect_all_sites();
+                $sites_result = $this->centralAPIHelper->classic_get_sites();
                 if (isset($sites_result['error'])) {
                     Log::error($sites_result['error']);
                     $this->fail($sites_result['error']);
