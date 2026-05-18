@@ -23,6 +23,7 @@ use App\Jobs\RemoveLocalOverrideVlansJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\Site;
 use App\Models\Task;
 use App\TaskType;
 use Carbon\Carbon;
@@ -868,6 +869,25 @@ class TaskController extends Controller
             $siteName = $centralSite['site_name'] ?? null;
             if (is_string($siteName) && trim($siteName) !== '') {
                 $centralNames[trim($siteName)] = true;
+            }
+        }
+
+        $sitesToSync = $devices
+            ->map(fn (Device $device) => $device->site)
+            ->unique('id')
+            ->filter(function (Site $site) use ($centralNames): bool {
+                $name = trim((string) $site->name);
+
+                return blank($site->scope_id) && $name !== '' && array_key_exists($name, $centralNames);
+            })
+            ->values();
+
+        if ($sitesToSync->isNotEmpty()) {
+            $syncResult = $helper->syncScopeIdsForSites($sitesToSync);
+            if ($syncResult['error'] !== null) {
+                session()->flash('error', $syncResult['error']);
+
+                return back();
             }
         }
 

@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Site;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -149,6 +150,88 @@ class CentralAPIHelper
         }
 
         return $central_site['scopeId'];
+    }
+
+    /**
+     * @param  Collection<int, Site>|iterable<Site>  $sites
+     * @return array{updated: int, error: string|null}
+     */
+    public function syncScopeIdsForSites(iterable $sites): array
+    {
+        $sites = collect($sites)->unique('id')->values();
+
+        if ($sites->isEmpty()) {
+            return ['updated' => 0, 'error' => null];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'updated' => 0,
+                'error' => 'Could not authenticate with Central to load site scope IDs.',
+            ];
+        }
+
+        $limit = 100;
+        $offset = 0;
+        $returned_sites = [];
+
+        while (true) {
+            $central_sites = $this->get_sites([
+                'offset' => $offset,
+                'limit' => $limit,
+            ]);
+
+            if (is_array($central_sites) && array_key_exists('error', $central_sites)) {
+                return [
+                    'updated' => 0,
+                    'error' => 'Could not load site scope IDs from Central.',
+                ];
+            }
+
+            if (! $central_sites->ok()) {
+                return [
+                    'updated' => 0,
+                    'error' => 'Could not load site scope IDs from Central.',
+                ];
+            }
+
+            $page_items = $central_sites->json('items', []);
+            $returned_sites = array_merge($returned_sites, is_array($page_items) ? $page_items : []);
+
+            if (count($page_items) < $limit) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        $updated = 0;
+        foreach ($sites as $site) {
+            $central_site = array_find(
+                $returned_sites,
+                fn (mixed $s): bool => is_array($s) && ($s['scopeName'] ?? null) === $site->name
+            );
+
+            if (! is_array($central_site) || ! isset($central_site['scopeId'])) {
+                continue;
+            }
+
+            $site->scope_id = $central_site['scopeId'];
+            $site->save();
+            $updated++;
+        }
+
+        $stillMissing = $sites->filter(fn (Site $site): bool => blank($site->scope_id));
+        if ($stillMissing->isNotEmpty()) {
+            $names = $stillMissing->pluck('name')->filter()->values()->all();
+
+            return [
+                'updated' => $updated,
+                'error' => 'Could not resolve scope ID for sites: '.implode(', ', $names).'.',
+            ];
+        }
+
+        return ['updated' => $updated, 'error' => null];
     }
 
     public function updateSystemInfo(Device $device)
