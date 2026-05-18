@@ -93,8 +93,13 @@ class ConfigureVlanInterfaceJob extends BaseTaskJob
                     $this->release($this->wait_time * 60);
                     return;
                 }
-
-                return;
+                else {
+                    $success_message = '\nSuccessfully patched vlan interface for .'.$this->deviceInterface->device;
+                    $this->task->processTaskStatusLog($success_message);
+                    $this->task->deviceInterfaces()->find($this->deviceInterface)->pivot->update(['status' => 'COMPLETED']);
+                    
+                    return;
+                }
             }
             $error_message = '\nFailed to post vlan interface.';
             Log::error($error_message);
