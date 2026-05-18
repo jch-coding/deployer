@@ -945,7 +945,6 @@ class CentralAPIHelper
                 break;
             }
 
-            $countBefore = count($sitesById);
             foreach ($pageSites as $site) {
                 if (! is_array($site)) {
                     continue;
@@ -955,10 +954,6 @@ class CentralAPIHelper
                     continue;
                 }
                 $sitesById[$siteId] = $site;
-            }
-
-            if (count($sitesById) === $countBefore) {
-                break;
             }
 
             $offset += $limit;
