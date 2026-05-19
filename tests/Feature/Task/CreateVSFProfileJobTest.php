@@ -22,7 +22,7 @@ beforeEach(function () {
 it('refreshes device scope_id after successful vsf profile creation', function () {
     Sleep::fake();
 
-    $site = Site::factory()->create([
+    $site = Site::factory()->for($this->client)->create([
         'scope_id' => 'site-scope-id',
     ]);
 

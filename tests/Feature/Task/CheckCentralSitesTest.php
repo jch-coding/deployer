@@ -33,7 +33,7 @@ test('check central sites flashes success when all device site names exist in Ce
             ->push(['sites' => []], 200),
     ]);
 
-    $site = Site::factory()->create(['name' => 'MySite']);
+    $site = Site::factory()->for($this->client)->create(['name' => 'MySite']);
 
     Device::factory()->create([
         'client_id' => $this->client->id,
@@ -56,7 +56,7 @@ test('check central sites flashes error listing sites missing in Central', funct
             ->push(['sites' => []], 200),
     ]);
 
-    $site = Site::factory()->create(['name' => 'NotInCentral']);
+    $site = Site::factory()->for($this->client)->create(['name' => 'NotInCentral']);
 
     Device::factory()->create([
         'client_id' => $this->client->id,
@@ -77,7 +77,7 @@ test('check central sites flashes error when Central sites request fails', funct
         '*central/v2/sites*' => Http::response(['detail' => 'nope'], 500),
     ]);
 
-    $site = Site::factory()->create(['name' => 'Any']);
+    $site = Site::factory()->for($this->client)->create(['name' => 'Any']);
 
     Device::factory()->create([
         'client_id' => $this->client->id,
@@ -119,7 +119,7 @@ test('check central sites rejects when current client does not match deployment'
     $otherClient = Client::factory()->for($this->user)->create(['current' => false]);
     $otherDeployment = Deployment::factory()->for($otherClient)->create();
 
-    $site = Site::factory()->create(['name' => 'S']);
+    $site = Site::factory()->for($this->client)->create(['name' => 'S']);
 
     Device::factory()->create([
         'client_id' => $otherClient->id,
@@ -149,7 +149,7 @@ test('check central sites updates scope_id when site exists in Classic and local
         ], 200),
     ]);
 
-    $site = Site::factory()->create(['name' => 'MySite', 'scope_id' => null]);
+    $site = Site::factory()->for($this->client)->create(['name' => 'MySite', 'scope_id' => null]);
 
     Device::factory()->create([
         'client_id' => $this->client->id,
@@ -175,7 +175,7 @@ test('check central sites flashes scope sync error when modern Central lookup fa
         '*network-config/v1/sites*' => Http::response(['detail' => 'nope'], 500),
     ]);
 
-    $site = Site::factory()->create(['name' => 'MySite', 'scope_id' => null]);
+    $site = Site::factory()->for($this->client)->create(['name' => 'MySite', 'scope_id' => null]);
 
     Device::factory()->create([
         'client_id' => $this->client->id,
@@ -200,7 +200,7 @@ test('check central sites does not call modern Central when local scope_id is al
             ->push(['sites' => []], 200),
     ]);
 
-    $site = Site::factory()->create([
+    $site = Site::factory()->for($this->client)->create([
         'name' => 'MySite',
         'scope_id' => 'existing-scope-id',
     ]);

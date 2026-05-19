@@ -12,6 +12,7 @@ use App\Http\Resources\LacpProfileResource;
 use App\Http\Resources\StpProfileResource;
 use App\Http\Resources\SwitchPortResource;
 use App\InterfaceKind;
+use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -142,8 +143,14 @@ class DeviceController extends Controller
 
         if (in_array('site', $headers)) {
             $sites_with_devices = static::getSitesWithDeviceSerials($devices);
-            $saved_sites = static::saveSitesWithDevices($sites_with_devices, $user->id);
-            $unsaved_sites = array_filter($sites_with_devices, fn ($site) => Site::where('name', $site['name'])->doesntExist());
+            $saved_sites = static::saveSitesWithDevices($sites_with_devices, $currentClient, $user->id);
+            $unsaved_sites = array_filter(
+                $sites_with_devices,
+                fn ($site) => Site::query()
+                    ->where('client_id', $currentClient->id)
+                    ->where('name', $site['name'])
+                    ->doesntExist()
+            );
         }
 
         if (in_array('interface', $headers)) {
@@ -593,19 +600,22 @@ class DeviceController extends Controller
         return $sites_with_devices;
     }
 
-    public static function saveSitesWithDevices(array $sites_with_devices, ?int $userId = null)
+    public static function saveSitesWithDevices(array $sites_with_devices, Client $client, ?int $userId = null)
     {
         $saved_sites = [];
         foreach ($sites_with_devices as $site_with_devices) {
-            $site = Site::firstOrCreate(['name' => $site_with_devices['name']]);
+            $site = Site::firstOrCreateForClient($client, $site_with_devices['name']);
             $saved_sites[] = $site;
-            array_map(function ($device) use ($site, $userId): void {
+            array_map(function ($device) use ($site, $userId, $client): void {
                 $deviceQuery = Device::query()->where('serial', $device);
                 if ($userId !== null) {
                     $deviceQuery->where('user_id', $userId);
                 }
                 $siteDevice = $deviceQuery->first();
-                $siteDevice?->update(['site_id' => $site->id]);
+                if ($siteDevice === null || (int) $siteDevice->client_id !== (int) $client->id) {
+                    return;
+                }
+                $siteDevice->update(['site_id' => $site->id]);
             }, $site_with_devices['devices']);
         }
 

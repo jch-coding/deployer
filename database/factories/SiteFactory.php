@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Client;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -17,7 +18,8 @@ class SiteFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => fake()->name(),
+            'name' => fake()->unique()->words(2, true),
+            'client_id' => Client::factory(),
             'scope_id' => fake()->uuid(),
         ];
     }

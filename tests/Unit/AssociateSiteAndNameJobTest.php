@@ -63,7 +63,7 @@ it('fails the queue job when classic_collect_all_sites returns a token error arr
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
-    $site = Site::factory()->create(['name' => 'Alpha', 'classic_id' => null]);
+    $site = Site::factory()->for($client)->create(['name' => 'Alpha', 'classic_id' => null]);
 
     [$task, $device] = associateJobMakeDeviceTaskSite($user, $client, $deployment, $site);
 
@@ -82,7 +82,7 @@ it('fails the queue job when classic_collect_all_sites reports load failure', fu
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
-    $site = Site::factory()->create(['name' => 'Alpha', 'classic_id' => null]);
+    $site = Site::factory()->for($client)->create(['name' => 'Alpha', 'classic_id' => null]);
 
     [$task, $device] = associateJobMakeDeviceTaskSite($user, $client, $deployment, $site);
 
@@ -101,7 +101,7 @@ it('fails the queue job when the deployment site is not present in classic centr
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
-    $site = Site::factory()->create(['name' => 'Missing Here', 'classic_id' => null]);
+    $site = Site::factory()->for($client)->create(['name' => 'Missing Here', 'classic_id' => null]);
 
     [$task, $device] = associateJobMakeDeviceTaskSite($user, $client, $deployment, $site);
 
@@ -122,7 +122,7 @@ it('persists classic_id from classic central then stops when associate fails wit
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
-    $site = Site::factory()->create(['name' => 'Rome', 'classic_id' => null]);
+    $site = Site::factory()->for($client)->create(['name' => 'Rome', 'classic_id' => null]);
 
     [$task, $device] = associateJobMakeDeviceTaskSite($user, $client, $deployment, $site, [
         'scope_id' => null,
@@ -152,7 +152,7 @@ it('releases the job when associate fails and device already has classic site id
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
-    $site = Site::factory()->create(['name' => 'Paris', 'classic_id' => 99]);
+    $site = Site::factory()->for($client)->create(['name' => 'Paris', 'classic_id' => 99]);
 
     [$task, $device] = associateJobMakeDeviceTaskSite($user, $client, $deployment, $site, [
         'scope_id' => null,
@@ -178,7 +178,7 @@ it('completes device pivot when scope id already exists and postSystemInfo succe
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
-    $site = Site::factory()->create(['name' => 'London', 'classic_id' => 1]);
+    $site = Site::factory()->for($client)->create(['name' => 'London', 'classic_id' => 1]);
 
     [$task, $device] = associateJobMakeDeviceTaskSite($user, $client, $deployment, $site, [
         'scope_id' => 'scope-existing',
@@ -206,7 +206,7 @@ it('releases the job when postSystemInfo returns a token error array', function 
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
-    $site = Site::factory()->create(['name' => 'Berlin', 'classic_id' => 1]);
+    $site = Site::factory()->for($client)->create(['name' => 'Berlin', 'classic_id' => 1]);
 
     [$task, $device] = associateJobMakeDeviceTaskSite($user, $client, $deployment, $site, [
         'scope_id' => 'scope-x',
@@ -228,7 +228,7 @@ it('runs associate then scope lookup then postSystemInfo when starting without s
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
-    $site = Site::factory()->create(['name' => 'Madrid', 'classic_id' => 77]);
+    $site = Site::factory()->for($client)->create(['name' => 'Madrid', 'classic_id' => 77]);
 
     [$task, $device] = associateJobMakeDeviceTaskSite($user, $client, $deployment, $site, [
         'scope_id' => null,

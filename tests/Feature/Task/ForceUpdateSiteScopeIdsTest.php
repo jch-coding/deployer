@@ -29,8 +29,8 @@ test('force update site scope ids updates all deployment sites from modern Centr
         ], 200),
     ]);
 
-    $siteA = Site::factory()->create(['name' => 'SiteA', 'scope_id' => 'old-a']);
-    $siteB = Site::factory()->create(['name' => 'SiteB', 'scope_id' => null]);
+    $siteA = Site::factory()->for($this->client)->create(['name' => 'SiteA', 'scope_id' => 'old-a']);
+    $siteB = Site::factory()->for($this->client)->create(['name' => 'SiteB', 'scope_id' => null]);
 
     Device::factory()->create([
         'client_id' => $this->client->id,
@@ -64,7 +64,7 @@ test('force update site scope ids flashes success with site name and scope id fo
         ], 200),
     ]);
 
-    $site = Site::factory()->create(['name' => 'MySite', 'scope_id' => null]);
+    $site = Site::factory()->for($this->client)->create(['name' => 'MySite', 'scope_id' => null]);
 
     Device::factory()->create([
         'client_id' => $this->client->id,
@@ -87,7 +87,7 @@ test('force update site scope ids flashes error when modern Central lookup fails
         '*network-config/v1/sites*' => Http::response(['detail' => 'nope'], 500),
     ]);
 
-    $site = Site::factory()->create(['name' => 'MySite', 'scope_id' => 'existing']);
+    $site = Site::factory()->for($this->client)->create(['name' => 'MySite', 'scope_id' => 'existing']);
 
     Device::factory()->create([
         'client_id' => $this->client->id,
@@ -111,7 +111,7 @@ test('force update site scope ids rejects when current client does not match dep
     $otherClient = Client::factory()->for($this->user)->create(['current' => false]);
     $otherDeployment = Deployment::factory()->for($otherClient)->create();
 
-    $site = Site::factory()->create(['name' => 'S']);
+    $site = Site::factory()->for($this->client)->create(['name' => 'S']);
 
     Device::factory()->create([
         'client_id' => $otherClient->id,

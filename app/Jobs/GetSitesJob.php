@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 class GetSitesJob implements ShouldQueue
 {
-    use Queueable, Batchable;
+    use Batchable, Queueable;
 
     /**
      *  $sites = [
@@ -76,7 +76,10 @@ class GetSitesJob implements ShouldQueue
                 continue;
             }
 
-            $found = Site::where('name', $returned_site['scopeName'])->get()->first();
+            $found = Site::query()
+                ->where('name', $returned_site['scopeName'])
+                ->where('client_id', $this->centralAPIHelper->client->id)
+                ->first();
             if ($found) {
                 $found->scope_id = $returned_site['scopeId'];
                 $found->save();

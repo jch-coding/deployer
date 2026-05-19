@@ -28,14 +28,21 @@ function centralSitesResponse(array $payload, bool $ok = true): object
     };
 }
 
+function getSitesJobMockHelper(Client $client): CentralAPIHelper
+{
+    $clientMock = mock(Client::class)->makePartial();
+    $clientMock->id = $client->id;
+    $clientMock->shouldReceive('handleBearerTokenAuth')->andReturnTrue();
+
+    return mock(CentralAPIHelper::class, [$clientMock])->makePartial();
+}
+
 it('fetches paginated sites and updates matching local site scope ids', function () {
-    $siteA = Site::factory()->create(['name' => 'Site A', 'scope_id' => null]);
-    $siteB = Site::factory()->create(['name' => 'Site B', 'scope_id' => null]);
+    $client = Client::factory()->create();
+    $siteA = Site::factory()->for($client)->create(['name' => 'Site A', 'scope_id' => null]);
+    $siteB = Site::factory()->for($client)->create(['name' => 'Site B', 'scope_id' => null]);
 
-    $client = mock(Client::class)->makePartial();
-    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnTrue();
-
-    $helper = mock(CentralAPIHelper::class, [$client])->makePartial();
+    $helper = getSitesJobMockHelper($client);
     $helper->shouldReceive('get_sites')->once()->with(['offset' => 0, 'limit' => 100])->andReturn(
         centralSitesResponse([
             'items' => [
@@ -56,12 +63,10 @@ it('fetches paginated sites and updates matching local site scope ids', function
 });
 
 it('continues pagination until an empty page is returned', function () {
-    Site::factory()->create(['name' => 'Site Z', 'scope_id' => null]);
+    $client = Client::factory()->create();
+    Site::factory()->for($client)->create(['name' => 'Site Z', 'scope_id' => null]);
 
-    $client = mock(Client::class)->makePartial();
-    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnTrue();
-
-    $helper = mock(CentralAPIHelper::class, [$client])->makePartial();
+    $helper = getSitesJobMockHelper($client);
     $helper->shouldReceive('get_sites')->once()->with(['offset' => 0, 'limit' => 100])->andReturn(
         centralSitesResponse([
             'items' => array_map(
@@ -79,14 +84,12 @@ it('continues pagination until an empty page is returned', function () {
     ]);
     $job->handle();
 
-    expect(Site::query()->where('name', 'Site Z')->value('scope_id'))->toBe('scope-z');
+    expect(Site::query()->where('client_id', $client->id)->where('name', 'Site Z')->value('scope_id'))->toBe('scope-z');
 });
 
 it('throws when a paginated get_sites call fails', function () {
-    $client = mock(Client::class)->makePartial();
-    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnTrue();
-
-    $helper = mock(CentralAPIHelper::class, [$client])->makePartial();
+    $client = Client::factory()->create();
+    $helper = getSitesJobMockHelper($client);
     $helper->shouldReceive('get_sites')->once()->with(['offset' => 0, 'limit' => 100])->andReturn(
         centralSitesResponse([
             'items' => array_map(
@@ -109,13 +112,11 @@ it('throws when a paginated get_sites call fails', function () {
 })->throws(Exception::class, 'Failed to get sites from Central');
 
 it('logs when requested sites are not found across paginated results', function () {
-    Site::factory()->create(['name' => 'Site Present', 'scope_id' => null]);
-    Site::factory()->create(['name' => 'Site Missing', 'scope_id' => null]);
+    $client = Client::factory()->create();
+    Site::factory()->for($client)->create(['name' => 'Site Present', 'scope_id' => null]);
+    Site::factory()->for($client)->create(['name' => 'Site Missing', 'scope_id' => null]);
 
-    $client = mock(Client::class)->makePartial();
-    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnTrue();
-
-    $helper = mock(CentralAPIHelper::class, [$client])->makePartial();
+    $helper = getSitesJobMockHelper($client);
     $helper->shouldReceive('get_sites')->once()->with(['offset' => 0, 'limit' => 100])->andReturn(
         centralSitesResponse([
             'items' => [
@@ -132,6 +133,6 @@ it('logs when requested sites are not found across paginated results', function 
     ]);
     $job->handle();
 
-    expect(Site::query()->where('name', 'Site Present')->value('scope_id'))->toBe('scope-present')
-        ->and(Site::query()->where('name', 'Site Missing')->value('scope_id'))->toBeNull();
+    expect(Site::query()->where('client_id', $client->id)->where('name', 'Site Present')->value('scope_id'))->toBe('scope-present')
+        ->and(Site::query()->where('client_id', $client->id)->where('name', 'Site Missing')->value('scope_id'))->toBeNull();
 });

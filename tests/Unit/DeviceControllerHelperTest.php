@@ -534,8 +534,9 @@ test('get sites returns an array of sites and their associated devices by serial
 });
 
 test('save sites saves sites with their devices associated', function () {
-    $devices_site_a = Device::factory()->count(2)->create();
-    $devices_site_b = Device::factory()->count(2)->create();
+    $client = \App\Models\Client::factory()->create();
+    $devices_site_a = Device::factory()->count(2)->for($client)->create();
+    $devices_site_b = Device::factory()->count(2)->for($client)->create();
     $sites = [
         [
             'name' => 'Site A',
@@ -546,14 +547,16 @@ test('save sites saves sites with their devices associated', function () {
             'devices' => $devices_site_b->pluck('serial')->toArray(),
         ],
     ];
-    $saved_sites = DeviceController::saveSitesWithDevices($sites);
+    $saved_sites = DeviceController::saveSitesWithDevices($sites, $client);
     $collected_saved_sites = collect($saved_sites);
     $this->assertDatabaseCount('sites', 2);
     $this->assertDatabaseHas('sites', [
         'name' => 'Site A',
+        'client_id' => $client->id,
     ]);
     $this->assertDatabaseHas('sites', [
         'name' => 'Site B',
+        'client_id' => $client->id,
     ]);
 
     $site_a = $collected_saved_sites->first();
@@ -830,18 +833,22 @@ test('saveInterfaces links switchport, stp, and lacp profiles from optional colu
 });
 
 test('saveSitesWithDevices updates device site_id based on optional site column mapping', function () {
-    $first = Device::factory()->create(['serial' => 'SN-SITE-0001']);
-    $second = Device::factory()->create(['serial' => 'SN-SITE-0002']);
+    $client = \App\Models\Client::factory()->create();
+    $first = Device::factory()->for($client)->create(['serial' => 'SN-SITE-0001']);
+    $second = Device::factory()->for($client)->create(['serial' => 'SN-SITE-0002']);
 
     DeviceController::saveSitesWithDevices([
         [
             'name' => 'Optional Site Alpha',
             'devices' => [$first->serial, $second->serial],
         ],
-    ]);
+    ], $client);
 
-    $this->assertDatabaseHas('sites', ['name' => 'Optional Site Alpha']);
-    $siteId = \App\Models\Site::query()->where('name', 'Optional Site Alpha')->value('id');
+    $this->assertDatabaseHas('sites', ['name' => 'Optional Site Alpha', 'client_id' => $client->id]);
+    $siteId = \App\Models\Site::query()
+        ->where('name', 'Optional Site Alpha')
+        ->where('client_id', $client->id)
+        ->value('id');
 
     $this->assertDatabaseHas('devices', ['id' => $first->id, 'site_id' => $siteId]);
     $this->assertDatabaseHas('devices', ['id' => $second->id, 'site_id' => $siteId]);

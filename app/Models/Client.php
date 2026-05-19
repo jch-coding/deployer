@@ -31,6 +31,11 @@ class Client extends Model
         return $this->hasMany(Deployment::class);
     }
 
+    public function sites(): HasMany
+    {
+        return $this->hasMany(Site::class);
+    }
+
     protected function casts(): array
     {
         return [
