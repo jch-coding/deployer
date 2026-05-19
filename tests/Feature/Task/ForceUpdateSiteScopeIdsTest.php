@@ -49,10 +49,37 @@ test('force update site scope ids updates all deployment sites from modern Centr
         'task_type' => 'ASSOCIATE_DEVICE_TO_SITE',
     ])
         ->assertRedirect()
-        ->assertSessionHas('success', 'Updated scope IDs for 2 sites.');
+        ->assertSessionHas('success', 'Updated scope IDs: SiteA: scope-a-new, SiteB: scope-b-new.');
 
     expect($siteA->fresh()->scope_id)->toBe('scope-a-new')
         ->and($siteB->fresh()->scope_id)->toBe('scope-b-new');
+});
+
+test('force update site scope ids flashes success with site name and scope id for one site', function () {
+    Http::fake([
+        '*network-config/v1/sites*' => Http::response([
+            'items' => [
+                ['scopeName' => 'MySite', 'scopeId' => 'scope-xyz'],
+            ],
+        ], 200),
+    ]);
+
+    $site = Site::factory()->create(['name' => 'MySite', 'scope_id' => null]);
+
+    Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'site_id' => $site->id,
+    ]);
+
+    $this->post(route('tasks.force_update_site_scope_ids', $this->deployment), [
+        'task_type' => 'ASSOCIATE_DEVICE_TO_SITE',
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success', 'Updated scope ID for MySite: scope-xyz.');
+
+    expect($site->fresh()->scope_id)->toBe('scope-xyz');
 });
 
 test('force update site scope ids flashes error when modern Central lookup fails', function () {

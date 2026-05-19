@@ -952,14 +952,24 @@ class TaskController extends Controller
             return back();
         }
 
-        $updated = $syncResult['updated'];
-        if ($updated === 1) {
-            session()->flash('success', 'Updated scope ID for 1 site.');
-        } else {
-            session()->flash('success', "Updated scope IDs for {$updated} sites.");
-        }
+        session()->flash('success', $this->formatSiteScopeIdUpdateFlashMessage($sitesToSync));
 
         return back();
+    }
+
+    private function formatSiteScopeIdUpdateFlashMessage(Collection $sites): string
+    {
+        $details = $sites
+            ->sortBy(fn (Site $site) => $site->name)
+            ->map(fn (Site $site) => "{$site->name}: {$site->scope_id}")
+            ->values()
+            ->all();
+
+        if (count($details) === 1) {
+            return "Updated scope ID for {$details[0]}.";
+        }
+
+        return 'Updated scope IDs: '.implode(', ', $details).'.';
     }
 
     public function destroy(Task $task)
