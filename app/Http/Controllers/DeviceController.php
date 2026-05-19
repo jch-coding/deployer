@@ -22,6 +22,7 @@ use App\Models\StpProfile;
 use App\Models\SwitchPort;
 use App\Support\TrunkVlanRanges;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -1048,7 +1049,7 @@ class DeviceController extends Controller
         return back();
     }
 
-    private function applyDeploymentDeviceSearch(Builder $query, string $search): void
+    private function applyDeploymentDeviceSearch(Builder|Relation $query, string $search): void
     {
         if ($search === '') {
             return;
