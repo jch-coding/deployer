@@ -1,11 +1,15 @@
 <?php
 
+use App\BaseURL;
 use App\Helper\CentralAPIHelper;
 use App\InterfaceKind;
+use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\LacpProfile;
 use App\Models\SwitchPort;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 test('build_switchport_from_device_interface returns a switchport array with subarrays that are not empty', function () {
     $this->withoutExceptionHandling();
@@ -346,4 +350,145 @@ test('the conductor serial number is used to find the stack_id of a stack in mrt
 
     $stack_id = CentralAPIHelper::getStackId($device, $response_json['items']);
     expect($stack_id['stackId'])->toEqual('41bbc334-749b-4924-bf91-c4377a323536');
+});
+
+function makeCentralApiHelperForSwitches(): CentralAPIHelper
+{
+    $client = Client::factory()->create([
+        'expires_at' => now()->addHour(),
+        'bearer_token' => 'test-bearer-token',
+        'base_url' => BaseURL::US1->value,
+    ]);
+
+    return new CentralAPIHelper($client);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function minimalSwitchItem(string $serial, string $stackId): array
+{
+    return [
+        'serialNumber' => $serial,
+        'stackId' => $stackId,
+    ];
+}
+
+test('get_all_switches paginates with limit and next until cursor is null', function () {
+    $pageOneSerial = 'SERIAL-PAGE-ONE';
+    $pageTwoSerial = 'SERIAL-PAGE-TWO';
+    $stackId = 'stack-uuid-page-two';
+
+    Http::fake(function (Request $request) use ($pageOneSerial, $pageTwoSerial, $stackId) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        expect($query['limit'] ?? null)->toBe('100');
+
+        if (! isset($query['next'])) {
+            return Http::response([
+                'items' => [minimalSwitchItem($pageOneSerial, 'stack-page-one')],
+                'count' => 1,
+                'total' => 2,
+                'next' => '2',
+            ], 200);
+        }
+
+        expect($query['next'])->toBe('2');
+
+        return Http::response([
+            'items' => [minimalSwitchItem($pageTwoSerial, $stackId)],
+            'count' => 1,
+            'total' => 2,
+            'next' => null,
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_all_switches();
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(2)
+        ->and($result[0]['serialNumber'])->toBe($pageOneSerial)
+        ->and($result[1]['serialNumber'])->toBe($pageTwoSerial);
+
+    Http::assertSentCount(2);
+});
+
+test('get_all_switches returns error when a page request fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/switches*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_all_switches())->toBe([
+        'error' => 'failed to get switches from central.',
+    ]);
+});
+
+test('getScopeIdFromCentral resolves stack_id from a later switches page', function () {
+    $deviceSerial = 'SG20KN309V';
+    $stackId = '41bbc334-749b-4924-bf91-c4377a323536';
+    $scopeId = 'resolved-scope-id';
+
+    Http::fake(function (Request $request) use ($deviceSerial, $stackId, $scopeId) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/switches')) {
+            parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $query);
+
+            if (! isset($query['next'])) {
+                return Http::response([
+                    'items' => [minimalSwitchItem('OTHER-SERIAL', 'other-stack')],
+                    'count' => 1,
+                    'total' => 2,
+                    'next' => '2',
+                ], 200);
+            }
+
+            return Http::response([
+                'items' => [minimalSwitchItem($deviceSerial, $stackId)],
+                'count' => 1,
+                'total' => 2,
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-config/v1/hierarchy')) {
+            return Http::response([
+                'items' => [
+                    [
+                        'hierarchy' => [
+                            [
+                                'childCount' => null,
+                                'scopeType' => 'device',
+                                'scopeId' => $scopeId,
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $device = Device::factory()->create([
+        'serial' => $deviceSerial,
+        'device_function' => 'ACCESS_SWITCH',
+        'scope_id' => null,
+        'stack_id' => null,
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->getScopeIdFromCentral($device);
+
+    expect($result)->not->toHaveKey('error')
+        ->and($device->fresh()->stack_id)->toBe($stackId)
+        ->and(collect($result)->first()['scopeId'] ?? null)->toBe($scopeId);
+
+    Http::assertSent(function (Request $request) {
+        return str_contains($request->url(), 'network-monitoring/v1/switches')
+            && str_contains($request->url(), 'next=2');
+    });
 });

@@ -81,12 +81,11 @@ class CentralAPIHelper
         }
 
         if (str_contains($device->device_function, 'SWITCH')) {
-            $get_switches_response = $this->get_switches();
-            if (! $get_switches_response->ok()) {
+            $switchesResult = $this->get_all_switches();
+            if (array_key_exists('error', $switchesResult)) {
                 Log::error('failed to get switches from central. Using switch serial to retrieve scope-id. Will fail if switch is a stack.');
             } else {
-                $switches = $get_switches_response->json()['items'];
-                $stack_id = static::getStackId($device, $switches);
+                $stack_id = static::getStackId($device, $switchesResult);
                 if (array_key_exists('error', $stack_id)) {
                     Log::error('failed to get stack-id from central. Using switch serial to retrieve scope-id.');
 
@@ -921,10 +920,14 @@ class CentralAPIHelper
         }
     }
 
-    /*
-     *  param: $filter = [ 'siteId', 'siteName', 'model', 'status', 'deployment' ]
+    /**
+     * Single-page GET for network-monitoring switches.
      *
-     *  used with eq or in. Ex ['siteName' => ' eq SAC Warehouse'] will translate to 'siteName eq "SAC Warehouse"'
+     * @param  array<string, mixed>  $filter  Query parameters:
+     *                                        - limit: page size (0–1000)
+     *                                        - next: pagination cursor from a previous response
+     *                                        - filter: OData filter (siteId, siteName, model, status, deployment)
+     *                                        - sort: sort expression
      */
     public function get_switches(array $filter = [])
     {
@@ -933,6 +936,50 @@ class CentralAPIHelper
             ->get($this->client->base_url.$this->switchMonitoring['switches']);
 
         return $response;
+    }
+
+    /**
+     * Page through all switches using cursor pagination (limit + next).
+     *
+     * @param  array<string, mixed>  $filter  Optional OData filter/sort (limit and next are managed internally)
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    public function get_all_switches(array $filter = []): array
+    {
+        $allItems = [];
+        $limit = 100;
+        $next = null;
+
+        while (true) {
+            $params = array_merge($filter, ['limit' => $limit]);
+            if ($next !== null && $next !== '') {
+                $params['next'] = $next;
+            }
+
+            $response = $this->get_switches($params);
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get switches from central.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            $allItems = array_merge($allItems, $pageItems);
+
+            $next = $response->json('next');
+            if ($next === null || $next === '') {
+                break;
+            }
+        }
+
+        return $allItems;
     }
 
     public function get_sites(array $queryParameters = [])
