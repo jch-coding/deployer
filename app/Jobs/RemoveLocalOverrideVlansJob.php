@@ -27,7 +27,7 @@ class RemoveLocalOverrideVlansJob extends BaseTaskJob
             if (! $this->device->scope_id) {
                 $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
                 if (array_key_exists('error', $scopeid_response)) {
-                    $message = '\nFailed to get scope-id from Central.';
+                    $message = '\nFailed to get scope-id from Central for device '.$this->device->name;
                     $this->task->processTaskStatusLog($message, true);
 
                     return;
@@ -53,7 +53,7 @@ class RemoveLocalOverrideVlansJob extends BaseTaskJob
                 }
                 $override_vlans = array_filter($l2_vlans, fn ($vlan) => ($vlan['vlan'] ?? null) != 1);
                 if (count($override_vlans) === 0) {
-                    $message = "\nNo local override vlans found.";
+                    $message = "\nNo local override vlans found for device ".$this->device->name;
                     $this->task->processTaskStatusLog($message);
                     $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                     $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
@@ -67,16 +67,16 @@ class RemoveLocalOverrideVlansJob extends BaseTaskJob
                         if ($delete_response->ok()) {
                             $success++;
                         } else {
-                            $message = "\nFailed to delete vlan {$vlan_array['vlan']}: {$delete_response->json()['message']}";
+                            $message = "\nFailed to delete vlan {$vlan_array['vlan']}: {$delete_response->json()['message']} for device ".$this->device->name;
                             $this->task->processTaskStatusLog($message, true);
                         }
                     }, $override_vlans);
                     if ($success != count($override_vlans)) {
-                        $message = "\nFailed to delete all local override vlans. Please check Central for more details.";
+                        $message = "\nFailed to delete all local override vlans for device ".$this->device->name.". Please check Central for more details.";
                         $this->task->processTaskStatusLog($message, true);
                         $this->release($this->wait_time * 60);
                     } else {
-                        $message = "\nSuccessfully deleted all local override vlans.";
+                        $message = "\nSuccessfully deleted all local override vlans for device ".$this->device->name;
                         $this->task->processTaskStatusLog($message);
                         $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                         $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
@@ -86,7 +86,7 @@ class RemoveLocalOverrideVlansJob extends BaseTaskJob
                     }
                 }
             } else {
-                $message = "\nFailed to get local override vlans: {$l2_vlan_response->json()['message']}";
+                $message = "\nFailed to get local override vlans: {$l2_vlan_response->json()['message']} for device ".$this->device->name;
                 $this->task->processTaskStatusLog($message, true);
                 $this->release($this->wait_time * 60);
             }

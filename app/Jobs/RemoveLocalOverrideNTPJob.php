@@ -27,7 +27,7 @@ class RemoveLocalOverrideNTPJob extends BaseTaskJob
             if (! $this->device->scope_id) {
                 $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
                 if (array_key_exists('error', $scopeid_response)) {
-                    $message = '\nFailed to get scope-id from Central.';
+                    $message = '\nFailed to get scope-id from Central for device '.$this->device->name;
                     $this->task->processTaskStatusLog($message, true);
 
                     return;
@@ -52,11 +52,11 @@ class RemoveLocalOverrideNTPJob extends BaseTaskJob
                     $ntp_profile_name = array_pop($ntp_response->json()['profile'])['name'];
                     $delete_ntp_response = $this->centralAPIHelper->delete_ntp_profile($ntp_profile_name, $query_parameters);
                     if (! $delete_ntp_response->ok()) {
-                        $message = "\nFailed to delete ntp profile: {$delete_ntp_response->json()['message']}";
+                        $message = "\nFailed to delete ntp profile: {$delete_ntp_response->json()['message']} for device ".$this->device->name;
                         $this->task->processTaskStatusLog($message, true);
                         $this->release($this->wait_time * 60);
                     } else {
-                        $message = "\nDeleted ntp profile: {$ntp_profile_name}";
+                        $message = "\nDeleted ntp profile: {$ntp_profile_name} for device ".$this->device->name;
                         $this->task->processTaskStatusLog($message);
                         $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                         $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
@@ -65,7 +65,7 @@ class RemoveLocalOverrideNTPJob extends BaseTaskJob
                         }
                     }
                 } else {
-                    $message = "\nNo local override ntp profiles found.";
+                    $message = "\nNo local override ntp profiles found for device ".$this->device->name;
                     $this->task->processTaskStatusLog($message);
                     $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                     $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
@@ -74,7 +74,7 @@ class RemoveLocalOverrideNTPJob extends BaseTaskJob
                     }
                 }
             } else {
-                $message = "\nFailed to get local override ntp profiles: {$ntp_response->json()['message']}";
+                $message = "\nFailed to get local override ntp profiles: {$ntp_response->json()['message']} for device ".$this->device->name;
                 $this->task->processTaskStatusLog($message, true);
                 $this->release($this->wait_time * 60);
             }

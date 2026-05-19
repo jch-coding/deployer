@@ -28,7 +28,7 @@ class RemoveLocalOverrideDNSJob extends BaseTaskJob
         if (!$this->device->scope_id) {
             $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
             if (array_key_exists('error', $scopeid_response)) {
-                $message = '\nFailed to get scope-id from Central.';
+                $message = '\nFailed to get scope-id from Central for device '.$this->device->name;
                 $this->task->processTaskStatusLog($message, true);
                 return;
             } else {
@@ -52,11 +52,11 @@ class RemoveLocalOverrideDNSJob extends BaseTaskJob
                 $dns_profile_name = array_pop($dns_response->json()['profile'])['name'];
                 $delete_dns_response = $this->centralAPIHelper->delete_dns_profile($dns_profile_name, $query_parameters);
                 if (! $delete_dns_response->ok()) {
-                    $message = "\nFailed to delete dns profile: {$delete_dns_response->json()['message']}";
+                    $message = "\nFailed to delete dns profile: {$delete_dns_response->json()['message']} for device ".$this->device->name;
                     $this->task->processTaskStatusLog($message, true);
                     $this->release($this->wait_time * 60);
                 } else {
-                    $message = "\nDeleted dns profile: {$dns_profile_name}";
+                    $message = "\nDeleted dns profile: {$dns_profile_name} for device ".$this->device->name;
                     $this->task->processTaskStatusLog($message);
                     $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                     $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
@@ -65,7 +65,7 @@ class RemoveLocalOverrideDNSJob extends BaseTaskJob
                     }
                 }
             } else {
-                $message = "\nNo local override dns profiles found.";
+                $message = "\nNo local override dns profiles found for device ".$this->device->name;
                 $this->task->processTaskStatusLog($message);
                 $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                 $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
@@ -74,7 +74,7 @@ class RemoveLocalOverrideDNSJob extends BaseTaskJob
                 }
             }
         } else {
-            $message = "\nFailed to get local override dns profiles: {$dns_response->json()['message']}";
+            $message = "\nFailed to get local override dns profiles: {$dns_response->json()['message']} for device ".$this->device->name;
             $this->task->processTaskStatusLog($message, true);
             $this->release($this->wait_time * 60);
         }

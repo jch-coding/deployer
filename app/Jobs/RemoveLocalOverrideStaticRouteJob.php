@@ -27,7 +27,7 @@ class RemoveLocalOverrideStaticRouteJob extends BaseTaskJob
             if (! $this->device->scope_id) {
                 $scopeid_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
                 if (array_key_exists('error', $scopeid_response)) {
-                    $message = '\nFailed to get scope-id from Central.';
+                    $message = '\nFailed to get scope-id from Central for device '.$this->device->name;
                     $this->task->processTaskStatusLog($message, true);
 
                     return;
@@ -52,11 +52,11 @@ class RemoveLocalOverrideStaticRouteJob extends BaseTaskJob
                     $static_profile_name = array_pop($static_route_response->json()['profile'])['name'];
                     $delete_static_response = $this->centralAPIHelper->delete_static_route($static_profile_name, $query_parameters);
                     if (! $delete_static_response->ok()) {
-                        $message = "\nFailed to delete static route: {$delete_static_response->json()['message']}";
+                        $message = "\nFailed to delete static route: {$delete_static_response->json()['message']} for device ".$this->device->name;
                         $this->task->processTaskStatusLog($message, true);
                         $this->release($this->wait_time * 60);
                     } else {
-                        $message = "\nDeleted static route: {$static_profile_name}";
+                        $message = "\nDeleted static route: {$static_profile_name} for device ".$this->device->name;
                         $this->task->processTaskStatusLog($message);
                         $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                         $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
@@ -65,7 +65,7 @@ class RemoveLocalOverrideStaticRouteJob extends BaseTaskJob
                         }
                     }
                 } else {
-                    $message = "\nNo local override static route profiles found.";
+                    $message = "\nNo local override static route profiles found for device ".$this->device->name;
                     $this->task->processTaskStatusLog($message);
                     $this->task->devices()->find($this->device)->pivot->update(['status' => 'COMPLETED']);
                     $completed_devices = $this->task->devices->filter(fn ($device) => $device->pivot->status === 'COMPLETED');
@@ -74,7 +74,7 @@ class RemoveLocalOverrideStaticRouteJob extends BaseTaskJob
                     }
                 }
             } else {
-                $message = "\nFailed to get local override static routes: {$static_route_response->json()['message']}";
+                $message = "\nFailed to get local override static routes: {$static_route_response->json()['message']} for device ".$this->device->name;
                 $this->task->processTaskStatusLog($message, true);
                 $this->release($this->wait_time * 60);
             }
