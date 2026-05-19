@@ -326,15 +326,19 @@ export default function Show() {
                                 </div>
                             </div>
                             {showSelectAllFilteredBanner ? (
-                                <p
-                                    className="mb-2 text-sm text-muted-foreground"
+                                <div
+                                    className="mb-2 flex flex-wrap items-center gap-4"
                                     data-test="select-all-filtered-devices-banner"
                                 >
-                                    All {devicesFromServer.length} devices on this
-                                    page are selected.{' '}
-                                    <button
+                                    <p className="text-sm text-muted-foreground">
+                                        All {devicesFromServer.length} devices on
+                                        this page are selected.
+                                    </p>
+                                    <Button
                                         type="button"
-                                        className="text-primary underline-offset-4 hover:underline"
+                                        variant="default"
+                                        size="sm"
+                                        className="shrink-0"
                                         data-test="select-all-filtered-devices"
                                         onClick={() => {
                                             setAllFilteredSelected(true);
@@ -343,8 +347,8 @@ export default function Show() {
                                     >
                                         Select all {devicesPaginator.total} devices
                                         matching this search
-                                    </button>
-                                </p>
+                                    </Button>
+                                </div>
                             ) : null}
                             <DataTable<DeviceDef, unknown>
                                 data={devicesFromServer}
