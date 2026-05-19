@@ -286,6 +286,8 @@ class TaskController extends Controller
                     'status' => $task->status,
                     'item_count' => $category === 'INTERFACE' ? $task->device_interfaces_count : $task->devices_count,
                     'human_updated_at' => Carbon::parse($task->updated_at)->diffForHumans(),
+                    'deployment_time' => $task->deployment_time,
+                    'wait_time' => $task->wait_time,
                 ];
             });
 
@@ -1001,7 +1003,7 @@ class TaskController extends Controller
         return to_route('tasks.show', $group->first());
     }
 
-    public function relaunch(Task $task)
+    public function relaunch(Request $request, Task $task)
     {
         if (! in_array($task->status, ['FAILED', 'TIMED_OUT', 'CANCELLED'], true)) {
             session()->flash('error', 'Only failed, timed out, or cancelled tasks can be relaunched.');
@@ -1009,8 +1011,21 @@ class TaskController extends Controller
             return back();
         }
 
+        $validated = $request->validate([
+            'deployment_time' => ['nullable', 'integer', 'min:0'],
+            'wait_time' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        $updates = ['status' => 'IN_PROGRESS'];
+        if (array_key_exists('deployment_time', $validated)) {
+            $updates['deployment_time'] = $validated['deployment_time'];
+        }
+        if (array_key_exists('wait_time', $validated)) {
+            $updates['wait_time'] = $validated['wait_time'];
+        }
+
         $task->resetIncompletePivotRowsToPending();
-        $task->update(['status' => 'IN_PROGRESS']);
+        $task->update($updates);
         $batchId = $this->dispatchJob($task);
 
         if ($batchId !== null) {

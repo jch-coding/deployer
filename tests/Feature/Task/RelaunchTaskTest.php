@@ -102,6 +102,34 @@ test('relaunching a timed out task sets status in progress and redirects to show
     expect($task->devices->first()->pivot->status)->toBe('PENDING');
 });
 
+test('relaunch with custom timers persists deployment_time and wait_time', function () {
+    Bus::fake();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'FAILED',
+        'deployment_time' => 1,
+        'wait_time' => 1,
+    ]);
+
+    $task->devices()->attach($device->id, ['status' => 'FAILED']);
+
+    $this->post(route('tasks.relaunch', $task), [
+        'deployment_time' => 90,
+        'wait_time' => 5,
+    ])->assertRedirect(route('tasks.show', $task));
+
+    $task->refresh();
+    expect($task->status)->toBe('IN_PROGRESS')
+        ->and($task->deployment_time)->toBe(90)
+        ->and($task->wait_time)->toBe(5);
+});
+
 test('relaunch rejects non-failed-and-non-cancelled task statuses', function () {
     Bus::fake();
 

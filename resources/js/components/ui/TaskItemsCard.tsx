@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import TaskDurationDialog from '@/components/ui/TaskDurationDialog';
 import {
     Tooltip,
     TooltipContent,
@@ -93,65 +94,30 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
             </CardHeader>
             <CardContent className="flex w-full flex-wrap items-center gap-2">
                 <div className="flex flex-wrap items-center gap-2">
-                <Dialog>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <DialogTrigger asChild>
-                                <Button
-                                    type="button"
-                                    size="icon"
-                                    className="rounded-full"
-                                    data-test="set-deployment-time"
-                                    aria-label="Set duration"
-                                >
-                                    <AlarmClockIcon className="size-4" aria-hidden />
-                                </Button>
-                            </DialogTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                            <p>Set duration</p>
-                        </TooltipContent>
-                    </Tooltip>
-                    <DialogContent>
-                        <DialogTitle>Set Task Duration</DialogTitle>
-                        <DialogDescription>
-                            Set the duration of the task
-                        </DialogDescription>
-                        <div className="flex gap-2">
-                            <label htmlFor="deployment-time-hours" className="self-center">Hours</label>
-                            <input
-                                type="number"
-                                value={deploymentTimeHours}
-                                onChange={(e) => setDeploymentTimeHours(parseInt(e.target.value))}
-                                className="w-1/4 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                            <label htmlFor="deployment-time-minutes" className="self-center">Minutes</label>
-                            <input
-                                type="number"
-                                value={deploymentTimeMinutes}
-                                onChange={(e) => setDeploymentTimeMinutes(parseInt(e.target.value))}
-                                className="w-1/4 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="wait-time-minutes" className="self-center pr-2">Retry Interval</label>
-                            <input
-                                type="number"
-                                value={waitTimeMinutes}
-                                onChange={(e) => setWaitTimeMinutes(parseInt(e.target.value))}
-                                className="w-1/4 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                            <i className="text-slate-400 pl-2">in minutes</i>
-                        </div>
-                        <DialogFooter className="sm:justify-start">
-                            <DialogClose asChild>
-                                <Button className="hover:bg-slate-300">
-                                    Set Duration
-                                </Button>
-                            </DialogClose>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                <TaskDurationDialog
+                    deploymentTimeHours={deploymentTimeHours}
+                    deploymentTimeMinutes={deploymentTimeMinutes}
+                    waitTimeMinutes={waitTimeMinutes}
+                    onDeploymentTimeHoursChange={setDeploymentTimeHours}
+                    onDeploymentTimeMinutesChange={setDeploymentTimeMinutes}
+                    onWaitTimeMinutesChange={setWaitTimeMinutes}
+                    trigger={
+                        <Button
+                            type="button"
+                            size="icon"
+                            className="rounded-full"
+                            data-test="set-deployment-time"
+                            aria-label="Set duration"
+                        >
+                            <AlarmClockIcon className="size-4" aria-hidden />
+                        </Button>
+                    }
+                    footer={
+                        <DialogClose asChild>
+                            <Button className="hover:bg-slate-300">Set Duration</Button>
+                        </DialogClose>
+                    }
+                />
                 <Dialog>
                     <Tooltip>
                         <TooltipTrigger asChild>

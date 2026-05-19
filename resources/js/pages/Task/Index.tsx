@@ -1,12 +1,14 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { AlarmClock, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
+import TaskDurationDialog from '@/components/ui/TaskDurationDialog';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as taskIndex, relaunch, show as showTask } from '@/routes/tasks';
@@ -21,6 +23,8 @@ type TaskRow = {
     status: string;
     item_count: number;
     human_updated_at: string;
+    deployment_time: number | null;
+    wait_time: number;
 };
 
 type TaskIndexProps = {
@@ -56,76 +60,148 @@ function canRelaunch(status: string): boolean {
     return status === 'FAILED' || status === 'TIMED_OUT' || status === 'CANCELLED';
 }
 
-const columns: ColumnDef<TaskRow>[] = [
-    {
-        accessorKey: 'task_name',
-        header: 'Task Name',
-        cell: ({ row }) => (
-            <Link
-                href={showTask(row.original.id).url}
-                className="text-primary font-medium hover:underline"
-            >
-                {row.original.task_name}
-            </Link>
-        ),
-    },
-    {
-        accessorKey: 'deployment_name',
-        header: 'Deployment Name',
-    },
-    {
-        accessorKey: 'client_name',
-        header: 'Client Name',
-    },
-    {
-        accessorKey: 'status',
-        header: 'Status',
-        cell: ({ row }) => (
-            <Badge variant="outline" className={statusBadgeClass(row.original.status)}>
-                {row.original.status}
-            </Badge>
-        ),
-    },
-    {
-        accessorKey: 'human_updated_at',
-        header: 'Last updated',
-    },
-    {
-        accessorKey: 'item_count',
-        header: 'Items',
-    },
-    {
-        id: 'actions',
-        header: 'Actions',
-        cell: ({ row }) => {
-            const disabled = !canRelaunch(row.original.status);
+function deploymentTimeToHoursMinutes(deploymentTime: number | null): { hours: number; minutes: number } {
+    const total = deploymentTime ?? 0;
+    return {
+        hours: Math.floor(total / 60),
+        minutes: total % 60,
+    };
+}
 
-            return (
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={disabled}
-                    onClick={() => {
-                        if (disabled) {
-                            return;
-                        }
-                        router.post(relaunch(row.original.id).url);
-                    }}
-                    data-test={`tasks-relaunch-${row.original.id}`}
-                >
-                    Relaunch
-                </Button>
-            );
-        },
-    },
-];
+function TaskRowActions({ task }: { task: TaskRow }) {
+    const disabled = !canRelaunch(task.status);
+    const initial = deploymentTimeToHoursMinutes(task.deployment_time);
+    const [deploymentTimeHours, setDeploymentTimeHours] = useState(initial.hours);
+    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(initial.minutes);
+    const [waitTimeMinutes, setWaitTimeMinutes] = useState(task.wait_time ?? 1);
+
+    useEffect(() => {
+        const next = deploymentTimeToHoursMinutes(task.deployment_time);
+        setDeploymentTimeHours(next.hours);
+        setDeploymentTimeMinutes(next.minutes);
+        setWaitTimeMinutes(task.wait_time ?? 1);
+    }, [task.deployment_time, task.wait_time]);
+
+    const relaunchWithTimers = () => {
+        if (disabled) {
+            return;
+        }
+        router.post(relaunch(task.id).url, {
+            deployment_time: deploymentTimeHours * 60 + deploymentTimeMinutes,
+            wait_time: waitTimeMinutes,
+        });
+    };
+
+    return (
+        <div className="flex items-center gap-2">
+            <TaskDurationDialog
+                deploymentTimeHours={deploymentTimeHours}
+                deploymentTimeMinutes={deploymentTimeMinutes}
+                waitTimeMinutes={waitTimeMinutes}
+                onDeploymentTimeHoursChange={setDeploymentTimeHours}
+                onDeploymentTimeMinutesChange={setDeploymentTimeMinutes}
+                onWaitTimeMinutesChange={setWaitTimeMinutes}
+                hoursInputId={`tasks-relaunch-hours-${task.id}`}
+                minutesInputId={`tasks-relaunch-minutes-${task.id}`}
+                waitTimeInputId={`tasks-relaunch-wait-${task.id}`}
+                tooltipLabel="Relaunch with custom timers"
+                trigger={
+                    <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        disabled={disabled}
+                        data-test={`tasks-relaunch-timers-${task.id}`}
+                        aria-label="Relaunch with custom timers"
+                    >
+                        <AlarmClock className="size-4" aria-hidden />
+                    </Button>
+                }
+                footer={
+                    <DialogClose asChild>
+                        <Button
+                            type="button"
+                            disabled={disabled}
+                            data-test={`tasks-relaunch-timers-submit-${task.id}`}
+                            onClick={relaunchWithTimers}
+                        >
+                            Relaunch
+                        </Button>
+                    </DialogClose>
+                }
+            />
+            <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={disabled}
+                onClick={() => {
+                    if (disabled) {
+                        return;
+                    }
+                    router.post(relaunch(task.id).url);
+                }}
+                data-test={`tasks-relaunch-${task.id}`}
+            >
+                Relaunch
+            </Button>
+        </div>
+    );
+}
 
 export default function Index() {
     const { current_client, filters, tasks, status_options } = usePage<TaskIndexProps>().props;
     const [taskNameFilter, setTaskNameFilter] = useState(filters.task_name ?? '');
     const [deploymentNameFilter, setDeploymentNameFilter] = useState(filters.deployment_name ?? '');
     const [statusFilter, setStatusFilter] = useState(filters.status ?? '');
+
+    const columns = useMemo<ColumnDef<TaskRow>[]>(
+        () => [
+            {
+                accessorKey: 'task_name',
+                header: 'Task Name',
+                cell: ({ row }) => (
+                    <Link
+                        href={showTask(row.original.id).url}
+                        className="text-primary font-medium hover:underline"
+                    >
+                        {row.original.task_name}
+                    </Link>
+                ),
+            },
+            {
+                accessorKey: 'deployment_name',
+                header: 'Deployment Name',
+            },
+            {
+                accessorKey: 'client_name',
+                header: 'Client Name',
+            },
+            {
+                accessorKey: 'status',
+                header: 'Status',
+                cell: ({ row }) => (
+                    <Badge variant="outline" className={statusBadgeClass(row.original.status)}>
+                        {row.original.status}
+                    </Badge>
+                ),
+            },
+            {
+                accessorKey: 'human_updated_at',
+                header: 'Last updated',
+            },
+            {
+                accessorKey: 'item_count',
+                header: 'Items',
+            },
+            {
+                id: 'actions',
+                header: 'Actions',
+                cell: ({ row }) => <TaskRowActions task={row.original} />,
+            },
+        ],
+        [],
+    );
 
     useEffect(() => {
         setTaskNameFilter(filters.task_name ?? '');

@@ -30,6 +30,8 @@ test('tasks index shows only tasks for the current client', function () {
         'status' => 'IN_PROGRESS',
     ]);
 
+    $visibleTask->update(['deployment_time' => 45, 'wait_time' => 3]);
+
     $this->get(route('tasks.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
@@ -37,6 +39,8 @@ test('tasks index shows only tasks for the current client', function () {
             ->has('tasks.data', 1)
             ->where('tasks.data.0.id', $visibleTask->id)
             ->has('tasks.data.0.human_updated_at')
+            ->where('tasks.data.0.deployment_time', 45)
+            ->where('tasks.data.0.wait_time', 3)
         );
 });
 

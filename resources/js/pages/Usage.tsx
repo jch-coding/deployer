@@ -351,9 +351,12 @@ export default function Usage() {
                             </li>
                             <li>
                                 <strong>Relaunch Task:</strong> available from the Tasks index for tasks in
-                                <strong> FAILED</strong> or <strong>CANCELLED</strong> state. Relaunch sets
-                                the task back to <strong>IN_PROGRESS</strong>, redispatches work, and sends
-                                you to the task detail page.
+                                <strong> FAILED</strong>, <strong>TIMED_OUT</strong>, or{' '}
+                                <strong>CANCELLED</strong> state. Relaunch sets the task back to{' '}
+                                <strong>IN_PROGRESS</strong>, redispatches work, and sends you to the task
+                                detail page. Use the clock button next to Relaunch to set custom deployment
+                                duration and retry interval before relaunching; the plain Relaunch button keeps
+                                the task&apos;s stored timers.
                             </li>
                         </ul>
                         <p className={cn(body, 'mt-4')}>
