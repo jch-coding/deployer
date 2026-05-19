@@ -1,5 +1,6 @@
 import {
     type ColumnDef,
+    type RowSelectionState,
     type VisibilityState,
     flexRender,
     getCoreRowModel,
@@ -40,6 +41,9 @@ interface DataTableProps<TData, TValue> {
     enableColumnPicker?: boolean;
     columnPickerTitle?: string;
     columnGroups?: { label: string; columnIds: string[] }[];
+    enableRowSelection?: boolean;
+    rowSelection?: RowSelectionState;
+    onRowSelectionChange?: OnChangeFn<RowSelectionState>;
 }
 
 function stickyCellClass(
@@ -78,6 +82,9 @@ export function DataTable<TData, TValue>({
     enableColumnPicker = false,
     columnPickerTitle = 'Columns',
     columnGroups,
+    enableRowSelection = false,
+    rowSelection,
+    onRowSelectionChange,
 }: DataTableProps<TData, TValue>) {
     const [internalColumnVisibility, setInternalColumnVisibility] = useState<VisibilityState>(
         controlledColumnVisibility ?? {},
@@ -113,10 +120,17 @@ export function DataTable<TData, TValue>({
         columns,
         getCoreRowModel: getCoreRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
+        enableRowSelection,
         state: {
             columnVisibility,
+            ...(enableRowSelection && rowSelection !== undefined
+                ? { rowSelection }
+                : {}),
         },
         onColumnVisibilityChange: handleColumnVisibilityChange,
+        ...(enableRowSelection && onRowSelectionChange
+            ? { onRowSelectionChange }
+            : {}),
         ...(getRowId ? { getRowId } : {}),
     })
 

@@ -1,6 +1,7 @@
 import { Form, router, useForm, usePage } from '@inertiajs/react';
+import type { RowSelectionState } from '@tanstack/react-table';
 import { Download, Search } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { toast } from 'sonner';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
@@ -31,8 +32,11 @@ import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
-import { index as deploymentsIndex } from '@/routes/deployments';
-import { show as showDeployment } from '@/routes/deployments';
+import {
+    index as deploymentsIndex,
+    refreshScopeIds,
+    show as showDeployment,
+} from '@/routes/deployments';
 import { show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import type { Paginator } from '@/types/deployer';
@@ -83,7 +87,11 @@ export default function Show() {
     const deploymentId = Number(deployment.id);
 
     const [deviceTableSearch, setDeviceTableSearch] = useState(device_search);
+    const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+    const [allFilteredSelected, setAllFilteredSelected] = useState(false);
+    const [syncingScopeIds, setSyncingScopeIds] = useState(false);
     const previousDeploymentIdRef = useRef(deploymentId);
+    const previousDeviceSearchRef = useRef(device_search.trim());
 
     const devicesForTasks = useMemo(
         () =>
@@ -125,8 +133,68 @@ export default function Show() {
         if (previousDeploymentIdRef.current !== deploymentId) {
             previousDeploymentIdRef.current = deploymentId;
             setDeviceTableSearch(device_search);
+            setRowSelection({});
+            setAllFilteredSelected(false);
         }
     }, [deploymentId, device_search]);
+
+    useEffect(() => {
+        const trimmed = deviceTableSearch.trim();
+        if (previousDeviceSearchRef.current !== trimmed) {
+            previousDeviceSearchRef.current = trimmed;
+            setRowSelection({});
+            setAllFilteredSelected(false);
+        }
+    }, [deviceTableSearch]);
+
+    const selectedIds = useMemo(
+        () =>
+            Object.entries(rowSelection)
+                .filter(([, selected]) => selected)
+                .map(([id]) => Number(id)),
+        [rowSelection],
+    );
+
+    const selectedCount = allFilteredSelected
+        ? devicesPaginator.total
+        : selectedIds.length;
+
+    const isAllFilteredSelected =
+        allFilteredSelected ||
+        (selectedCount > 0 && selectedCount === devicesPaginator.total);
+
+    const allPageRowsSelected =
+        devicesFromServer.length > 0 &&
+        devicesFromServer.every((device) => rowSelection[String(device.id)]);
+
+    const showSelectAllFilteredBanner =
+        allPageRowsSelected &&
+        !allFilteredSelected &&
+        devicesPaginator.total > devicesFromServer.length;
+
+    const handleForceSyncScopeIds = useCallback(() => {
+        setSyncingScopeIds(true);
+        router.post(
+            refreshScopeIds.url(deploymentId),
+            isAllFilteredSelected
+                ? {
+                      sync_all: true,
+                      ...(deviceTableSearch.trim() !== ''
+                          ? { search: deviceTableSearch.trim() }
+                          : {}),
+                  }
+                : { device_ids: selectedIds },
+            {
+                preserveScroll: true,
+                onFinish: () => setSyncingScopeIds(false),
+            },
+        );
+    }, [
+        deploymentId,
+        deviceTableSearch,
+        isAllFilteredSelected,
+        selectedIds,
+    ]);
 
     useEffect(() => {
         const trimmed = deviceTableSearch.trim();
@@ -227,8 +295,19 @@ export default function Show() {
                     {devicesFromServer.length > 0 ||
                     deviceTableSearch.trim() !== '' ? (
                         <div className="mt-6">
-                            <div className="mb-2 flex justify-end">
-                                <div className="relative w-full max-w-sm">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={selectedCount === 0 || syncingScopeIds}
+                                    data-test="force-sync-device-scope-ids"
+                                    onClick={handleForceSyncScopeIds}
+                                >
+                                    {isAllFilteredSelected
+                                        ? 'force sync scope-id for all devices'
+                                        : 'force sync scope-id for selected'}
+                                </Button>
+                                <div className="relative w-full max-w-sm sm:ml-auto">
                                     <Search
                                         className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
                                         aria-hidden
@@ -246,10 +325,37 @@ export default function Show() {
                                     />
                                 </div>
                             </div>
+                            {showSelectAllFilteredBanner ? (
+                                <p
+                                    className="mb-2 text-sm text-muted-foreground"
+                                    data-test="select-all-filtered-devices-banner"
+                                >
+                                    All {devicesFromServer.length} devices on this
+                                    page are selected.{' '}
+                                    <button
+                                        type="button"
+                                        className="text-primary underline-offset-4 hover:underline"
+                                        data-test="select-all-filtered-devices"
+                                        onClick={() => {
+                                            setAllFilteredSelected(true);
+                                            setRowSelection({});
+                                        }}
+                                    >
+                                        Select all {devicesPaginator.total} devices
+                                        matching this search
+                                    </button>
+                                </p>
+                            ) : null}
                             <DataTable<DeviceDef, unknown>
                                 data={devicesFromServer}
                                 columns={deploymentShowColumns}
                                 getRowId={(row) => String(row.id)}
+                                enableRowSelection
+                                rowSelection={rowSelection}
+                                onRowSelectionChange={(updater) => {
+                                    setAllFilteredSelected(false);
+                                    setRowSelection(updater);
+                                }}
                             />
                             {devicesPaginator.total >
                                 devicesPaginator.per_page && (

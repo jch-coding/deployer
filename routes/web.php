@@ -50,6 +50,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::controller(DeviceController::class)->group(function () {
+        Route::post('/deployments/{deployment}/refresh-scope-ids', 'refreshScopeIds')->name('deployments.refresh-scope-ids');
         Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::get('/devices/{device}', 'show')->name('devices.show');

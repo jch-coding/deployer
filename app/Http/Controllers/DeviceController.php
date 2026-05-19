@@ -20,7 +20,9 @@ use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
 use App\Support\TrunkVlanRanges;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -944,9 +946,125 @@ class DeviceController extends Controller
             $device->update(['scope_id' => array_pop($scopeId)['scopeId']]);
 
             return to_route('deployments.show', $device->fresh()->deployment)->with('success', 'Device scope ID refreshed successfully');
-        } else {
-            return to_route('deployments.show', $device->fresh()->deployment)->with('error', 'Failed to refresh device scope ID');
         }
+
+        return to_route('deployments.show', $device->fresh()->deployment)->with('error', 'Failed to refresh device scope ID');
+    }
+
+    public function refreshScopeIds(Request $request, Deployment $deployment)
+    {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before refreshing device scope IDs.');
+
+            return back();
+        }
+
+        $data = $request->validate([
+            'device_ids' => ['nullable', 'array', 'min:1'],
+            'device_ids.*' => ['integer'],
+            'sync_all' => ['nullable', 'boolean'],
+            'search' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $syncAll = $request->boolean('sync_all');
+        $deviceIds = $data['device_ids'] ?? [];
+
+        if (! $syncAll && $deviceIds === []) {
+            throw ValidationException::withMessages([
+                'device_ids' => 'Select at least one device or sync all devices.',
+            ]);
+        }
+
+        $search = is_string($data['search'] ?? null) ? mb_substr(trim($data['search']), 0, 255) : '';
+
+        if ($syncAll) {
+            $devicesQuery = $deployment->devices();
+            $this->applyDeploymentDeviceSearch($devicesQuery, $search);
+            $devices = $devicesQuery->get();
+        } else {
+            $devices = $deployment->devices()
+                ->whereIn('id', $deviceIds)
+                ->get();
+
+            $missingIds = collect($deviceIds)->diff($devices->pluck('id'));
+            if ($missingIds->isNotEmpty()) {
+                session()->flash('error', 'One or more selected devices do not belong to this deployment.');
+
+                return back();
+            }
+        }
+
+        if ($devices->isEmpty()) {
+            session()->flash('error', 'No devices selected to refresh scope IDs.');
+
+            return back();
+        }
+
+        $centralAPIHelper = new CentralAPIHelper($currentClient);
+        $succeeded = collect();
+        $failedNames = [];
+
+        foreach ($devices as $device) {
+            $scopeId = $centralAPIHelper->getScopeIdFromCentral($device);
+            if (array_key_exists('error', $scopeId)) {
+                $failedNames[] = $device->name;
+
+                continue;
+            }
+
+            $device->update(['scope_id' => array_pop($scopeId)['scopeId']]);
+            $succeeded->push($device->fresh());
+        }
+
+        if ($succeeded->isEmpty()) {
+            session()->flash('error', 'Failed to refresh device scope IDs.');
+
+            return back();
+        }
+
+        if ($failedNames !== []) {
+            session()->flash(
+                'error',
+                'Failed to refresh scope ID for: '.implode(', ', $failedNames).'. '
+                .$this->formatDeviceScopeIdUpdateFlashMessage($succeeded)
+            );
+
+            return back();
+        }
+
+        session()->flash('success', $this->formatDeviceScopeIdUpdateFlashMessage($succeeded));
+
+        return back();
+    }
+
+    private function applyDeploymentDeviceSearch(Builder $query, string $search): void
+    {
+        if ($search === '') {
+            return;
+        }
+
+        $pattern = '%'.addcslashes(mb_strtolower($search), '%_\\').'%';
+        $query->where(function ($inner) use ($pattern) {
+            $inner->whereRaw('lower(name) LIKE ?', [$pattern])
+                ->orWhereRaw('lower(serial) LIKE ?', [$pattern])
+                ->orWhereRaw('lower(device_function) LIKE ?', [$pattern]);
+        });
+    }
+
+    private function formatDeviceScopeIdUpdateFlashMessage(Collection $devices): string
+    {
+        $details = $devices
+            ->sortBy(fn (Device $device) => $device->name)
+            ->map(fn (Device $device) => "{$device->name}: {$device->scope_id}")
+            ->values()
+            ->all();
+
+        if (count($details) === 1) {
+            return "Updated scope ID for {$details[0]}.";
+        }
+
+        return 'Updated scope IDs: '.implode(', ', $details).'.';
     }
 
     /**

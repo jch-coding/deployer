@@ -3,6 +3,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Eye, MoreHorizontal, Pencil, RefreshCw, TrashIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -182,6 +183,33 @@ function DeviceScopeAndDeleteActions({ id }: { id: number }) {
     );
 }
 
+export const deploymentShowSelectColumn: ColumnDef<DeviceDef> = {
+    id: 'select',
+    header: ({ table }) => (
+        <Checkbox
+            checked={
+                table.getIsAllPageRowsSelected() ||
+                (table.getIsSomePageRowsSelected() && 'indeterminate')
+            }
+            onCheckedChange={(value) =>
+                table.toggleAllPageRowsSelected(value === true)
+            }
+            aria-label="Select all devices on this page"
+            data-test="select-all-devices-on-page"
+        />
+    ),
+    cell: ({ row }) => (
+        <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(value === true)}
+            aria-label={`Select device ${row.original.name}`}
+            data-test={`select-device-${row.original.id}`}
+        />
+    ),
+    enableSorting: false,
+    enableHiding: false,
+};
+
 const deploymentShowColumnsBase: ColumnDef<DeviceDef>[] = [
     {
         accessorKey: 'name',
@@ -252,5 +280,7 @@ export const columns: ColumnDef<DeviceDef>[] = [
 ];
 
 /** Device table columns without the numeric ID (e.g. deployment show page). */
-export const deploymentShowColumns: ColumnDef<DeviceDef>[] =
-    deploymentShowColumnsBase;
+export const deploymentShowColumns: ColumnDef<DeviceDef>[] = [
+    deploymentShowSelectColumn,
+    ...deploymentShowColumnsBase,
+];
