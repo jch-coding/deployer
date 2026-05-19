@@ -46,6 +46,7 @@ class Client extends Model
             'classic_password' => 'encrypted',
             'classic_access_token' => 'encrypted',
             'classic_refresh_token' => 'encrypted',
+            'classic_expires_in' => 'datetime',
         ];
     }
 
@@ -126,6 +127,16 @@ class Client extends Model
     public function hasClassicCentralCredentials(): bool
     {
         return $this->classic_client_id !== null && $this->classic_client_secret !== null && $this->classic_username !== null && $this->classic_password !== null;
+    }
+
+    public function updateClassicRefreshToken(string $refreshToken): bool
+    {
+        $this->classic_refresh_token = $refreshToken;
+        $this->classic_access_token = null;
+        $this->classic_expires_in = now()->subSecond();
+        $this->save();
+
+        return $this->handleClassicBearerToken(true);
     }
 
     public function refreshClassicCentralBearerToken()

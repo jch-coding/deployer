@@ -135,6 +135,24 @@ class ClientController extends Controller
             $validated = array_merge($validated, $request->validate(['base_url' => 'string']));
         }
 
+        if ($request->has('classic_refresh_token')) {
+            $classicRefreshToken = $request->validate([
+                'classic_refresh_token' => 'required|string|min:12|max:65535',
+            ])['classic_refresh_token'];
+
+            if (! $client->updateClassicRefreshToken($classicRefreshToken)) {
+                return to_route('clients.index')->with(
+                    'error',
+                    'Failed to refresh Classic Central token with the provided refresh token.',
+                );
+            }
+
+            return to_route('clients.index')->with(
+                'success',
+                'Classic refresh token saved and validated.',
+            );
+        }
+
         $client->update($validated);
         session()->flash('success', 'Client updated successfully.');
 

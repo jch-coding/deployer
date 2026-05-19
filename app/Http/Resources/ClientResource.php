@@ -22,6 +22,8 @@ class ClientResource extends JsonResource
             'current' => $this->current,
             'base_url' => $this->base_url,
             'classic_base_url' => $this->classic_base_url,
+            'has_classic_refresh_token' => $this->classic_refresh_token !== null,
+            'classic_expires_in' => $this->classic_expires_in?->toIso8601String(),
             'deployments_count' => $this->deployments_count,
             'devices_count' => $this->devices_count,
             'user' => $this->whenLoaded('user', fn () => UserResource::make($this->user)),

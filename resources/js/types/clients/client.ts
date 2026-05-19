@@ -9,6 +9,8 @@ type Client = {
     classic_client_secret?: string | null;
     classic_username?: string | null;
     classic_password?: string | null;
+    has_classic_refresh_token?: boolean;
+    classic_expires_in?: string | null;
 }
 
 const base_urls = ["ae1", "au1", "ca1", "de1", "de2", "de3", "gb1", "in", "jp1", "us1", "us2", "us4", "us5", "us6"] as const
