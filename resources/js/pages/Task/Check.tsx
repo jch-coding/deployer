@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { Check as CheckIcon, ChevronDown, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import ConfigurationDiff, {
@@ -69,6 +69,7 @@ type CheckPageProps = SharedData & {
     device_errors: DeviceError[];
     results: InterfaceResult[];
     summary: { total: number; passed: number; failed: number };
+    can_relaunch_failed_verification: boolean;
 };
 
 function groupResultsByDevice(
@@ -277,7 +278,10 @@ export default function Check() {
         device_errors,
         results,
         summary,
+        can_relaunch_failed_verification,
     } = usePage<CheckPageProps>().props;
+
+    const [isRelaunchingFailed, setIsRelaunchingFailed] = useState(false);
 
     const labels = checkKindLabels[check_kind];
 
@@ -339,6 +343,32 @@ export default function Check() {
                             </span>
                         </span>
                     </CardContent>
+                    {can_relaunch_failed_verification && (
+                        <CardContent className="border-t pt-4">
+                            <Button
+                                type="button"
+                                disabled={isRelaunchingFailed}
+                                onClick={() => {
+                                    setIsRelaunchingFailed(true);
+                                    router.post(
+                                        `/tasks/${task.id}/relaunch-failed-verification`,
+                                        {},
+                                        {
+                                            onFinish: () => setIsRelaunchingFailed(false),
+                                        },
+                                    );
+                                }}
+                            >
+                                {isRelaunchingFailed
+                                    ? 'Starting task…'
+                                    : `Relaunch failed interfaces (${summary.failed})`}
+                            </Button>
+                            <p className="text-muted-foreground mt-2 text-xs dark:text-white/70">
+                                Creates a new task containing only the interfaces that failed
+                                verification.
+                            </p>
+                        </CardContent>
+                    )}
                 </Card>
 
                 {deviceGroups.length === 0 ? (

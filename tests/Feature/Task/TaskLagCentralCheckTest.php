@@ -197,6 +197,78 @@ test('task lag central check redirects when current client does not match deploy
     expect($otherClient->fresh()->current)->toBeTrue();
 });
 
+test('task lag central check exposes relaunch when interfaces failed', function () {
+    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+
+    Http::fake([
+        '*portchannels*' => Http::response(['interface' => []], 200),
+    ]);
+
+    $this->get(route('tasks.check', $fixtures['task']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('can_relaunch_failed_verification', true)
+            ->where('summary.failed', 1));
+});
+
+test('task lag central check hides relaunch when all interfaces pass', function () {
+    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+
+    Http::fake([
+        '*portchannels*' => Http::response([
+            'interface' => [$fixtures['expectedCentralItem']],
+        ], 200),
+    ]);
+
+    $this->get(route('tasks.check', $fixtures['task']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('can_relaunch_failed_verification', false)
+            ->where('summary.failed', 0));
+});
+
+test('relaunch failed verification creates task with only failed interfaces', function () {
+    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+
+    Http::fake([
+        '*portchannels*' => Http::response(['interface' => []], 200),
+    ]);
+
+    $response = $this->post(route('tasks.relaunch_failed_verification', $fixtures['task']));
+
+    $newTask = Task::query()
+        ->where('deployment_id', $this->deployment->id)
+        ->where('id', '!=', $fixtures['task']->id)
+        ->latest('id')
+        ->first();
+
+    expect($newTask)->not->toBeNull()
+        ->and($newTask->task_type)->toBe('CONFIGURE_LAG_INTERFACE')
+        ->and($newTask->status)->toBe('IN_PROGRESS');
+
+    $response->assertRedirect(route('tasks.show', $newTask));
+
+    expect($newTask->fresh()->deviceInterfaces->pluck('id')->all())
+        ->toBe([$fixtures['deviceInterface']->id]);
+});
+
+test('relaunch failed verification rejects when nothing failed', function () {
+    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+
+    Http::fake([
+        '*portchannels*' => Http::response([
+            'interface' => [$fixtures['expectedCentralItem']],
+        ], 200),
+    ]);
+
+    $this->from(route('tasks.check', $fixtures['task']))
+        ->post(route('tasks.relaunch_failed_verification', $fixtures['task']))
+        ->assertRedirect(route('tasks.check', $fixtures['task']))
+        ->assertSessionHas('error');
+
+    expect(Task::query()->where('deployment_id', $this->deployment->id)->count())->toBe(1);
+});
+
 test('task index includes central check flags for lag tasks', function () {
     $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
 

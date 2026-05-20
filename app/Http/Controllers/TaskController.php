@@ -23,6 +23,7 @@ use App\Jobs\RemoveLocalOverrideVlansJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\DeviceInterface;
 use App\Models\Site;
 use App\Models\Task;
 use App\Services\EthernetInterfaceCentralVerifier;
@@ -390,7 +391,90 @@ class TaskController extends Controller
                 'passed' => $passed,
                 'failed' => $failed,
             ],
+            'can_relaunch_failed_verification' => $failed > 0,
         ]);
+    }
+
+    public function relaunchFailedVerification(Request $request, Task $task)
+    {
+        $task->loadMissing('deployment.client');
+
+        $currentClient = $request->user()?->currentClient();
+        if (! $currentClient || (int) $task->deployment?->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before relaunching failed interfaces.');
+
+            return redirect()->route('tasks.index');
+        }
+
+        if (! Task::supportsCentralCheck($task->task_type)) {
+            abort(404);
+        }
+
+        $helper = new CentralAPIHelper($task->deployment->client);
+
+        $verification = match ($task->task_type) {
+            'CONFIGURE_LAG_INTERFACE' => (new LagInterfaceCentralVerifier)->verify($task, $helper),
+            'CONFIGURE_ETHERNET_INTERFACE' => (new EthernetInterfaceCentralVerifier)->verify($task, $helper),
+            default => abort(404),
+        };
+
+        $failedInterfaceIds = collect($verification['results'])
+            ->where('ok', false)
+            ->pluck('device_interface_id')
+            ->unique()
+            ->values();
+
+        if ($failedInterfaceIds->isEmpty()) {
+            session()->flash('error', 'No interfaces failed verification; nothing to relaunch.');
+
+            return back();
+        }
+
+        $deviceIds = DeviceInterface::query()
+            ->whereIn('id', $failedInterfaceIds)
+            ->pluck('device_id')
+            ->unique()
+            ->values();
+
+        $namePrefix = match ($task->task_type) {
+            'CONFIGURE_LAG_INTERFACE' => 'configure_lag_interface_retry_',
+            'CONFIGURE_ETHERNET_INTERFACE' => 'configure_ethernet_interface_retry_',
+            default => 'configure_interface_retry_',
+        };
+
+        $jobQueue = $task->job_queue;
+        if (! is_string($jobQueue) || $jobQueue === '') {
+            $jobQueue = $this->allocateJobQueue($request, (string) $task->id);
+        }
+
+        $newTask = $task->deployment->tasks()->create([
+            'task_type' => $task->task_type,
+            'name' => $namePrefix.$task->deployment->name.now(),
+            'deployment_time' => $task->deployment_time,
+            'wait_time' => $task->wait_time,
+            'status' => 'IN_PROGRESS',
+            'job_queue' => $jobQueue,
+        ]);
+
+        $newTask->devices()->attach($deviceIds);
+
+        $attachData = $failedInterfaceIds
+            ->mapWithKeys(fn (int $id) => [$id => ['status' => 'PENDING']])
+            ->all();
+        $newTask->deviceInterfaces()->attach($attachData);
+
+        $batchId = $this->dispatchJob($newTask);
+
+        if ($batchId !== null) {
+            $newTask->forceFill(['batch_id' => $batchId])->save();
+        }
+
+        session()->flash(
+            'success',
+            'Started a new task for '.$failedInterfaceIds->count().' interface(s) that failed verification.',
+        );
+
+        return to_route('tasks.show', $newTask);
     }
 
     /**
@@ -1254,13 +1338,26 @@ class TaskController extends Controller
                 $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideStaticRouteJob($task, $device, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_ETHERNET_INTERFACE':
-                $devices_with_port_profiles = $task->devices->map(function ($device) {
-                    $device->interfaces_sw_profiles = $device->interfaces->filter(fn ($interface) => $interface->sw_profile && str_contains($interface->interface, '/'));
+                if ($task->deviceInterfaces->isNotEmpty()) {
+                    $in_progress = $task->deviceInterfaces->filter(
+                        fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED',
+                    );
+                } else {
+                    $devices_with_port_profiles = $task->devices->map(function ($device) {
+                        $device->interfaces_sw_profiles = $device->interfaces->filter(
+                            fn ($interface) => $interface->sw_profile && str_contains($interface->interface, '/'),
+                        );
 
-                    return $device;
-                });
-                $task = $this->attach_interfaces($task, $this->getConfigureAllInterfacesForType($devices_with_port_profiles, 'CONFIGURE_ETHERNET_INTERFACE'));
-                $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
+                        return $device;
+                    });
+                    $task = $this->attach_interfaces(
+                        $task,
+                        $this->getConfigureAllInterfacesForType($devices_with_port_profiles, 'CONFIGURE_ETHERNET_INTERFACE'),
+                    );
+                    $in_progress = $task->deviceInterfaces->filter(
+                        fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED',
+                    );
+                }
                 $jobs[] = $in_progress->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_VLAN_INTERFACE':
@@ -1270,9 +1367,17 @@ class TaskController extends Controller
                 $jobs[] = $in_progress->map(fn ($vlan_interface) => new ConfigureVlanInterfaceJob($vlan_interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_LAG_INTERFACE':
-                $lag_interfaces = $this->getConfigureAllInterfacesForType($task->devices, 'CONFIGURE_LAG_INTERFACE');
-                $task = $this->attach_interfaces($task, $lag_interfaces);
-                $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
+                if ($task->deviceInterfaces->isNotEmpty()) {
+                    $in_progress = $task->deviceInterfaces->filter(
+                        fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED',
+                    );
+                } else {
+                    $lag_interfaces = $this->getConfigureAllInterfacesForType($task->devices, 'CONFIGURE_LAG_INTERFACE');
+                    $task = $this->attach_interfaces($task, $lag_interfaces);
+                    $in_progress = $task->deviceInterfaces->filter(
+                        fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED',
+                    );
+                }
                 $jobs[] = $in_progress->map(fn ($lag_interface) => new ConfigureLagInterfaceJob($lag_interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'ASSOCIATE_SITE_AND_NAME':
