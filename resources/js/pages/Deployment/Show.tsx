@@ -261,7 +261,7 @@ export default function Show() {
                 {deployment.name}
             </h1>
             <div className="mt-4 flex justify-center">
-                <Button variant="outline" asChild>
+                <Button asChild>
                     <a href={criticalCheckDeployment(deploymentId).url}>
                         Critical configuration check
                     </a>
