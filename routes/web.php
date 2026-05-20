@@ -68,6 +68,7 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(TaskController::class)->group(function () {
         Route::get('/tasks', 'index')->name('tasks.index');
         Route::get('/tasks/{task}', 'show')->name('tasks.show');
+        Route::get('/tasks/{task}/check', 'check')->name('tasks.check');
         Route::post('/tasks/deployment/{deployment}/check-central-group', 'checkCentralGroup')->name('tasks.check_central_group');
         Route::post('/tasks/deployment/{deployment}/check-central-sites', 'checkCentralSites')->name('tasks.check_central_sites');
         Route::post('/tasks/deployment/{deployment}/force-update-site-scope-ids', 'forceUpdateSiteScopeIds')->name('tasks.force_update_site_scope_ids');

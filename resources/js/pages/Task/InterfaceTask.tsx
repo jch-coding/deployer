@@ -1,4 +1,4 @@
-import { router, usePage, usePoll } from '@inertiajs/react';
+import { Link, router, usePage, usePoll } from '@inertiajs/react';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { index as clientIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
-import { cancel, clear_queue, show as showTask } from '@/routes/tasks';
+import { cancel, check as checkTask, clear_queue, show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -92,6 +92,16 @@ export default function Show() {
             </div>
             <div className="mx-auto my-2 flex min-w-7xl gap-4">
                 <div className="max-w-[400px]">
+                    {task.task_type === 'CONFIGURE_LAG_INTERFACE' &&
+                        task.status === 'COMPLETED' && (
+                            <div className="mb-2">
+                                <Button variant="outline" className="w-full" asChild>
+                                    <Link href={checkTask(task.id).url}>
+                                        Verify in Central
+                                    </Link>
+                                </Button>
+                            </div>
+                        )}
                     <Card className="h-[75vh] overflow-y-auto">
                         <CardHeader className="text-center text-2xl font-bold">
                             Progress

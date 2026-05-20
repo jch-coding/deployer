@@ -11,7 +11,7 @@ import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import TaskDurationDialog from '@/components/ui/TaskDurationDialog';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
-import { index as taskIndex, relaunch, show as showTask } from '@/routes/tasks';
+import { check as checkTask, index as taskIndex, relaunch, show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import type { Paginator } from '@/types/deployer';
 
@@ -25,6 +25,8 @@ type TaskRow = {
     human_updated_at: string;
     deployment_time: number | null;
     wait_time: number;
+    supports_central_check: boolean;
+    can_run_central_check: boolean;
 };
 
 type TaskIndexProps = {
@@ -94,6 +96,11 @@ function TaskRowActions({ task }: { task: TaskRow }) {
 
     return (
         <div className="flex items-center gap-2">
+            {task.can_run_central_check && (
+                <Button variant="outline" size="sm" asChild>
+                    <Link href={checkTask(task.id).url}>Verify</Link>
+                </Button>
+            )}
             <TaskDurationDialog
                 deploymentTimeHours={deploymentTimeHours}
                 deploymentTimeMinutes={deploymentTimeMinutes}

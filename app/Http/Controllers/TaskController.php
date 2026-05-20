@@ -25,6 +25,7 @@ use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\Site;
 use App\Models\Task;
+use App\Services\LagInterfaceCentralVerifier;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -278,6 +279,8 @@ class TaskController extends Controller
             ->through(function (Task $task) {
                 $category = $task->getTaskCategory($task->task_type);
 
+                $supportsCentralCheck = Task::supportsCentralCheck($task->task_type);
+
                 return [
                     'id' => $task->id,
                     'task_name' => Task::getTaskFriendlyName($task->task_type),
@@ -288,6 +291,8 @@ class TaskController extends Controller
                     'human_updated_at' => Carbon::parse($task->updated_at)->diffForHumans(),
                     'deployment_time' => $task->deployment_time,
                     'wait_time' => $task->wait_time,
+                    'supports_central_check' => $supportsCentralCheck,
+                    'can_run_central_check' => $supportsCentralCheck && $task->status === 'COMPLETED',
                 ];
             });
 
@@ -337,6 +342,41 @@ class TaskController extends Controller
             'interfaces' => $isDeviceBasedTask ? [] : $task->deviceInterfaces()->withPivot('status')->get(),
             'deployment' => $task->deployment,
             'display_columns' => $this->display_columns[$task->task_type] ?? [],
+        ]);
+    }
+
+    public function check(Request $request, Task $task)
+    {
+        $task->loadMissing('deployment.client');
+
+        $currentClient = $request->user()?->currentClient();
+        if (! $currentClient || (int) $task->deployment?->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before verifying configuration.');
+
+            return redirect()->route('tasks.index');
+        }
+
+        if (! Task::supportsCentralCheck($task->task_type)) {
+            abort(404);
+        }
+
+        $helper = new CentralAPIHelper($task->deployment->client);
+        $verification = (new LagInterfaceCentralVerifier)->verify($task, $helper);
+
+        $passed = collect($verification['results'])->where('ok', true)->count();
+        $failed = collect($verification['results'])->where('ok', false)->count();
+
+        return Inertia::render('Task/Check', [
+            'task' => $task->only(['id', 'task_type', 'status']),
+            'task_friendly_name' => Task::getTaskFriendlyName($task->task_type),
+            'deployment' => $task->deployment->only(['id', 'name']),
+            'device_errors' => $verification['device_errors'],
+            'results' => $verification['results'],
+            'summary' => [
+                'total' => count($verification['results']),
+                'passed' => $passed,
+                'failed' => $failed,
+            ],
         ]);
     }
 

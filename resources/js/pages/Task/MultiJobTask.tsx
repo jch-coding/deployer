@@ -1,4 +1,4 @@
-import { router, usePage, usePoll } from '@inertiajs/react';
+import { Link, router, usePage, usePoll } from '@inertiajs/react';
 import { ChevronDown, PowerOffIcon, Trash2Icon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { index as clientIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
-import { cancel, clear_queue, show as showTask } from '@/routes/tasks';
+import { cancel, check as checkTask, clear_queue, show as showTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import { toast } from 'sonner';
 
@@ -203,6 +203,21 @@ export default function MultiJobTask() {
                                             />
                                         </div>
                                         <div className="flex flex-1 flex-col justify-center text-center lg:text-left">
+                                            {sub.task_type === 'CONFIGURE_LAG_INTERFACE' &&
+                                                sub.status === 'COMPLETED' && (
+                                                    <div className="mb-3">
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="w-full"
+                                                            asChild
+                                                        >
+                                                            <Link href={checkTask(sub.id).url}>
+                                                                Verify in Central
+                                                            </Link>
+                                                        </Button>
+                                                    </div>
+                                                )}
                                             <p className="text-muted-foreground text-xs tracking-wide uppercase">
                                                 Progress
                                             </p>

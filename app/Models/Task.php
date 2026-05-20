@@ -63,6 +63,11 @@ class Task extends Model
             ->update(['status' => 'PENDING', 'updated_at' => $now]);
     }
 
+    public static function supportsCentralCheck(string $taskType): bool
+    {
+        return $taskType === 'CONFIGURE_LAG_INTERFACE';
+    }
+
     public function getTaskCategory($task_type)
     {
         $interface_based = [
