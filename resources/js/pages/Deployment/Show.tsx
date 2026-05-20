@@ -30,6 +30,11 @@ import {
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import {
@@ -261,11 +266,19 @@ export default function Show() {
                 {deployment.name}
             </h1>
             <div className="mt-4 flex justify-center">
-                <Button asChild>
-                    <a href={criticalCheckDeployment(deploymentId).url}>
-                        Critical configuration check
-                    </a>
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button asChild>
+                            <a href={criticalCheckDeployment(deploymentId).url}>
+                                Critical configuration check
+                            </a>
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                        Compare LAG and VLAN config in Central with this deployment,
+                        and view static routes and DNS profiles.
+                    </TooltipContent>
+                </Tooltip>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-5 p-4">
                 <div className="col-span-2 mx-auto">
