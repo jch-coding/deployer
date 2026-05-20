@@ -374,6 +374,44 @@ function minimalSwitchItem(string $serial, string $stackId): array
     ];
 }
 
+test('get_all_interface_portchannels paginates with limit and next until cursor is null', function () {
+    Http::fake(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        expect($query['limit'] ?? null)->toBe('100')
+            ->and($query['view-type'] ?? null)->toBe('LOCAL');
+
+        if (! isset($query['next'])) {
+            return Http::response([
+                'items' => [['name' => '1', 'enable' => true]],
+                'next' => '2',
+            ], 200);
+        }
+
+        expect($query['next'])->toBe('2');
+
+        return Http::response([
+            'items' => [['name' => '10', 'enable' => true]],
+            'next' => null,
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_all_interface_portchannels([
+        'object-type' => 'LOCAL',
+        'view-type' => 'LOCAL',
+        'scope-id' => 'scope-abc',
+        'device-function' => 'ACCESS_SWITCH',
+    ]);
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(2)
+        ->and($result[0]['name'])->toBe('1')
+        ->and($result[1]['name'])->toBe('10');
+
+    Http::assertSentCount(2);
+});
+
 test('get_all_switches paginates with limit and next until cursor is null', function () {
     $pageOneSerial = 'SERIAL-PAGE-ONE';
     $pageTwoSerial = 'SERIAL-PAGE-TWO';

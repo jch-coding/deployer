@@ -127,6 +127,35 @@ test('task lag central check reports mismatch when Central differs', function ()
             ->where('results.0.diff.0.path', 'lacp.mode'));
 });
 
+test('task lag central check finds interface on a later portchannels page', function () {
+    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+
+    Http::fake(function (\Illuminate\Http\Client\Request $request) use ($fixtures) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        if (! isset($query['next'])) {
+            return Http::response([
+                'items' => [['name' => '99', 'enable' => true]],
+                'next' => 'page-2',
+            ], 200);
+        }
+
+        return Http::response([
+            'items' => [$fixtures['expectedCentralItem']],
+            'next' => null,
+        ], 200);
+    });
+
+    $this->get(route('tasks.check', $fixtures['task']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('summary.passed', 1)
+            ->where('results.0.ok', true)
+            ->where('results.0.interface', '10'));
+
+    Http::assertSentCount(2);
+});
+
 test('task lag central check reports missing interface when not in Central', function () {
     $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
 

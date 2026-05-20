@@ -6,7 +6,6 @@ use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Task;
-use Illuminate\Http\Client\Response;
 
 class LagInterfaceCentralVerifier
 {
@@ -118,31 +117,19 @@ class LagInterfaceCentralVerifier
      */
     protected function fetchPortchannelsByName(CentralAPIHelper $helper, Device $device): array
     {
-        $response = $helper->get_interface_portchannels([
+        $items = $helper->get_all_interface_portchannels([
             'object-type' => 'LOCAL',
             'view-type' => 'LOCAL',
             'scope-id' => $device->scope_id,
             'device-function' => $this->deviceFunctionQueryValue($device),
         ]);
 
-        if (is_array($response) && array_key_exists('error', $response)) {
-            return ['error' => (string) $response['error']];
+        if (array_key_exists('error', $items)) {
+            return ['error' => (string) $items['error']];
         }
 
-        if (! $response instanceof Response || ! $response->ok()) {
-            $message = $response instanceof Response
-                ? (string) ($response->json('message') ?? $response->body())
-                : 'Failed to fetch portchannels from Central.';
-
-            return ['error' => $message !== '' ? $message : 'Failed to fetch portchannels from Central.'];
-        }
-
-        $items = $this->collectItemsFromResponse($response);
         $indexed = [];
         foreach ($items as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
             $name = (string) ($item['name'] ?? '');
             if ($name !== '') {
                 $indexed[$name] = $item;
@@ -150,26 +137,6 @@ class LagInterfaceCentralVerifier
         }
 
         return ['items' => $indexed];
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function collectItemsFromResponse(Response $response): array
-    {
-        $items = $response->json('items', []);
-        if (! is_array($items)) {
-            return [];
-        }
-
-        $all = [];
-        foreach ($items as $item) {
-            if (is_array($item)) {
-                $all[] = $item;
-            }
-        }
-
-        return $all;
     }
 
     protected function deviceFunctionQueryValue(Device $device): string

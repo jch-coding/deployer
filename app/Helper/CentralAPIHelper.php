@@ -612,6 +612,62 @@ class CentralAPIHelper
         }
     }
 
+    /**
+     * Page through all portchannels using cursor pagination (limit + next).
+     *
+     * @param  array<string, mixed>  $queryParameters
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    public function get_all_interface_portchannels(array $queryParameters = []): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $allItems = [];
+        $limit = 100;
+        $next = null;
+
+        while (true) {
+            $params = array_merge($queryParameters, ['limit' => $limit]);
+            if ($next !== null && $next !== '') {
+                $params['next'] = $next;
+            }
+
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($params)
+                ->get($this->client->base_url.$this->interfaces['interface_portchannel']);
+
+            if (! $response->ok()) {
+                $message = (string) ($response->json('message') ?? $response->body());
+
+                return ['error' => $message !== '' ? $message : 'Failed to fetch portchannels from Central.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            foreach ($pageItems as $item) {
+                if (is_array($item)) {
+                    $allItems[] = $item;
+                }
+            }
+
+            $next = $response->json('next');
+            if ($next === null || $next === '') {
+                break;
+            }
+        }
+
+        return $allItems;
+    }
+
     public function patch_interface_portchannel(DeviceInterface $deviceInterface, $queryParameters = [])
     {
         $switch_port = static::build_portchannel_from_device_interface($deviceInterface);
