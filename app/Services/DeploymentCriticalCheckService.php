@@ -321,7 +321,7 @@ class DeploymentCriticalCheckService
             'object-type' => 'SHARED',
             'view-type' => 'LOCAL',
             'scope-id' => $dnsScopeId,
-            'device-function' => LagInterfaceCentralVerifier::deviceFunctionQueryValue($device),
+            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
         ]);
 
         if (! $this->responseOk($response)) {
@@ -373,7 +373,7 @@ class DeploymentCriticalCheckService
             'object-type' => 'SHARED',
             'view-type' => 'LOCAL',
             'scope-id' => $site->scope_id,
-            'device-function' => LagInterfaceCentralVerifier::deviceFunctionQueryValue($device),
+            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
         ]);
 
         if (! $this->responseOk($response)) {
@@ -431,7 +431,7 @@ class DeploymentCriticalCheckService
             'object-type' => 'SHARED',
             'view-type' => 'LOCAL',
             'scope-id' => $dnsScopeId,
-            'device-function' => LagInterfaceCentralVerifier::deviceFunctionQueryValue($probeDevice),
+            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($probeDevice),
         ]);
 
         if ($this->responseOk($probeResponse)) {
@@ -469,7 +469,7 @@ class DeploymentCriticalCheckService
             'object-type' => 'SHARED',
             'view-type' => 'LOCAL',
             'scope-id' => $dnsScopeId,
-            'device-function' => LagInterfaceCentralVerifier::deviceFunctionQueryValue($probeDevice),
+            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($probeDevice),
         ]);
 
         if (! $this->responseOk($retryResponse)) {

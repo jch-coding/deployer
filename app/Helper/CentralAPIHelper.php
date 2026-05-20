@@ -74,6 +74,36 @@ class CentralAPIHelper
 
     public function __construct(public Client $client) {}
 
+    /**
+     * Query parameters for LOCAL device-scoped interface GET/POST/PATCH calls.
+     *
+     * @return array{view-type: string, object-type: string, scope-id: string, device-function: string}
+     */
+    public static function localDeviceInterfaceQueryParameters(Device $device): array
+    {
+        return [
+            'view-type' => 'LOCAL',
+            'object-type' => 'LOCAL',
+            'scope-id' => (string) $device->scope_id,
+            'device-function' => static::deviceFunctionQueryValue($device),
+        ];
+    }
+
+    public static function deviceFunctionQueryValue(Device $device): string
+    {
+        $value = $device->device_function;
+
+        if ($value instanceof \BackedEnum) {
+            return $value->value;
+        }
+
+        if ($value instanceof \UnitEnum) {
+            return $value->name;
+        }
+
+        return (string) $value;
+    }
+
     public function getScopeIdFromCentral(Device $device)
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -569,12 +599,8 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
-                ->withQueryParameters([
-                    'view-type' => 'LOCAL',
-                    'object-type' => 'LOCAL',
-                    'scope-id' => $device->scope_id,
-                    'device-function' => $device->device_function,
-                ])->get($this->client->base_url.$this->interfaces['interface_ethernet']);
+                ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
+                ->get($this->client->base_url.$this->interfaces['interface_ethernet']);
 
             return $response;
         }
@@ -709,12 +735,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
-                ->withQueryParameters([
-                    'view-type' => 'LOCAL',
-                    'object-type' => 'LOCAL',
-                    'scope-id' => $device->scope_id,
-                    'device-function' => $device->device_function,
-                ])
+                ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
                 ->get($this->client->base_url.$this->interfaces['interface_vlan']);
 
             return $response;

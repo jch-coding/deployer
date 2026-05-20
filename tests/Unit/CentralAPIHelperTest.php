@@ -530,3 +530,63 @@ test('getScopeIdFromCentral resolves stack_id from a later switches page', funct
             && str_contains($request->url(), 'next=2');
     });
 });
+
+test('localDeviceInterfaceQueryParameters uses LOCAL scope and string device function', function () {
+    $device = Device::factory()->create([
+        'scope_id' => 'scope-abc',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    expect(CentralAPIHelper::localDeviceInterfaceQueryParameters($device))->toBe([
+        'view-type' => 'LOCAL',
+        'object-type' => 'LOCAL',
+        'scope-id' => 'scope-abc',
+        'device-function' => 'ACCESS_SWITCH',
+    ]);
+});
+
+test('get_vlan_interfaces sends LOCAL device query parameters', function () {
+    Http::fake(['*vlan-interfaces*' => Http::response(['items' => []], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'scope_id' => 'device-scope-123',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $helper->get_vlan_interfaces($device);
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return str_contains($request->url(), 'vlan-interfaces')
+            && ($query['view-type'] ?? '') === 'LOCAL'
+            && ($query['object-type'] ?? '') === 'LOCAL'
+            && ($query['scope-id'] ?? '') === 'device-scope-123'
+            && ($query['device-function'] ?? '') === 'ACCESS_SWITCH';
+    });
+});
+
+test('get_all_interface_portchannels uses LOCAL device query parameters', function () {
+    Http::fake(['*portchannels*' => Http::response(['items' => []], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'scope_id' => 'device-scope-456',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $helper->get_all_interface_portchannels(
+        CentralAPIHelper::localDeviceInterfaceQueryParameters($device)
+    );
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return str_contains($request->url(), 'portchannels')
+            && ($query['view-type'] ?? '') === 'LOCAL'
+            && ($query['object-type'] ?? '') === 'LOCAL'
+            && ($query['scope-id'] ?? '') === 'device-scope-456'
+            && ($query['device-function'] ?? '') === 'ACCESS_SWITCH';
+    });
+});

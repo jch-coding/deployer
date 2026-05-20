@@ -136,12 +136,9 @@ class LagInterfaceCentralVerifier
      */
     protected function fetchPortchannelsByName(CentralAPIHelper $helper, Device $device): array
     {
-        $items = $helper->get_all_interface_portchannels([
-            'object-type' => 'LOCAL',
-            'view-type' => 'LOCAL',
-            'scope-id' => $device->scope_id,
-            'device-function' => self::deviceFunctionQueryValue($device),
-        ]);
+        $items = $helper->get_all_interface_portchannels(
+            CentralAPIHelper::localDeviceInterfaceQueryParameters($device)
+        );
 
         if (array_key_exists('error', $items)) {
             return ['error' => (string) $items['error']];
@@ -160,17 +157,7 @@ class LagInterfaceCentralVerifier
 
     public static function deviceFunctionQueryValue(Device $device): string
     {
-        $value = $device->device_function;
-
-        if ($value instanceof \BackedEnum) {
-            return $value->value;
-        }
-
-        if ($value instanceof \UnitEnum) {
-            return $value->name;
-        }
-
-        return (string) $value;
+        return CentralAPIHelper::deviceFunctionQueryValue($device);
     }
 
     /**
