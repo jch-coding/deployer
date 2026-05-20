@@ -34,12 +34,82 @@ type ConfigurationDiffProps = {
     ok?: boolean;
     /** @deprecated Use details instead */
     diff?: DiffEntry[];
+    /** Render only the comparison table (parent provides collapsible trigger). */
+    contentOnly?: boolean;
 };
+
+export function ConfigurationDiffTable({
+    rows,
+    className,
+}: {
+    rows: DiffEntry[];
+    className?: string;
+}) {
+    if (rows.length === 0) {
+        return null;
+    }
+
+    return (
+        <div
+            className={cn(
+                'overflow-x-auto rounded-md border text-xs dark:border-white/20 dark:text-white',
+                className,
+            )}
+        >
+            <table className="w-full min-w-[28rem]">
+                <thead>
+                    <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10 dark:text-white">
+                        <th className="px-3 py-2 font-medium">Field</th>
+                        <th className="px-3 py-2 font-medium">Expected</th>
+                        <th className="px-3 py-2 font-medium">Central</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((entry) => {
+                        const matches = valuesMatch(entry.expected, entry.actual);
+
+                        return (
+                            <tr
+                                key={entry.path}
+                                className="border-b last:border-0 dark:border-white/20"
+                            >
+                                <td className="px-3 py-2 font-mono dark:text-white">
+                                    {entry.path}
+                                </td>
+                                <td
+                                    className={cn(
+                                        'px-3 py-2',
+                                        matches
+                                            ? 'text-emerald-700 dark:text-white'
+                                            : 'text-emerald-700 dark:text-white',
+                                    )}
+                                >
+                                    {formatValue(entry.expected)}
+                                </td>
+                                <td
+                                    className={cn(
+                                        'px-3 py-2',
+                                        matches
+                                            ? 'text-emerald-700 dark:text-white'
+                                            : 'text-red-700 dark:text-white',
+                                    )}
+                                >
+                                    {formatValue(entry.actual)}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
 
 export default function ConfigurationDiff({
     details,
     ok = false,
     diff = [],
+    contentOnly = false,
 }: ConfigurationDiffProps) {
     const [open, setOpen] = useState(false);
     const rows = details.length > 0 ? details : diff;
@@ -49,6 +119,10 @@ export default function ConfigurationDiff({
 
     if (rows.length === 0) {
         return null;
+    }
+
+    if (contentOnly) {
+        return <ConfigurationDiffTable rows={rows} className="mt-2" />;
     }
 
     const triggerLabel = ok
@@ -63,7 +137,7 @@ export default function ConfigurationDiff({
                 <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 gap-1 px-2 text-xs"
+                    className="h-8 gap-1 px-2 text-xs dark:text-white"
                 >
                     <ChevronDown
                         className={cn(
@@ -75,56 +149,7 @@ export default function ConfigurationDiff({
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-                <div className="mt-2 overflow-x-auto rounded-md border text-xs">
-                    <table className="w-full min-w-[28rem]">
-                        <thead>
-                            <tr className="border-b bg-muted/50 text-left">
-                                <th className="px-3 py-2 font-medium">Field</th>
-                                <th className="px-3 py-2 font-medium">Expected</th>
-                                <th className="px-3 py-2 font-medium">Central</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rows.map((entry) => {
-                                const matches = valuesMatch(
-                                    entry.expected,
-                                    entry.actual,
-                                );
-
-                                return (
-                                    <tr
-                                        key={entry.path}
-                                        className="border-b last:border-0"
-                                    >
-                                        <td className="px-3 py-2 font-mono">
-                                            {entry.path}
-                                        </td>
-                                        <td
-                                            className={cn(
-                                                'px-3 py-2',
-                                                matches
-                                                    ? 'text-emerald-700'
-                                                    : 'text-emerald-700',
-                                            )}
-                                        >
-                                            {formatValue(entry.expected)}
-                                        </td>
-                                        <td
-                                            className={cn(
-                                                'px-3 py-2',
-                                                matches
-                                                    ? 'text-emerald-700'
-                                                    : 'text-red-700',
-                                            )}
-                                        >
-                                            {formatValue(entry.actual)}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                <ConfigurationDiffTable rows={rows} className="mt-2" />
             </CollapsibleContent>
         </Collapsible>
     );

@@ -1,11 +1,17 @@
 import { Link, usePage } from '@inertiajs/react';
+import { Check, ChevronDown, X } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import ConfigurationDiff, {
     type DiffEntry,
 } from '@/components/ui/ConfigurationDiff';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
@@ -192,77 +198,248 @@ function mergeCheckResults(
     return merged;
 }
 
-function InterfaceResults({
-    title,
-    deviceErrors,
-    results,
-    pending,
-}: {
-    title: string;
-    deviceErrors: DeviceError[];
-    results: InterfaceResult[];
-    pending: boolean;
-}) {
+type InterfaceKind = 'lag' | 'ethernet' | 'vlan';
+
+type GroupedInterfaceResult = InterfaceResult & {
+    kind: InterfaceKind;
+};
+
+type DeviceInterfaceGroup = {
+    device_id: number;
+    device_name: string;
+    errors: string[];
+    interfaces: GroupedInterfaceResult[];
+};
+
+const kindLabels: Record<InterfaceKind, string> = {
+    lag: 'LAG',
+    ethernet: 'Ethernet',
+    vlan: 'VLAN',
+};
+
+function groupInterfaceResultsByDevice(
+    lagResults: InterfaceResult[],
+    ethernetResults: InterfaceResult[],
+    vlanResults: InterfaceResult[],
+    lagErrors: DeviceError[],
+    ethernetErrors: DeviceError[],
+    vlanErrors: DeviceError[],
+): DeviceInterfaceGroup[] {
+    const groups = new Map<number, DeviceInterfaceGroup>();
+
+    const ensureGroup = (deviceId: number, deviceName: string): DeviceInterfaceGroup => {
+        const existing = groups.get(deviceId);
+        if (existing) {
+            if (deviceName && !existing.device_name) {
+                existing.device_name = deviceName;
+            }
+
+            return existing;
+        }
+
+        const group: DeviceInterfaceGroup = {
+            device_id: deviceId,
+            device_name: deviceName,
+            errors: [],
+            interfaces: [],
+        };
+        groups.set(deviceId, group);
+
+        return group;
+    };
+
+    const addResults = (results: InterfaceResult[], kind: InterfaceKind) => {
+        for (const result of results) {
+            const group = ensureGroup(result.device_id, result.device_name);
+            group.interfaces.push({ ...result, kind });
+        }
+    };
+
+    const addErrors = (errors: DeviceError[]) => {
+        for (const error of errors) {
+            const group = ensureGroup(error.device_id, error.device_name);
+            if (!group.errors.includes(error.message)) {
+                group.errors.push(error.message);
+            }
+        }
+    };
+
+    addResults(lagResults, 'lag');
+    addResults(ethernetResults, 'ethernet');
+    addResults(vlanResults, 'vlan');
+    addErrors(lagErrors);
+    addErrors(ethernetErrors);
+    addErrors(vlanErrors);
+
+    return [...groups.values()]
+        .map((group) => ({
+            ...group,
+            interfaces: [...group.interfaces].sort((a, b) => {
+                const kindOrder =
+                    kindLabels[a.kind].localeCompare(kindLabels[b.kind]);
+                if (kindOrder !== 0) {
+                    return kindOrder;
+                }
+
+                return a.interface.localeCompare(b.interface);
+            }),
+        }))
+        .sort((a, b) => a.device_name.localeCompare(b.device_name));
+}
+
+function InterfaceCheckRow({ result }: { result: GroupedInterfaceResult }) {
+    const [open, setOpen] = useState(false);
+    const rows = result.details?.length ? result.details : result.diff;
+    const hasDetails = rows.length > 0;
+
     return (
-        <Card>
+        <Collapsible open={open} onOpenChange={setOpen}>
+            <div className="flex items-center gap-3 border-b border-border py-2.5 last:border-0 dark:border-white/20 dark:text-white">
+                {result.ok ? (
+                    <Check
+                        className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                        aria-label="Match"
+                    />
+                ) : (
+                    <X
+                        className="size-5 shrink-0 text-red-600 dark:text-red-400"
+                        aria-label="Mismatch"
+                    />
+                )}
+                <div className="min-w-0 flex-1">
+                    <span className="font-medium">
+                        {result.interface}
+                        <span className="text-muted-foreground ml-2 text-xs font-normal dark:text-white/70">
+                            {kindLabels[result.kind]}
+                        </span>
+                    </span>
+                    {result.missing_in_central && (
+                        <span className="mt-0.5 block text-xs opacity-80">
+                            Not found in Central
+                        </span>
+                    )}
+                </div>
+                {hasDetails && (
+                    <CollapsibleTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0 dark:text-white"
+                            aria-label={
+                                open ? 'Hide configuration diff' : 'Show configuration diff'
+                            }
+                        >
+                            <ChevronDown
+                                className={cn(
+                                    'size-4 transition-transform',
+                                    open && 'rotate-180',
+                                )}
+                            />
+                        </Button>
+                    </CollapsibleTrigger>
+                )}
+            </div>
+            {hasDetails && (
+                <CollapsibleContent className="pb-3 pl-8">
+                    <ConfigurationDiff details={rows} contentOnly />
+                </CollapsibleContent>
+            )}
+        </Collapsible>
+    );
+}
+
+function DeviceInterfaceCheckCard({ group }: { group: DeviceInterfaceGroup }) {
+    return (
+        <Card className="dark:text-white">
             <CardHeader className="pb-2">
-                <h2 className="text-lg font-semibold">{title}</h2>
+                <CardTitle className="text-lg dark:text-white">{group.device_name}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-                {deviceErrors.length > 0 && (
-                    <div className="space-y-2 text-sm text-red-700">
-                        {deviceErrors.map((error) => (
-                            <p key={error.device_id}>
-                                <span className="font-medium">{error.device_name}:</span>{' '}
-                                {error.message}
-                            </p>
+            <CardContent>
+                {group.errors.length > 0 && (
+                    <div className="mb-3 space-y-1 text-sm dark:text-white">
+                        {group.errors.map((message) => (
+                            <p key={message}>{message}</p>
                         ))}
                     </div>
                 )}
-                {results.length === 0 ? (
-                    <p className="text-muted-foreground text-sm">
-                        {pending
-                            ? 'Waiting to check...'
-                            : 'No interfaces to check in this deployment.'}
+                {group.interfaces.length === 0 ? (
+                    <p className="text-muted-foreground text-sm dark:text-white/80">
+                        No interfaces checked for this device.
                     </p>
                 ) : (
-                    results.map((result) => (
-                        <div
-                            key={result.device_interface_id}
-                            className={cn(
-                                'rounded-md border px-4 py-3',
-                                result.ok
-                                    ? 'border-emerald-200 bg-emerald-50/50'
-                                    : 'border-red-200 bg-red-50/50',
-                            )}
-                        >
-                            <div
-                                className={cn(
-                                    'font-medium',
-                                    result.ok ? 'text-emerald-800' : 'text-red-800',
-                                )}
-                            >
-                                {result.interface}
-                                <span className="text-muted-foreground font-normal">
-                                    {' '}
-                                    on {result.device_name}
-                                </span>
-                                {result.missing_in_central && (
-                                    <span className="ml-2 text-xs font-normal text-red-600">
-                                        (not found in Central)
-                                    </span>
-                                )}
-                            </div>
-                            <ConfigurationDiff
-                                details={result.details ?? result.diff}
-                                ok={result.ok}
-                                diff={result.diff}
+                    <div className="divide-y divide-border dark:divide-white/20">
+                        {group.interfaces.map((result) => (
+                            <InterfaceCheckRow
+                                key={`${result.kind}-${result.device_interface_id}`}
+                                result={result}
                             />
-                        </div>
-                    ))
+                        ))}
+                    </div>
                 )}
             </CardContent>
         </Card>
+    );
+}
+
+function DeviceGroupedInterfaceResults({
+    lagResults,
+    ethernetResults,
+    vlanResults,
+    lagErrors,
+    ethernetErrors,
+    vlanErrors,
+    pending,
+}: {
+    lagResults: InterfaceResult[];
+    ethernetResults: InterfaceResult[];
+    vlanResults: InterfaceResult[];
+    lagErrors: DeviceError[];
+    ethernetErrors: DeviceError[];
+    vlanErrors: DeviceError[];
+    pending: boolean;
+}) {
+    const deviceGroups = useMemo(
+        () =>
+            groupInterfaceResultsByDevice(
+                lagResults,
+                ethernetResults,
+                vlanResults,
+                lagErrors,
+                ethernetErrors,
+                vlanErrors,
+            ),
+        [
+            lagResults,
+            ethernetResults,
+            vlanResults,
+            lagErrors,
+            ethernetErrors,
+            vlanErrors,
+        ],
+    );
+
+    if (pending && deviceGroups.length === 0) {
+        return (
+            <p className="text-muted-foreground text-sm dark:text-white">
+                Waiting to check interfaces...
+            </p>
+        );
+    }
+
+    if (deviceGroups.length === 0) {
+        return (
+            <p className="text-muted-foreground text-sm dark:text-white">
+                No interfaces to check in this deployment.
+            </p>
+        );
+    }
+
+    return (
+        <div className="space-y-4">
+            {deviceGroups.map((group) => (
+                <DeviceInterfaceCheckCard key={group.device_id} group={group} />
+            ))}
+        </div>
     );
 }
 
@@ -470,65 +647,73 @@ export default function CriticalCheck() {
                     </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="dark:text-white">
                     <CardHeader className="pb-2">
-                        <h2 className="text-lg font-semibold">Summary</h2>
+                        <h2 className="text-lg font-semibold dark:text-white">Summary</h2>
                     </CardHeader>
-                    <CardContent className="flex flex-wrap gap-6 text-sm">
+                    <CardContent className="flex flex-wrap gap-6 text-sm dark:text-white">
                         {!hasStarted ? (
-                            <span className="text-muted-foreground">
+                            <span className="text-muted-foreground dark:text-white">
                                 Run the check to see results.
                             </span>
                         ) : isRunning && results.lag_results.length === 0 ? (
-                            <span className="text-muted-foreground">
+                            <span className="text-muted-foreground dark:text-white">
                                 Results will appear as each step completes.
                             </span>
                         ) : (
                             <>
                                 <span>
-                                    <span className="text-muted-foreground">LAG passed:</span>{' '}
-                                    <span className="font-semibold text-emerald-600">
+                                    <span className="text-muted-foreground dark:text-white">
+                                        LAG passed:
+                                    </span>{' '}
+                                    <span className="font-semibold text-emerald-600 dark:text-white">
                                         {results.summary.lag_passed}/
                                         {results.summary.lag_total}
                                     </span>
                                 </span>
                                 <span>
-                                    <span className="text-muted-foreground">LAG failed:</span>{' '}
-                                    <span className="font-semibold text-red-600">
+                                    <span className="text-muted-foreground dark:text-white">
+                                        LAG failed:
+                                    </span>{' '}
+                                    <span className="font-semibold text-red-600 dark:text-white">
                                         {results.summary.lag_failed}
                                     </span>
                                 </span>
                                 {ranWithEthernet && (
                                     <>
                                         <span>
-                                            <span className="text-muted-foreground">
+                                            <span className="text-muted-foreground dark:text-white">
                                                 Ethernet passed:
                                             </span>{' '}
-                                            <span className="font-semibold text-emerald-600">
+                                            <span className="font-semibold text-emerald-600 dark:text-white">
                                                 {results.summary.ethernet_passed}/
                                                 {results.summary.ethernet_total}
                                             </span>
                                         </span>
                                         <span>
-                                            <span className="text-muted-foreground">
+                                            <span className="text-muted-foreground dark:text-white">
                                                 Ethernet failed:
                                             </span>{' '}
-                                            <span className="font-semibold text-red-600">
+                                            <span className="font-semibold text-red-600 dark:text-white">
                                                 {results.summary.ethernet_failed}
                                             </span>
                                         </span>
                                     </>
                                 )}
                                 <span>
-                                    <span className="text-muted-foreground">VLAN passed:</span>{' '}
-                                    <span className="font-semibold text-emerald-600">
+                                    <span className="text-muted-foreground dark:text-white">
+                                        VLAN passed:
+                                    </span>{' '}
+                                    <span className="font-semibold text-emerald-600 dark:text-white">
                                         {results.summary.vlan_passed}/
                                         {results.summary.vlan_total}
                                     </span>
                                 </span>
                                 <span>
-                                    <span className="text-muted-foreground">VLAN failed:</span>{' '}
-                                    <span className="font-semibold text-red-600">
+                                    <span className="text-muted-foreground dark:text-white">
+                                        VLAN failed:
+                                    </span>{' '}
+                                    <span className="font-semibold text-red-600 dark:text-white">
                                         {results.summary.vlan_failed}
                                     </span>
                                 </span>
@@ -539,40 +724,40 @@ export default function CriticalCheck() {
 
                 {hasStarted && (
                     <>
-                        <InterfaceResults
-                            title="LAG interfaces"
-                            deviceErrors={results.lag_device_errors}
-                            results={results.lag_results}
-                            pending={isRunning && results.lag_results.length === 0}
-                        />
-
-                        {ranWithEthernet && (
-                            <InterfaceResults
-                                title="Ethernet interfaces"
-                                deviceErrors={results.ethernet_device_errors}
-                                results={results.ethernet_results}
+                        <div className="space-y-4 dark:text-white">
+                            <h2 className="text-lg font-semibold dark:text-white">
+                                Interface verification
+                            </h2>
+                            <DeviceGroupedInterfaceResults
+                                lagResults={results.lag_results}
+                                ethernetResults={
+                                    ranWithEthernet ? results.ethernet_results : []
+                                }
+                                vlanResults={results.vlan_results}
+                                lagErrors={results.lag_device_errors}
+                                ethernetErrors={
+                                    ranWithEthernet ? results.ethernet_device_errors : []
+                                }
+                                vlanErrors={results.vlan_device_errors}
                                 pending={
-                                    isRunning && results.ethernet_results.length === 0
+                                    isRunning &&
+                                    results.lag_results.length === 0 &&
+                                    results.vlan_results.length === 0 &&
+                                    (!ranWithEthernet ||
+                                        results.ethernet_results.length === 0)
                                 }
                             />
-                        )}
+                        </div>
 
-                        <InterfaceResults
-                            title="VLAN interfaces"
-                            deviceErrors={results.vlan_device_errors}
-                            results={results.vlan_results}
-                            pending={isRunning && results.vlan_results.length === 0}
-                        />
-
-                        <Card>
+                        <Card className="dark:text-white">
                             <CardHeader className="pb-2">
-                                <h2 className="text-lg font-semibold">
+                                <h2 className="text-lg font-semibold dark:text-white">
                                     Static routes (Central)
                                 </h2>
                             </CardHeader>
-                            <CardContent className="space-y-4">
+                            <CardContent className="space-y-4 dark:text-white">
                                 {results.static_routes.length === 0 ? (
-                                    <p className="text-muted-foreground text-sm">
+                                    <p className="text-muted-foreground text-sm dark:text-white">
                                         {isRunning
                                             ? 'Waiting to fetch static routes...'
                                             : 'No devices in deployment.'}
@@ -583,13 +768,15 @@ export default function CriticalCheck() {
                                             key={device.device_id}
                                             className="rounded-md border px-4 py-3"
                                         >
-                                            <p className="font-medium">{device.device_name}</p>
+                                            <p className="font-medium dark:text-white">
+                                                {device.device_name}
+                                            </p>
                                             {device.error ? (
-                                                <p className="mt-1 text-sm text-red-700">
+                                                <p className="mt-1 text-sm text-red-700 dark:text-white">
                                                     {device.error}
                                                 </p>
                                             ) : device.routes.length === 0 ? (
-                                                <p className="text-muted-foreground mt-1 text-sm">
+                                                <p className="text-muted-foreground mt-1 text-sm dark:text-white">
                                                     No static route profiles returned.
                                                 </p>
                                             ) : (
@@ -631,24 +818,26 @@ export default function CriticalCheck() {
                             </CardContent>
                         </Card>
 
-                        <Card>
+                        <Card className="dark:text-white">
                             <CardHeader className="pb-2">
-                                <h2 className="text-lg font-semibold">DNS profiles (Central)</h2>
+                                <h2 className="text-lg font-semibold dark:text-white">
+                                    DNS profiles (Central)
+                                </h2>
                                 {results.dns_scope_id && (
-                                    <p className="text-muted-foreground text-xs">
+                                    <p className="text-muted-foreground text-xs dark:text-white">
                                         Scope ID: {results.dns_scope_id}
                                     </p>
                                 )}
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 {results.dns_scope_error && (
-                                    <p className="text-sm text-red-700">
+                                    <p className="text-sm text-red-700 dark:text-white">
                                         {results.dns_scope_error}
                                     </p>
                                 )}
                                 {!results.dns_scope_error &&
                                     results.dns_results.length === 0 && (
-                                        <p className="text-muted-foreground text-sm">
+                                        <p className="text-muted-foreground text-sm dark:text-white">
                                             {isRunning
                                                 ? 'Waiting to fetch DNS profiles...'
                                                 : 'No devices in deployment.'}
@@ -660,24 +849,26 @@ export default function CriticalCheck() {
                                             key={device.device_id}
                                             className="rounded-md border px-4 py-3"
                                         >
-                                            <p className="font-medium">{device.device_name}</p>
+                                            <p className="font-medium dark:text-white">
+                                                {device.device_name}
+                                            </p>
                                             {device.error ? (
-                                                <p className="mt-1 text-sm text-red-700">
+                                                <p className="mt-1 text-sm text-red-700 dark:text-white">
                                                     {device.error}
                                                 </p>
                                             ) : device.profiles.length === 0 ? (
-                                                <p className="text-muted-foreground mt-1 text-sm">
+                                                <p className="text-muted-foreground mt-1 text-sm dark:text-white">
                                                     No DNS profiles returned.
                                                 </p>
                                             ) : (
                                                 <div className="mt-2 space-y-3 text-sm">
                                                     {device.profiles.map((profile) => (
                                                         <div key={profile.name}>
-                                                            <p className="font-medium">
+                                                            <p className="font-medium dark:text-white">
                                                                 {profile.name}
                                                             </p>
                                                             {profile.resolvers.length === 0 ? (
-                                                                <p className="text-muted-foreground text-xs">
+                                                                <p className="text-muted-foreground text-xs dark:text-white">
                                                                     No resolvers.
                                                                 </p>
                                                             ) : (
