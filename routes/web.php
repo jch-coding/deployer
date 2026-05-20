@@ -48,6 +48,7 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/deployments/{deployment}', 'destroy')->name('deployments.destroy');
         Route::get('/deployments/{deployment}', 'show')->name('deployments.show');
         Route::get('/deployments/{deployment}/critical-check', 'criticalCheck')->name('deployments.critical_check');
+        Route::get('/deployments/{deployment}/critical-check/step/{step}', 'criticalCheckStep')->name('deployments.critical_check.step');
     });
 
     Route::controller(DeviceController::class)->group(function () {

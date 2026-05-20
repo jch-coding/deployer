@@ -71,6 +71,17 @@ function fakeCriticalCheckCentralApis(array $overrides = []): void
     ], $overrides));
 }
 
+function criticalCheckStepUrl(Deployment $deployment, int $step, array $query = []): string
+{
+    $url = route('deployments.critical_check.step', [$deployment, $step]);
+
+    if ($query !== []) {
+        $url .= '?'.http_build_query($query);
+    }
+
+    return $url;
+}
+
 test('deployment critical check reports lag match', function () {
     $lacpProfile = LacpProfile::factory()->create([
         'mode' => 'ACTIVE',
@@ -114,13 +125,31 @@ test('deployment critical check reports lag match', function () {
         '*portchannels*' => Http::response(['items' => [$centralLag]], 200),
     ]);
 
+    $this->getJson(route('deployments.critical_check.step', [$this->deployment, 1]))
+        ->assertOk()
+        ->assertJsonPath('partial.lag_results.0.ok', true)
+        ->assertJsonPath('progress.message', 'Checking LAG interfaces for '.$this->device->name.'...');
+});
+
+test('deployment critical check step endpoint returns progress', function () {
+    fakeCriticalCheckCentralApis();
+
+    $this->getJson(route('deployments.critical_check.step', [$this->deployment, 0]))
+        ->assertOk()
+        ->assertJsonPath('progress.current', 1)
+        ->assertJsonPath('progress.message', 'Resolving DNS scope ID...')
+        ->assertJsonPath('partial.dns_scope_id', '73800600944427008');
+});
+
+test('deployment critical check page loads immediately without results', function () {
     $this->get(route('deployments.critical_check', $this->deployment))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/CriticalCheck')
-            ->where('summary.lag_passed', 1)
-            ->where('summary.lag_failed', 0)
-            ->where('lag_results.0.ok', true));
+            ->where('total_steps', 5)
+            ->has('lag_results', 0)
+            ->where('summary.lag_passed', 0)
+            ->where('summary.lag_failed', 0));
 });
 
 test('deployment critical check reports lag mismatch', function () {
@@ -166,12 +195,10 @@ test('deployment critical check reports lag mismatch', function () {
         '*portchannels*' => Http::response(['items' => [$mismatched]], 200),
     ]);
 
-    $this->get(route('deployments.critical_check', $this->deployment))
+    $this->getJson(criticalCheckStepUrl($this->deployment, 1))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('summary.lag_failed', 1)
-            ->where('lag_results.0.ok', false)
-            ->where('lag_results.0.diff.0.path', 'lacp.mode'));
+        ->assertJsonPath('partial.lag_results.0.ok', false)
+        ->assertJsonPath('partial.lag_results.0.diff.0.path', 'lacp.mode');
 });
 
 test('deployment critical check reports vlan mismatch', function () {
@@ -196,37 +223,37 @@ test('deployment critical check reports vlan mismatch', function () {
         ], 200),
     ]);
 
-    $this->get(route('deployments.critical_check', $this->deployment))
+    $this->getJson(criticalCheckStepUrl($this->deployment, 2))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('summary.vlan_failed', 1)
-            ->where('vlan_results.0.ok', false)
-            ->where('vlan_results.0.diff.0.path', 'ipv4.address'));
+        ->assertJsonPath('partial.vlan_results.0.ok', false)
+        ->assertJsonPath('partial.vlan_results.0.diff.0.path', 'ipv4.address');
 });
 
 test('deployment critical check displays static routes from central', function () {
     fakeCriticalCheckCentralApis();
 
-    $this->get(route('deployments.critical_check', $this->deployment))
+    $this->getJson(criticalCheckStepUrl($this->deployment, 3))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('static_routes.0.device_name', $this->device->name)
-            ->where('static_routes.0.error', null)
-            ->where('static_routes.0.routes.0.profile_name', 'static-profile')
-            ->where('static_routes.0.routes.0.prefix', '0.0.0.0/0'));
+        ->assertJsonPath('partial.static_routes.0.device_name', $this->device->name)
+        ->assertJsonPath('partial.static_routes.0.error', null)
+        ->assertJsonPath('partial.static_routes.0.routes.0.profile_name', 'static-profile')
+        ->assertJsonPath('partial.static_routes.0.routes.0.prefix', '0.0.0.0/0');
 });
 
 test('deployment critical check displays dns profiles from central', function () {
     fakeCriticalCheckCentralApis();
 
-    $this->get(route('deployments.critical_check', $this->deployment))
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('dns_scope_id', '73800600944427008')
-            ->where('dns_scope_error', null)
-            ->where('dns_results.0.profiles.0.name', 'dns-profile')
-            ->where('dns_results.0.profiles.0.resolvers.0.vrf', 'default')
-            ->where('dns_results.0.profiles.0.resolvers.0.name_server_ips.0', '8.8.8.8'));
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 4, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.profiles.0.name', 'dns-profile')
+        ->assertJsonPath('partial.dns_results.0.profiles.0.resolvers.0.vrf', 'default')
+        ->assertJsonPath('partial.dns_results.0.profiles.0.resolvers.0.name_server_ips.0', '8.8.8.8');
 });
 
 test('deployment critical check resolves dns scope from wcd site collection on failure', function () {
@@ -269,12 +296,16 @@ test('deployment critical check resolves dns scope from wcd site collection on f
         return Http::response([], 200);
     });
 
-    $this->get(route('deployments.critical_check', $this->deployment))
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('dns_scope_id', 'wcd-scope-from-central')
-            ->where('dns_scope_error', null)
-            ->where('dns_results.0.profiles.0.name', 'dns-wcd'));
+        ->assertJsonPath('partial.dns_scope_id', 'wcd-scope-from-central')
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 4, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.profiles.0.name', 'dns-wcd');
 
     Http::assertSent(fn (\Illuminate\Http\Client\Request $request) => str_contains($request->url(), 'site-collections'));
 });
@@ -288,11 +319,15 @@ test('deployment critical check reports dns scope error when wcd not found', fun
         '*dns*' => Http::response(['message' => 'failed'], 500),
     ]);
 
-    $this->get(route('deployments.critical_check', $this->deployment))
+    $this->getJson(criticalCheckStepUrl($this->deployment, 0))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('dns_scope_error', 'Site collection "WCD" was not found in Central.')
-            ->has('dns_results', 0));
+        ->assertJsonPath('partial.dns_scope_error', 'Site collection "WCD" was not found in Central.');
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 4, [
+        'dns_scope_error' => 'Site collection "WCD" was not found in Central.',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_results', []);
 });
 
 test('deployment critical check reports missing site scope for static routes', function () {
@@ -300,11 +335,10 @@ test('deployment critical check reports missing site scope for static routes', f
 
     fakeCriticalCheckCentralApis();
 
-    $this->get(route('deployments.critical_check', $this->deployment))
+    $this->getJson(criticalCheckStepUrl($this->deployment, 3))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('static_routes.0.error', 'Site or site scope ID not available for this device.')
-            ->has('static_routes.0.routes', 0));
+        ->assertJsonPath('partial.static_routes.0.error', 'Site or site scope ID not available for this device.')
+        ->assertJsonPath('partial.static_routes.0.routes', []);
 
     Http::assertNotSent(fn (\Illuminate\Http\Client\Request $request) => str_contains($request->url(), 'static-route'));
 });

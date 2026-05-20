@@ -133,21 +133,69 @@ class DeploymentController extends Controller
 
     public function criticalCheck(Request $request, Deployment $deployment, DeploymentCriticalCheckService $criticalCheckService)
     {
+        if ($response = $this->criticalCheckClientGuard($request, $deployment)) {
+            return $response;
+        }
+
+        return Inertia::render('Deployment/CriticalCheck', [
+            'deployment' => $deployment->only(['id', 'name']),
+            'total_steps' => $criticalCheckService->totalSteps($deployment),
+            ...$criticalCheckService->emptyResults(),
+        ]);
+    }
+
+    public function criticalCheckStep(
+        Request $request,
+        Deployment $deployment,
+        int $step,
+        DeploymentCriticalCheckService $criticalCheckService,
+    ) {
+        if ($response = $this->criticalCheckClientGuard($request, $deployment, json: true)) {
+            return $response;
+        }
+
+        $validated = $request->validate([
+            'dns_scope_id' => ['nullable', 'string'],
+            'dns_scope_error' => ['nullable', 'string'],
+        ]);
+
+        $context = [];
+        if (array_key_exists('dns_scope_id', $validated) && $validated['dns_scope_id'] !== null) {
+            $context['dns_scope_id'] = $validated['dns_scope_id'];
+        }
+        if (array_key_exists('dns_scope_error', $validated) && $validated['dns_scope_error'] !== null) {
+            $context['dns_scope_error'] = $validated['dns_scope_error'];
+        }
+
+        $helper = new CentralAPIHelper($deployment->client);
+        $total = $criticalCheckService->totalSteps($deployment);
+
+        if ($step < 0 || $step >= $total) {
+            abort(404);
+        }
+
+        return response()->json(
+            $criticalCheckService->runStep($deployment, $helper, $step, $context)
+        );
+    }
+
+    protected function criticalCheckClientGuard(Request $request, Deployment $deployment, bool $json = false)
+    {
         $deployment->loadMissing('client');
 
         $currentClient = $request->user()?->currentClient();
         if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
-            session()->flash('error', 'Please set current client to match this deployment before running critical configuration check.');
+            $message = 'Please set current client to match this deployment before running critical configuration check.';
+
+            if ($json) {
+                return response()->json(['message' => $message], 403);
+            }
+
+            session()->flash('error', $message);
 
             return redirect()->route('deployments.index');
         }
 
-        $helper = new CentralAPIHelper($deployment->client);
-        $check = $criticalCheckService->run($deployment, $helper);
-
-        return Inertia::render('Deployment/CriticalCheck', [
-            'deployment' => $deployment->only(['id', 'name']),
-            ...$check,
-        ]);
+        return null;
     }
 }

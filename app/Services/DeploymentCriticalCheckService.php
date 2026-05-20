@@ -21,49 +21,375 @@ class DeploymentCriticalCheckService
         protected VlanInterfaceCentralVerifier $vlanVerifier = new VlanInterfaceCentralVerifier,
     ) {}
 
+    public function totalSteps(Deployment $deployment): int
+    {
+        return 1 + ($this->loadDevices($deployment)->count() * 4);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function emptyResults(): array
+    {
+        return [
+            'lag_device_errors' => [],
+            'vlan_device_errors' => [],
+            'lag_results' => [],
+            'vlan_results' => [],
+            'static_routes' => [],
+            'dns_scope_id' => null,
+            'dns_scope_error' => null,
+            'dns_results' => [],
+            'summary' => [
+                'lag_total' => 0,
+                'lag_passed' => 0,
+                'lag_failed' => 0,
+                'vlan_total' => 0,
+                'vlan_passed' => 0,
+                'vlan_failed' => 0,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{
+     *     progress: array{current: int, total: int, percent: int, message: string},
+     *     partial: array<string, mixed>,
+     *     context: array<string, mixed>,
+     *     done: bool
+     * }
+     */
+    public function runStep(Deployment $deployment, CentralAPIHelper $helper, int $step, array $context = []): array
+    {
+        $devices = $this->loadDevices($deployment);
+        $total = $this->totalStepsForDevices($devices);
+        $message = $this->messageForStep($devices, $step);
+        $partial = [];
+        $context = array_merge([
+            'dns_scope_id' => null,
+            'dns_scope_error' => null,
+        ], $context);
+
+        if ($step === 0) {
+            $dnsScope = $this->resolveDnsScopeForDevices($devices, $helper);
+            $context['dns_scope_id'] = $dnsScope['dns_scope_id'];
+            $context['dns_scope_error'] = $dnsScope['dns_scope_error'];
+            $partial = [
+                'dns_scope_id' => $dnsScope['dns_scope_id'],
+                'dns_scope_error' => $dnsScope['dns_scope_error'],
+            ];
+        } elseif ($devices->isEmpty()) {
+            $partial = [];
+        } else {
+            $deviceIndex = intdiv($step - 1, 4);
+            $phase = ($step - 1) % 4;
+            /** @var Device $device */
+            $device = $devices->values()->get($deviceIndex);
+            $deviceCollection = collect([$device]);
+
+            $partial = match ($phase) {
+                0 => $this->verifyLagForDevices($deviceCollection, $helper),
+                1 => $this->verifyVlanForDevices($deviceCollection, $helper),
+                2 => ['static_routes' => [$this->fetchStaticRouteForDevice($device, $helper)]],
+                3 => $this->fetchDnsForDeviceStep($device, $helper, $context),
+                default => [],
+            };
+        }
+
+        $current = min($step + 1, $total);
+
+        return [
+            'progress' => [
+                'current' => $current,
+                'total' => $total,
+                'percent' => $total > 0 ? (int) round(($current / $total) * 100) : 100,
+                'message' => $message,
+            ],
+            'partial' => $partial,
+            'context' => $context,
+            'done' => $current >= $total,
+        ];
+    }
+
     /**
      * @return array<string, mixed>
      */
     public function run(Deployment $deployment, CentralAPIHelper $helper): array
     {
-        $devices = $deployment->devices()
+        $results = $this->emptyResults();
+        $context = [];
+        $total = $this->totalSteps($deployment);
+
+        for ($step = 0; $step < $total; $step++) {
+            $stepResult = $this->runStep($deployment, $helper, $step, $context);
+            $context = $stepResult['context'];
+            $results = $this->mergePartialResults($results, $stepResult['partial']);
+        }
+
+        $results['summary'] = $this->buildSummary(
+            $results['lag_results'],
+            $results['vlan_results'],
+        );
+
+        return $results;
+    }
+
+    /**
+     * @param  array<string, mixed>  $accumulated
+     * @param  array<string, mixed>  $partial
+     * @return array<string, mixed>
+     */
+    public function mergePartialResults(array $accumulated, array $partial): array
+    {
+        foreach (['lag_device_errors', 'vlan_device_errors', 'lag_results', 'vlan_results', 'static_routes', 'dns_results'] as $listKey) {
+            if (! array_key_exists($listKey, $partial)) {
+                continue;
+            }
+            $accumulated[$listKey] = array_merge($accumulated[$listKey] ?? [], $partial[$listKey]);
+        }
+
+        if (array_key_exists('dns_scope_id', $partial)) {
+            $accumulated['dns_scope_id'] = $partial['dns_scope_id'];
+        }
+        if (array_key_exists('dns_scope_error', $partial)) {
+            $accumulated['dns_scope_error'] = $partial['dns_scope_error'];
+        }
+
+        $accumulated['summary'] = $this->buildSummary(
+            $accumulated['lag_results'] ?? [],
+            $accumulated['vlan_results'] ?? [],
+        );
+
+        return $accumulated;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $lagResults
+     * @param  list<array<string, mixed>>  $vlanResults
+     * @return array{lag_total: int, lag_passed: int, lag_failed: int, vlan_total: int, vlan_passed: int, vlan_failed: int}
+     */
+    public function buildSummary(array $lagResults, array $vlanResults): array
+    {
+        return [
+            'lag_total' => count($lagResults),
+            'lag_passed' => collect($lagResults)->where('ok', true)->count(),
+            'lag_failed' => collect($lagResults)->where('ok', false)->count(),
+            'vlan_total' => count($vlanResults),
+            'vlan_passed' => collect($vlanResults)->where('ok', true)->count(),
+            'vlan_failed' => collect($vlanResults)->where('ok', false)->count(),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Device>  $devices
+     */
+    protected function totalStepsForDevices(Collection $devices): int
+    {
+        return 1 + ($devices->count() * 4);
+    }
+
+    /**
+     * @param  Collection<int, Device>  $devices
+     */
+    protected function messageForStep(Collection $devices, int $step): string
+    {
+        if ($step === 0) {
+            return 'Resolving DNS scope ID...';
+        }
+
+        if ($devices->isEmpty()) {
+            return 'No devices in deployment.';
+        }
+
+        $deviceIndex = intdiv($step - 1, 4);
+        $phase = ($step - 1) % 4;
+        $device = $devices->values()->get($deviceIndex);
+        $name = $device?->name ?? 'device';
+
+        return match ($phase) {
+            0 => "Checking LAG interfaces for {$name}...",
+            1 => "Checking VLAN interfaces for {$name}...",
+            2 => "Fetching static routes for {$name}...",
+            3 => "Fetching DNS profiles for {$name}...",
+            default => 'Running check...',
+        };
+    }
+
+    /**
+     * @return Collection<int, Device>
+     */
+    protected function loadDevices(Deployment $deployment): Collection
+    {
+        return $deployment->devices()
             ->with([
                 'interfaces.lacp_profile',
                 'interfaces.switch_port',
                 'interfaces.stp_profile',
                 'site',
             ])
+            ->orderBy('name')
             ->get();
+    }
 
-        $lagInterfaces = $this->collectLagInterfaces($devices);
-        $vlanInterfaces = $this->collectVlanInterfaces($devices);
-
-        $lagVerification = $this->lagVerifier->verifyInterfaces($lagInterfaces, $helper);
-        $vlanVerification = $this->vlanVerifier->verifyInterfaces($vlanInterfaces, $helper);
-
-        $staticRoutes = $this->fetchStaticRoutesForDevices($devices, $helper);
-        $dnsResult = $this->fetchDnsForDevices($devices, $helper);
-
-        $lagResults = $lagVerification['results'];
-        $vlanResults = $vlanVerification['results'];
+    /**
+     * @param  Collection<int, Device>  $devices
+     * @return array{lag_device_errors: array, lag_results: array}
+     */
+    protected function verifyLagForDevices(Collection $devices, CentralAPIHelper $helper): array
+    {
+        $interfaces = $this->collectLagInterfaces($devices);
+        $verification = $this->lagVerifier->verifyInterfaces($interfaces, $helper);
 
         return [
-            'lag_device_errors' => $lagVerification['device_errors'],
-            'vlan_device_errors' => $vlanVerification['device_errors'],
-            'lag_results' => $lagResults,
-            'vlan_results' => $vlanResults,
-            'static_routes' => $staticRoutes,
-            'dns_scope_id' => $dnsResult['dns_scope_id'],
-            'dns_scope_error' => $dnsResult['dns_scope_error'],
-            'dns_results' => $dnsResult['dns_results'],
-            'summary' => [
-                'lag_total' => count($lagResults),
-                'lag_passed' => collect($lagResults)->where('ok', true)->count(),
-                'lag_failed' => collect($lagResults)->where('ok', false)->count(),
-                'vlan_total' => count($vlanResults),
-                'vlan_passed' => collect($vlanResults)->where('ok', true)->count(),
-                'vlan_failed' => collect($vlanResults)->where('ok', false)->count(),
-            ],
+            'lag_device_errors' => $verification['device_errors'],
+            'lag_results' => $verification['results'],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Device>  $devices
+     * @return array{vlan_device_errors: array, vlan_results: array}
+     */
+    protected function verifyVlanForDevices(Collection $devices, CentralAPIHelper $helper): array
+    {
+        $interfaces = $this->collectVlanInterfaces($devices);
+        $verification = $this->vlanVerifier->verifyInterfaces($interfaces, $helper);
+
+        return [
+            'vlan_device_errors' => $verification['device_errors'],
+            'vlan_results' => $verification['results'],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Device>  $devices
+     * @return array{dns_scope_id: string|null, dns_scope_error: string|null}
+     */
+    protected function resolveDnsScopeForDevices(Collection $devices, CentralAPIHelper $helper): array
+    {
+        $probeDevice = $devices->first(fn (Device $device) => filled($device->device_function));
+
+        if ($probeDevice === null) {
+            return [
+                'dns_scope_id' => self::DEFAULT_DNS_SCOPE_ID,
+                'dns_scope_error' => 'No devices with a device function found in this deployment.',
+            ];
+        }
+
+        $scopeResolution = $this->resolveDnsScopeId($helper, $probeDevice);
+
+        if (isset($scopeResolution['error'])) {
+            return [
+                'dns_scope_id' => $scopeResolution['attempted_scope_id'] ?? self::DEFAULT_DNS_SCOPE_ID,
+                'dns_scope_error' => $scopeResolution['error'],
+            ];
+        }
+
+        return [
+            'dns_scope_id' => $scopeResolution['scope_id'],
+            'dns_scope_error' => null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{dns_results: list<array<string, mixed>>}
+     */
+    protected function fetchDnsForDeviceStep(Device $device, CentralAPIHelper $helper, array $context): array
+    {
+        if (! empty($context['dns_scope_error'])) {
+            return [
+                'dns_results' => [],
+            ];
+        }
+
+        $dnsScopeId = $context['dns_scope_id'] ?? self::DEFAULT_DNS_SCOPE_ID;
+
+        if (! $device->device_function) {
+            return [
+                'dns_results' => [[
+                    'device_id' => $device->id,
+                    'device_name' => $device->name,
+                    'error' => 'Device function not available for this device.',
+                    'profiles' => [],
+                ]],
+            ];
+        }
+
+        $response = $helper->get_dns_profiles([
+            'object-type' => 'SHARED',
+            'view-type' => 'LOCAL',
+            'scope-id' => $dnsScopeId,
+            'device-function' => LagInterfaceCentralVerifier::deviceFunctionQueryValue($device),
+        ]);
+
+        if (! $this->responseOk($response)) {
+            return [
+                'dns_results' => [[
+                    'device_id' => $device->id,
+                    'device_name' => $device->name,
+                    'error' => $this->responseErrorMessage($response, 'Failed to fetch DNS profiles from Central.'),
+                    'profiles' => [],
+                ]],
+            ];
+        }
+
+        return [
+            'dns_results' => [[
+                'device_id' => $device->id,
+                'device_name' => $device->name,
+                'error' => null,
+                'profiles' => $this->parseDnsProfiles($response instanceof Response ? $response->json() : []),
+            ]],
+        ];
+    }
+
+    /**
+     * @return array{device_id: int, device_name: string, error: string|null, routes: list<array{profile_name: string, prefix: string}>}
+     */
+    protected function fetchStaticRouteForDevice(Device $device, CentralAPIHelper $helper): array
+    {
+        $site = $device->site;
+        if ($site === null || blank($site->scope_id)) {
+            return [
+                'device_id' => $device->id,
+                'device_name' => $device->name,
+                'error' => 'Site or site scope ID not available for this device.',
+                'routes' => [],
+            ];
+        }
+
+        if (! $device->device_function) {
+            return [
+                'device_id' => $device->id,
+                'device_name' => $device->name,
+                'error' => 'Device function not available for this device.',
+                'routes' => [],
+            ];
+        }
+
+        $response = $helper->get_static_route([
+            'object-type' => 'SHARED',
+            'view-type' => 'LOCAL',
+            'scope-id' => $site->scope_id,
+            'device-function' => LagInterfaceCentralVerifier::deviceFunctionQueryValue($device),
+        ]);
+
+        if (! $this->responseOk($response)) {
+            return [
+                'device_id' => $device->id,
+                'device_name' => $device->name,
+                'error' => $this->responseErrorMessage($response, 'Failed to fetch static routes from Central.'),
+                'routes' => [],
+            ];
+        }
+
+        return [
+            'device_id' => $device->id,
+            'device_name' => $device->name,
+            'error' => null,
+            'routes' => $this->parseStaticRouteProfiles($response instanceof Response ? $response->json() : []),
         ];
     }
 
@@ -92,143 +418,6 @@ class DeploymentCriticalCheckService
                 fn (DeviceInterface $iface) => $iface->interface_kind === InterfaceKind::VLAN
             );
         })->values();
-    }
-
-    /**
-     * @param  Collection<int, Device>  $devices
-     * @return list<array{device_id: int, device_name: string, error: string|null, routes: list<array{profile_name: string, prefix: string}>}>
-     */
-    protected function fetchStaticRoutesForDevices(Collection $devices, CentralAPIHelper $helper): array
-    {
-        $results = [];
-
-        foreach ($devices as $device) {
-            $site = $device->site;
-            if ($site === null || blank($site->scope_id)) {
-                $results[] = [
-                    'device_id' => $device->id,
-                    'device_name' => $device->name,
-                    'error' => 'Site or site scope ID not available for this device.',
-                    'routes' => [],
-                ];
-
-                continue;
-            }
-
-            if (! $device->device_function) {
-                $results[] = [
-                    'device_id' => $device->id,
-                    'device_name' => $device->name,
-                    'error' => 'Device function not available for this device.',
-                    'routes' => [],
-                ];
-
-                continue;
-            }
-
-            $response = $helper->get_static_route([
-                'object-type' => 'SHARED',
-                'view-type' => 'LOCAL',
-                'scope-id' => $site->scope_id,
-                'device-function' => LagInterfaceCentralVerifier::deviceFunctionQueryValue($device),
-            ]);
-
-            if (! $this->responseOk($response)) {
-                $message = $this->responseErrorMessage($response, 'Failed to fetch static routes from Central.');
-
-                $results[] = [
-                    'device_id' => $device->id,
-                    'device_name' => $device->name,
-                    'error' => $message,
-                    'routes' => [],
-                ];
-
-                continue;
-            }
-
-            $results[] = [
-                'device_id' => $device->id,
-                'device_name' => $device->name,
-                'error' => null,
-                'routes' => $this->parseStaticRouteProfiles($response instanceof Response ? $response->json() : []),
-            ];
-        }
-
-        return $results;
-    }
-
-    /**
-     * @param  Collection<int, Device>  $devices
-     * @return array{dns_scope_id: string|null, dns_scope_error: string|null, dns_results: list<array<string, mixed>>}
-     */
-    protected function fetchDnsForDevices(Collection $devices, CentralAPIHelper $helper): array
-    {
-        $probeDevice = $devices->first(fn (Device $device) => filled($device->device_function));
-
-        if ($probeDevice === null) {
-            return [
-                'dns_scope_id' => self::DEFAULT_DNS_SCOPE_ID,
-                'dns_scope_error' => 'No devices with a device function found in this deployment.',
-                'dns_results' => [],
-            ];
-        }
-
-        $scopeResolution = $this->resolveDnsScopeId($helper, $probeDevice);
-
-        if (isset($scopeResolution['error'])) {
-            return [
-                'dns_scope_id' => $scopeResolution['attempted_scope_id'] ?? self::DEFAULT_DNS_SCOPE_ID,
-                'dns_scope_error' => $scopeResolution['error'],
-                'dns_results' => [],
-            ];
-        }
-
-        $dnsScopeId = $scopeResolution['scope_id'];
-        $dnsResults = [];
-
-        foreach ($devices as $device) {
-            if (! $device->device_function) {
-                $dnsResults[] = [
-                    'device_id' => $device->id,
-                    'device_name' => $device->name,
-                    'error' => 'Device function not available for this device.',
-                    'profiles' => [],
-                ];
-
-                continue;
-            }
-
-            $response = $helper->get_dns_profiles([
-                'object-type' => 'SHARED',
-                'view-type' => 'LOCAL',
-                'scope-id' => $dnsScopeId,
-                'device-function' => LagInterfaceCentralVerifier::deviceFunctionQueryValue($device),
-            ]);
-
-            if (! $this->responseOk($response)) {
-                $dnsResults[] = [
-                    'device_id' => $device->id,
-                    'device_name' => $device->name,
-                    'error' => $this->responseErrorMessage($response, 'Failed to fetch DNS profiles from Central.'),
-                    'profiles' => [],
-                ];
-
-                continue;
-            }
-
-            $dnsResults[] = [
-                'device_id' => $device->id,
-                'device_name' => $device->name,
-                'error' => null,
-                'profiles' => $this->parseDnsProfiles($response instanceof Response ? $response->json() : []),
-            ];
-        }
-
-        return [
-            'dns_scope_id' => $dnsScopeId,
-            'dns_scope_error' => null,
-            'dns_results' => $dnsResults,
-        ];
     }
 
     /**
