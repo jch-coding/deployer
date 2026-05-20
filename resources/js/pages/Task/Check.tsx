@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Check, ChevronDown, X } from 'lucide-react';
+import { Check as CheckIcon, ChevronDown, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import ConfigurationDiff, {
     type DiffEntry,
@@ -137,7 +137,7 @@ function InterfaceCheckRow({ result }: { result: InterfaceResult }) {
         <Collapsible open={open} onOpenChange={setOpen}>
             <div className="flex items-center gap-3 border-b border-border py-2.5 last:border-0 dark:border-white/20 dark:text-white">
                 {result.ok ? (
-                    <Check
+                    <CheckIcon
                         className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400"
                         aria-label="Match"
                     />
