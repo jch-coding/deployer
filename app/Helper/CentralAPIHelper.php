@@ -651,7 +651,7 @@ class CentralAPIHelper
         }
 
         $allItems = [];
-        $limit = 100;
+        $limit = 10;
         $next = null;
 
         while (true) {
@@ -670,7 +670,7 @@ class CentralAPIHelper
                 return ['error' => $message !== '' ? $message : 'Failed to fetch portchannels from Central.'];
             }
 
-            $pageItems = $response->json('items', []);
+            $pageItems = $response->json('interface', []);
             if (! is_array($pageItems)) {
                 $pageItems = [];
             }

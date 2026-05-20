@@ -127,7 +127,7 @@ class VlanInterfaceCentralVerifier
             return ['error' => (string) $response['error']];
         }
 
-        $items = $response instanceof Response ? $response->json('items', []) : [];
+        $items = $response instanceof Response ? $response->json('interface', []) : [];
         if (! is_array($items)) {
             $items = [];
         }
