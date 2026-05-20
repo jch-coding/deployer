@@ -33,6 +33,7 @@ import TaskItemsCard from '@/components/ui/TaskItemsCard';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import {
+    critical_check as criticalCheckDeployment,
     index as deploymentsIndex,
     refreshScopeIds,
     show as showDeployment,
@@ -259,6 +260,13 @@ export default function Show() {
             <h1 className="text-center text-3xl font-semibold">
                 {deployment.name}
             </h1>
+            <div className="mt-4 flex justify-center">
+                <Button variant="outline" asChild>
+                    <a href={criticalCheckDeployment(deploymentId).url}>
+                        Critical configuration check
+                    </a>
+                </Button>
+            </div>
             <div className="mt-4 grid grid-cols-2 gap-5 p-4">
                 <div className="col-span-2 mx-auto">
                     <h2 className="text-center text-xl font-semibold">

@@ -5,33 +5,11 @@ namespace App\Services;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\DeviceInterface;
-use App\Models\Task;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 
-class LagInterfaceCentralVerifier
+class VlanInterfaceCentralVerifier
 {
-    /**
-     * @return array{
-     *     device_errors: array<int, array{device_id: int, device_name: string, message: string}>,
-     *     results: array<int, array{
-     *         device_interface_id: int,
-     *         device_name: string,
-     *         interface: string,
-     *         ok: bool,
-     *         missing_in_central: bool,
-     *         diff: array<int, array{path: string, expected: mixed, actual: mixed}>
-     *     }>
-     * }
-     */
-    public function verify(Task $task, CentralAPIHelper $helper): array
-    {
-        $interfaces = $task->deviceInterfaces()
-            ->with(['device', 'lacp_profile', 'switch_port', 'stp_profile'])
-            ->get();
-
-        return $this->verifyInterfaces($interfaces, $helper);
-    }
-
     /**
      * @param  Collection<int, DeviceInterface>  $interfaces
      * @return array{
@@ -53,7 +31,7 @@ class LagInterfaceCentralVerifier
         $results = [];
         $centralByDevice = [];
 
-        foreach ($interfaces->groupBy('device_id') as $deviceId => $deviceInterfaces) {
+        foreach ($interfaces->groupBy('device_id') as $deviceInterfaces) {
             /** @var DeviceInterface $first */
             $first = $deviceInterfaces->first();
             $device = $first->device;
@@ -80,7 +58,7 @@ class LagInterfaceCentralVerifier
             }
 
             if (! array_key_exists($device->id, $centralByDevice)) {
-                $fetch = $this->fetchPortchannelsByName($helper, $device);
+                $fetch = $this->fetchVlanInterfacesById($helper, $device);
                 if (isset($fetch['error'])) {
                     $deviceErrors[] = [
                         'device_id' => $device->id,
@@ -100,7 +78,8 @@ class LagInterfaceCentralVerifier
 
             foreach ($deviceInterfaces as $deviceInterface) {
                 $expected = $this->buildExpectedPayload($deviceInterface);
-                $centralItem = $centralItems[$deviceInterface->interface] ?? null;
+                $vlanId = (string) $deviceInterface->interface;
+                $centralItem = $centralItems[$vlanId] ?? null;
 
                 if ($centralItem === null) {
                     $results[] = $this->buildResult(
@@ -134,43 +113,37 @@ class LagInterfaceCentralVerifier
     /**
      * @return array{items: array<string, array<string, mixed>>}|array{error: string}
      */
-    protected function fetchPortchannelsByName(CentralAPIHelper $helper, Device $device): array
+    protected function fetchVlanInterfacesById(CentralAPIHelper $helper, Device $device): array
     {
-        $items = $helper->get_all_interface_portchannels([
-            'object-type' => 'LOCAL',
-            'view-type' => 'LOCAL',
-            'scope-id' => $device->scope_id,
-            'device-function' => self::deviceFunctionQueryValue($device),
-        ]);
+        $response = $helper->get_vlan_interfaces($device);
 
-        if (array_key_exists('error', $items)) {
-            return ['error' => (string) $items['error']];
+        if ($response instanceof Response && ! $response->ok()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return ['error' => $message !== '' ? $message : 'Failed to fetch VLAN interfaces from Central.'];
+        }
+
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return ['error' => (string) $response['error']];
+        }
+
+        $items = $response instanceof Response ? $response->json('items', []) : [];
+        if (! is_array($items)) {
+            $items = [];
         }
 
         $indexed = [];
         foreach ($items as $item) {
-            $name = (string) ($item['name'] ?? '');
-            if ($name !== '') {
-                $indexed[$name] = $item;
+            if (! is_array($item)) {
+                continue;
+            }
+            $id = (string) ($item['id'] ?? '');
+            if ($id !== '') {
+                $indexed[$id] = $item;
             }
         }
 
         return ['items' => $indexed];
-    }
-
-    public static function deviceFunctionQueryValue(Device $device): string
-    {
-        $value = $device->device_function;
-
-        if ($value instanceof \BackedEnum) {
-            return $value->value;
-        }
-
-        if ($value instanceof \UnitEnum) {
-            return $value->name;
-        }
-
-        return (string) $value;
     }
 
     /**
@@ -178,15 +151,14 @@ class LagInterfaceCentralVerifier
      */
     public function buildExpectedPayload(DeviceInterface $deviceInterface): array
     {
-        $expected = CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface, true);
-        if ($deviceInterface->sw_profile) {
-            $expected = array_merge(
-                $expected,
-                CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface, false)
-            );
-        }
-
-        return $expected;
+        return [
+            'id' => $deviceInterface->interface,
+            'ipv4' => [
+                'address' => $deviceInterface->ip_address,
+            ],
+            'enable' => $deviceInterface->enable,
+            'is-valid' => true,
+        ];
     }
 
     /**
@@ -310,6 +282,7 @@ class LagInterfaceCentralVerifier
     /**
      * @return array{
      *     device_interface_id: int,
+     *     device_id: int,
      *     device_name: string,
      *     interface: string,
      *     ok: bool,

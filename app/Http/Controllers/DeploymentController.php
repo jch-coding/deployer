@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Helper\CentralAPIHelper;
 use App\Models\Deployment;
 use App\Models\Task;
+use App\Services\DeploymentCriticalCheckService;
 use App\Services\FinalizeExpiredTasksService;
 use App\TaskType;
 use Carbon\Carbon;
@@ -127,5 +129,25 @@ class DeploymentController extends Controller
         $deployment->delete();
 
         return redirect()->route('deployments.index');
+    }
+
+    public function criticalCheck(Request $request, Deployment $deployment, DeploymentCriticalCheckService $criticalCheckService)
+    {
+        $deployment->loadMissing('client');
+
+        $currentClient = $request->user()?->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before running critical configuration check.');
+
+            return redirect()->route('deployments.index');
+        }
+
+        $helper = new CentralAPIHelper($deployment->client);
+        $check = $criticalCheckService->run($deployment, $helper);
+
+        return Inertia::render('Deployment/CriticalCheck', [
+            'deployment' => $deployment->only(['id', 'name']),
+            ...$check,
+        ]);
     }
 }
