@@ -5,11 +5,35 @@ namespace App\Services;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\Task;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 
 class VlanInterfaceCentralVerifier
 {
+    /**
+     * @return array{
+     *     device_errors: array<int, array{device_id: int, device_name: string, message: string}>,
+     *     results: array<int, array{
+     *         device_interface_id: int,
+     *         device_id: int,
+     *         device_name: string,
+     *         interface: string,
+     *         ok: bool,
+     *         missing_in_central: bool,
+     *         diff: array<int, array{path: string, expected: mixed, actual: mixed}>
+     *     }>
+     * }
+     */
+    public function verify(Task $task, CentralAPIHelper $helper): array
+    {
+        $interfaces = $task->deviceInterfaces()
+            ->with(['device'])
+            ->get();
+
+        return $this->verifyInterfaces($interfaces, $helper);
+    }
+
     /**
      * @param  Collection<int, DeviceInterface>  $interfaces
      * @return array{

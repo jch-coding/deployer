@@ -28,6 +28,7 @@ use App\Models\Site;
 use App\Models\Task;
 use App\Services\EthernetInterfaceCentralVerifier;
 use App\Services\LagInterfaceCentralVerifier;
+use App\Services\VlanInterfaceCentralVerifier;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -344,6 +345,8 @@ class TaskController extends Controller
             'interfaces' => $isDeviceBasedTask ? [] : $task->deviceInterfaces()->withPivot('status')->get(),
             'deployment' => $task->deployment,
             'display_columns' => $this->display_columns[$task->task_type] ?? [],
+            'supports_central_check' => Task::supportsCentralCheck($task->task_type),
+            'can_run_central_check' => Task::supportsCentralCheck($task->task_type) && $task->status === 'COMPLETED',
         ]);
     }
 
@@ -367,12 +370,14 @@ class TaskController extends Controller
         $checkKind = match ($task->task_type) {
             'CONFIGURE_LAG_INTERFACE' => 'lag',
             'CONFIGURE_ETHERNET_INTERFACE' => 'ethernet',
+            'CONFIGURE_VLAN_INTERFACE' => 'vlan',
             default => abort(404),
         };
 
         $verification = match ($task->task_type) {
             'CONFIGURE_LAG_INTERFACE' => (new LagInterfaceCentralVerifier)->verify($task, $helper),
             'CONFIGURE_ETHERNET_INTERFACE' => (new EthernetInterfaceCentralVerifier)->verify($task, $helper),
+            'CONFIGURE_VLAN_INTERFACE' => (new VlanInterfaceCentralVerifier)->verify($task, $helper),
             default => abort(404),
         };
 
@@ -415,6 +420,7 @@ class TaskController extends Controller
         $verification = match ($task->task_type) {
             'CONFIGURE_LAG_INTERFACE' => (new LagInterfaceCentralVerifier)->verify($task, $helper),
             'CONFIGURE_ETHERNET_INTERFACE' => (new EthernetInterfaceCentralVerifier)->verify($task, $helper),
+            'CONFIGURE_VLAN_INTERFACE' => (new VlanInterfaceCentralVerifier)->verify($task, $helper),
             default => abort(404),
         };
 
@@ -439,6 +445,7 @@ class TaskController extends Controller
         $namePrefix = match ($task->task_type) {
             'CONFIGURE_LAG_INTERFACE' => 'configure_lag_interface_retry_',
             'CONFIGURE_ETHERNET_INTERFACE' => 'configure_ethernet_interface_retry_',
+            'CONFIGURE_VLAN_INTERFACE' => 'configure_vlan_interface_retry_',
             default => 'configure_interface_retry_',
         };
 
@@ -520,6 +527,19 @@ class TaskController extends Controller
     }
 
     /**
+     * @return array{supports_central_check: bool, can_run_central_check: bool}
+     */
+    protected function centralCheckFlagsForTask(Task $task): array
+    {
+        $supports = Task::supportsCentralCheck($task->task_type);
+
+        return [
+            'supports_central_check' => $supports,
+            'can_run_central_check' => $supports && $task->status === 'COMPLETED',
+        ];
+    }
+
+    /**
      * @param  \Illuminate\Support\Collection<int, Task>  $siblings
      * @return array<int, array<string, mixed>>
      */
@@ -542,6 +562,7 @@ class TaskController extends Controller
                     'devices' => $devices,
                     'interfaces' => [],
                     'display_columns' => $this->display_columns[$sub->task_type] ?? [],
+                    ...$this->centralCheckFlagsForTask($sub),
                 ];
             }
 
@@ -563,6 +584,7 @@ class TaskController extends Controller
                     'devices' => $devices,
                     'interfaces' => [],
                     'display_columns' => $this->display_columns[$sub->task_type] ?? [],
+                    ...$this->centralCheckFlagsForTask($sub),
                 ];
             }
 
@@ -582,6 +604,7 @@ class TaskController extends Controller
                 'devices' => $sub->devices,
                 'interfaces' => $interfaces,
                 'display_columns' => $this->display_columns[$sub->task_type] ?? [],
+                ...$this->centralCheckFlagsForTask($sub),
             ];
         })->values()->all();
     }
@@ -1361,9 +1384,17 @@ class TaskController extends Controller
                 $jobs[] = $in_progress->map(fn ($interface) => new ConfigureEthernetInterface($interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_VLAN_INTERFACE':
-                $vlan_interfaces = $this->getConfigureAllInterfacesForType($task->devices, 'CONFIGURE_VLAN_INTERFACE');
-                $task = $this->attach_interfaces($task, $vlan_interfaces);
-                $in_progress = $task->deviceInterfaces->filter(fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED');
+                if ($task->deviceInterfaces->isNotEmpty()) {
+                    $in_progress = $task->deviceInterfaces->filter(
+                        fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED',
+                    );
+                } else {
+                    $vlan_interfaces = $this->getConfigureAllInterfacesForType($task->devices, 'CONFIGURE_VLAN_INTERFACE');
+                    $task = $this->attach_interfaces($task, $vlan_interfaces);
+                    $in_progress = $task->deviceInterfaces->filter(
+                        fn ($device_interface) => $device_interface->pivot->status !== 'COMPLETED',
+                    );
+                }
                 $jobs[] = $in_progress->map(fn ($vlan_interface) => new ConfigureVlanInterfaceJob($vlan_interface, $task, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_LAG_INTERFACE':

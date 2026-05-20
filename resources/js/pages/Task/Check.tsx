@@ -35,7 +35,7 @@ type DeviceError = {
     message: string;
 };
 
-type CheckKind = 'lag' | 'ethernet';
+type CheckKind = 'lag' | 'ethernet' | 'vlan';
 
 type DeviceCheckGroup = {
     device_id: number;
@@ -58,6 +58,11 @@ const checkKindLabels: Record<
         title: 'Verify ethernet in Central',
         breadcrumb: 'Verify ethernet in Central',
         empty: 'No ethernet interfaces are attached to this task.',
+    },
+    vlan: {
+        title: 'Verify VLAN in Central',
+        breadcrumb: 'Verify VLAN in Central',
+        empty: 'No VLAN interfaces are attached to this task.',
     },
 };
 

@@ -24,6 +24,7 @@ export default function Show() {
         (device_interface) => device_interface.pivot.status === 'COMPLETED',
     );
     const displayColumns = usePage().props.display_columns ?? []
+    const canRunCentralCheck = usePage().props.can_run_central_check === true
     const [isCancelling, setIsCancelling] = useState(false);
     const [isClearingQueue, setIsClearingQueue] = useState(false);
 
@@ -92,16 +93,15 @@ export default function Show() {
             </div>
             <div className="mx-auto my-2 flex min-w-7xl gap-4">
                 <div className="max-w-[400px]">
-                    {task.task_type === 'CONFIGURE_LAG_INTERFACE' &&
-                        task.status === 'COMPLETED' && (
-                            <div className="mb-2">
-                                <Button variant="outline" className="w-full" asChild>
-                                    <Link href={checkTask(task.id).url}>
-                                        Verify in Central
-                                    </Link>
-                                </Button>
-                            </div>
-                        )}
+                    {canRunCentralCheck && (
+                        <div className="mb-2">
+                            <Button variant="outline" className="w-full" asChild>
+                                <Link href={checkTask(task.id).url}>
+                                    Verify in Central
+                                </Link>
+                            </Button>
+                        </div>
+                    )}
                     <Card className="h-[75vh] overflow-y-auto">
                         <CardHeader className="text-center text-2xl font-bold">
                             Progress

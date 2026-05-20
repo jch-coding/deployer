@@ -173,7 +173,7 @@ test('task lag central check reports missing interface when not in Central', fun
 
 test('task lag central check returns 404 for unsupported task types', function () {
     $task = Task::factory()->for($this->deployment)->create([
-        'task_type' => 'CONFIGURE_VLAN_INTERFACE',
+        'task_type' => 'UPDATE_SYSTEM_INFO',
         'status' => 'COMPLETED',
     ]);
 

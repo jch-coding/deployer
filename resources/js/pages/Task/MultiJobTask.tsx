@@ -53,6 +53,7 @@ type SubJob = {
     devices: DeviceRow[];
     interfaces: DeviceInterfaceRow[];
     display_columns: string[];
+    can_run_central_check?: boolean;
 };
 
 type PageProps = {
@@ -203,21 +204,20 @@ export default function MultiJobTask() {
                                             />
                                         </div>
                                         <div className="flex flex-1 flex-col justify-center text-center lg:text-left">
-                                            {sub.task_type === 'CONFIGURE_LAG_INTERFACE' &&
-                                                sub.status === 'COMPLETED' && (
-                                                    <div className="mb-3">
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="w-full"
-                                                            asChild
-                                                        >
-                                                            <Link href={checkTask(sub.id).url}>
-                                                                Verify in Central
-                                                            </Link>
-                                                        </Button>
-                                                    </div>
-                                                )}
+                                            {sub.can_run_central_check && (
+                                                <div className="mb-3">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="w-full"
+                                                        asChild
+                                                    >
+                                                        <Link href={checkTask(sub.id).url}>
+                                                            Verify in Central
+                                                        </Link>
+                                                    </Button>
+                                                </div>
+                                            )}
                                             <p className="text-muted-foreground text-xs tracking-wide uppercase">
                                                 Progress
                                             </p>
