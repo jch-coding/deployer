@@ -570,7 +570,7 @@ export default function CriticalCheck() {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
+            <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
                 <div className="text-center">
                     <h1 className="text-2xl font-bold">Critical configuration check</h1>
                     <p className="text-muted-foreground mt-1 text-sm">
@@ -619,39 +619,42 @@ export default function CriticalCheck() {
                     </CardContent>
                 </Card>
 
-                <Card>
-                    <CardHeader className="pb-2">
-                        <h2 className="text-lg font-semibold">Progress</h2>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        <div
-                            className="bg-muted h-2 w-full overflow-hidden rounded-full"
-                            role="progressbar"
-                            aria-valuenow={progress.percent}
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                        >
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                    <Card className="dark:text-white">
+                        <CardHeader className="pb-2">
+                            <h2 className="text-lg font-semibold dark:text-white">Progress</h2>
+                        </CardHeader>
+                        <CardContent className="space-y-3 dark:text-white">
                             <div
-                                className="bg-primary h-full rounded-full transition-all duration-300"
-                                style={{ width: `${progress.percent}%` }}
-                            />
-                        </div>
-                        <p className="text-muted-foreground text-sm">
-                            Step {progress.current} of {progress.total}
-                            {progress.percent > 0 && ` (${progress.percent}%)`}
-                        </p>
-                        <p className="text-sm font-medium">{progress.message}</p>
-                        {runError && (
-                            <p className="text-sm text-red-700">{runError}</p>
-                        )}
-                    </CardContent>
-                </Card>
+                                className="bg-muted h-2 w-full overflow-hidden rounded-full"
+                                role="progressbar"
+                                aria-valuenow={progress.percent}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                            >
+                                <div
+                                    className="bg-primary h-full rounded-full transition-all duration-300"
+                                    style={{ width: `${progress.percent}%` }}
+                                />
+                            </div>
+                            <p className="text-muted-foreground text-sm dark:text-white">
+                                Step {progress.current} of {progress.total}
+                                {progress.percent > 0 && ` (${progress.percent}%)`}
+                            </p>
+                            <p className="text-sm font-medium dark:text-white">
+                                {progress.message}
+                            </p>
+                            {runError && (
+                                <p className="text-sm text-red-700 dark:text-white">{runError}</p>
+                            )}
+                        </CardContent>
+                    </Card>
 
-                <Card className="dark:text-white">
-                    <CardHeader className="pb-2">
-                        <h2 className="text-lg font-semibold dark:text-white">Summary</h2>
-                    </CardHeader>
-                    <CardContent className="flex flex-wrap gap-6 text-sm dark:text-white">
+                    <Card className="dark:text-white">
+                        <CardHeader className="pb-2">
+                            <h2 className="text-lg font-semibold dark:text-white">Summary</h2>
+                        </CardHeader>
+                        <CardContent className="flex flex-wrap gap-6 text-sm dark:text-white">
                         {!hasStarted ? (
                             <span className="text-muted-foreground dark:text-white">
                                 Run the check to see results.
@@ -719,12 +722,11 @@ export default function CriticalCheck() {
                                 </span>
                             </>
                         )}
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
 
-                {hasStarted && (
-                    <>
-                        <div className="space-y-4 dark:text-white">
+                    {hasStarted && (
+                        <div className="space-y-4 lg:col-span-2 dark:text-white">
                             <h2 className="text-lg font-semibold dark:text-white">
                                 Interface verification
                             </h2>
@@ -748,7 +750,9 @@ export default function CriticalCheck() {
                                 }
                             />
                         </div>
+                    )}
 
+                    {hasStarted && (
                         <Card className="dark:text-white">
                             <CardHeader className="pb-2">
                                 <h2 className="text-lg font-semibold dark:text-white">
@@ -817,7 +821,9 @@ export default function CriticalCheck() {
                                 )}
                             </CardContent>
                         </Card>
+                    )}
 
+                    {hasStarted && (
                         <Card className="dark:text-white">
                             <CardHeader className="pb-2">
                                 <h2 className="text-lg font-semibold dark:text-white">
@@ -901,8 +907,8 @@ export default function CriticalCheck() {
                                     ))}
                             </CardContent>
                         </Card>
-                    </>
-                )}
+                    )}
+                </div>
 
                 <div className="flex justify-center">
                     <Button variant="outline" asChild>
