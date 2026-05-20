@@ -67,10 +67,10 @@ export function initializeTheme(): void {
 
     if (!localStorage.getItem('appearance')) {
         localStorage.setItem('appearance', 'system');
-        setCookie('appearance', 'system');
     }
 
     currentAppearance = getStoredAppearance();
+    setCookie('appearance', currentAppearance);
     applyTheme(currentAppearance);
 
     // Set up system theme change listener

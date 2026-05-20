@@ -6,6 +6,7 @@ import {
     ListTodoIcon,
     ScrollText,
 } from 'lucide-react';
+import { AppearanceToggle } from '@/components/appearance-toggle';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -77,6 +78,7 @@ export function AppSidebar() {
 
             <SidebarFooter>
                 <NavFooter items={footerNavItems} className="mt-auto" />
+                <AppearanceToggle />
                 <NavUser />
             </SidebarFooter>
         </Sidebar>
