@@ -65,7 +65,7 @@ class Task extends Model
 
     public static function supportsCentralCheck(string $taskType): bool
     {
-        return $taskType === 'CONFIGURE_LAG_INTERFACE';
+        return in_array($taskType, ['CONFIGURE_LAG_INTERFACE', 'CONFIGURE_ETHERNET_INTERFACE'], true);
     }
 
     public function getTaskCategory($task_type)

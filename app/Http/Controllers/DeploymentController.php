@@ -139,6 +139,7 @@ class DeploymentController extends Controller
 
         return Inertia::render('Deployment/CriticalCheck', [
             'deployment' => $deployment->only(['id', 'name']),
+            'device_count' => $deployment->devices()->count(),
             'total_steps' => $criticalCheckService->totalSteps($deployment),
             ...$criticalCheckService->emptyResults(),
         ]);
@@ -157,9 +158,14 @@ class DeploymentController extends Controller
         $validated = $request->validate([
             'dns_scope_id' => ['nullable', 'string'],
             'dns_scope_error' => ['nullable', 'string'],
+            'include_ethernet' => ['sometimes', 'boolean'],
         ]);
 
-        $context = [];
+        $includeEthernet = $request->boolean('include_ethernet');
+
+        $context = [
+            'include_ethernet' => $includeEthernet,
+        ];
         if (array_key_exists('dns_scope_id', $validated) && $validated['dns_scope_id'] !== null) {
             $context['dns_scope_id'] = $validated['dns_scope_id'];
         }
@@ -168,7 +174,7 @@ class DeploymentController extends Controller
         }
 
         $helper = new CentralAPIHelper($deployment->client);
-        $total = $criticalCheckService->totalSteps($deployment);
+        $total = $criticalCheckService->totalSteps($deployment, $includeEthernet);
 
         if ($step < 0 || $step >= $total) {
             abort(404);

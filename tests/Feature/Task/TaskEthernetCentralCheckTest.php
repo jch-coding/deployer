@@ -6,7 +6,6 @@ use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
-use App\Models\LacpProfile;
 use App\Models\SwitchPort;
 use App\Models\Task;
 use App\Models\User;
@@ -32,53 +31,42 @@ beforeEach(function () {
 /**
  * @return array{task: Task, deviceInterface: DeviceInterface, expectedCentralItem: array<string, mixed>}
  */
-function createLagCentralCheckFixtures(Device $device, Deployment $deployment): array
+function createEthernetCentralCheckFixtures(Device $device, Deployment $deployment): array
 {
-    $lacpProfile = LacpProfile::factory()->create([
-        'mode' => 'ACTIVE',
-        'rate' => 'SLOW',
-        'port_list' => '1/1/1-1/1/2',
-        'trunk_type' => 'LACP',
-    ]);
     $switchPort = SwitchPort::factory()->create([
-        'interface_mode' => 'TRUNK',
-        'access_vlan' => null,
-        'native_vlan' => 10,
-        'trunk_vlan_all' => 'true',
+        'interface_mode' => 'ACCESS',
+        'access_vlan' => 100,
+        'native_vlan' => null,
+        'trunk_vlan_all' => null,
         'trunk_vlan_ranges' => null,
     ]);
     $deviceInterface = DeviceInterface::factory()->create([
         'device_id' => $device->id,
-        'interface' => '10',
+        'interface' => '1/1/1',
         'switch_port_id' => $switchPort->id,
-        'lacp_profile_id' => $lacpProfile->id,
-        'interface_kind' => InterfaceKind::LAG,
-        'description' => null,
+        'interface_kind' => InterfaceKind::ETHERNET,
+        'description' => 'Access port',
+        'shutdown_on_split' => false,
     ]);
 
     $task = Task::factory()->for($deployment)->create([
-        'task_type' => 'CONFIGURE_LAG_INTERFACE',
+        'task_type' => 'CONFIGURE_ETHERNET_INTERFACE',
         'status' => 'COMPLETED',
     ]);
     $task->deviceInterfaces()->attach($deviceInterface->id, ['status' => 'COMPLETED']);
 
     $expectedCentralItem = [
-        'name' => '10',
+        'name' => '1/1/1',
+        'description' => 'Access port',
         'vsx' => ['shutdown-on-split' => false],
         'switchport' => [
-            'access-vlan' => null,
-            'interface-mode' => 'TRUNK',
-            'native-vlan' => 10,
-            'trunk-vlan-all' => true,
+            'access-vlan' => 100,
+            'interface-mode' => 'ACCESS',
+            'native-vlan' => null,
+            'trunk-vlan-all' => null,
             'trunk-vlan-ranges' => null,
         ],
-        'lacp' => [
-            'mode' => 'ACTIVE',
-            'rate' => 'SLOW',
-        ],
-        'trunk-type' => 'LACP',
-        'port-list' => ['1/1/1', '1/1/2'],
-        'enable' => true,
+        'stp' => [],
     ];
 
     return [
@@ -88,11 +76,11 @@ function createLagCentralCheckFixtures(Device $device, Deployment $deployment): 
     ];
 }
 
-test('task lag central check reports success when Central matches expected config', function () {
-    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+test('task ethernet central check reports success when Central matches expected config', function () {
+    $fixtures = createEthernetCentralCheckFixtures($this->device, $this->deployment);
 
     Http::fake([
-        '*portchannels*' => Http::response([
+        '*ethernet-interfaces*' => Http::response([
             'interface' => [$fixtures['expectedCentralItem']],
         ], 200),
     ]);
@@ -101,21 +89,21 @@ test('task lag central check reports success when Central matches expected confi
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Task/Check')
-            ->where('check_kind', 'lag')
+            ->where('check_kind', 'ethernet')
             ->where('summary.passed', 1)
             ->where('summary.failed', 0)
             ->has('results', 1)
             ->where('results.0.ok', true)
-            ->where('results.0.interface', '10'));
+            ->where('results.0.interface', '1/1/1'));
 });
 
-test('task lag central check reports mismatch when Central differs', function () {
-    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+test('task ethernet central check reports mismatch when Central differs', function () {
+    $fixtures = createEthernetCentralCheckFixtures($this->device, $this->deployment);
     $mismatched = $fixtures['expectedCentralItem'];
-    $mismatched['lacp']['mode'] = 'PASSIVE';
+    $mismatched['switchport']['access-vlan'] = 200;
 
     Http::fake([
-        '*portchannels*' => Http::response([
+        '*ethernet-interfaces*' => Http::response([
             'interface' => [$mismatched],
         ], 200),
     ]);
@@ -125,43 +113,14 @@ test('task lag central check reports mismatch when Central differs', function ()
         ->assertInertia(fn (Assert $page) => $page
             ->where('summary.failed', 1)
             ->where('results.0.ok', false)
-            ->where('results.0.diff.0.path', 'lacp.mode'));
+            ->where('results.0.diff.0.path', 'switchport.access-vlan'));
 });
 
-test('task lag central check finds interface on a later portchannels page', function () {
-    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
-
-    Http::fake(function (\Illuminate\Http\Client\Request $request) use ($fixtures) {
-        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
-
-        if (! isset($query['next'])) {
-            return Http::response([
-                'interface' => [['name' => '99', 'enable' => true]],
-                'next' => 'page-2',
-            ], 200);
-        }
-
-        return Http::response([
-            'interface' => [$fixtures['expectedCentralItem']],
-            'next' => null,
-        ], 200);
-    });
-
-    $this->get(route('tasks.check', $fixtures['task']))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('summary.passed', 1)
-            ->where('results.0.ok', true)
-            ->where('results.0.interface', '10'));
-
-    Http::assertSentCount(2);
-});
-
-test('task lag central check reports missing interface when not in Central', function () {
-    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+test('task ethernet central check reports missing interface when not in Central', function () {
+    $fixtures = createEthernetCentralCheckFixtures($this->device, $this->deployment);
 
     Http::fake([
-        '*portchannels*' => Http::response(['interface' => []], 200),
+        '*ethernet-interfaces*' => Http::response(['interface' => []], 200),
     ]);
 
     $this->get(route('tasks.check', $fixtures['task']))
@@ -171,7 +130,7 @@ test('task lag central check reports missing interface when not in Central', fun
             ->where('results.0.missing_in_central', true));
 });
 
-test('task lag central check returns 404 for unsupported task types', function () {
+test('task ethernet central check returns 404 for unsupported task types', function () {
     $task = Task::factory()->for($this->deployment)->create([
         'task_type' => 'CONFIGURE_VLAN_INTERFACE',
         'status' => 'COMPLETED',
@@ -180,14 +139,14 @@ test('task lag central check returns 404 for unsupported task types', function (
     $this->get(route('tasks.check', $task))->assertNotFound();
 });
 
-test('task lag central check redirects when current client does not match deployment', function () {
+test('task ethernet central check redirects when current client does not match deployment', function () {
     $otherClient = Client::factory()->for($this->user)->create(['current' => true]);
     $this->client->update(['current' => false]);
 
-    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+    $fixtures = createEthernetCentralCheckFixtures($this->device, $this->deployment);
 
     Http::fake([
-        '*portchannels*' => Http::response(['interface' => []], 200),
+        '*ethernet-interfaces*' => Http::response(['interface' => []], 200),
     ]);
 
     $this->get(route('tasks.check', $fixtures['task']))
@@ -197,8 +156,8 @@ test('task lag central check redirects when current client does not match deploy
     expect($otherClient->fresh()->current)->toBeTrue();
 });
 
-test('task index includes central check flags for lag tasks', function () {
-    $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
+test('task index includes central check flags for ethernet tasks', function () {
+    $fixtures = createEthernetCentralCheckFixtures($this->device, $this->deployment);
 
     $this->get(route('tasks.index'))
         ->assertOk()

@@ -25,6 +25,7 @@ use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\Site;
 use App\Models\Task;
+use App\Services\EthernetInterfaceCentralVerifier;
 use App\Services\LagInterfaceCentralVerifier;
 use App\TaskType;
 use Carbon\Carbon;
@@ -361,7 +362,18 @@ class TaskController extends Controller
         }
 
         $helper = new CentralAPIHelper($task->deployment->client);
-        $verification = (new LagInterfaceCentralVerifier)->verify($task, $helper);
+
+        $checkKind = match ($task->task_type) {
+            'CONFIGURE_LAG_INTERFACE' => 'lag',
+            'CONFIGURE_ETHERNET_INTERFACE' => 'ethernet',
+            default => abort(404),
+        };
+
+        $verification = match ($task->task_type) {
+            'CONFIGURE_LAG_INTERFACE' => (new LagInterfaceCentralVerifier)->verify($task, $helper),
+            'CONFIGURE_ETHERNET_INTERFACE' => (new EthernetInterfaceCentralVerifier)->verify($task, $helper),
+            default => abort(404),
+        };
 
         $passed = collect($verification['results'])->where('ok', true)->count();
         $failed = collect($verification['results'])->where('ok', false)->count();
@@ -369,6 +381,7 @@ class TaskController extends Controller
         return Inertia::render('Task/Check', [
             'task' => $task->only(['id', 'task_type', 'status']),
             'task_friendly_name' => Task::getTaskFriendlyName($task->task_type),
+            'check_kind' => $checkKind,
             'deployment' => $task->deployment->only(['id', 'name']),
             'device_errors' => $verification['device_errors'],
             'results' => $verification['results'],

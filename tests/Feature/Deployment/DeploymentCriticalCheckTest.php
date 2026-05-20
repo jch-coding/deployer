@@ -37,8 +37,9 @@ beforeEach(function () {
 function fakeCriticalCheckCentralApis(array $overrides = []): void
 {
     Http::fake(array_merge([
-        '*portchannels*' => Http::response(['items' => []], 200),
-        '*vlan-interfaces*' => Http::response(['items' => []], 200),
+        '*portchannels*' => Http::response(['interface' => []], 200),
+        '*ethernet-interfaces*' => Http::response(['interface' => []], 200),
+        '*vlan-interfaces*' => Http::response(['interface' => []], 200),
         '*static-route*' => Http::response([
             'profile' => [
                 'name' => 'static-profile',
@@ -122,7 +123,7 @@ test('deployment critical check reports lag match', function () {
     ];
 
     fakeCriticalCheckCentralApis([
-        '*portchannels*' => Http::response(['items' => [$centralLag]], 200),
+        '*portchannels*' => Http::response(['interface' => [$centralLag]], 200),
     ]);
 
     $response = $this->getJson(route('deployments.critical_check.step', [$this->deployment, 1]))
@@ -149,7 +150,9 @@ test('deployment critical check page loads immediately without results', functio
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/CriticalCheck')
             ->where('total_steps', 5)
+            ->where('device_count', 1)
             ->has('lag_results', 0)
+            ->has('ethernet_results', 0)
             ->where('summary.lag_passed', 0)
             ->where('summary.lag_failed', 0));
 });
@@ -194,7 +197,7 @@ test('deployment critical check reports lag mismatch', function () {
     ];
 
     fakeCriticalCheckCentralApis([
-        '*portchannels*' => Http::response(['items' => [$mismatched]], 200),
+        '*portchannels*' => Http::response(['interface' => [$mismatched]], 200),
     ]);
 
     $this->getJson(criticalCheckStepUrl($this->deployment, 1))
@@ -214,7 +217,7 @@ test('deployment critical check reports vlan mismatch', function () {
 
     fakeCriticalCheckCentralApis([
         '*vlan-interfaces*' => Http::response([
-            'items' => [
+            'interface' => [
                 [
                     'id' => '100',
                     'ipv4' => ['address' => '10.0.0.2/24'],
@@ -263,10 +266,13 @@ test('deployment critical check resolves dns scope from wcd site collection on f
         $url = $request->url();
 
         if (str_contains($url, 'portchannels')) {
-            return Http::response(['items' => []], 200);
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'ethernet-interfaces')) {
+            return Http::response(['interface' => []], 200);
         }
         if (str_contains($url, 'vlan-interfaces')) {
-            return Http::response(['items' => []], 200);
+            return Http::response(['interface' => []], 200);
         }
         if (str_contains($url, 'static-route')) {
             return Http::response(['profile' => []], 200);
@@ -314,8 +320,9 @@ test('deployment critical check resolves dns scope from wcd site collection on f
 
 test('deployment critical check reports dns scope error when wcd not found', function () {
     Http::fake([
-        '*portchannels*' => Http::response(['items' => []], 200),
-        '*vlan-interfaces*' => Http::response(['items' => []], 200),
+        '*portchannels*' => Http::response(['interface' => []], 200),
+        '*ethernet-interfaces*' => Http::response(['interface' => []], 200),
+        '*vlan-interfaces*' => Http::response(['interface' => []], 200),
         '*static-route*' => Http::response(['profile' => []], 200),
         '*site-collections*' => Http::response(['items' => [['scopeName' => 'Other', 'scopeId' => 'x']]], 200),
         '*dns*' => Http::response(['message' => 'failed'], 500),
@@ -343,6 +350,111 @@ test('deployment critical check reports missing site scope for static routes', f
         ->assertJsonPath('partial.static_routes.0.routes', []);
 
     Http::assertNotSent(fn (\Illuminate\Http\Client\Request $request) => str_contains($request->url(), 'static-route'));
+});
+
+test('deployment critical check reports ethernet match when include_ethernet is enabled', function () {
+    $switchPort = SwitchPort::factory()->create([
+        'interface_mode' => 'ACCESS',
+        'access_vlan' => 100,
+        'native_vlan' => null,
+        'trunk_vlan_all' => null,
+        'trunk_vlan_ranges' => null,
+    ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $this->device->id,
+        'interface' => '1/1/1',
+        'switch_port_id' => $switchPort->id,
+        'interface_kind' => InterfaceKind::ETHERNET,
+        'description' => 'Access port',
+        'shutdown_on_split' => false,
+    ]);
+
+    $centralEthernet = [
+        'name' => '1/1/1',
+        'description' => 'Access port',
+        'vsx' => ['shutdown-on-split' => false],
+        'switchport' => [
+            'access-vlan' => 100,
+            'interface-mode' => 'ACCESS',
+            'native-vlan' => null,
+            'trunk-vlan-all' => null,
+            'trunk-vlan-ranges' => null,
+        ],
+        'stp' => [],
+    ];
+
+    fakeCriticalCheckCentralApis([
+        '*ethernet-interfaces*' => Http::response(['interface' => [$centralEthernet]], 200),
+    ]);
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 2, ['include_ethernet' => '1']))
+        ->assertOk()
+        ->assertJsonPath('partial.ethernet_results.0.ok', true)
+        ->assertJsonPath('progress.message', 'Checking ethernet interfaces for '.$this->device->name.'...');
+});
+
+test('deployment critical check reports ethernet mismatch when include_ethernet is enabled', function () {
+    $switchPort = SwitchPort::factory()->create([
+        'interface_mode' => 'ACCESS',
+        'access_vlan' => 100,
+        'native_vlan' => null,
+        'trunk_vlan_all' => null,
+        'trunk_vlan_ranges' => null,
+    ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $this->device->id,
+        'interface' => '1/1/2',
+        'switch_port_id' => $switchPort->id,
+        'interface_kind' => InterfaceKind::ETHERNET,
+        'shutdown_on_split' => false,
+    ]);
+
+    $mismatched = [
+        'name' => '1/1/2',
+        'vsx' => ['shutdown-on-split' => false],
+        'switchport' => [
+            'access-vlan' => 200,
+            'interface-mode' => 'ACCESS',
+            'native-vlan' => null,
+            'trunk-vlan-all' => null,
+            'trunk-vlan-ranges' => null,
+        ],
+        'stp' => [],
+    ];
+
+    fakeCriticalCheckCentralApis([
+        '*ethernet-interfaces*' => Http::response(['interface' => [$mismatched]], 200),
+    ]);
+
+    $response = $this->getJson(criticalCheckStepUrl($this->deployment, 2, ['include_ethernet' => '1']))
+        ->assertOk()
+        ->assertJsonPath('partial.ethernet_results.0.ok', false);
+
+    $paths = collect($response->json('partial.ethernet_results.0.diff'))->pluck('path')->all();
+    expect($paths)->toContain('switchport.access-vlan');
+});
+
+test('deployment critical check skips ethernet phase when include_ethernet is not set', function () {
+    $switchPort = SwitchPort::factory()->create([
+        'interface_mode' => 'ACCESS',
+        'access_vlan' => 50,
+        'native_vlan' => null,
+        'trunk_vlan_all' => null,
+        'trunk_vlan_ranges' => null,
+    ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $this->device->id,
+        'interface' => '1/1/9',
+        'switch_port_id' => $switchPort->id,
+        'interface_kind' => InterfaceKind::ETHERNET,
+    ]);
+
+    fakeCriticalCheckCentralApis();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 2))
+        ->assertOk()
+        ->assertJsonPath('progress.message', 'Checking VLAN interfaces for '.$this->device->name.'...')
+        ->assertJsonMissingPath('partial.ethernet_results');
 });
 
 test('deployment critical check redirects when current client does not match deployment', function () {

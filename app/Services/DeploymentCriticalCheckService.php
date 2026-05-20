@@ -18,12 +18,13 @@ class DeploymentCriticalCheckService
 
     public function __construct(
         protected LagInterfaceCentralVerifier $lagVerifier = new LagInterfaceCentralVerifier,
+        protected EthernetInterfaceCentralVerifier $ethernetVerifier = new EthernetInterfaceCentralVerifier,
         protected VlanInterfaceCentralVerifier $vlanVerifier = new VlanInterfaceCentralVerifier,
     ) {}
 
-    public function totalSteps(Deployment $deployment): int
+    public function totalSteps(Deployment $deployment, bool $includeEthernet = false): int
     {
-        return 1 + ($this->loadDevices($deployment)->count() * 4);
+        return $this->totalStepsForDevices($this->loadDevices($deployment), $includeEthernet);
     }
 
     /**
@@ -33,8 +34,10 @@ class DeploymentCriticalCheckService
     {
         return [
             'lag_device_errors' => [],
+            'ethernet_device_errors' => [],
             'vlan_device_errors' => [],
             'lag_results' => [],
+            'ethernet_results' => [],
             'vlan_results' => [],
             'static_routes' => [],
             'dns_scope_id' => null,
@@ -44,6 +47,9 @@ class DeploymentCriticalCheckService
                 'lag_total' => 0,
                 'lag_passed' => 0,
                 'lag_failed' => 0,
+                'ethernet_total' => 0,
+                'ethernet_passed' => 0,
+                'ethernet_failed' => 0,
                 'vlan_total' => 0,
                 'vlan_passed' => 0,
                 'vlan_failed' => 0,
@@ -63,12 +69,14 @@ class DeploymentCriticalCheckService
     public function runStep(Deployment $deployment, CentralAPIHelper $helper, int $step, array $context = []): array
     {
         $devices = $this->loadDevices($deployment);
-        $total = $this->totalStepsForDevices($devices);
-        $message = $this->messageForStep($devices, $step);
+        $includeEthernet = $this->includeEthernetFromContext($context);
+        $total = $this->totalStepsForDevices($devices, $includeEthernet);
+        $message = $this->messageForStep($devices, $step, $includeEthernet);
         $partial = [];
         $context = array_merge([
             'dns_scope_id' => null,
             'dns_scope_error' => null,
+            'include_ethernet' => $includeEthernet,
         ], $context);
 
         if ($step === 0) {
@@ -82,17 +90,20 @@ class DeploymentCriticalCheckService
         } elseif ($devices->isEmpty()) {
             $partial = [];
         } else {
-            $deviceIndex = intdiv($step - 1, 4);
-            $phase = ($step - 1) % 4;
+            $phasesPerDevice = $this->phasesPerDevice($includeEthernet);
+            $deviceIndex = intdiv($step - 1, $phasesPerDevice);
+            $phase = ($step - 1) % $phasesPerDevice;
             /** @var Device $device */
             $device = $devices->values()->get($deviceIndex);
             $deviceCollection = collect([$device]);
+            $phaseName = $this->phaseNameForIndex($includeEthernet, $phase);
 
-            $partial = match ($phase) {
-                0 => $this->verifyLagForDevices($deviceCollection, $helper),
-                1 => $this->verifyVlanForDevices($deviceCollection, $helper),
-                2 => ['static_routes' => [$this->fetchStaticRouteForDevice($device, $helper)]],
-                3 => $this->fetchDnsForDeviceStep($device, $helper, $context),
+            $partial = match ($phaseName) {
+                'lag' => $this->verifyLagForDevices($deviceCollection, $helper),
+                'ethernet' => $this->verifyEthernetForDevices($deviceCollection, $helper),
+                'vlan' => $this->verifyVlanForDevices($deviceCollection, $helper),
+                'static' => ['static_routes' => [$this->fetchStaticRouteForDevice($device, $helper)]],
+                'dns' => $this->fetchDnsForDeviceStep($device, $helper, $context),
                 default => [],
             };
         }
@@ -129,6 +140,7 @@ class DeploymentCriticalCheckService
 
         $results['summary'] = $this->buildSummary(
             $results['lag_results'],
+            $results['ethernet_results'],
             $results['vlan_results'],
         );
 
@@ -142,7 +154,7 @@ class DeploymentCriticalCheckService
      */
     public function mergePartialResults(array $accumulated, array $partial): array
     {
-        foreach (['lag_device_errors', 'vlan_device_errors', 'lag_results', 'vlan_results', 'static_routes', 'dns_results'] as $listKey) {
+        foreach (['lag_device_errors', 'ethernet_device_errors', 'vlan_device_errors', 'lag_results', 'ethernet_results', 'vlan_results', 'static_routes', 'dns_results'] as $listKey) {
             if (! array_key_exists($listKey, $partial)) {
                 continue;
             }
@@ -158,6 +170,7 @@ class DeploymentCriticalCheckService
 
         $accumulated['summary'] = $this->buildSummary(
             $accumulated['lag_results'] ?? [],
+            $accumulated['ethernet_results'] ?? [],
             $accumulated['vlan_results'] ?? [],
         );
 
@@ -166,15 +179,29 @@ class DeploymentCriticalCheckService
 
     /**
      * @param  list<array<string, mixed>>  $lagResults
+     * @param  list<array<string, mixed>>  $ethernetResults
      * @param  list<array<string, mixed>>  $vlanResults
-     * @return array{lag_total: int, lag_passed: int, lag_failed: int, vlan_total: int, vlan_passed: int, vlan_failed: int}
+     * @return array{
+     *     lag_total: int,
+     *     lag_passed: int,
+     *     lag_failed: int,
+     *     ethernet_total: int,
+     *     ethernet_passed: int,
+     *     ethernet_failed: int,
+     *     vlan_total: int,
+     *     vlan_passed: int,
+     *     vlan_failed: int
+     * }
      */
-    public function buildSummary(array $lagResults, array $vlanResults): array
+    public function buildSummary(array $lagResults, array $ethernetResults, array $vlanResults): array
     {
         return [
             'lag_total' => count($lagResults),
             'lag_passed' => collect($lagResults)->where('ok', true)->count(),
             'lag_failed' => collect($lagResults)->where('ok', false)->count(),
+            'ethernet_total' => count($ethernetResults),
+            'ethernet_passed' => collect($ethernetResults)->where('ok', true)->count(),
+            'ethernet_failed' => collect($ethernetResults)->where('ok', false)->count(),
             'vlan_total' => count($vlanResults),
             'vlan_passed' => collect($vlanResults)->where('ok', true)->count(),
             'vlan_failed' => collect($vlanResults)->where('ok', false)->count(),
@@ -184,15 +211,50 @@ class DeploymentCriticalCheckService
     /**
      * @param  Collection<int, Device>  $devices
      */
-    protected function totalStepsForDevices(Collection $devices): int
+    protected function totalStepsForDevices(Collection $devices, bool $includeEthernet = false): int
     {
-        return 1 + ($devices->count() * 4);
+        return 1 + ($devices->count() * $this->phasesPerDevice($includeEthernet));
+    }
+
+    protected function phasesPerDevice(bool $includeEthernet): int
+    {
+        return $includeEthernet ? 5 : 4;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    protected function includeEthernetFromContext(array $context): bool
+    {
+        return (bool) ($context['include_ethernet'] ?? false);
+    }
+
+    protected function phaseNameForIndex(bool $includeEthernet, int $phase): ?string
+    {
+        if ($includeEthernet) {
+            return match ($phase) {
+                0 => 'lag',
+                1 => 'ethernet',
+                2 => 'vlan',
+                3 => 'static',
+                4 => 'dns',
+                default => null,
+            };
+        }
+
+        return match ($phase) {
+            0 => 'lag',
+            1 => 'vlan',
+            2 => 'static',
+            3 => 'dns',
+            default => null,
+        };
     }
 
     /**
      * @param  Collection<int, Device>  $devices
      */
-    protected function messageForStep(Collection $devices, int $step): string
+    protected function messageForStep(Collection $devices, int $step, bool $includeEthernet = false): string
     {
         if ($step === 0) {
             return 'Resolving DNS scope ID...';
@@ -202,16 +264,19 @@ class DeploymentCriticalCheckService
             return 'No devices in deployment.';
         }
 
-        $deviceIndex = intdiv($step - 1, 4);
-        $phase = ($step - 1) % 4;
+        $phasesPerDevice = $this->phasesPerDevice($includeEthernet);
+        $deviceIndex = intdiv($step - 1, $phasesPerDevice);
+        $phase = ($step - 1) % $phasesPerDevice;
         $device = $devices->values()->get($deviceIndex);
         $name = $device?->name ?? 'device';
+        $phaseName = $this->phaseNameForIndex($includeEthernet, $phase);
 
-        return match ($phase) {
-            0 => "Checking LAG interfaces for {$name}...",
-            1 => "Checking VLAN interfaces for {$name}...",
-            2 => "Fetching static routes for {$name}...",
-            3 => "Fetching DNS profiles for {$name}...",
+        return match ($phaseName) {
+            'lag' => "Checking LAG interfaces for {$name}...",
+            'ethernet' => "Checking ethernet interfaces for {$name}...",
+            'vlan' => "Checking VLAN interfaces for {$name}...",
+            'static' => "Fetching static routes for {$name}...",
+            'dns' => "Fetching DNS profiles for {$name}...",
             default => 'Running check...',
         };
     }
@@ -259,6 +324,21 @@ class DeploymentCriticalCheckService
         return [
             'vlan_device_errors' => $verification['device_errors'],
             'vlan_results' => $verification['results'],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Device>  $devices
+     * @return array{ethernet_device_errors: array, ethernet_results: array}
+     */
+    protected function verifyEthernetForDevices(Collection $devices, CentralAPIHelper $helper): array
+    {
+        $interfaces = $this->collectEthernetInterfaces($devices);
+        $verification = $this->ethernetVerifier->verifyInterfaces($interfaces, $helper);
+
+        return [
+            'ethernet_device_errors' => $verification['device_errors'],
+            'ethernet_results' => $verification['results'],
         ];
     }
 
@@ -416,6 +496,19 @@ class DeploymentCriticalCheckService
         return $devices->flatMap(function (Device $device) {
             return $device->interfaces->filter(
                 fn (DeviceInterface $iface) => $iface->interface_kind === InterfaceKind::VLAN
+            );
+        })->values();
+    }
+
+    /**
+     * @param  Collection<int, Device>  $devices
+     * @return Collection<int, DeviceInterface>
+     */
+    protected function collectEthernetInterfaces(Collection $devices): Collection
+    {
+        return $devices->flatMap(function (Device $device) {
+            return $device->interfaces->filter(
+                fn (DeviceInterface $iface) => $iface->interface_kind === InterfaceKind::ETHERNET
             );
         })->values();
     }

@@ -1,10 +1,12 @@
 import { Link, usePage } from '@inertiajs/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import ConfigurationDiff, {
     type DiffEntry,
 } from '@/components/ui/ConfigurationDiff';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { index as clientIndex } from '@/routes/clients';
@@ -64,6 +66,9 @@ type Summary = {
     lag_total: number;
     lag_passed: number;
     lag_failed: number;
+    ethernet_total: number;
+    ethernet_passed: number;
+    ethernet_failed: number;
     vlan_total: number;
     vlan_passed: number;
     vlan_failed: number;
@@ -71,8 +76,10 @@ type Summary = {
 
 type CheckResults = {
     lag_device_errors: DeviceError[];
+    ethernet_device_errors: DeviceError[];
     vlan_device_errors: DeviceError[];
     lag_results: InterfaceResult[];
+    ethernet_results: InterfaceResult[];
     vlan_results: InterfaceResult[];
     static_routes: StaticRouteDevice[];
     dns_scope_id: string | null;
@@ -102,6 +109,7 @@ type StepResponse = {
 
 type CriticalCheckPageProps = SharedData & {
     deployment: { id: number; name: string };
+    device_count: number;
     total_steps: number;
 } & CheckResults;
 
@@ -109,10 +117,29 @@ const emptySummary: Summary = {
     lag_total: 0,
     lag_passed: 0,
     lag_failed: 0,
+    ethernet_total: 0,
+    ethernet_passed: 0,
+    ethernet_failed: 0,
     vlan_total: 0,
     vlan_passed: 0,
     vlan_failed: 0,
 };
+
+function emptyCheckResults(): CheckResults {
+    return {
+        lag_device_errors: [],
+        ethernet_device_errors: [],
+        vlan_device_errors: [],
+        lag_results: [],
+        ethernet_results: [],
+        vlan_results: [],
+        static_routes: [],
+        dns_scope_id: null,
+        dns_scope_error: null,
+        dns_results: [],
+        summary: emptySummary,
+    };
+}
 
 function mergeCheckResults(
     current: CheckResults,
@@ -123,11 +150,19 @@ function mergeCheckResults(
             ...current.lag_device_errors,
             ...(partial.lag_device_errors ?? []),
         ],
+        ethernet_device_errors: [
+            ...current.ethernet_device_errors,
+            ...(partial.ethernet_device_errors ?? []),
+        ],
         vlan_device_errors: [
             ...current.vlan_device_errors,
             ...(partial.vlan_device_errors ?? []),
         ],
         lag_results: [...current.lag_results, ...(partial.lag_results ?? [])],
+        ethernet_results: [
+            ...current.ethernet_results,
+            ...(partial.ethernet_results ?? []),
+        ],
         vlan_results: [...current.vlan_results, ...(partial.vlan_results ?? [])],
         static_routes: [...current.static_routes, ...(partial.static_routes ?? [])],
         dns_results: [...current.dns_results, ...(partial.dns_results ?? [])],
@@ -146,6 +181,9 @@ function mergeCheckResults(
         lag_total: merged.lag_results.length,
         lag_passed: merged.lag_results.filter((r) => r.ok).length,
         lag_failed: merged.lag_results.filter((r) => !r.ok).length,
+        ethernet_total: merged.ethernet_results.length,
+        ethernet_passed: merged.ethernet_results.filter((r) => r.ok).length,
+        ethernet_failed: merged.ethernet_results.filter((r) => !r.ok).length,
         vlan_total: merged.vlan_results.length,
         vlan_passed: merged.vlan_results.filter((r) => r.ok).length,
         vlan_failed: merged.vlan_results.filter((r) => !r.ok).length,
@@ -229,13 +267,17 @@ function InterfaceResults({
 }
 
 export default function CriticalCheck() {
-    const { current_client, deployment, total_steps, ...initialResults } =
+    const { current_client, deployment, device_count, ...initialResults } =
         usePage<CriticalCheckPageProps>().props;
 
+    const [includeEthernet, setIncludeEthernet] = useState(false);
+    const [ranWithEthernet, setRanWithEthernet] = useState(false);
     const [results, setResults] = useState<CheckResults>(() => ({
         lag_device_errors: initialResults.lag_device_errors ?? [],
+        ethernet_device_errors: initialResults.ethernet_device_errors ?? [],
         vlan_device_errors: initialResults.vlan_device_errors ?? [],
         lag_results: initialResults.lag_results ?? [],
+        ethernet_results: initialResults.ethernet_results ?? [],
         vlan_results: initialResults.vlan_results ?? [],
         static_routes: initialResults.static_routes ?? [],
         dns_scope_id: initialResults.dns_scope_id ?? null,
@@ -244,37 +286,41 @@ export default function CriticalCheck() {
         summary: initialResults.summary ?? emptySummary,
     }));
 
+    const phasesPerDevice = includeEthernet ? 5 : 4;
+    const totalSteps = 1 + device_count * phasesPerDevice;
+
     const [progress, setProgress] = useState<StepProgress>({
         current: 0,
-        total: total_steps,
+        total: totalSteps,
         percent: 0,
-        message: 'Starting critical configuration check...',
+        message: 'Configure options and run the check.',
     });
-    const [checkState, setCheckState] = useState<'running' | 'complete' | 'error'>(
-        'running',
+    const [checkState, setCheckState] = useState<'idle' | 'running' | 'complete' | 'error'>(
+        'idle',
     );
     const [runError, setRunError] = useState<string | null>(null);
-    const checkStarted = useRef(false);
 
     const runCheck = useCallback(async () => {
+        const stepTotal = 1 + device_count * (includeEthernet ? 5 : 4);
         let context: StepContext = {};
-        let accumulated: CheckResults = {
-            lag_device_errors: [],
-            vlan_device_errors: [],
-            lag_results: [],
-            vlan_results: [],
-            static_routes: [],
-            dns_scope_id: null,
-            dns_scope_error: null,
-            dns_results: [],
-            summary: emptySummary,
-        };
+        let accumulated = emptyCheckResults();
 
+        setRanWithEthernet(includeEthernet);
         setCheckState('running');
         setRunError(null);
+        setResults(accumulated);
+        setProgress({
+            current: 0,
+            total: stepTotal,
+            percent: 0,
+            message: 'Starting critical configuration check...',
+        });
 
-        for (let step = 0; step < total_steps; step++) {
+        for (let step = 0; step < stepTotal; step++) {
             const params = new URLSearchParams();
+            if (includeEthernet) {
+                params.set('include_ethernet', '1');
+            }
             if (context.dns_scope_id) {
                 params.set('dns_scope_id', context.dns_scope_id);
             }
@@ -323,23 +369,10 @@ export default function CriticalCheck() {
             percent: 100,
             message: 'Critical configuration check complete.',
         }));
-    }, [deployment.id, total_steps]);
-
-    useEffect(() => {
-        if (checkStarted.current) {
-            return;
-        }
-        checkStarted.current = true;
-
-        void runCheck().catch((error: unknown) => {
-            setCheckState('error');
-            setRunError(
-                error instanceof Error ? error.message : 'Critical check failed.',
-            );
-        });
-    }, [runCheck]);
+    }, [deployment.id, device_count, includeEthernet]);
 
     const isRunning = checkState === 'running';
+    const hasStarted = checkState !== 'idle';
     const breadcrumbs: BreadcrumbItem[] = useMemo(
         () => [
             {
@@ -367,6 +400,47 @@ export default function CriticalCheck() {
                         {deployment.name}
                     </p>
                 </div>
+
+                <Card>
+                    <CardHeader className="pb-2">
+                        <h2 className="text-lg font-semibold">Options</h2>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <Checkbox
+                                id="include-ethernet"
+                                checked={includeEthernet}
+                                disabled={isRunning}
+                                onCheckedChange={(checked) =>
+                                    setIncludeEthernet(checked === true)
+                                }
+                            />
+                            <Label htmlFor="include-ethernet" className="text-sm font-normal">
+                                Verify ethernet interfaces against Central
+                            </Label>
+                        </div>
+                        <p className="text-muted-foreground text-xs">
+                            {totalSteps} steps ({device_count} device
+                            {device_count === 1 ? '' : 's'}
+                            {includeEthernet ? ', including ethernet per device' : ''})
+                        </p>
+                        <Button
+                            onClick={() => {
+                                void runCheck().catch((error: unknown) => {
+                                    setCheckState('error');
+                                    setRunError(
+                                        error instanceof Error
+                                            ? error.message
+                                            : 'Critical check failed.',
+                                    );
+                                });
+                            }}
+                            disabled={isRunning}
+                        >
+                            {checkState === 'idle' ? 'Run check' : 'Run again'}
+                        </Button>
+                    </CardContent>
+                </Card>
 
                 <Card>
                     <CardHeader className="pb-2">
@@ -401,7 +475,11 @@ export default function CriticalCheck() {
                         <h2 className="text-lg font-semibold">Summary</h2>
                     </CardHeader>
                     <CardContent className="flex flex-wrap gap-6 text-sm">
-                        {isRunning && results.lag_results.length === 0 ? (
+                        {!hasStarted ? (
+                            <span className="text-muted-foreground">
+                                Run the check to see results.
+                            </span>
+                        ) : isRunning && results.lag_results.length === 0 ? (
                             <span className="text-muted-foreground">
                                 Results will appear as each step completes.
                             </span>
@@ -420,6 +498,27 @@ export default function CriticalCheck() {
                                         {results.summary.lag_failed}
                                     </span>
                                 </span>
+                                {ranWithEthernet && (
+                                    <>
+                                        <span>
+                                            <span className="text-muted-foreground">
+                                                Ethernet passed:
+                                            </span>{' '}
+                                            <span className="font-semibold text-emerald-600">
+                                                {results.summary.ethernet_passed}/
+                                                {results.summary.ethernet_total}
+                                            </span>
+                                        </span>
+                                        <span>
+                                            <span className="text-muted-foreground">
+                                                Ethernet failed:
+                                            </span>{' '}
+                                            <span className="font-semibold text-red-600">
+                                                {results.summary.ethernet_failed}
+                                            </span>
+                                        </span>
+                                    </>
+                                )}
                                 <span>
                                     <span className="text-muted-foreground">VLAN passed:</span>{' '}
                                     <span className="font-semibold text-emerald-600">
@@ -438,139 +537,181 @@ export default function CriticalCheck() {
                     </CardContent>
                 </Card>
 
-                <InterfaceResults
-                    title="LAG interfaces"
-                    deviceErrors={results.lag_device_errors}
-                    results={results.lag_results}
-                    pending={isRunning && results.lag_results.length === 0}
-                />
+                {hasStarted && (
+                    <>
+                        <InterfaceResults
+                            title="LAG interfaces"
+                            deviceErrors={results.lag_device_errors}
+                            results={results.lag_results}
+                            pending={isRunning && results.lag_results.length === 0}
+                        />
 
-                <InterfaceResults
-                    title="VLAN interfaces"
-                    deviceErrors={results.vlan_device_errors}
-                    results={results.vlan_results}
-                    pending={isRunning && results.vlan_results.length === 0}
-                />
+                        {ranWithEthernet && (
+                            <InterfaceResults
+                                title="Ethernet interfaces"
+                                deviceErrors={results.ethernet_device_errors}
+                                results={results.ethernet_results}
+                                pending={
+                                    isRunning && results.ethernet_results.length === 0
+                                }
+                            />
+                        )}
 
-                <Card>
-                    <CardHeader className="pb-2">
-                        <h2 className="text-lg font-semibold">Static routes (Central)</h2>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {results.static_routes.length === 0 ? (
-                            <p className="text-muted-foreground text-sm">
-                                {isRunning
-                                    ? 'Waiting to fetch static routes...'
-                                    : 'No devices in deployment.'}
-                            </p>
-                        ) : (
-                            results.static_routes.map((device) => (
-                                <div key={device.device_id} className="rounded-md border px-4 py-3">
-                                    <p className="font-medium">{device.device_name}</p>
-                                    {device.error ? (
-                                        <p className="mt-1 text-sm text-red-700">{device.error}</p>
-                                    ) : device.routes.length === 0 ? (
-                                        <p className="text-muted-foreground mt-1 text-sm">
-                                            No static route profiles returned.
-                                        </p>
-                                    ) : (
-                                        <div className="mt-2 overflow-x-auto text-sm">
-                                            <table className="w-full min-w-[20rem]">
-                                                <thead>
-                                                    <tr className="border-b text-left">
-                                                        <th className="px-2 py-1 font-medium">
-                                                            Profile
-                                                        </th>
-                                                        <th className="px-2 py-1 font-medium">
-                                                            Prefix
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {device.routes.map((route, index) => (
-                                                        <tr
-                                                            key={`${route.profile_name}-${route.prefix}-${index}`}
-                                                            className="border-b last:border-0"
-                                                        >
-                                                            <td className="px-2 py-1">
-                                                                {route.profile_name}
-                                                            </td>
-                                                            <td className="px-2 py-1 font-mono">
-                                                                {route.prefix || '—'}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-                                </div>
-                            ))
-                        )}
-                    </CardContent>
-                </Card>
+                        <InterfaceResults
+                            title="VLAN interfaces"
+                            deviceErrors={results.vlan_device_errors}
+                            results={results.vlan_results}
+                            pending={isRunning && results.vlan_results.length === 0}
+                        />
 
-                <Card>
-                    <CardHeader className="pb-2">
-                        <h2 className="text-lg font-semibold">DNS profiles (Central)</h2>
-                        {results.dns_scope_id && (
-                            <p className="text-muted-foreground text-xs">
-                                Scope ID: {results.dns_scope_id}
-                            </p>
-                        )}
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {results.dns_scope_error && (
-                            <p className="text-sm text-red-700">{results.dns_scope_error}</p>
-                        )}
-                        {!results.dns_scope_error && results.dns_results.length === 0 && (
-                            <p className="text-muted-foreground text-sm">
-                                {isRunning
-                                    ? 'Waiting to fetch DNS profiles...'
-                                    : 'No devices in deployment.'}
-                            </p>
-                        )}
-                        {!results.dns_scope_error &&
-                            results.dns_results.map((device) => (
-                                <div key={device.device_id} className="rounded-md border px-4 py-3">
-                                    <p className="font-medium">{device.device_name}</p>
-                                    {device.error ? (
-                                        <p className="mt-1 text-sm text-red-700">{device.error}</p>
-                                    ) : device.profiles.length === 0 ? (
-                                        <p className="text-muted-foreground mt-1 text-sm">
-                                            No DNS profiles returned.
-                                        </p>
-                                    ) : (
-                                        <div className="mt-2 space-y-3 text-sm">
-                                            {device.profiles.map((profile) => (
-                                                <div key={profile.name}>
-                                                    <p className="font-medium">{profile.name}</p>
-                                                    {profile.resolvers.length === 0 ? (
-                                                        <p className="text-muted-foreground text-xs">
-                                                            No resolvers.
-                                                        </p>
-                                                    ) : (
-                                                        <ul className="mt-1 list-inside list-disc space-y-1">
-                                                            {profile.resolvers.map((resolver, idx) => (
-                                                                <li
-                                                                    key={`${profile.name}-${resolver.vrf}-${idx}`}
-                                                                >
-                                                                    VRF {resolver.vrf || '—'}:{' '}
-                                                                    {resolver.name_server_ips.length > 0
-                                                                        ? resolver.name_server_ips.join(', ')
-                                                                        : '—'}
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    )}
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <h2 className="text-lg font-semibold">
+                                    Static routes (Central)
+                                </h2>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {results.static_routes.length === 0 ? (
+                                    <p className="text-muted-foreground text-sm">
+                                        {isRunning
+                                            ? 'Waiting to fetch static routes...'
+                                            : 'No devices in deployment.'}
+                                    </p>
+                                ) : (
+                                    results.static_routes.map((device) => (
+                                        <div
+                                            key={device.device_id}
+                                            className="rounded-md border px-4 py-3"
+                                        >
+                                            <p className="font-medium">{device.device_name}</p>
+                                            {device.error ? (
+                                                <p className="mt-1 text-sm text-red-700">
+                                                    {device.error}
+                                                </p>
+                                            ) : device.routes.length === 0 ? (
+                                                <p className="text-muted-foreground mt-1 text-sm">
+                                                    No static route profiles returned.
+                                                </p>
+                                            ) : (
+                                                <div className="mt-2 overflow-x-auto text-sm">
+                                                    <table className="w-full min-w-[20rem]">
+                                                        <thead>
+                                                            <tr className="border-b text-left">
+                                                                <th className="px-2 py-1 font-medium">
+                                                                    Profile
+                                                                </th>
+                                                                <th className="px-2 py-1 font-medium">
+                                                                    Prefix
+                                                                </th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {device.routes.map(
+                                                                (route, index) => (
+                                                                    <tr
+                                                                        key={`${route.profile_name}-${route.prefix}-${index}`}
+                                                                        className="border-b last:border-0"
+                                                                    >
+                                                                        <td className="px-2 py-1">
+                                                                            {route.profile_name}
+                                                                        </td>
+                                                                        <td className="px-2 py-1 font-mono">
+                                                                            {route.prefix || '—'}
+                                                                        </td>
+                                                                    </tr>
+                                                                ),
+                                                            )}
+                                                        </tbody>
+                                                    </table>
                                                 </div>
-                                            ))}
+                                            )}
                                         </div>
+                                    ))
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <h2 className="text-lg font-semibold">DNS profiles (Central)</h2>
+                                {results.dns_scope_id && (
+                                    <p className="text-muted-foreground text-xs">
+                                        Scope ID: {results.dns_scope_id}
+                                    </p>
+                                )}
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {results.dns_scope_error && (
+                                    <p className="text-sm text-red-700">
+                                        {results.dns_scope_error}
+                                    </p>
+                                )}
+                                {!results.dns_scope_error &&
+                                    results.dns_results.length === 0 && (
+                                        <p className="text-muted-foreground text-sm">
+                                            {isRunning
+                                                ? 'Waiting to fetch DNS profiles...'
+                                                : 'No devices in deployment.'}
+                                        </p>
                                     )}
-                                </div>
-                            ))}
-                    </CardContent>
-                </Card>
+                                {!results.dns_scope_error &&
+                                    results.dns_results.map((device) => (
+                                        <div
+                                            key={device.device_id}
+                                            className="rounded-md border px-4 py-3"
+                                        >
+                                            <p className="font-medium">{device.device_name}</p>
+                                            {device.error ? (
+                                                <p className="mt-1 text-sm text-red-700">
+                                                    {device.error}
+                                                </p>
+                                            ) : device.profiles.length === 0 ? (
+                                                <p className="text-muted-foreground mt-1 text-sm">
+                                                    No DNS profiles returned.
+                                                </p>
+                                            ) : (
+                                                <div className="mt-2 space-y-3 text-sm">
+                                                    {device.profiles.map((profile) => (
+                                                        <div key={profile.name}>
+                                                            <p className="font-medium">
+                                                                {profile.name}
+                                                            </p>
+                                                            {profile.resolvers.length === 0 ? (
+                                                                <p className="text-muted-foreground text-xs">
+                                                                    No resolvers.
+                                                                </p>
+                                                            ) : (
+                                                                <ul className="mt-1 list-inside list-disc space-y-1">
+                                                                    {profile.resolvers.map(
+                                                                        (resolver, idx) => (
+                                                                            <li
+                                                                                key={`${profile.name}-${resolver.vrf}-${idx}`}
+                                                                            >
+                                                                                VRF{' '}
+                                                                                {resolver.vrf ||
+                                                                                    '—'}
+                                                                                :{' '}
+                                                                                {resolver.name_server_ips.length >
+                                                                                0
+                                                                                    ? resolver.name_server_ips.join(
+                                                                                          ', ',
+                                                                                      )
+                                                                                    : '—'}
+                                                                            </li>
+                                                                        ),
+                                                                    )}
+                                                                </ul>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                            </CardContent>
+                        </Card>
+                    </>
+                )}
 
                 <div className="flex justify-center">
                     <Button variant="outline" asChild>

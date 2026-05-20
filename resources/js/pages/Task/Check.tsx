@@ -31,9 +31,30 @@ type DeviceError = {
     message: string;
 };
 
+type CheckKind = 'lag' | 'ethernet';
+
+const checkKindLabels: Record<
+    CheckKind,
+    { title: string; breadcrumb: string; section: string; empty: string }
+> = {
+    lag: {
+        title: 'Verify LAG in Central',
+        breadcrumb: 'Verify LAG in Central',
+        section: 'LAG interfaces',
+        empty: 'No LAG interfaces are attached to this task.',
+    },
+    ethernet: {
+        title: 'Verify ethernet in Central',
+        breadcrumb: 'Verify ethernet in Central',
+        section: 'Ethernet interfaces',
+        empty: 'No ethernet interfaces are attached to this task.',
+    },
+};
+
 type CheckPageProps = SharedData & {
     task: { id: number; task_type: string; status: string };
     task_friendly_name: string;
+    check_kind: CheckKind;
     deployment: { id: number; name: string };
     device_errors: DeviceError[];
     results: InterfaceResult[];
@@ -45,11 +66,14 @@ export default function Check() {
         current_client,
         task,
         task_friendly_name,
+        check_kind,
         deployment,
         device_errors,
         results,
         summary,
     } = usePage<CheckPageProps>().props;
+
+    const labels = checkKindLabels[check_kind];
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -65,7 +89,7 @@ export default function Check() {
             href: showTask(task.id).url,
         },
         {
-            title: 'Verify LAG in Central',
+            title: labels.breadcrumb,
             href: checkTask(task.id).url,
         },
     ];
@@ -74,7 +98,7 @@ export default function Check() {
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
                 <div className="text-center">
-                    <h1 className="text-2xl font-bold">Verify LAG in Central</h1>
+                    <h1 className="text-2xl font-bold">{labels.title}</h1>
                     <p className="text-muted-foreground mt-1 text-sm">
                         {task_friendly_name}
                     </p>
@@ -124,13 +148,11 @@ export default function Check() {
 
                 <Card>
                     <CardHeader className="pb-2">
-                        <h2 className="text-lg font-semibold">LAG interfaces</h2>
+                        <h2 className="text-lg font-semibold">{labels.section}</h2>
                     </CardHeader>
                     <CardContent className="space-y-3">
                         {results.length === 0 ? (
-                            <p className="text-muted-foreground text-sm">
-                                No LAG interfaces are attached to this task.
-                            </p>
+                            <p className="text-muted-foreground text-sm">{labels.empty}</p>
                         ) : (
                             results.map((result) => (
                                 <div
