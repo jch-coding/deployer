@@ -25,12 +25,37 @@ function formatValue(value: unknown): string {
     return String(value);
 }
 
-export default function ConfigurationDiff({ diff }: { diff: DiffEntry[] }) {
-    const [open, setOpen] = useState(false);
+function valuesMatch(expected: unknown, actual: unknown): boolean {
+    return formatValue(expected) === formatValue(actual);
+}
 
-    if (diff.length === 0) {
+type ConfigurationDiffProps = {
+    details: DiffEntry[];
+    ok?: boolean;
+    /** @deprecated Use details instead */
+    diff?: DiffEntry[];
+};
+
+export default function ConfigurationDiff({
+    details,
+    ok = false,
+    diff = [],
+}: ConfigurationDiffProps) {
+    const [open, setOpen] = useState(false);
+    const rows = details.length > 0 ? details : diff;
+    const mismatchCount = rows.filter(
+        (entry) => !valuesMatch(entry.expected, entry.actual),
+    ).length;
+
+    if (rows.length === 0) {
         return null;
     }
+
+    const triggerLabel = ok
+        ? `View configuration details (${rows.length} field${rows.length === 1 ? '' : 's'})`
+        : mismatchCount > 0
+          ? `View ${mismatchCount} difference${mismatchCount === 1 ? '' : 's'} (${rows.length} fields)`
+          : `View configuration details (${rows.length} field${rows.length === 1 ? '' : 's'})`;
 
     return (
         <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
@@ -46,7 +71,7 @@ export default function ConfigurationDiff({ diff }: { diff: DiffEntry[] }) {
                             open && 'rotate-180',
                         )}
                     />
-                    View {diff.length} difference{diff.length === 1 ? '' : 's'}
+                    {triggerLabel}
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
@@ -60,17 +85,43 @@ export default function ConfigurationDiff({ diff }: { diff: DiffEntry[] }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {diff.map((entry) => (
-                                <tr key={entry.path} className="border-b last:border-0">
-                                    <td className="px-3 py-2 font-mono">{entry.path}</td>
-                                    <td className="px-3 py-2 text-emerald-700">
-                                        {formatValue(entry.expected)}
-                                    </td>
-                                    <td className="px-3 py-2 text-red-700">
-                                        {formatValue(entry.actual)}
-                                    </td>
-                                </tr>
-                            ))}
+                            {rows.map((entry) => {
+                                const matches = valuesMatch(
+                                    entry.expected,
+                                    entry.actual,
+                                );
+
+                                return (
+                                    <tr
+                                        key={entry.path}
+                                        className="border-b last:border-0"
+                                    >
+                                        <td className="px-3 py-2 font-mono">
+                                            {entry.path}
+                                        </td>
+                                        <td
+                                            className={cn(
+                                                'px-3 py-2',
+                                                matches
+                                                    ? 'text-emerald-700'
+                                                    : 'text-emerald-700',
+                                            )}
+                                        >
+                                            {formatValue(entry.expected)}
+                                        </td>
+                                        <td
+                                            className={cn(
+                                                'px-3 py-2',
+                                                matches
+                                                    ? 'text-emerald-700'
+                                                    : 'text-red-700',
+                                            )}
+                                        >
+                                            {formatValue(entry.actual)}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

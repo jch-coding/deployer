@@ -22,6 +22,7 @@ type InterfaceResult = {
     ok: boolean;
     missing_in_central: boolean;
     diff: DiffEntry[];
+    details?: DiffEntry[];
 };
 
 type DeviceError = {
@@ -158,9 +159,11 @@ export default function Check() {
                                             </span>
                                         )}
                                     </div>
-                                    {!result.ok && (
-                                        <ConfigurationDiff diff={result.diff} />
-                                    )}
+                                    <ConfigurationDiff
+                                        details={result.details ?? result.diff}
+                                        ok={result.ok}
+                                        diff={result.diff}
+                                    />
                                 </div>
                             ))
                         )}

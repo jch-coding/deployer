@@ -108,19 +108,20 @@ class LagInterfaceCentralVerifier
                         $device,
                         ok: false,
                         missingInCentral: true,
-                        diff: $this->diffExpectedAgainstActual($expected, []),
+                        expected: $expected,
+                        central: [],
                     );
 
                     continue;
                 }
 
-                $diff = $this->diffExpectedAgainstActual($expected, $centralItem);
                 $results[] = $this->buildResult(
                     $deviceInterface,
                     $device,
-                    ok: $diff === [],
+                    ok: $this->diffExpectedAgainstActual($expected, $centralItem) === [],
                     missingInCentral: false,
-                    diff: $diff,
+                    expected: $expected,
+                    central: $centralItem,
                 );
             }
         }
@@ -307,21 +308,24 @@ class LagInterfaceCentralVerifier
     protected function errorResult(DeviceInterface $deviceInterface, string $deviceName, bool $missingInCentral): array
     {
         $expected = $this->buildExpectedPayload($deviceInterface);
-        $deviceId = (int) ($deviceInterface->device_id ?? 0);
+        $central = [];
+        $diff = $this->diffExpectedAgainstActual($expected, $central);
 
         return [
             'device_interface_id' => $deviceInterface->id,
-            'device_id' => $deviceId,
+            'device_id' => (int) ($deviceInterface->device_id ?? 0),
             'device_name' => $deviceName,
             'interface' => $deviceInterface->interface,
             'ok' => false,
             'missing_in_central' => $missingInCentral,
-            'diff' => $this->diffExpectedAgainstActual($expected, []),
+            'diff' => $diff,
+            'details' => ConfigurationDetailRowsBuilder::fromExpectedAndActual($expected, $central),
         ];
     }
 
     /**
-     * @param  list<array{path: string, expected: mixed, actual: mixed}>  $diff
+     * @param  array<string, mixed>  $expected
+     * @param  array<string, mixed>  $central
      * @return array{
      *     device_interface_id: int,
      *     device_id: int,
@@ -329,7 +333,8 @@ class LagInterfaceCentralVerifier
      *     interface: string,
      *     ok: bool,
      *     missing_in_central: bool,
-     *     diff: list<array{path: string, expected: mixed, actual: mixed}>
+     *     diff: list<array{path: string, expected: mixed, actual: mixed}>,
+     *     details: list<array{path: string, expected: mixed, actual: mixed}>
      * }
      */
     protected function buildResult(
@@ -337,8 +342,11 @@ class LagInterfaceCentralVerifier
         Device $device,
         bool $ok,
         bool $missingInCentral,
-        array $diff,
+        array $expected,
+        array $central,
     ): array {
+        $diff = $this->diffExpectedAgainstActual($expected, $central);
+
         return [
             'device_interface_id' => $deviceInterface->id,
             'device_id' => $device->id,
@@ -347,6 +355,7 @@ class LagInterfaceCentralVerifier
             'ok' => $ok,
             'missing_in_central' => $missingInCentral,
             'diff' => $diff,
+            'details' => ConfigurationDetailRowsBuilder::fromExpectedAndActual($expected, $central),
         ];
     }
 }

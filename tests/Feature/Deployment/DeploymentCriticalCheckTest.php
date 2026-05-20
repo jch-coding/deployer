@@ -125,10 +125,12 @@ test('deployment critical check reports lag match', function () {
         '*portchannels*' => Http::response(['items' => [$centralLag]], 200),
     ]);
 
-    $this->getJson(route('deployments.critical_check.step', [$this->deployment, 1]))
+    $response = $this->getJson(route('deployments.critical_check.step', [$this->deployment, 1]))
         ->assertOk()
         ->assertJsonPath('partial.lag_results.0.ok', true)
         ->assertJsonPath('progress.message', 'Checking LAG interfaces for '.$this->device->name.'...');
+
+    expect($response->json('partial.lag_results.0.details'))->toBeArray()->not->toBeEmpty();
 });
 
 test('deployment critical check step endpoint returns progress', function () {
