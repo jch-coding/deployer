@@ -449,6 +449,155 @@ function DeviceInterfaceCheckCard({ group }: { group: DeviceInterfaceGroup }) {
     );
 }
 
+function uniqueStaticRouteProfiles(devices: StaticRouteDevice[]): StaticRouteRow[] {
+    const seen = new Set<string>();
+    const unique: StaticRouteRow[] = [];
+
+    for (const device of devices) {
+        if (device.error) {
+            continue;
+        }
+        for (const route of device.routes) {
+            const key = `${route.profile_name}\0${route.prefix}`;
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            unique.push(route);
+        }
+    }
+
+    return unique.sort(
+        (a, b) =>
+            a.profile_name.localeCompare(b.profile_name) ||
+            a.prefix.localeCompare(b.prefix),
+    );
+}
+
+function staticRouteInheritanceLabel(device: StaticRouteDevice): string {
+    if (device.error) {
+        return device.error;
+    }
+    if (device.source === 'device') {
+        return 'Local override';
+    }
+    if (device.source === 'site') {
+        return device.site_name ?? 'site';
+    }
+
+    return '—';
+}
+
+function StaticRoutesCentralSection({
+    devices,
+    pending,
+}: {
+    devices: StaticRouteDevice[];
+    pending: boolean;
+}) {
+    const uniqueProfiles = useMemo(
+        () => uniqueStaticRouteProfiles(devices),
+        [devices],
+    );
+
+    const sortedDevices = useMemo(
+        () => [...devices].sort((a, b) => a.device_name.localeCompare(b.device_name)),
+        [devices],
+    );
+
+    if (pending && devices.length === 0) {
+        return (
+            <p className="text-muted-foreground text-sm dark:text-white">
+                Waiting to fetch static routes...
+            </p>
+        );
+    }
+
+    if (devices.length === 0) {
+        return (
+            <p className="text-muted-foreground text-sm dark:text-white">
+                No devices in deployment.
+            </p>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h3 className="mb-2 text-sm font-semibold dark:text-white">Profiles</h3>
+                {uniqueProfiles.length === 0 ? (
+                    <p className="text-muted-foreground text-sm dark:text-white/80">
+                        No static route profiles returned.
+                    </p>
+                ) : (
+                    <div className="overflow-x-auto rounded-md border text-sm dark:border-white/20">
+                        <table className="w-full min-w-[20rem] dark:text-white">
+                            <thead>
+                                <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10">
+                                    <th className="px-3 py-2 font-medium">Profile</th>
+                                    <th className="px-3 py-2 font-medium">Prefix</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {uniqueProfiles.map((route) => (
+                                    <tr
+                                        key={`${route.profile_name}-${route.prefix}`}
+                                        className="border-b last:border-0 dark:border-white/20"
+                                    >
+                                        <td className="px-3 py-2">{route.profile_name}</td>
+                                        <td className="px-3 py-2 font-mono">
+                                            {route.prefix || '—'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div>
+                <h3 className="mb-2 text-sm font-semibold dark:text-white">Devices</h3>
+                <div className="overflow-x-auto rounded-md border text-sm dark:border-white/20">
+                    <table className="w-full min-w-[20rem] dark:text-white">
+                        <thead>
+                            <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10">
+                                <th className="px-3 py-2 font-medium">Device</th>
+                                <th className="px-3 py-2 font-medium">Inherited from</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedDevices.map((device) => {
+                                const inheritance = staticRouteInheritanceLabel(device);
+                                const hasError = Boolean(device.error);
+
+                                return (
+                                    <tr
+                                        key={device.device_id}
+                                        className="border-b last:border-0 dark:border-white/20"
+                                    >
+                                        <td className="px-3 py-2 font-medium">
+                                            {device.device_name}
+                                        </td>
+                                        <td
+                                            className={cn(
+                                                'px-3 py-2',
+                                                hasError && 'text-red-700 dark:text-red-300',
+                                            )}
+                                        >
+                                            {inheritance}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function DeviceGroupedInterfaceResults({
     lagResults,
     ethernetResults,
@@ -829,77 +978,13 @@ export default function CriticalCheck() {
                                     Static routes (Central)
                                 </h2>
                             </CardHeader>
-                            <CardContent className="space-y-4 dark:text-white">
-                                {results.static_routes.length === 0 ? (
-                                    <p className="text-muted-foreground text-sm dark:text-white">
-                                        {isRunning
-                                            ? 'Waiting to fetch static routes...'
-                                            : 'No devices in deployment.'}
-                                    </p>
-                                ) : (
-                                    results.static_routes.map((device) => (
-                                        <div
-                                            key={device.device_id}
-                                            className="rounded-md border px-4 py-3"
-                                        >
-                                            <p className="font-medium dark:text-white">
-                                                {device.device_name}
-                                            </p>
-                                            {device.source === 'device' && (
-                                                <p className="text-muted-foreground mt-1 text-xs dark:text-white/70">
-                                                    Profile source: Device
-                                                </p>
-                                            )}
-                                            {device.source === 'site' && (
-                                                <p className="text-muted-foreground mt-1 text-xs dark:text-white/70">
-                                                    Profile source: Inheriting from site (
-                                                    {device.site_name ?? 'site'})
-                                                </p>
-                                            )}
-                                            {device.error ? (
-                                                <p className="mt-1 text-sm text-red-700 dark:text-white">
-                                                    {device.error}
-                                                </p>
-                                            ) : device.routes.length === 0 ? (
-                                                <p className="text-muted-foreground mt-1 text-sm dark:text-white">
-                                                    No static route profiles returned.
-                                                </p>
-                                            ) : (
-                                                <div className="mt-2 overflow-x-auto text-sm">
-                                                    <table className="w-full min-w-[20rem]">
-                                                        <thead>
-                                                            <tr className="border-b text-left">
-                                                                <th className="px-2 py-1 font-medium">
-                                                                    Profile
-                                                                </th>
-                                                                <th className="px-2 py-1 font-medium">
-                                                                    Prefix
-                                                                </th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {device.routes.map(
-                                                                (route, index) => (
-                                                                    <tr
-                                                                        key={`${route.profile_name}-${route.prefix}-${index}`}
-                                                                        className="border-b last:border-0"
-                                                                    >
-                                                                        <td className="px-2 py-1">
-                                                                            {route.profile_name}
-                                                                        </td>
-                                                                        <td className="px-2 py-1 font-mono">
-                                                                            {route.prefix || '—'}
-                                                                        </td>
-                                                                    </tr>
-                                                                ),
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))
-                                )}
+                            <CardContent className="dark:text-white">
+                                <StaticRoutesCentralSection
+                                    devices={results.static_routes}
+                                    pending={
+                                        isRunning && results.static_routes.length === 0
+                                    }
+                                />
                             </CardContent>
                         </Card>
                     )}
