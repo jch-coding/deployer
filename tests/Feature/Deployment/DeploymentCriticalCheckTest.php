@@ -227,6 +227,83 @@ function fakeCriticalCheckCentralApisWithStaticRouteHandler(callable $staticRout
     });
 }
 
+test('deployment critical check refreshes missing device scope id from Central before verification', function () {
+    $this->device->update([
+        'scope_id' => null,
+        'serial' => 'SERIAL-SCOPE-REFRESH',
+        'stack_id' => null,
+    ]);
+
+    $lacpProfile = LacpProfile::factory()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'port_list' => '1/1/1-1/1/2',
+        'trunk_type' => 'LACP',
+    ]);
+    $switchPort = SwitchPort::factory()->create([
+        'interface_mode' => 'TRUNK',
+        'access_vlan' => null,
+        'native_vlan' => 10,
+        'trunk_vlan_all' => 'true',
+        'trunk_vlan_ranges' => null,
+    ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $this->device->id,
+        'interface' => '10',
+        'switch_port_id' => $switchPort->id,
+        'lacp_profile_id' => $lacpProfile->id,
+        'interface_kind' => InterfaceKind::LAG,
+        'description' => null,
+    ]);
+
+    $centralLag = [
+        'name' => '10',
+        'vsx' => ['shutdown-on-split' => false],
+        'switchport' => [
+            'access-vlan' => null,
+            'interface-mode' => 'TRUNK',
+            'native-vlan' => 10,
+            'trunk-vlan-all' => true,
+            'trunk-vlan-ranges' => null,
+        ],
+        'lacp' => ['mode' => 'ACTIVE', 'rate' => 'SLOW'],
+        'trunk-type' => 'LACP',
+        'port-list' => ['1/1/1', '1/1/2'],
+        'enable' => true,
+    ];
+
+    fakeCriticalCheckCentralApis([
+        '*network-monitoring/v1/switches*' => Http::response([
+            'items' => [
+                ['serialNumber' => 'SERIAL-SCOPE-REFRESH', 'stackId' => 'stack-for-scope-refresh'],
+            ],
+            'count' => 1,
+            'total' => 1,
+        ], 200),
+        '*network-config/v1/hierarchy*' => Http::response([
+            'items' => [
+                [
+                    'hierarchy' => [
+                        [
+                            'childCount' => null,
+                            'scopeType' => 'device',
+                            'scopeId' => 'scope-resolved-from-central',
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+        '*portchannels*' => Http::response(['interface' => [$centralLag]], 200),
+    ]);
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 1))
+        ->assertOk()
+        ->assertJsonPath('partial.lag_device_errors', [])
+        ->assertJsonPath('partial.lag_results.0.ok', true);
+
+    expect($this->device->fresh()->scope_id)->toBe('scope-resolved-from-central');
+});
+
 test('deployment critical check reports lag match', function () {
     $lacpProfile = LacpProfile::factory()->create([
         'mode' => 'ACTIVE',

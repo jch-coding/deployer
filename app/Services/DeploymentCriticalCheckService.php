@@ -100,6 +100,7 @@ class DeploymentCriticalCheckService
             $phase = ($step - 1) % $phasesPerDevice;
             /** @var Device $device */
             $device = $devices->values()->get($deviceIndex);
+            $this->ensureDeviceScopeIdFromCentral($device, $helper);
             $deviceCollection = collect([$device]);
             $phaseName = $this->phaseNameForIndex($includeEthernet, $phase);
 
@@ -303,6 +304,35 @@ class DeploymentCriticalCheckService
             ])
             ->orderBy('name')
             ->get();
+    }
+
+    /**
+     * Resolve and persist device scope_id from Central when missing, so interface checks can run.
+     */
+    public function ensureDeviceScopeIdFromCentral(Device $device, CentralAPIHelper $helper): void
+    {
+        if (filled($device->scope_id)) {
+            return;
+        }
+
+        $scopeIdResponse = $helper->getScopeIdFromCentral($device);
+        if (array_key_exists('error', $scopeIdResponse)) {
+            return;
+        }
+
+        $scopeEntries = array_values($scopeIdResponse);
+        if ($scopeEntries === []) {
+            return;
+        }
+
+        $entry = array_pop($scopeEntries);
+        $scopeId = $entry['scopeId'] ?? null;
+        if (! filled($scopeId)) {
+            return;
+        }
+
+        $device->update(['scope_id' => $scopeId]);
+        $device->scope_id = $scopeId;
     }
 
     /**

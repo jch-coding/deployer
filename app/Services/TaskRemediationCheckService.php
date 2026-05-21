@@ -65,6 +65,7 @@ class TaskRemediationCheckService
             $phase = ($step - 1) % $phasesPerDevice;
             /** @var Device $device */
             $device = $devices->values()->get($deviceIndex);
+            $this->deploymentCheck->ensureDeviceScopeIdFromCentral($device, $helper);
             $phaseName = $this->phaseNameForIndex($includeEthernet, $phase);
             $message = $this->messageForPhase($device, $phaseName);
 
