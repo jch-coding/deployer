@@ -83,6 +83,79 @@ function criticalCheckStepUrl(Deployment $deployment, int $step, array $query = 
     return $url;
 }
 
+/**
+ * @return array<string, mixed>
+ */
+function staticRouteProfilePayload(string $name = 'static-profile', string $prefix = '0.0.0.0/0'): array
+{
+    return [
+        'profile' => [
+            'name' => $name,
+            'ipv4' => [
+                'prefix' => $prefix,
+                'prefix-vrf-nexthop-id' => '1',
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return array<string, string>
+ */
+function staticRouteRequestQuery(\Illuminate\Http\Client\Request $request): array
+{
+    parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+    return is_array($query) ? $query : [];
+}
+
+function fakeCriticalCheckCentralApisWithStaticRouteHandler(callable $staticRouteHandler): void
+{
+    Http::fake(function (\Illuminate\Http\Client\Request $request) use ($staticRouteHandler) {
+        $url = $request->url();
+
+        if (str_contains($url, 'static-route')) {
+            return $staticRouteHandler($request);
+        }
+
+        if (str_contains($url, 'portchannels')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'ethernet-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'vlan-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope-from-central'],
+                ],
+            ], 200);
+        }
+        if (str_contains($url, 'dns')) {
+            return Http::response([
+                'profile' => [
+                    [
+                        'name' => 'dns-profile',
+                        'resolver' => [
+                            [
+                                'vrf' => 'default',
+                                'name-server' => [
+                                    ['ip' => '8.8.8.8', 'priority' => 1],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+}
+
 test('deployment critical check reports lag match', function () {
     $lacpProfile = LacpProfile::factory()->create([
         'mode' => 'ACTIVE',
@@ -243,8 +316,47 @@ test('deployment critical check displays static routes from central', function (
         ->assertOk()
         ->assertJsonPath('partial.static_routes.0.device_name', $this->device->name)
         ->assertJsonPath('partial.static_routes.0.error', null)
+        ->assertJsonPath('partial.static_routes.0.source', 'device')
         ->assertJsonPath('partial.static_routes.0.routes.0.profile_name', 'static-profile')
         ->assertJsonPath('partial.static_routes.0.routes.0.prefix', '0.0.0.0/0');
+});
+
+test('deployment critical check inherits static routes from site when device level is empty', function () {
+    fakeCriticalCheckCentralApisWithStaticRouteHandler(function (\Illuminate\Http\Client\Request $request) {
+        $query = staticRouteRequestQuery($request);
+
+        if (($query['object-type'] ?? '') === 'LOCAL') {
+            return Http::response([], 200);
+        }
+
+        if (($query['object-type'] ?? '') === 'SHARED') {
+            return Http::response(staticRouteProfilePayload('site-static-profile', '10.0.0.0/8'), 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 3))
+        ->assertOk()
+        ->assertJsonPath('partial.static_routes.0.source', 'site')
+        ->assertJsonPath('partial.static_routes.0.site_name', 'TestSite')
+        ->assertJsonPath('partial.static_routes.0.routes.0.profile_name', 'site-static-profile')
+        ->assertJsonPath('partial.static_routes.0.routes.0.prefix', '10.0.0.0/8');
+});
+
+test('deployment critical check reports empty static route profile when device and site are empty', function () {
+    fakeCriticalCheckCentralApisWithStaticRouteHandler(
+        fn () => Http::response([], 200),
+    );
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 3))
+        ->assertOk()
+        ->assertJsonPath('partial.static_routes.0.source', null)
+        ->assertJsonPath('partial.static_routes.0.routes', [])
+        ->assertJsonPath(
+            'partial.static_routes.0.error',
+            'Empty static route profile for this device.',
+        );
 });
 
 test('deployment critical check displays dns profiles from central', function () {
@@ -341,17 +453,28 @@ test('deployment critical check reports dns scope error when wcd not found', fun
         ->assertJsonPath('partial.dns_results', []);
 });
 
-test('deployment critical check reports missing site scope for static routes', function () {
+test('deployment critical check resolves static routes at device level when site scope is missing', function () {
     $this->site->update(['scope_id' => null]);
 
     fakeCriticalCheckCentralApis();
 
     $this->getJson(criticalCheckStepUrl($this->deployment, 3))
         ->assertOk()
-        ->assertJsonPath('partial.static_routes.0.error', 'Site or site scope ID not available for this device.')
-        ->assertJsonPath('partial.static_routes.0.routes', []);
+        ->assertJsonPath('partial.static_routes.0.error', null)
+        ->assertJsonPath('partial.static_routes.0.source', 'device')
+        ->assertJsonPath('partial.static_routes.0.routes.0.profile_name', 'static-profile');
 
-    Http::assertNotSent(fn (\Illuminate\Http\Client\Request $request) => str_contains($request->url(), 'static-route'));
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        if (! str_contains($request->url(), 'static-route')) {
+            return false;
+        }
+        $query = staticRouteRequestQuery($request);
+
+        return ($query['object-type'] ?? '') === 'LOCAL'
+            && ($query['scope-id'] ?? '') === 'device-scope-123';
+    });
+
+    Http::assertSentCount(1, fn (\Illuminate\Http\Client\Request $request) => str_contains($request->url(), 'static-route'));
 });
 
 test('deployment critical check reports ethernet match when include_ethernet is enabled', function () {

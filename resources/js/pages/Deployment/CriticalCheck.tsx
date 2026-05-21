@@ -49,6 +49,8 @@ type StaticRouteDevice = {
     device_name: string;
     error: string | null;
     routes: StaticRouteRow[];
+    source: 'device' | 'site' | null;
+    site_name: string | null;
 };
 
 type DnsResolver = {
@@ -843,6 +845,17 @@ export default function CriticalCheck() {
                                             <p className="font-medium dark:text-white">
                                                 {device.device_name}
                                             </p>
+                                            {device.source === 'device' && (
+                                                <p className="text-muted-foreground mt-1 text-xs dark:text-white/70">
+                                                    Profile source: Device
+                                                </p>
+                                            )}
+                                            {device.source === 'site' && (
+                                                <p className="text-muted-foreground mt-1 text-xs dark:text-white/70">
+                                                    Profile source: Inheriting from site (
+                                                    {device.site_name ?? 'site'})
+                                                </p>
+                                            )}
                                             {device.error ? (
                                                 <p className="mt-1 text-sm text-red-700 dark:text-white">
                                                     {device.error}

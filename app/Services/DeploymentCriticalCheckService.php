@@ -439,50 +439,132 @@ class DeploymentCriticalCheckService
     }
 
     /**
-     * @return array{device_id: int, device_name: string, error: string|null, routes: list<array{profile_name: string, prefix: string}>}
+     * @return array{
+     *     device_id: int,
+     *     device_name: string,
+     *     error: string|null,
+     *     routes: list<array{profile_name: string, prefix: string}>,
+     *     source: 'device'|'site'|null,
+     *     site_name: string|null
+     * }
      */
     protected function fetchStaticRouteForDevice(Device $device, CentralAPIHelper $helper): array
     {
+        if (! $device->device_function) {
+            return $this->staticRouteDeviceResult($device, [
+                'error' => 'Device function not available for this device.',
+            ]);
+        }
+
+        if (filled($device->scope_id)) {
+            $deviceResponse = $helper->get_static_route(
+                $this->staticRouteQueryParams($device, 'device'),
+            );
+
+            if (! $this->responseOk($deviceResponse)) {
+                return $this->staticRouteDeviceResult($device, [
+                    'error' => $this->responseErrorMessage($deviceResponse, 'Failed to fetch static routes from Central.'),
+                ]);
+            }
+
+            $deviceJson = $deviceResponse instanceof Response ? $deviceResponse->json() : [];
+            if ($this->staticRouteResponseHasProfiles(is_array($deviceJson) ? $deviceJson : [])) {
+                return $this->staticRouteDeviceResult($device, [
+                    'routes' => $this->parseStaticRouteProfiles($deviceJson),
+                    'source' => 'device',
+                ]);
+            }
+        }
+
         $site = $device->site;
         if ($site === null || blank($site->scope_id)) {
-            return [
-                'device_id' => $device->id,
-                'device_name' => $device->name,
-                'error' => 'Site or site scope ID not available for this device.',
-                'routes' => [],
-            ];
+            return $this->staticRouteDeviceResult($device, [
+                'error' => 'Empty static route profile for this device. Site scope ID is not available for site-level lookup.',
+            ]);
         }
 
-        if (! $device->device_function) {
-            return [
-                'device_id' => $device->id,
-                'device_name' => $device->name,
-                'error' => 'Device function not available for this device.',
-                'routes' => [],
-            ];
+        $siteResponse = $helper->get_static_route(
+            $this->staticRouteQueryParams($device, 'site'),
+        );
+
+        if (! $this->responseOk($siteResponse)) {
+            return $this->staticRouteDeviceResult($device, [
+                'error' => $this->responseErrorMessage($siteResponse, 'Failed to fetch static routes from Central.'),
+            ]);
         }
 
-        $response = $helper->get_static_route([
-            'object-type' => 'SHARED',
-            'view-type' => 'LOCAL',
-            'scope-id' => $site->scope_id,
-            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
+        $siteJson = $siteResponse instanceof Response ? $siteResponse->json() : [];
+        if ($this->staticRouteResponseHasProfiles(is_array($siteJson) ? $siteJson : [])) {
+            return $this->staticRouteDeviceResult($device, [
+                'routes' => $this->parseStaticRouteProfiles($siteJson),
+                'source' => 'site',
+                'site_name' => $site->name,
+            ]);
+        }
+
+        return $this->staticRouteDeviceResult($device, [
+            'error' => 'Empty static route profile for this device.',
         ]);
+    }
 
-        if (! $this->responseOk($response)) {
+    /**
+     * @param  'device'|'site'  $level
+     * @return array<string, string>
+     */
+    protected function staticRouteQueryParams(Device $device, string $level): array
+    {
+        if ($level === 'device') {
             return [
-                'device_id' => $device->id,
-                'device_name' => $device->name,
-                'error' => $this->responseErrorMessage($response, 'Failed to fetch static routes from Central.'),
-                'routes' => [],
+                'view-type' => 'LOCAL',
+                'object-type' => 'LOCAL',
+                'scope-id' => (string) $device->scope_id,
+                'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
             ];
         }
 
+        $site = $device->site;
+
+        return [
+            'view-type' => 'LOCAL',
+            'object-type' => 'SHARED',
+            'scope-id' => (string) ($site?->scope_id ?? ''),
+            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     */
+    protected function staticRouteResponseHasProfiles(array $json): bool
+    {
+        return count($this->parseStaticRouteProfiles($json)) > 0;
+    }
+
+    /**
+     * @param  array{
+     *     error?: string|null,
+     *     routes?: list<array{profile_name: string, prefix: string}>,
+     *     source?: 'device'|'site'|null,
+     *     site_name?: string|null
+     * }  $overrides
+     * @return array{
+     *     device_id: int,
+     *     device_name: string,
+     *     error: string|null,
+     *     routes: list<array{profile_name: string, prefix: string}>,
+     *     source: 'device'|'site'|null,
+     *     site_name: string|null
+     * }
+     */
+    protected function staticRouteDeviceResult(Device $device, array $overrides = []): array
+    {
         return [
             'device_id' => $device->id,
             'device_name' => $device->name,
-            'error' => null,
-            'routes' => $this->parseStaticRouteProfiles($response instanceof Response ? $response->json() : []),
+            'error' => $overrides['error'] ?? null,
+            'routes' => $overrides['routes'] ?? [],
+            'source' => $overrides['source'] ?? null,
+            'site_name' => $overrides['site_name'] ?? null,
         ];
     }
 
