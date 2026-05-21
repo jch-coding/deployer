@@ -26,8 +26,11 @@ use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Site;
 use App\Models\Task;
+use App\Services\DeploymentCriticalCheckService;
+use App\Services\RelaunchFailedCriticalConfigService;
 use App\Services\EthernetInterfaceCentralVerifier;
 use App\Services\LagInterfaceCentralVerifier;
+use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
 use App\TaskType;
 use Carbon\Carbon;
@@ -224,6 +227,10 @@ class TaskController extends Controller
         $tasksQuery = Task::query()
             ->with(['deployment.client'])
             ->withCount(['devices', 'deviceInterfaces'])
+            ->where(function ($query) {
+                $query->whereNull('composite_group_id')
+                    ->orWhere('composite_order', 1);
+            })
             ->when(
                 $currentClient,
                 fn ($query) => $query->whereHas('deployment', fn ($deploymentQuery) => $deploymentQuery->where('client_id', $currentClient->id)),
@@ -281,12 +288,23 @@ class TaskController extends Controller
             ->withQueryString()
             ->through(function (Task $task) {
                 $category = $task->getTaskCategory($task->task_type);
+                $displayType = $task->composite_kind ?? $task->task_type;
+                $supportsRemediationCheck = Task::supportsRemediationCentralCheck($task->composite_kind);
+                $supportsCentralCheck = Task::supportsCentralCheck($task->task_type) || $supportsRemediationCheck;
 
-                $supportsCentralCheck = Task::supportsCentralCheck($task->task_type);
+                $canRunCentralCheck = false;
+                if ($supportsRemediationCheck && $task->composite_group_id !== null) {
+                    $siblings = Task::query()
+                        ->where('composite_group_id', $task->composite_group_id)
+                        ->get();
+                    $canRunCentralCheck = Task::compositeCanRunRemediationCheck($task->composite_kind, $siblings);
+                } elseif (Task::supportsCentralCheck($task->task_type)) {
+                    $canRunCentralCheck = $task->status === 'COMPLETED';
+                }
 
                 return [
                     'id' => $task->id,
-                    'task_name' => Task::getTaskFriendlyName($task->task_type),
+                    'task_name' => Task::getTaskFriendlyName($displayType),
                     'deployment_name' => $task->deployment?->name,
                     'client_name' => $task->deployment?->client?->name,
                     'status' => $task->status,
@@ -295,7 +313,8 @@ class TaskController extends Controller
                     'deployment_time' => $task->deployment_time,
                     'wait_time' => $task->wait_time,
                     'supports_central_check' => $supportsCentralCheck,
-                    'can_run_central_check' => $supportsCentralCheck && $task->status === 'COMPLETED',
+                    'supports_remediation_check' => $supportsRemediationCheck,
+                    'can_run_central_check' => $canRunCentralCheck,
                 ];
             });
 
@@ -331,6 +350,8 @@ class TaskController extends Controller
                 'logical_friendly_name' => Task::getTaskFriendlyName($task->composite_kind),
                 'logical_description' => Task::getTaskFriendlyDescription($task->composite_kind),
                 'sub_jobs' => $this->buildSubJobsForCompositePage($siblings),
+                'supports_remediation_check' => Task::supportsRemediationCentralCheck($task->composite_kind),
+                'can_run_remediation_check' => Task::compositeCanRunRemediationCheck($task->composite_kind, $siblings),
             ]);
         }
 
@@ -1165,10 +1186,14 @@ class TaskController extends Controller
 
     public function relaunch(Request $request, Task $task)
     {
-        if (! in_array($task->status, ['FAILED', 'TIMED_OUT', 'CANCELLED'], true)) {
-            session()->flash('error', 'Only failed, timed out, or cancelled tasks can be relaunched.');
+        $group = $this->tasksInCompositeGroup($task);
 
-            return back();
+        foreach ($group as $t) {
+            if (! in_array($t->status, ['FAILED', 'TIMED_OUT', 'CANCELLED'], true)) {
+                session()->flash('error', 'Only failed, timed out, or cancelled tasks can be relaunched.');
+
+                return back();
+            }
         }
 
         $validated = $request->validate([
@@ -1184,15 +1209,92 @@ class TaskController extends Controller
             $updates['wait_time'] = $validated['wait_time'];
         }
 
-        $task->resetIncompletePivotRowsToPending();
-        $task->update($updates);
-        $batchId = $this->dispatchJob($task);
-
-        if ($batchId !== null) {
-            $task->forceFill(['batch_id' => $batchId])->save();
+        foreach ($group as $t) {
+            $t->resetIncompletePivotRowsToPending();
+            $t->update($updates);
+            if ($t->composite_kind === 'ADD_VLANS_TO_DEVICE_GROUP' && $t->task_type === 'CREATE_NEW_CENTRAL_CX_GROUP') {
+                continue;
+            }
+            $batchId = $this->dispatchJob($t);
+            if ($batchId !== null) {
+                $t->forceFill(['batch_id' => $batchId])->save();
+            }
         }
 
-        return to_route('tasks.show', $task);
+        return to_route('tasks.show', $group->first());
+    }
+
+    public function remediationCheck(Request $request, Task $task, TaskRemediationCheckService $remediationCheckService)
+    {
+        $task->loadMissing('deployment.client');
+        $siblings = $this->tasksInCompositeGroup($task);
+
+        if (! Task::supportsRemediationCentralCheck($task->composite_kind)) {
+            abort(404);
+        }
+
+        $currentClient = $request->user()?->currentClient();
+        if (! $currentClient || (int) $task->deployment?->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before verifying remediation.');
+
+            return redirect()->route('tasks.index');
+        }
+
+        $scope = $remediationCheckService->buildScope($siblings);
+        $includeEthernet = $scope['include_ethernet'];
+
+        return Inertia::render('Deployment/CriticalCheck', [
+            'deployment' => $task->deployment->only(['id', 'name']),
+            'device_count' => $scope['devices']->count(),
+            'total_steps' => $remediationCheckService->totalSteps($siblings),
+            'remediation_task_id' => $task->id,
+            'include_ethernet' => $includeEthernet,
+            'remediation_title' => Task::getTaskFriendlyName(RelaunchFailedCriticalConfigService::COMPOSITE_KIND),
+            ...(new DeploymentCriticalCheckService)->emptyResults(),
+        ]);
+    }
+
+    public function remediationCheckStep(
+        Request $request,
+        Task $task,
+        int $step,
+        TaskRemediationCheckService $remediationCheckService,
+    ) {
+        $task->loadMissing('deployment.client');
+        $siblings = $this->tasksInCompositeGroup($task);
+
+        if (! Task::supportsRemediationCentralCheck($task->composite_kind)) {
+            abort(404);
+        }
+
+        $currentClient = $request->user()?->currentClient();
+        if (! $currentClient || (int) $task->deployment?->client_id !== (int) $currentClient->id) {
+            return response()->json(['message' => 'Please set current client to match this deployment.'], 403);
+        }
+
+        $validated = $request->validate([
+            'dns_scope_id' => ['nullable', 'string'],
+            'dns_scope_error' => ['nullable', 'string'],
+        ]);
+
+        $context = [];
+        if (array_key_exists('dns_scope_id', $validated) && $validated['dns_scope_id'] !== null) {
+            $context['dns_scope_id'] = $validated['dns_scope_id'];
+        }
+        if (array_key_exists('dns_scope_error', $validated) && $validated['dns_scope_error'] !== null) {
+            $context['dns_scope_error'] = $validated['dns_scope_error'];
+        }
+
+        $helper = new CentralAPIHelper($task->deployment->client);
+        $total = $remediationCheckService->totalSteps($siblings);
+
+        if ($step < 0 || $step >= $total) {
+            abort(404);
+        }
+
+        return response()->json(
+            $remediationCheckService->runStep($siblings, $helper, $step, $context)
+        );
     }
 
     public function cancel(Task $task)

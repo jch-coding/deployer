@@ -12,6 +12,10 @@ import TaskDurationDialog from '@/components/ui/TaskDurationDialog';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import { check as checkTask, index as taskIndex, relaunch, show as showTask } from '@/routes/tasks';
+
+function remediationCheckUrl(taskId: number): string {
+    return `/tasks/${taskId}/remediation-check`;
+}
 import type { BreadcrumbItem, SharedData } from '@/types';
 import type { Paginator } from '@/types/deployer';
 
@@ -26,6 +30,7 @@ type TaskRow = {
     deployment_time: number | null;
     wait_time: number;
     supports_central_check: boolean;
+    supports_remediation_check?: boolean;
     can_run_central_check: boolean;
 };
 
@@ -96,7 +101,12 @@ function TaskRowActions({ task }: { task: TaskRow }) {
 
     return (
         <div className="flex items-center gap-2">
-            {task.can_run_central_check && (
+            {task.can_run_central_check && task.supports_remediation_check && (
+                <Button variant="outline" size="sm" asChild>
+                    <Link href={remediationCheckUrl(task.id)}>Verify</Link>
+                </Button>
+            )}
+            {task.can_run_central_check && !task.supports_remediation_check && (
                 <Button variant="outline" size="sm" asChild>
                     <Link href={checkTask(task.id).url}>Verify</Link>
                 </Button>

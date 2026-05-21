@@ -15,6 +15,10 @@ class Task extends Model
     /** @use HasFactory<\Database\Factories\TaskFactory> */
     use HasFactory;
 
+    protected $casts = [
+        'remediation_context' => 'array',
+    ];
+
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class);
@@ -72,6 +76,23 @@ class Task extends Model
         ], true);
     }
 
+    public static function supportsRemediationCentralCheck(?string $compositeKind): bool
+    {
+        return $compositeKind === 'RELAUNCH_FAILED_CRITICAL_CONFIG';
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Task>|null  $siblings
+     */
+    public static function compositeCanRunRemediationCheck(?string $compositeKind, $siblings = null): bool
+    {
+        if (! self::supportsRemediationCentralCheck($compositeKind) || $siblings === null) {
+            return false;
+        }
+
+        return $siblings->every(fn (Task $t) => $t->status === 'COMPLETED');
+    }
+
     public function getTaskCategory($task_type)
     {
         $interface_based = [
@@ -115,6 +136,8 @@ class Task extends Model
                 return 'Name Devices';
             case 'CONFIGURE_ALL_INTERFACE':
                 return 'Configure LAG, Ethernet and VLAN Interfaces';
+            case 'RELAUNCH_FAILED_CRITICAL_CONFIG':
+                return 'Relaunch failed critical configurations';
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 return 'Configure Ethernet Interfaces';
             case 'CONFIGURE_LAG_INTERFACE':
@@ -161,6 +184,8 @@ class Task extends Model
                 return 'Name or rename devices';
             case 'CONFIGURE_ALL_INTERFACE':
                 return 'Configure LAG, physical and SVIs in that order.';
+            case 'RELAUNCH_FAILED_CRITICAL_CONFIG':
+                return 'Retry failed LAG, ethernet, and VLAN interfaces and remove local overrides for static route and DNS profiles.';
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 return 'Configure physical interfaces';
             case 'CONFIGURE_LAG_INTERFACE':

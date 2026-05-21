@@ -49,6 +49,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/deployments/{deployment}', 'show')->name('deployments.show');
         Route::get('/deployments/{deployment}/critical-check', 'criticalCheck')->name('deployments.critical_check');
         Route::get('/deployments/{deployment}/critical-check/step/{step}', 'criticalCheckStep')->name('deployments.critical_check.step');
+        Route::patch('/deployments/{deployment}/critical-check/failed-interfaces', 'patchCriticalCheckFailedInterfaces')->name('deployments.critical_check.failed_interfaces');
+        Route::post('/deployments/{deployment}/relaunch-failed-critical-config', 'relaunchFailedCriticalConfig')->name('deployments.relaunch_failed_critical_config');
     });
 
     Route::controller(DeviceController::class)->group(function () {
@@ -71,6 +73,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/tasks', 'index')->name('tasks.index');
         Route::get('/tasks/{task}', 'show')->name('tasks.show');
         Route::get('/tasks/{task}/check', 'check')->name('tasks.check');
+        Route::get('/tasks/{task}/remediation-check', 'remediationCheck')->name('tasks.remediation_check');
+        Route::get('/tasks/{task}/remediation-check/step/{step}', 'remediationCheckStep')->name('tasks.remediation_check.step');
         Route::post('/tasks/deployment/{deployment}/check-central-group', 'checkCentralGroup')->name('tasks.check_central_group');
         Route::post('/tasks/deployment/{deployment}/check-central-sites', 'checkCentralSites')->name('tasks.check_central_sites');
         Route::post('/tasks/deployment/{deployment}/force-update-site-scope-ids', 'forceUpdateSiteScopeIds')->name('tasks.force_update_site_scope_ids');

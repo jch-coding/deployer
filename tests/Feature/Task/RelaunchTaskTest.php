@@ -1,11 +1,15 @@
 <?php
 
+use App\InterfaceKind;
 use App\Models\Client;
 use App\Models\Device;
+use App\Models\DeviceInterface;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\RelaunchFailedCriticalConfigService;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->user = User::factory()
@@ -153,4 +157,54 @@ test('relaunch rejects non-failed-and-non-cancelled task statuses', function () 
     $task->refresh();
     expect($task->status)->toBe('IN_PROGRESS');
     Bus::assertNothingBatched();
+});
+
+test('relaunching a failed composite remediation group relaunches all siblings', function () {
+    Bus::fake();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+    $lagInterface = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface_kind' => InterfaceKind::LAG,
+    ]);
+    $vlanInterface = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface_kind' => InterfaceKind::VLAN,
+    ]);
+
+    $group = (string) Str::uuid();
+    $jobQueue = 'q0';
+    $first = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'CONFIGURE_LAG_INTERFACE',
+        'status' => 'FAILED',
+        'job_queue' => $jobQueue,
+        'composite_group_id' => $group,
+        'composite_kind' => RelaunchFailedCriticalConfigService::COMPOSITE_KIND,
+        'composite_order' => 1,
+    ]);
+    $second = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'CONFIGURE_VLAN_INTERFACE',
+        'status' => 'FAILED',
+        'job_queue' => $jobQueue,
+        'composite_group_id' => $group,
+        'composite_kind' => RelaunchFailedCriticalConfigService::COMPOSITE_KIND,
+        'composite_order' => 2,
+    ]);
+
+    $first->devices()->attach($device->id, ['status' => 'FAILED']);
+    $first->deviceInterfaces()->attach([$lagInterface->id => ['status' => 'FAILED']]);
+    $second->devices()->attach($device->id, ['status' => 'FAILED']);
+    $second->deviceInterfaces()->attach([$vlanInterface->id => ['status' => 'FAILED']]);
+
+    $this->post(route('tasks.relaunch', $first))
+        ->assertRedirect(route('tasks.show', $first));
+
+    expect($first->refresh()->status)->toBe('IN_PROGRESS');
+    expect($second->refresh()->status)->toBe('IN_PROGRESS');
+
+    $batches = Bus::batched(fn (PendingBatch $batch) => count($batch->jobs) === 1);
+    expect($batches)->toHaveCount(2);
 });

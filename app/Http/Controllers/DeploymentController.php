@@ -4,12 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
 use App\Models\Deployment;
+use App\Models\DeviceInterface;
 use App\Models\Task;
 use App\Services\DeploymentCriticalCheckService;
+use App\Services\DeviceInterfacePayloadSync;
 use App\Services\FinalizeExpiredTasksService;
+use App\Services\RelaunchFailedCriticalConfigService;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -203,5 +207,90 @@ class DeploymentController extends Controller
         }
 
         return null;
+    }
+
+    public function patchCriticalCheckFailedInterfaces(
+        Request $request,
+        Deployment $deployment,
+        DeviceInterfacePayloadSync $payloadSync,
+    ) {
+        if ($response = $this->criticalCheckClientGuard($request, $deployment, json: true)) {
+            return $response;
+        }
+
+        $validated = $request->validate([
+            'updates' => ['required', 'array', 'min:1'],
+            'updates.*.device_interface_id' => ['required', 'integer', 'distinct'],
+            'updates.*.kind' => ['required', Rule::in(['lag', 'vlan', 'ethernet'])],
+            'updates.*.attributes' => ['required', 'array'],
+        ]);
+
+        $ids = collect($validated['updates'])->pluck('device_interface_id')->map(fn ($id) => (int) $id)->all();
+        $interfaces = DeviceInterface::query()
+            ->whereIn('id', $ids)
+            ->whereHas('device', fn ($q) => $q->where('deployment_id', $deployment->id))
+            ->with(['switch_port', 'lacp_profile', 'stp_profile'])
+            ->get()
+            ->keyBy('id');
+
+        if ($interfaces->count() !== count($ids)) {
+            return response()->json(['message' => 'One or more interfaces do not belong to this deployment.'], 422);
+        }
+
+        DB::transaction(function () use ($validated, $interfaces, $payloadSync): void {
+            foreach ($validated['updates'] as $row) {
+                $interface = $interfaces->get((int) $row['device_interface_id']);
+                if ($interface === null) {
+                    continue;
+                }
+                $payloadSync->apply($interface, (string) $row['kind'], $row['attributes']);
+            }
+        });
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function relaunchFailedCriticalConfig(
+        Request $request,
+        Deployment $deployment,
+        RelaunchFailedCriticalConfigService $relaunchService,
+    ) {
+        if ($response = $this->criticalCheckClientGuard($request, $deployment)) {
+            return $response;
+        }
+
+        $validated = $request->validate([
+            'deployment_time' => ['required', 'integer', 'min:0'],
+            'wait_time' => ['required', 'integer', 'min:0'],
+            'include_ethernet' => ['sometimes', 'boolean'],
+            'failed_interface_ids' => ['required', 'array'],
+            'failed_interface_ids.lag' => ['sometimes', 'array'],
+            'failed_interface_ids.lag.*' => ['integer'],
+            'failed_interface_ids.vlan' => ['sometimes', 'array'],
+            'failed_interface_ids.vlan.*' => ['integer'],
+            'failed_interface_ids.ethernet' => ['sometimes', 'array'],
+            'failed_interface_ids.ethernet.*' => ['integer'],
+            'profile_device_ids' => ['required', 'array'],
+            'profile_device_ids.static_route' => ['sometimes', 'array'],
+            'profile_device_ids.static_route.*' => ['integer'],
+            'profile_device_ids.dns' => ['sometimes', 'array'],
+            'profile_device_ids.dns.*' => ['integer'],
+        ]);
+
+        try {
+            $firstTask = $relaunchService->create($deployment, [
+                'deployment_time' => (int) $validated['deployment_time'],
+                'wait_time' => (int) $validated['wait_time'],
+                'include_ethernet' => $request->boolean('include_ethernet'),
+                'failed_interface_ids' => $validated['failed_interface_ids'],
+                'profile_device_ids' => $validated['profile_device_ids'],
+            ], $request);
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['relaunch' => $e->getMessage()]);
+        }
+
+        session()->flash('success', 'Started relaunch task for failed critical configuration items.');
+
+        return to_route('tasks.show', $firstTask);
     }
 }

@@ -62,6 +62,8 @@ type PageProps = {
     logical_friendly_name: string;
     logical_description: string;
     sub_jobs: SubJob[];
+    supports_remediation_check?: boolean;
+    can_run_remediation_check?: boolean;
 } & SharedData;
 
 const formatColumnLabel = (column: string) =>
@@ -116,8 +118,16 @@ function SubJobCollapsibleLog({ status_log }: { status_log: string }) {
 }
 
 export default function MultiJobTask() {
-    const { task, deployment, logical_friendly_name, logical_description, sub_jobs, current_client, flash } =
-        usePage<PageProps>().props;
+    const {
+        task,
+        deployment,
+        logical_friendly_name,
+        logical_description,
+        sub_jobs,
+        current_client,
+        flash,
+        can_run_remediation_check,
+    } = usePage<PageProps>().props;
     const [isCancelling, setIsCancelling] = useState(false);
     const [isClearingQueue, setIsClearingQueue] = useState(false);
 
@@ -141,6 +151,11 @@ export default function MultiJobTask() {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="absolute top-4 right-4 flex items-center gap-2">
+                {can_run_remediation_check && (
+                    <Button variant="outline" asChild>
+                        <Link href={`/tasks/${task.id}/remediation-check`}>Verify</Link>
+                    </Button>
+                )}
                 <Button
                     variant="outline"
                     disabled={isCancelling || isClearingQueue}

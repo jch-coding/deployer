@@ -1,6 +1,10 @@
-import { Link, usePage } from '@inertiajs/react';
-import { Check, ChevronDown, X } from 'lucide-react';
+import { Link, router, usePage } from '@inertiajs/react';
+import { AlarmClock, Check, ChevronDown, X } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import FailedInterfaceConfigTable from '@/components/Deployment/FailedInterfaceConfigTable';
+import ProfileInheritanceFailuresTable, {
+    collectProfileDeviceIds,
+} from '@/components/Deployment/ProfileInheritanceFailuresTable';
 import ConfigurationDiff, {
     type DiffEntry,
 } from '@/components/ui/ConfigurationDiff';
@@ -13,6 +17,8 @@ import {
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
+import TaskDurationDialog from '@/components/ui/TaskDurationDialog';
+import { DialogClose } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { index as clientIndex } from '@/routes/clients';
@@ -126,6 +132,10 @@ type CriticalCheckPageProps = SharedData & {
     deployment: { id: number; name: string };
     device_count: number;
     total_steps: number;
+    /** When set, runs scoped remediation verify for this composite task. */
+    remediation_task_id?: number;
+    include_ethernet?: boolean;
+    remediation_title?: string;
 } & CheckResults;
 
 const emptySummary: Summary = {
@@ -843,10 +853,19 @@ function DeviceGroupedInterfaceResults({
 }
 
 export default function CriticalCheck() {
-    const { current_client, deployment, device_count, ...initialResults } =
-        usePage<CriticalCheckPageProps>().props;
+    const {
+        current_client,
+        deployment,
+        device_count,
+        remediation_task_id,
+        include_ethernet: includeEthernetProp,
+        remediation_title,
+        total_steps: totalStepsProp,
+        ...initialResults
+    } = usePage<CriticalCheckPageProps>().props;
 
-    const [includeEthernet, setIncludeEthernet] = useState(false);
+    const isRemediationVerify = remediation_task_id != null;
+    const [includeEthernet, setIncludeEthernet] = useState(includeEthernetProp ?? false);
     const [ranWithEthernet, setRanWithEthernet] = useState(false);
     const [results, setResults] = useState<CheckResults>(() => ({
         lag_device_errors: initialResults.lag_device_errors ?? [],
@@ -865,7 +884,7 @@ export default function CriticalCheck() {
     }));
 
     const phasesPerDevice = includeEthernet ? 5 : 4;
-    const totalSteps = 1 + device_count * phasesPerDevice;
+    const totalSteps = totalStepsProp ?? 1 + device_count * phasesPerDevice;
 
     const [progress, setProgress] = useState<StepProgress>({
         current: 0,
@@ -877,6 +896,83 @@ export default function CriticalCheck() {
         'idle',
     );
     const [runError, setRunError] = useState<string | null>(null);
+    const [deploymentTimeHours, setDeploymentTimeHours] = useState(0);
+    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(3);
+    const [waitTimeMinutes, setWaitTimeMinutes] = useState(1);
+    const [relaunchPending, setRelaunchPending] = useState(false);
+
+    const failedLag = useMemo(
+        () => results.lag_results.filter((r) => !r.ok),
+        [results.lag_results],
+    );
+    const failedVlan = useMemo(
+        () => results.vlan_results.filter((r) => !r.ok),
+        [results.vlan_results],
+    );
+    const failedEthernet = useMemo(
+        () => results.ethernet_results.filter((r) => !r.ok),
+        [results.ethernet_results],
+    );
+    const profileDeviceIds = useMemo(
+        () => collectProfileDeviceIds(results.static_routes, results.dns_results),
+        [results.static_routes, results.dns_results],
+    );
+    const hasRemediationWork = useMemo(
+        () =>
+            failedLag.length > 0 ||
+            failedVlan.length > 0 ||
+            (ranWithEthernet && failedEthernet.length > 0) ||
+            profileDeviceIds.static_route.length > 0 ||
+            profileDeviceIds.dns.length > 0,
+        [
+            failedLag.length,
+            failedVlan.length,
+            failedEthernet.length,
+            ranWithEthernet,
+            profileDeviceIds,
+        ],
+    );
+
+    const patchFailedInterfacesUrl = `/deployments/${deployment.id}/critical-check/failed-interfaces`;
+    const relaunchFailedUrl = `/deployments/${deployment.id}/relaunch-failed-critical-config`;
+
+    const relaunchFailedConfigurations = useCallback(() => {
+        if (!hasRemediationWork || relaunchPending) {
+            return;
+        }
+        setRelaunchPending(true);
+        router.post(
+            relaunchFailedUrl,
+            {
+                deployment_time: deploymentTimeHours * 60 + deploymentTimeMinutes,
+                wait_time: waitTimeMinutes,
+                include_ethernet: ranWithEthernet,
+                failed_interface_ids: {
+                    lag: failedLag.map((r) => r.device_interface_id),
+                    vlan: failedVlan.map((r) => r.device_interface_id),
+                    ethernet: ranWithEthernet
+                        ? failedEthernet.map((r) => r.device_interface_id)
+                        : [],
+                },
+                profile_device_ids: profileDeviceIds,
+            },
+            {
+                onFinish: () => setRelaunchPending(false),
+            },
+        );
+    }, [
+        deploymentTimeHours,
+        deploymentTimeMinutes,
+        failedEthernet,
+        failedLag,
+        failedVlan,
+        hasRemediationWork,
+        profileDeviceIds,
+        ranWithEthernet,
+        relaunchFailedUrl,
+        relaunchPending,
+        waitTimeMinutes,
+    ]);
 
     const runCheck = useCallback(async () => {
         const stepTotal = 1 + device_count * (includeEthernet ? 5 : 4);
@@ -906,7 +1002,9 @@ export default function CriticalCheck() {
                 params.set('dns_scope_error', context.dns_scope_error);
             }
 
-            const baseUrl = criticalCheckDeployment.step.url([deployment.id, step]);
+            const baseUrl = isRemediationVerify
+                ? `/tasks/${remediation_task_id}/remediation-check/step/${step}`
+                : criticalCheckDeployment.step.url([deployment.id, step]);
             const url =
                 params.toString() !== '' ? `${baseUrl}?${params.toString()}` : baseUrl;
 
@@ -947,7 +1045,7 @@ export default function CriticalCheck() {
             percent: 100,
             message: 'Critical configuration check complete.',
         }));
-    }, [deployment.id, device_count, includeEthernet]);
+    }, [deployment.id, device_count, includeEthernet, isRemediationVerify, remediation_task_id]);
 
     const isRunning = checkState === 'running';
     const hasStarted = checkState !== 'idle';
@@ -961,64 +1059,111 @@ export default function CriticalCheck() {
                 title: deployment.name,
                 href: showDeployment(deployment.id).url,
             },
-            {
-                title: 'Critical configuration check',
-                href: criticalCheckDeployment(deployment.id).url,
-            },
+            isRemediationVerify
+                ? {
+                      title: remediation_title ?? 'Remediation verification',
+                      href: `/tasks/${remediation_task_id}/remediation-check`,
+                  }
+                : {
+                      title: 'Critical configuration check',
+                      href: criticalCheckDeployment(deployment.id).url,
+                  },
         ],
-        [current_client?.name, deployment.id, deployment.name],
+        [
+            current_client?.name,
+            deployment.id,
+            deployment.name,
+            isRemediationVerify,
+            remediation_task_id,
+            remediation_title,
+        ],
     );
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
                 <div className="text-center">
-                    <h1 className="text-2xl font-bold">Critical configuration check</h1>
+                    <h1 className="text-2xl font-bold">
+                        {isRemediationVerify
+                            ? remediation_title ?? 'Remediation verification'
+                            : 'Critical configuration check'}
+                    </h1>
                     <p className="text-muted-foreground mt-1 text-sm">
                         {deployment.name}
                     </p>
                 </div>
 
-                <Card>
-                    <CardHeader className="pb-2">
-                        <h2 className="text-lg font-semibold">Options</h2>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex items-center gap-2">
-                            <Checkbox
-                                id="include-ethernet"
-                                checked={includeEthernet}
+                {!isRemediationVerify && (
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <h2 className="text-lg font-semibold">Options</h2>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex items-center gap-2">
+                                <Checkbox
+                                    id="include-ethernet"
+                                    checked={includeEthernet}
+                                    disabled={isRunning}
+                                    onCheckedChange={(checked) =>
+                                        setIncludeEthernet(checked === true)
+                                    }
+                                />
+                                <Label htmlFor="include-ethernet" className="text-sm font-normal">
+                                    Verify ethernet interfaces against Central
+                                </Label>
+                            </div>
+                            <p className="text-muted-foreground text-xs">
+                                {totalSteps} steps ({device_count} device
+                                {device_count === 1 ? '' : 's'}
+                                {includeEthernet ? ', including ethernet per device' : ''})
+                            </p>
+                            <Button
+                                onClick={() => {
+                                    void runCheck().catch((error: unknown) => {
+                                        setCheckState('error');
+                                        setRunError(
+                                            error instanceof Error
+                                                ? error.message
+                                                : 'Critical check failed.',
+                                        );
+                                    });
+                                }}
                                 disabled={isRunning}
-                                onCheckedChange={(checked) =>
-                                    setIncludeEthernet(checked === true)
-                                }
-                            />
-                            <Label htmlFor="include-ethernet" className="text-sm font-normal">
-                                Verify ethernet interfaces against Central
-                            </Label>
-                        </div>
-                        <p className="text-muted-foreground text-xs">
-                            {totalSteps} steps ({device_count} device
-                            {device_count === 1 ? '' : 's'}
-                            {includeEthernet ? ', including ethernet per device' : ''})
-                        </p>
-                        <Button
-                            onClick={() => {
-                                void runCheck().catch((error: unknown) => {
-                                    setCheckState('error');
-                                    setRunError(
-                                        error instanceof Error
-                                            ? error.message
-                                            : 'Critical check failed.',
-                                    );
-                                });
-                            }}
-                            disabled={isRunning}
-                        >
-                            {checkState === 'idle' ? 'Run check' : 'Run again'}
-                        </Button>
-                    </CardContent>
-                </Card>
+                            >
+                                {checkState === 'idle' ? 'Run check' : 'Run again'}
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+                {isRemediationVerify && (
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <h2 className="text-lg font-semibold">Verify</h2>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <p className="text-muted-foreground text-xs">
+                                {totalSteps} steps ({device_count} device
+                                {device_count === 1 ? '' : 's'}
+                                {includeEthernet ? ', including ethernet' : ''})
+                            </p>
+                            <Button
+                                onClick={() => {
+                                    void runCheck().catch((error: unknown) => {
+                                        setCheckState('error');
+                                        setRunError(
+                                            error instanceof Error
+                                                ? error.message
+                                                : 'Remediation check failed.',
+                                        );
+                                    });
+                                }}
+                                disabled={isRunning}
+                            >
+                                {checkState === 'idle' ? 'Run verification' : 'Run again'}
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
 
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                     <Card className="dark:text-white">
@@ -1202,7 +1347,88 @@ export default function CriticalCheck() {
                     )}
                 </div>
 
-                <div className="flex justify-center">
+                {checkState === 'complete' && !isRemediationVerify && (
+                    <Card className="dark:text-white lg:col-span-2">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg font-semibold">Remediation</CardTitle>
+                            <p className="text-muted-foreground text-sm">
+                                Edit expected configuration values, then relaunch failed items as a
+                                composite task.
+                            </p>
+                        </CardHeader>
+                        <CardContent className="space-y-8">
+                            <FailedInterfaceConfigTable
+                                title="LAG interfaces"
+                                rows={failedLag}
+                                kind="lag"
+                                patchUrl={patchFailedInterfacesUrl}
+                            />
+                            <FailedInterfaceConfigTable
+                                title="VLAN interfaces"
+                                rows={failedVlan}
+                                kind="vlan"
+                                patchUrl={patchFailedInterfacesUrl}
+                            />
+                            {ranWithEthernet && (
+                                <FailedInterfaceConfigTable
+                                    title="Ethernet interfaces"
+                                    rows={failedEthernet}
+                                    kind="ethernet"
+                                    patchUrl={patchFailedInterfacesUrl}
+                                />
+                            )}
+                            <ProfileInheritanceFailuresTable
+                                staticRoutes={results.static_routes}
+                                dnsResults={results.dns_results}
+                            />
+                            <div className="flex flex-wrap items-center gap-3">
+                                <Button
+                                    disabled={!hasRemediationWork || relaunchPending}
+                                    onClick={relaunchFailedConfigurations}
+                                >
+                                    {relaunchPending
+                                        ? 'Starting…'
+                                        : 'Relaunch failed configurations'}
+                                </Button>
+                                <TaskDurationDialog
+                                    deploymentTimeHours={deploymentTimeHours}
+                                    deploymentTimeMinutes={deploymentTimeMinutes}
+                                    waitTimeMinutes={waitTimeMinutes}
+                                    onDeploymentTimeHoursChange={setDeploymentTimeHours}
+                                    onDeploymentTimeMinutesChange={setDeploymentTimeMinutes}
+                                    onWaitTimeMinutesChange={setWaitTimeMinutes}
+                                    title="Task timers for relaunch"
+                                    description="Deployment duration and wait time before the composite relaunch runs."
+                                    tooltipLabel="Edit task timers"
+                                    trigger={
+                                        <Button type="button" variant="outline" size="icon" aria-label="Edit task timers">
+                                            <AlarmClock className="size-4" aria-hidden />
+                                        </Button>
+                                    }
+                                    footer={
+                                        <DialogClose asChild>
+                                            <Button type="button" variant="outline">
+                                                Done
+                                            </Button>
+                                        </DialogClose>
+                                    }
+                                />
+                                {!hasRemediationWork && (
+                                    <span className="text-muted-foreground text-sm">
+                                        No failed items to relaunch.
+                                    </span>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                <div className="flex justify-center gap-3">
+                    {isRemediationVerify && (
+                        <Button variant="outline" asChild>
+                            <Link href={`/tasks/${remediation_task_id}`}>Back to task</Link>
+                        </Button>
+                    )}
                     <Button variant="outline" asChild>
                         <Link href={showDeployment(deployment.id).url}>Back to deployment</Link>
                     </Button>
