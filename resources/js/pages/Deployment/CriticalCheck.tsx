@@ -354,15 +354,71 @@ function InterfaceCheckRow({ result }: { result: GroupedInterfaceResult }) {
     );
 }
 
+function sortGroupedInterfaces(
+    interfaces: GroupedInterfaceResult[],
+): GroupedInterfaceResult[] {
+    return [...interfaces].sort((a, b) => {
+        const kindOrder = kindLabels[a.kind].localeCompare(kindLabels[b.kind]);
+        if (kindOrder !== 0) {
+            return kindOrder;
+        }
+
+        return a.interface.localeCompare(b.interface);
+    });
+}
+
+function InterfaceStatusCard({
+    title,
+    results,
+    emptyMessage,
+}: {
+    title: string;
+    results: GroupedInterfaceResult[];
+    emptyMessage: string;
+}) {
+    return (
+        <Card className="dark:text-white">
+            <CardHeader className="pb-2">
+                <CardTitle className="text-lg dark:text-white">{title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+                {results.length === 0 ? (
+                    <p className="text-muted-foreground text-sm dark:text-white/80">
+                        {emptyMessage}
+                    </p>
+                ) : (
+                    <div className="divide-y divide-border dark:divide-white/20">
+                        {results.map((result) => (
+                            <InterfaceCheckRow
+                                key={`${result.kind}-${result.device_interface_id}`}
+                                result={result}
+                            />
+                        ))}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
 function DeviceInterfaceCheckCard({ group }: { group: DeviceInterfaceGroup }) {
+    const passed = useMemo(
+        () => sortGroupedInterfaces(group.interfaces.filter((result) => result.ok)),
+        [group.interfaces],
+    );
+    const failed = useMemo(
+        () => sortGroupedInterfaces(group.interfaces.filter((result) => !result.ok)),
+        [group.interfaces],
+    );
+
     return (
         <Card className="dark:text-white">
             <CardHeader className="pb-2">
                 <CardTitle className="text-lg dark:text-white">{group.device_name}</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
                 {group.errors.length > 0 && (
-                    <div className="mb-3 space-y-1 text-sm dark:text-white">
+                    <div className="space-y-1 text-sm dark:text-white">
                         {group.errors.map((message) => (
                             <p key={message}>{message}</p>
                         ))}
@@ -373,13 +429,17 @@ function DeviceInterfaceCheckCard({ group }: { group: DeviceInterfaceGroup }) {
                         No interfaces checked for this device.
                     </p>
                 ) : (
-                    <div className="divide-y divide-border dark:divide-white/20">
-                        {group.interfaces.map((result) => (
-                            <InterfaceCheckRow
-                                key={`${result.kind}-${result.device_interface_id}`}
-                                result={result}
-                            />
-                        ))}
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <InterfaceStatusCard
+                            title="Passed"
+                            results={passed}
+                            emptyMessage="No interfaces passed verification."
+                        />
+                        <InterfaceStatusCard
+                            title="Failed"
+                            results={failed}
+                            emptyMessage="No interfaces failed verification."
+                        />
                     </div>
                 )}
             </CardContent>
