@@ -1,7 +1,20 @@
 import type { ColumnDef } from '@tanstack/react-table';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
+    formatPayloadCellValue,
+    getLagPathEditor,
+    parsePayloadCellValue,
+    type PathEditorConfig,
+} from '@/lib/interface-payload-column-editors';
 
 export type FailedInterfaceRow = {
     device_interface_id: number;
@@ -12,31 +25,12 @@ export type FailedInterfaceRow = {
 
 const READ_ONLY_PATHS = new Set(['id', 'name', 'is-valid']);
 
-function formatCellValue(value: unknown): string {
-    if (value === null || value === undefined) {
-        return '';
-    }
-    if (typeof value === 'object') {
-        return JSON.stringify(value);
+function resolvePathEditor(path: string, kind: 'lag' | 'vlan' | 'ethernet'): PathEditorConfig {
+    if (kind === 'lag') {
+        return getLagPathEditor(path);
     }
 
-    return String(value);
-}
-
-function parseCellValue(path: string, raw: string): unknown {
-    if (path === 'enable' || path.startsWith('stp.') || path === 'switchport.trunk-vlan-all' || path === 'vsx.shutdown-on-split') {
-        if (raw === 'true') {
-            return true;
-        }
-        if (raw === 'false') {
-            return false;
-        }
-    }
-    if (path === 'port-list' && raw.includes(',')) {
-        return raw.split(',').map((p) => p.trim()).filter(Boolean);
-    }
-
-    return raw;
+    return { type: 'text' };
 }
 
 type TableRow = {
@@ -83,7 +77,10 @@ export default function FailedInterfaceConfigTable({
                 const valuesByPath: Record<string, string> = {};
                 for (const path of payloadPaths) {
                     const detail = row.details.find((d) => d.path === path);
-                    valuesByPath[path] = formatCellValue(detail?.expected);
+                    valuesByPath[path] = formatPayloadCellValue(
+                        path,
+                        detail?.expected,
+                    );
                 }
 
                 return {
@@ -155,23 +152,26 @@ export default function FailedInterfaceConfigTable({
         ];
 
         for (const path of payloadPaths) {
+            const editor = resolvePathEditor(path, kind);
             base.push({
                 id: path,
                 header: path,
                 cell: ({ row }) => (
                     <EditablePathCell
                         path={path}
+                        editor={editor}
                         value={row.original.valuesByPath[path] ?? ''}
                         onCommit={(next) => {
                             if (!pendingRef.current[row.original.device_interface_id]) {
                                 pendingRef.current[row.original.device_interface_id] = {};
                             }
-                            pendingRef.current[row.original.device_interface_id][path] = parseCellValue(
-                                path,
-                                next,
-                            );
+                            pendingRef.current[row.original.device_interface_id][path] =
+                                parsePayloadCellValue(path, next);
                         }}
                         onBlur={() => {
+                            void flushRow(row.original.device_interface_id);
+                        }}
+                        onSelectCommit={() => {
                             void flushRow(row.original.device_interface_id);
                         }}
                     />
@@ -180,7 +180,7 @@ export default function FailedInterfaceConfigTable({
         }
 
         return base;
-    }, [flushRow, payloadPaths]);
+    }, [flushRow, kind, payloadPaths]);
 
     if (rows.length === 0) {
         return (
@@ -203,25 +203,65 @@ export default function FailedInterfaceConfigTable({
 
 function EditablePathCell({
     path,
+    editor,
     value,
     onCommit,
     onBlur,
+    onSelectCommit,
 }: {
     path: string;
+    editor: PathEditorConfig;
     value: string;
     onCommit: (value: string) => void;
     onBlur: () => void;
+    onSelectCommit: () => void;
 }) {
     const [local, setLocal] = useState(value);
 
-    if (local !== value && document.activeElement?.tagName !== 'INPUT') {
+    useEffect(() => {
         setLocal(value);
+    }, [value]);
+
+    if (editor.type === 'enum' || editor.type === 'boolean') {
+        const baseOptions = editor.options ?? [];
+        const options =
+            local !== '' && !baseOptions.includes(local)
+                ? [...baseOptions, local]
+                : baseOptions;
+        const selectValue =
+            local !== '' && options.includes(local) ? local : (options[0] ?? '');
+
+        return (
+            <Select
+                value={selectValue}
+                onValueChange={(next) => {
+                    setLocal(next);
+                    onCommit(next);
+                    onSelectCommit();
+                }}
+            >
+                <SelectTrigger className="h-8 min-w-[6rem] font-mono text-xs" aria-label={path}>
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    {options.map((opt) => (
+                        <SelectItem key={opt} value={opt}>
+                            {opt}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        );
     }
+
+    const placeholder =
+        editor.type === 'port-list' ? '1/1/1-1/1/2, 1/1/3' : undefined;
 
     return (
         <Input
             className="min-w-[8rem] font-mono text-xs"
             value={local}
+            placeholder={placeholder}
             aria-label={path}
             onChange={(e) => {
                 setLocal(e.target.value);
