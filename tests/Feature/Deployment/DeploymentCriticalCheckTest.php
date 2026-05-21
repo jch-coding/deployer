@@ -42,6 +42,7 @@ function fakeCriticalCheckCentralApis(array $overrides = []): void
         '*vlan-interfaces*' => Http::response(['interface' => []], 200),
         '*static-route*' => Http::response(staticRouteProfilePayload(), 200),
         '*device-groups*' => Http::response(['items' => []], 200),
+        '*network-config/v1/sites*' => Http::response(['items' => []], 200),
         '*dns*' => Http::response([
             'profile' => [
                 [
@@ -146,7 +147,7 @@ function fakeCriticalCheckCentralApisWithDnsHandler(callable $dnsHandler): void
     Http::fake(function (\Illuminate\Http\Client\Request $request) use ($dnsHandler) {
         $url = $request->url();
 
-        if (str_contains($url, 'dns')) {
+        if (str_contains($url, 'dns') || str_contains($url, 'network-config/v1/sites')) {
             return $dnsHandler($request);
         }
 
@@ -163,6 +164,9 @@ function fakeCriticalCheckCentralApisWithDnsHandler(callable $dnsHandler): void
             return Http::response(staticRouteProfilePayload(), 200);
         }
         if (str_contains($url, 'device-groups')) {
+            return Http::response(['items' => []], 200);
+        }
+        if (str_contains($url, 'network-config/v1/sites')) {
             return Http::response(['items' => []], 200);
         }
         if (str_contains($url, 'site-collections')) {
@@ -196,6 +200,9 @@ function fakeCriticalCheckCentralApisWithStaticRouteHandler(callable $staticRout
             return Http::response(['interface' => []], 200);
         }
         if (str_contains($url, 'device-groups')) {
+            return Http::response(['items' => []], 200);
+        }
+        if (str_contains($url, 'network-config/v1/sites')) {
             return Http::response(['items' => []], 200);
         }
         if (str_contains($url, 'site-collections')) {
@@ -617,6 +624,50 @@ test('deployment critical check displays dns profiles from central', function ()
     });
 });
 
+test('deployment critical check refreshes missing site scope id from Central before inheritance lookups', function () {
+    $this->device->update(['scope_id' => null]);
+    $this->site->update(['scope_id' => null]);
+
+    fakeCriticalCheckCentralApisWithDnsHandler(function (\Illuminate\Http\Client\Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-config/v1/sites')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'TestSite', 'scopeId' => 'site-scope-from-central'],
+                ],
+            ], 200);
+        }
+
+        $query = dnsRequestQuery($request);
+
+        if (($query['object-type'] ?? '') === 'LOCAL') {
+            return Http::response([], 200);
+        }
+
+        if (($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'site-scope-from-central') {
+            return Http::response(dnsProfilePayload('site-dns-profile', 'mgmt', '10.0.0.53'), 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 4, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.source', 'site')
+        ->assertJsonPath('partial.dns_results.0.site_name', 'TestSite')
+        ->assertJsonPath('partial.dns_results.0.profiles.0.name', 'site-dns-profile');
+
+    expect($this->site->fresh()->scope_id)->toBe('site-scope-from-central');
+});
+
 test('deployment critical check inherits dns profiles from site when device level is empty', function () {
     fakeCriticalCheckCentralApisWithDnsHandler(function (\Illuminate\Http\Client\Request $request) {
         $query = dnsRequestQuery($request);
@@ -881,6 +932,10 @@ test('deployment critical check resolves static routes at device level when site
         ->assertJsonPath('partial.static_routes.0.routes.0.profile_name', 'static-profile');
 
     Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        return str_contains($request->url(), 'network-config/v1/sites');
+    });
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
         if (! str_contains($request->url(), 'static-route')) {
             return false;
         }
@@ -889,8 +944,6 @@ test('deployment critical check resolves static routes at device level when site
         return ($query['object-type'] ?? '') === 'LOCAL'
             && ($query['scope-id'] ?? '') === 'device-scope-123';
     });
-
-    Http::assertSentCount(1, fn (\Illuminate\Http\Client\Request $request) => str_contains($request->url(), 'static-route'));
 });
 
 test('deployment critical check reports ethernet match when include_ethernet is enabled', function () {

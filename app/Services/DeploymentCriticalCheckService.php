@@ -7,6 +7,7 @@ use App\InterfaceKind;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\Site;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 
@@ -307,10 +308,36 @@ class DeploymentCriticalCheckService
     }
 
     /**
-     * Resolve and persist device scope_id from Central when missing, so interface checks can run.
+     * Resolve and persist site scope_id from Central when missing, so site-level inheritance lookups can run.
+     */
+    public function ensureSiteScopeIdFromCentral(Site $site, CentralAPIHelper $helper): void
+    {
+        if (filled($site->scope_id)) {
+            return;
+        }
+
+        $scopeId = $helper->get_site_scope_id($site);
+        if (! filled($scopeId)) {
+            return;
+        }
+
+        $site->update(['scope_id' => $scopeId]);
+        $site->scope_id = $scopeId;
+    }
+
+    /**
+     * Resolve and persist device and site scope_ids from Central when missing, so checks can run.
      */
     public function ensureDeviceScopeIdFromCentral(Device $device, CentralAPIHelper $helper): void
     {
+        if (! $device->relationLoaded('site')) {
+            $device->load('site');
+        }
+
+        if ($device->site !== null) {
+            $this->ensureSiteScopeIdFromCentral($device->site, $helper);
+        }
+
         if (filled($device->scope_id)) {
             return;
         }

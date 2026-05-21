@@ -169,12 +169,21 @@ class CentralAPIHelper
             return null;
         }
         $response = $this->get_sites();
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return null;
+        }
         if (! $response->ok()) {
             return null;
         }
-        $central_sites = $response->json()['items'];
-        $central_site = array_find($central_sites, fn ($central_site) => $central_site['scopeName'] === $site->name);
-        if (count($central_site) === 0) {
+        $central_sites = $response->json('items', []);
+        if (! is_array($central_sites)) {
+            return null;
+        }
+        $central_site = array_find(
+            $central_sites,
+            fn ($central_site) => is_array($central_site) && ($central_site['scopeName'] ?? null) === $site->name
+        );
+        if (! is_array($central_site) || ! isset($central_site['scopeId'])) {
             return null;
         }
 
