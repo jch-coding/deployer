@@ -41,6 +41,7 @@ function fakeCriticalCheckCentralApis(array $overrides = []): void
         '*ethernet-interfaces*' => Http::response(['interface' => []], 200),
         '*vlan-interfaces*' => Http::response(['interface' => []], 200),
         '*static-route*' => Http::response(staticRouteProfilePayload(), 200),
+        '*device-groups*' => Http::response(['items' => []], 200),
         '*dns*' => Http::response([
             'profile' => [
                 [
@@ -122,6 +123,9 @@ function fakeCriticalCheckCentralApisWithStaticRouteHandler(callable $staticRout
         }
         if (str_contains($url, 'vlan-interfaces')) {
             return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'device-groups')) {
+            return Http::response(['items' => []], 200);
         }
         if (str_contains($url, 'site-collections')) {
             return Http::response([
@@ -326,7 +330,8 @@ test('deployment critical check inherits static routes from site when device lev
             return Http::response([], 200);
         }
 
-        if (($query['object-type'] ?? '') === 'SHARED') {
+        if (($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'site-scope-123') {
             return Http::response(staticRouteProfilePayload('site-static-profile', '10.0.0.0/8'), 200);
         }
 
@@ -339,6 +344,87 @@ test('deployment critical check inherits static routes from site when device lev
         ->assertJsonPath('partial.static_routes.0.site_name', 'TestSite')
         ->assertJsonPath('partial.static_routes.0.routes.0.profile_name', 'site-static-profile')
         ->assertJsonPath('partial.static_routes.0.routes.0.prefix', '10.0.0.0/8');
+});
+
+test('deployment critical check inherits static routes from device group when device level is empty', function () {
+    $this->device->update(['group' => 'WHSE-TEST-ACCESS']);
+
+    Http::fake(function (\Illuminate\Http\Client\Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'device-groups')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WHSE-TEST-ACCESS', 'scopeId' => 'group-scope-456'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($url, 'static-route')) {
+            $query = staticRouteRequestQuery($request);
+
+            if (($query['object-type'] ?? '') === 'LOCAL') {
+                return Http::response([], 200);
+            }
+
+            if (($query['object-type'] ?? '') === 'SHARED'
+                && ($query['scope-id'] ?? '') === 'group-scope-456') {
+                return Http::response(
+                    staticRouteProfilePayload('group-static-profile', '172.16.0.0/12', '10.0.0.1'),
+                    200,
+                );
+            }
+
+            return Http::response([], 200);
+        }
+
+        if (str_contains($url, 'portchannels')
+            || str_contains($url, 'ethernet-interfaces')
+            || str_contains($url, 'vlan-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+
+        if (str_contains($url, 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope-from-central'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($url, 'dns')) {
+            return Http::response(['profile' => []], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 3))
+        ->assertOk()
+        ->assertJsonPath('partial.static_routes.0.source', 'group')
+        ->assertJsonPath('partial.static_routes.0.group_name', 'WHSE-TEST-ACCESS')
+        ->assertJsonPath('partial.static_routes.0.routes.0.profile_name', 'group-static-profile')
+        ->assertJsonPath('partial.static_routes.0.routes.0.prefix', '172.16.0.0/12');
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        if (! str_contains($request->url(), 'static-route')) {
+            return false;
+        }
+        $query = staticRouteRequestQuery($request);
+
+        return ($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'group-scope-456';
+    });
+
+    Http::assertNotSent(function (\Illuminate\Http\Client\Request $request) {
+        if (! str_contains($request->url(), 'static-route')) {
+            return false;
+        }
+        $query = staticRouteRequestQuery($request);
+
+        return ($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'site-scope-123';
+    });
 });
 
 test('deployment critical check reports empty static route profile when device and site are empty', function () {

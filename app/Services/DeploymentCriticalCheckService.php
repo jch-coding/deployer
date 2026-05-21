@@ -16,6 +16,9 @@ class DeploymentCriticalCheckService
 
     private const WCD_SITE_COLLECTION_NAME = 'WCD';
 
+    /** @var array<string, string>|null scopeName => scopeId */
+    protected ?array $deviceGroupScopeIdsByName = null;
+
     public function __construct(
         protected LagInterfaceCentralVerifier $lagVerifier = new LagInterfaceCentralVerifier,
         protected EthernetInterfaceCentralVerifier $ethernetVerifier = new EthernetInterfaceCentralVerifier,
@@ -444,7 +447,8 @@ class DeploymentCriticalCheckService
      *     device_name: string,
      *     error: string|null,
      *     routes: list<array{profile_name: string, prefix: string, next_hop: string}>,
-     *     source: 'device'|'site'|null,
+     *     source: 'device'|'group'|'site'|null,
+     *     group_name: string|null,
      *     site_name: string|null
      * }
      */
@@ -457,22 +461,46 @@ class DeploymentCriticalCheckService
         }
 
         if (filled($device->scope_id)) {
-            $deviceResponse = $helper->get_static_route(
+            $deviceMatch = $this->fetchStaticRoutesWithQueryParams(
+                $device,
+                $helper,
                 $this->staticRouteQueryParams($device, 'device'),
             );
 
-            if (! $this->responseOk($deviceResponse)) {
-                return $this->staticRouteDeviceResult($device, [
-                    'error' => $this->responseErrorMessage($deviceResponse, 'Failed to fetch static routes from Central.'),
-                ]);
-            }
+            if ($deviceMatch !== null) {
+                if (isset($deviceMatch['error'])) {
+                    return $this->staticRouteDeviceResult($device, $deviceMatch);
+                }
 
-            $deviceJson = $deviceResponse instanceof Response ? $deviceResponse->json() : [];
-            if ($this->staticRouteResponseHasProfiles(is_array($deviceJson) ? $deviceJson : [])) {
                 return $this->staticRouteDeviceResult($device, [
-                    'routes' => $this->parseStaticRouteProfiles($deviceJson),
+                    'routes' => $deviceMatch['routes'],
                     'source' => 'device',
                 ]);
+            }
+        }
+
+        $groupName = trim((string) ($device->group ?? ''));
+        if ($groupName !== '') {
+            $groupScopeId = $this->deviceGroupScopeIdsByName($helper)[$groupName] ?? null;
+
+            if ($groupScopeId !== null) {
+                $groupMatch = $this->fetchStaticRoutesWithQueryParams(
+                    $device,
+                    $helper,
+                    $this->staticRouteQueryParams($device, 'group', $groupScopeId),
+                );
+
+                if ($groupMatch !== null) {
+                    if (isset($groupMatch['error'])) {
+                        return $this->staticRouteDeviceResult($device, $groupMatch);
+                    }
+
+                    return $this->staticRouteDeviceResult($device, [
+                        'routes' => $groupMatch['routes'],
+                        'source' => 'group',
+                        'group_name' => $groupName,
+                    ]);
+                }
             }
         }
 
@@ -483,20 +511,19 @@ class DeploymentCriticalCheckService
             ]);
         }
 
-        $siteResponse = $helper->get_static_route(
+        $siteMatch = $this->fetchStaticRoutesWithQueryParams(
+            $device,
+            $helper,
             $this->staticRouteQueryParams($device, 'site'),
         );
 
-        if (! $this->responseOk($siteResponse)) {
-            return $this->staticRouteDeviceResult($device, [
-                'error' => $this->responseErrorMessage($siteResponse, 'Failed to fetch static routes from Central.'),
-            ]);
-        }
+        if ($siteMatch !== null) {
+            if (isset($siteMatch['error'])) {
+                return $this->staticRouteDeviceResult($device, $siteMatch);
+            }
 
-        $siteJson = $siteResponse instanceof Response ? $siteResponse->json() : [];
-        if ($this->staticRouteResponseHasProfiles(is_array($siteJson) ? $siteJson : [])) {
             return $this->staticRouteDeviceResult($device, [
-                'routes' => $this->parseStaticRouteProfiles($siteJson),
+                'routes' => $siteMatch['routes'],
                 'source' => 'site',
                 'site_name' => $site->name,
             ]);
@@ -508,27 +535,99 @@ class DeploymentCriticalCheckService
     }
 
     /**
-     * @param  'device'|'site'  $level
-     * @return array<string, string>
+     * @param  array<string, string>  $queryParams
+     * @return array{routes: list<array{profile_name: string, prefix: string, next_hop: string}>}|array{error: string}|null
      */
-    protected function staticRouteQueryParams(Device $device, string $level): array
-    {
-        if ($level === 'device') {
+    protected function fetchStaticRoutesWithQueryParams(
+        Device $device,
+        CentralAPIHelper $helper,
+        array $queryParams,
+    ): ?array {
+        $response = $helper->get_static_route($queryParams);
+
+        if (! $this->responseOk($response)) {
             return [
-                'view-type' => 'LOCAL',
-                'object-type' => 'LOCAL',
-                'scope-id' => (string) $device->scope_id,
-                'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
+                'error' => $this->responseErrorMessage($response, 'Failed to fetch static routes from Central.'),
             ];
         }
 
-        $site = $device->site;
+        $json = $response instanceof Response ? $response->json() : [];
+        if (! is_array($json)) {
+            $json = [];
+        }
+
+        if ($this->staticRouteResponseHasProfiles($json)) {
+            return [
+                'routes' => $this->parseStaticRouteProfiles($json),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function deviceGroupScopeIdsByName(CentralAPIHelper $helper): array
+    {
+        if ($this->deviceGroupScopeIdsByName !== null) {
+            return $this->deviceGroupScopeIdsByName;
+        }
+
+        $this->deviceGroupScopeIdsByName = [];
+
+        $response = $helper->get_device_groups();
+
+        if ($this->responseOk($response)) {
+            $items = $response instanceof Response ? $response->json('items', []) : [];
+            if (is_array($items)) {
+                foreach ($items as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+                    $scopeName = trim((string) ($item['scopeName'] ?? ''));
+                    $scopeId = trim((string) ($item['scopeId'] ?? ''));
+                    if ($scopeName !== '' && $scopeId !== '') {
+                        $this->deviceGroupScopeIdsByName[$scopeName] = $scopeId;
+                    }
+                }
+            }
+        }
+
+        return $this->deviceGroupScopeIdsByName;
+    }
+
+    /**
+     * @param  'device'|'group'|'site'  $level
+     * @return array<string, string>
+     */
+    protected function staticRouteQueryParams(Device $device, string $level, ?string $scopeId = null): array
+    {
+        $params = [
+            'view-type' => 'LOCAL',
+            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
+        ];
+
+        if ($level === 'device') {
+            return [
+                ...$params,
+                'object-type' => 'LOCAL',
+                'scope-id' => (string) $device->scope_id,
+            ];
+        }
+
+        if ($level === 'group') {
+            return [
+                ...$params,
+                'object-type' => 'SHARED',
+                'scope-id' => (string) $scopeId,
+            ];
+        }
 
         return [
-            'view-type' => 'LOCAL',
+            ...$params,
             'object-type' => 'SHARED',
-            'scope-id' => (string) ($site?->scope_id ?? ''),
-            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
+            'scope-id' => (string) ($device->site?->scope_id ?? ''),
         ];
     }
 
@@ -544,7 +643,8 @@ class DeploymentCriticalCheckService
      * @param  array{
      *     error?: string|null,
      *     routes?: list<array{profile_name: string, prefix: string, next_hop: string}>,
-     *     source?: 'device'|'site'|null,
+     *     source?: 'device'|'group'|'site'|null,
+     *     group_name?: string|null,
      *     site_name?: string|null
      * }  $overrides
      * @return array{
@@ -552,7 +652,8 @@ class DeploymentCriticalCheckService
      *     device_name: string,
      *     error: string|null,
      *     routes: list<array{profile_name: string, prefix: string, next_hop: string}>,
-     *     source: 'device'|'site'|null,
+     *     source: 'device'|'group'|'site'|null,
+     *     group_name: string|null,
      *     site_name: string|null
      * }
      */
@@ -564,6 +665,7 @@ class DeploymentCriticalCheckService
             'error' => $overrides['error'] ?? null,
             'routes' => $overrides['routes'] ?? [],
             'source' => $overrides['source'] ?? null,
+            'group_name' => $overrides['group_name'] ?? null,
             'site_name' => $overrides['site_name'] ?? null,
         ];
     }

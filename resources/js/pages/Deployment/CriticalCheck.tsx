@@ -50,7 +50,8 @@ type StaticRouteDevice = {
     device_name: string;
     error: string | null;
     routes: StaticRouteRow[];
-    source: 'device' | 'site' | null;
+    source: 'device' | 'group' | 'site' | null;
+    group_name: string | null;
     site_name: string | null;
 };
 
@@ -481,6 +482,9 @@ function staticRouteInheritanceLabel(device: StaticRouteDevice): string {
     }
     if (device.source === 'device') {
         return 'Local override';
+    }
+    if (device.source === 'group') {
+        return device.group_name ?? '—';
     }
     if (device.source === 'site') {
         return device.site_name ?? 'site';
