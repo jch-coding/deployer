@@ -42,6 +42,7 @@ class DeploymentCriticalCheckService
             'static_routes' => [],
             'dns_scope_id' => null,
             'dns_scope_error' => null,
+            'dns_site_collection_name' => self::WCD_SITE_COLLECTION_NAME,
             'dns_results' => [],
             'summary' => [
                 'lag_total' => 0,
@@ -86,6 +87,7 @@ class DeploymentCriticalCheckService
             $partial = [
                 'dns_scope_id' => $dnsScope['dns_scope_id'],
                 'dns_scope_error' => $dnsScope['dns_scope_error'],
+                'dns_site_collection_name' => $dnsScope['dns_site_collection_name'],
             ];
         } elseif ($devices->isEmpty()) {
             $partial = [];
@@ -166,6 +168,9 @@ class DeploymentCriticalCheckService
         }
         if (array_key_exists('dns_scope_error', $partial)) {
             $accumulated['dns_scope_error'] = $partial['dns_scope_error'];
+        }
+        if (array_key_exists('dns_site_collection_name', $partial)) {
+            $accumulated['dns_site_collection_name'] = $partial['dns_site_collection_name'];
         }
 
         $accumulated['summary'] = $this->buildSummary(
@@ -344,16 +349,22 @@ class DeploymentCriticalCheckService
 
     /**
      * @param  Collection<int, Device>  $devices
-     * @return array{dns_scope_id: string|null, dns_scope_error: string|null}
+     * @return array{
+     *     dns_scope_id: string|null,
+     *     dns_scope_error: string|null,
+     *     dns_site_collection_name: string
+     * }
      */
     protected function resolveDnsScopeForDevices(Collection $devices, CentralAPIHelper $helper): array
     {
+        $siteCollectionName = self::WCD_SITE_COLLECTION_NAME;
         $probeDevice = $devices->first(fn (Device $device) => filled($device->device_function));
 
         if ($probeDevice === null) {
             return [
                 'dns_scope_id' => self::DEFAULT_DNS_SCOPE_ID,
                 'dns_scope_error' => 'No devices with a device function found in this deployment.',
+                'dns_site_collection_name' => $siteCollectionName,
             ];
         }
 
@@ -363,12 +374,14 @@ class DeploymentCriticalCheckService
             return [
                 'dns_scope_id' => $scopeResolution['attempted_scope_id'] ?? self::DEFAULT_DNS_SCOPE_ID,
                 'dns_scope_error' => $scopeResolution['error'],
+                'dns_site_collection_name' => $siteCollectionName,
             ];
         }
 
         return [
             'dns_scope_id' => $scopeResolution['scope_id'],
             'dns_scope_error' => null,
+            'dns_site_collection_name' => $siteCollectionName,
         ];
     }
 

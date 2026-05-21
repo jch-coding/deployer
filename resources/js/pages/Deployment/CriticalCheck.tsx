@@ -90,6 +90,7 @@ type CheckResults = {
     static_routes: StaticRouteDevice[];
     dns_scope_id: string | null;
     dns_scope_error: string | null;
+    dns_site_collection_name: string;
     dns_results: DnsDevice[];
     summary: Summary;
 };
@@ -142,6 +143,7 @@ function emptyCheckResults(): CheckResults {
         static_routes: [],
         dns_scope_id: null,
         dns_scope_error: null,
+        dns_site_collection_name: 'WCD',
         dns_results: [],
         summary: emptySummary,
     };
@@ -180,6 +182,10 @@ function mergeCheckResults(
             partial.dns_scope_error !== undefined
                 ? partial.dns_scope_error
                 : current.dns_scope_error,
+        dns_site_collection_name:
+            partial.dns_site_collection_name !== undefined
+                ? partial.dns_site_collection_name
+                : current.dns_site_collection_name,
         summary: current.summary,
     };
 
@@ -459,6 +465,8 @@ export default function CriticalCheck() {
         static_routes: initialResults.static_routes ?? [],
         dns_scope_id: initialResults.dns_scope_id ?? null,
         dns_scope_error: initialResults.dns_scope_error ?? null,
+        dns_site_collection_name:
+            initialResults.dns_site_collection_name ?? 'WCD',
         dns_results: initialResults.dns_results ?? [],
         summary: initialResults.summary ?? emptySummary,
     }));
@@ -829,9 +837,9 @@ export default function CriticalCheck() {
                                 <h2 className="text-lg font-semibold dark:text-white">
                                     DNS profiles (Central)
                                 </h2>
-                                {results.dns_scope_id && (
+                                {results.dns_site_collection_name && (
                                     <p className="text-muted-foreground text-xs dark:text-white">
-                                        Scope ID: {results.dns_scope_id}
+                                        Site Collection - {results.dns_site_collection_name}
                                     </p>
                                 )}
                             </CardHeader>

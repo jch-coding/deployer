@@ -141,7 +141,8 @@ test('deployment critical check step endpoint returns progress', function () {
         ->assertOk()
         ->assertJsonPath('progress.current', 1)
         ->assertJsonPath('progress.message', 'Resolving DNS scope ID...')
-        ->assertJsonPath('partial.dns_scope_id', '73800600944427008');
+        ->assertJsonPath('partial.dns_scope_id', '73800600944427008')
+        ->assertJsonPath('partial.dns_site_collection_name', 'WCD');
 });
 
 test('deployment critical check page loads immediately without results', function () {
@@ -154,7 +155,8 @@ test('deployment critical check page loads immediately without results', functio
             ->has('lag_results', 0)
             ->has('ethernet_results', 0)
             ->where('summary.lag_passed', 0)
-            ->where('summary.lag_failed', 0));
+            ->where('summary.lag_failed', 0)
+            ->where('dns_site_collection_name', 'WCD'));
 });
 
 test('deployment critical check reports lag mismatch', function () {
