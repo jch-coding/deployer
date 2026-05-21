@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react';
+import { Check as CheckIcon, ChevronDown, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -59,6 +59,7 @@ export function ConfigurationDiffTable({
             <table className="w-full min-w-[28rem]">
                 <thead>
                     <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10 dark:text-white">
+                        <th className="w-10 px-2 py-2" aria-label="Match status" />
                         <th className="px-3 py-2 font-medium">Field</th>
                         <th className="px-3 py-2 font-medium">Expected</th>
                         <th className="px-3 py-2 font-medium">Central</th>
@@ -73,6 +74,19 @@ export function ConfigurationDiffTable({
                                 key={entry.path}
                                 className="border-b last:border-0 dark:border-white/20"
                             >
+                                <td className="px-2 py-2 align-middle">
+                                    {matches ? (
+                                        <CheckIcon
+                                            className="size-4 text-emerald-600 dark:text-emerald-400"
+                                            aria-label="Match"
+                                        />
+                                    ) : (
+                                        <X
+                                            className="size-4 text-red-600 dark:text-red-400"
+                                            aria-label="Mismatch"
+                                        />
+                                    )}
+                                </td>
                                 <td className="px-3 py-2 font-mono dark:text-white">
                                     {entry.path}
                                 </td>
@@ -80,8 +94,8 @@ export function ConfigurationDiffTable({
                                     className={cn(
                                         'px-3 py-2',
                                         matches
-                                            ? 'text-emerald-700 dark:text-white'
-                                            : 'text-emerald-700 dark:text-white',
+                                            ? 'text-emerald-700 dark:text-emerald-300'
+                                            : 'text-foreground dark:text-white',
                                     )}
                                 >
                                     {formatValue(entry.expected)}
@@ -90,8 +104,8 @@ export function ConfigurationDiffTable({
                                     className={cn(
                                         'px-3 py-2',
                                         matches
-                                            ? 'text-emerald-700 dark:text-white'
-                                            : 'text-red-700 dark:text-white',
+                                            ? 'text-emerald-700 dark:text-emerald-300'
+                                            : 'text-red-700 dark:text-red-300',
                                     )}
                                 >
                                     {formatValue(entry.actual)}
