@@ -106,6 +106,77 @@ function staticRouteRequestQuery(\Illuminate\Http\Client\Request $request): arra
     return is_array($query) ? $query : [];
 }
 
+/**
+ * @return array<string, mixed>
+ */
+function dnsProfilePayload(
+    string $name = 'dns-profile',
+    string $vrf = 'default',
+    string $ip = '8.8.8.8',
+): array {
+    return [
+        'profile' => [
+            [
+                'name' => $name,
+                'resolver' => [
+                    [
+                        'vrf' => $vrf,
+                        'name-server' => [
+                            ['ip' => $ip, 'priority' => 1],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return array<string, string>
+ */
+function dnsRequestQuery(\Illuminate\Http\Client\Request $request): array
+{
+    parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+    return is_array($query) ? $query : [];
+}
+
+function fakeCriticalCheckCentralApisWithDnsHandler(callable $dnsHandler): void
+{
+    Http::fake(function (\Illuminate\Http\Client\Request $request) use ($dnsHandler) {
+        $url = $request->url();
+
+        if (str_contains($url, 'dns')) {
+            return $dnsHandler($request);
+        }
+
+        if (str_contains($url, 'portchannels')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'ethernet-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'vlan-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'static-route')) {
+            return Http::response(staticRouteProfilePayload(), 200);
+        }
+        if (str_contains($url, 'device-groups')) {
+            return Http::response(['items' => []], 200);
+        }
+        if (str_contains($url, 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope-from-central'],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+}
+
 function fakeCriticalCheckCentralApisWithStaticRouteHandler(callable $staticRouteHandler): void
 {
     Http::fake(function (\Illuminate\Http\Client\Request $request) use ($staticRouteHandler) {
@@ -453,9 +524,182 @@ test('deployment critical check displays dns profiles from central', function ()
         'dns_scope_id' => $scope['partial']['dns_scope_id'],
     ]))
         ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.source', 'device')
         ->assertJsonPath('partial.dns_results.0.profiles.0.name', 'dns-profile')
         ->assertJsonPath('partial.dns_results.0.profiles.0.resolvers.0.vrf', 'default')
         ->assertJsonPath('partial.dns_results.0.profiles.0.resolvers.0.name_server_ips.0', '8.8.8.8');
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        if (! str_contains($request->url(), 'dns')) {
+            return false;
+        }
+        $query = dnsRequestQuery($request);
+
+        return ($query['object-type'] ?? '') === 'LOCAL'
+            && ($query['scope-id'] ?? '') === 'device-scope-123';
+    });
+});
+
+test('deployment critical check inherits dns profiles from site when device level is empty', function () {
+    fakeCriticalCheckCentralApisWithDnsHandler(function (\Illuminate\Http\Client\Request $request) {
+        $query = dnsRequestQuery($request);
+
+        if (($query['object-type'] ?? '') === 'LOCAL') {
+            return Http::response([], 200);
+        }
+
+        if (($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'site-scope-123') {
+            return Http::response(dnsProfilePayload('site-dns-profile', 'mgmt', '10.0.0.53'), 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 4, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.source', 'site')
+        ->assertJsonPath('partial.dns_results.0.site_name', 'TestSite')
+        ->assertJsonPath('partial.dns_results.0.profiles.0.name', 'site-dns-profile');
+});
+
+test('deployment critical check inherits dns profiles from device group when device level is empty', function () {
+    $this->device->update(['group' => 'WHSE-TEST-ACCESS']);
+
+    Http::fake(function (\Illuminate\Http\Client\Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'device-groups')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WHSE-TEST-ACCESS', 'scopeId' => 'group-scope-456'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($url, 'dns')) {
+            $query = dnsRequestQuery($request);
+
+            if (($query['object-type'] ?? '') === 'LOCAL') {
+                return Http::response([], 200);
+            }
+
+            if (($query['object-type'] ?? '') === 'SHARED'
+                && ($query['scope-id'] ?? '') === 'group-scope-456') {
+                return Http::response(dnsProfilePayload('group-dns-profile'), 200);
+            }
+
+            return Http::response([], 200);
+        }
+
+        if (str_contains($url, 'portchannels')
+            || str_contains($url, 'ethernet-interfaces')
+            || str_contains($url, 'vlan-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+
+        if (str_contains($url, 'static-route')) {
+            return Http::response(staticRouteProfilePayload(), 200);
+        }
+
+        if (str_contains($url, 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope-from-central'],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 4, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.source', 'group')
+        ->assertJsonPath('partial.dns_results.0.group_name', 'WHSE-TEST-ACCESS')
+        ->assertJsonPath('partial.dns_results.0.profiles.0.name', 'group-dns-profile');
+
+    Http::assertNotSent(function (\Illuminate\Http\Client\Request $request) {
+        if (! str_contains($request->url(), 'dns')) {
+            return false;
+        }
+        $query = dnsRequestQuery($request);
+
+        return ($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'site-scope-123';
+    });
+});
+
+test('deployment critical check inherits dns profiles from site collection when lower levels are empty', function () {
+    fakeCriticalCheckCentralApisWithDnsHandler(function (\Illuminate\Http\Client\Request $request) {
+        $query = dnsRequestQuery($request);
+
+        if (($query['scope-id'] ?? '') === '73800600944427008') {
+            return Http::response(['message' => 'scope not found'], 404);
+        }
+
+        if (($query['object-type'] ?? '') === 'LOCAL') {
+            return Http::response([], 200);
+        }
+
+        if (($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'site-scope-123') {
+            return Http::response([], 200);
+        }
+
+        if (($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'wcd-scope-from-central') {
+            return Http::response(dnsProfilePayload('dns-wcd', 'mgmt', '1.1.1.1'), 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_scope_id', 'wcd-scope-from-central')
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 4, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.source', 'site_collection')
+        ->assertJsonPath('partial.dns_results.0.site_collection_name', 'WCD')
+        ->assertJsonPath('partial.dns_results.0.profiles.0.name', 'dns-wcd');
+});
+
+test('deployment critical check reports empty dns profile when all inheritance levels are empty', function () {
+    fakeCriticalCheckCentralApisWithDnsHandler(
+        fn () => Http::response([], 200),
+    );
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 4, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.source', null)
+        ->assertJsonPath('partial.dns_results.0.profiles', [])
+        ->assertJsonPath(
+            'partial.dns_results.0.error',
+            'Empty DNS profile for this device.',
+        );
 });
 
 test('deployment critical check resolves dns scope from wcd site collection on failure', function () {
@@ -474,6 +718,9 @@ test('deployment critical check resolves dns scope from wcd site collection on f
         if (str_contains($url, 'static-route')) {
             return Http::response(['profile' => []], 200);
         }
+        if (str_contains($url, 'device-groups')) {
+            return Http::response(['items' => []], 200);
+        }
         if (str_contains($url, 'site-collections')) {
             return Http::response([
                 'items' => [
@@ -482,20 +729,27 @@ test('deployment critical check resolves dns scope from wcd site collection on f
             ], 200);
         }
         if (str_contains($url, 'dns')) {
-            if (str_contains($url, 'scope-id=73800600944427008') || str_contains($url, 'scope-id=73800600944427008')) {
+            $query = dnsRequestQuery($request);
+
+            if (($query['scope-id'] ?? '') === '73800600944427008') {
                 return Http::response(['message' => 'scope not found'], 404);
             }
 
-            return Http::response([
-                'profile' => [
-                    [
-                        'name' => 'dns-wcd',
-                        'resolver' => [
-                            ['vrf' => 'mgmt', 'name-server' => [['ip' => '1.1.1.1', 'priority' => 1]]],
-                        ],
-                    ],
-                ],
-            ], 200);
+            if (($query['object-type'] ?? '') === 'LOCAL') {
+                return Http::response([], 200);
+            }
+
+            if (($query['object-type'] ?? '') === 'SHARED'
+                && ($query['scope-id'] ?? '') === 'site-scope-123') {
+                return Http::response([], 200);
+            }
+
+            if (($query['object-type'] ?? '') === 'SHARED'
+                && ($query['scope-id'] ?? '') === 'wcd-scope-from-central') {
+                return Http::response(dnsProfilePayload('dns-wcd', 'mgmt', '1.1.1.1'), 200);
+            }
+
+            return Http::response([], 200);
         }
 
         return Http::response([], 200);
@@ -510,6 +764,8 @@ test('deployment critical check resolves dns scope from wcd site collection on f
         'dns_scope_id' => $scope['partial']['dns_scope_id'],
     ]))
         ->assertOk()
+        ->assertJsonPath('partial.dns_results.0.source', 'site_collection')
+        ->assertJsonPath('partial.dns_results.0.site_collection_name', 'WCD')
         ->assertJsonPath('partial.dns_results.0.profiles.0.name', 'dns-wcd');
 
     Http::assertSent(fn (\Illuminate\Http\Client\Request $request) => str_contains($request->url(), 'site-collections'));

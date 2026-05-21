@@ -400,44 +400,242 @@ class DeploymentCriticalCheckService
             ];
         }
 
-        $dnsScopeId = $context['dns_scope_id'] ?? self::DEFAULT_DNS_SCOPE_ID;
+        $siteCollectionScopeId = $context['dns_scope_id'] ?? self::DEFAULT_DNS_SCOPE_ID;
+        $siteCollectionName = self::WCD_SITE_COLLECTION_NAME;
 
+        return [
+            'dns_results' => [
+                $this->fetchDnsForDevice($device, $helper, $siteCollectionScopeId, $siteCollectionName),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{
+     *     device_id: int,
+     *     device_name: string,
+     *     error: string|null,
+     *     profiles: list<array{name: string, resolvers: list<array{vrf: string, name_server_ips: list<string>}>}>,
+     *     source: 'device'|'group'|'site'|'site_collection'|null,
+     *     group_name: string|null,
+     *     site_name: string|null,
+     *     site_collection_name: string|null
+     * }
+     */
+    protected function fetchDnsForDevice(
+        Device $device,
+        CentralAPIHelper $helper,
+        string $siteCollectionScopeId,
+        string $siteCollectionName,
+    ): array {
         if (! $device->device_function) {
-            return [
-                'dns_results' => [[
-                    'device_id' => $device->id,
-                    'device_name' => $device->name,
-                    'error' => 'Device function not available for this device.',
-                    'profiles' => [],
-                ]],
-            ];
+            return $this->dnsDeviceResult($device, [
+                'error' => 'Device function not available for this device.',
+            ]);
         }
 
-        $response = $helper->get_dns_profiles([
-            'object-type' => 'SHARED',
-            'view-type' => 'LOCAL',
-            'scope-id' => $dnsScopeId,
-            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
+        if (filled($device->scope_id)) {
+            $deviceMatch = $this->fetchDnsWithQueryParams(
+                $device,
+                $helper,
+                $this->dnsQueryParams($device, 'device'),
+            );
+
+            if ($deviceMatch !== null) {
+                if (isset($deviceMatch['error'])) {
+                    return $this->dnsDeviceResult($device, $deviceMatch);
+                }
+
+                return $this->dnsDeviceResult($device, [
+                    'profiles' => $deviceMatch['profiles'],
+                    'source' => 'device',
+                ]);
+            }
+        }
+
+        $groupName = trim((string) ($device->group ?? ''));
+        if ($groupName !== '') {
+            $groupScopeId = $this->deviceGroupScopeIdsByName($helper)[$groupName] ?? null;
+
+            if ($groupScopeId !== null) {
+                $groupMatch = $this->fetchDnsWithQueryParams(
+                    $device,
+                    $helper,
+                    $this->dnsQueryParams($device, 'group', $groupScopeId),
+                );
+
+                if ($groupMatch !== null) {
+                    if (isset($groupMatch['error'])) {
+                        return $this->dnsDeviceResult($device, $groupMatch);
+                    }
+
+                    return $this->dnsDeviceResult($device, [
+                        'profiles' => $groupMatch['profiles'],
+                        'source' => 'group',
+                        'group_name' => $groupName,
+                    ]);
+                }
+            }
+        }
+
+        $site = $device->site;
+        if ($site !== null && filled($site->scope_id)) {
+            $siteMatch = $this->fetchDnsWithQueryParams(
+                $device,
+                $helper,
+                $this->dnsQueryParams($device, 'site'),
+            );
+
+            if ($siteMatch !== null) {
+                if (isset($siteMatch['error'])) {
+                    return $this->dnsDeviceResult($device, $siteMatch);
+                }
+
+                return $this->dnsDeviceResult($device, [
+                    'profiles' => $siteMatch['profiles'],
+                    'source' => 'site',
+                    'site_name' => $site->name,
+                ]);
+            }
+        }
+
+        if (filled($siteCollectionScopeId)) {
+            $siteCollectionMatch = $this->fetchDnsWithQueryParams(
+                $device,
+                $helper,
+                $this->dnsQueryParams($device, 'site_collection', $siteCollectionScopeId),
+            );
+
+            if ($siteCollectionMatch !== null) {
+                if (isset($siteCollectionMatch['error'])) {
+                    return $this->dnsDeviceResult($device, $siteCollectionMatch);
+                }
+
+                return $this->dnsDeviceResult($device, [
+                    'profiles' => $siteCollectionMatch['profiles'],
+                    'source' => 'site_collection',
+                    'site_collection_name' => $siteCollectionName,
+                ]);
+            }
+        }
+
+        return $this->dnsDeviceResult($device, [
+            'error' => 'Empty DNS profile for this device.',
         ]);
+    }
+
+    /**
+     * @param  array<string, string>  $queryParams
+     * @return array{profiles: list<array{name: string, resolvers: list<array{vrf: string, name_server_ips: list<string>}>}>}|array{error: string}|null
+     */
+    protected function fetchDnsWithQueryParams(
+        Device $device,
+        CentralAPIHelper $helper,
+        array $queryParams,
+    ): ?array {
+        $response = $helper->get_dns_profiles($queryParams);
 
         if (! $this->responseOk($response)) {
             return [
-                'dns_results' => [[
-                    'device_id' => $device->id,
-                    'device_name' => $device->name,
-                    'error' => $this->responseErrorMessage($response, 'Failed to fetch DNS profiles from Central.'),
-                    'profiles' => [],
-                ]],
+                'error' => $this->responseErrorMessage($response, 'Failed to fetch DNS profiles from Central.'),
+            ];
+        }
+
+        $json = $response instanceof Response ? $response->json() : [];
+        if (! is_array($json)) {
+            $json = [];
+        }
+
+        if ($this->dnsResponseHasProfiles($json)) {
+            return [
+                'profiles' => $this->parseDnsProfiles($json),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  'device'|'group'|'site'|'site_collection'  $level
+     * @return array<string, string>
+     */
+    protected function dnsQueryParams(Device $device, string $level, ?string $scopeId = null): array
+    {
+        $params = [
+            'view-type' => 'LOCAL',
+            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
+        ];
+
+        if ($level === 'device') {
+            return [
+                ...$params,
+                'object-type' => 'LOCAL',
+                'scope-id' => (string) $device->scope_id,
+            ];
+        }
+
+        if ($level === 'group') {
+            return [
+                ...$params,
+                'object-type' => 'SHARED',
+                'scope-id' => (string) $scopeId,
+            ];
+        }
+
+        if ($level === 'site') {
+            return [
+                ...$params,
+                'object-type' => 'SHARED',
+                'scope-id' => (string) ($device->site?->scope_id ?? ''),
             ];
         }
 
         return [
-            'dns_results' => [[
-                'device_id' => $device->id,
-                'device_name' => $device->name,
-                'error' => null,
-                'profiles' => $this->parseDnsProfiles($response instanceof Response ? $response->json() : []),
-            ]],
+            ...$params,
+            'object-type' => 'SHARED',
+            'scope-id' => (string) $scopeId,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     */
+    protected function dnsResponseHasProfiles(array $json): bool
+    {
+        return count($this->parseDnsProfiles($json)) > 0;
+    }
+
+    /**
+     * @param  array{
+     *     error?: string|null,
+     *     profiles?: list<array{name: string, resolvers: list<array{vrf: string, name_server_ips: list<string>}>}>,
+     *     source?: 'device'|'group'|'site'|'site_collection'|null,
+     *     group_name?: string|null,
+     *     site_name?: string|null,
+     *     site_collection_name?: string|null
+     * }  $overrides
+     * @return array{
+     *     device_id: int,
+     *     device_name: string,
+     *     error: string|null,
+     *     profiles: list<array{name: string, resolvers: list<array{vrf: string, name_server_ips: list<string>}>}>,
+     *     source: 'device'|'group'|'site'|'site_collection'|null,
+     *     group_name: string|null,
+     *     site_name: string|null,
+     *     site_collection_name: string|null
+     * }
+     */
+    protected function dnsDeviceResult(Device $device, array $overrides = []): array
+    {
+        return [
+            'device_id' => $device->id,
+            'device_name' => $device->name,
+            'error' => $overrides['error'] ?? null,
+            'profiles' => $overrides['profiles'] ?? [],
+            'source' => $overrides['source'] ?? null,
+            'group_name' => $overrides['group_name'] ?? null,
+            'site_name' => $overrides['site_name'] ?? null,
+            'site_collection_name' => $overrides['site_collection_name'] ?? null,
         ];
     }
 

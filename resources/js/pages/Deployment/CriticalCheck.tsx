@@ -70,6 +70,10 @@ type DnsDevice = {
     device_name: string;
     error: string | null;
     profiles: DnsProfile[];
+    source: 'device' | 'group' | 'site' | 'site_collection' | null;
+    group_name: string | null;
+    site_name: string | null;
+    site_collection_name: string | null;
 };
 
 type Summary = {
@@ -491,6 +495,175 @@ function staticRouteInheritanceLabel(device: StaticRouteDevice): string {
     }
 
     return '—';
+}
+
+type UniqueDnsProfileRow = {
+    name: string;
+    vrf: string;
+    name_servers: string;
+};
+
+function uniqueDnsProfileRows(devices: DnsDevice[]): UniqueDnsProfileRow[] {
+    const seen = new Set<string>();
+    const unique: UniqueDnsProfileRow[] = [];
+
+    for (const device of devices) {
+        if (device.error) {
+            continue;
+        }
+        for (const profile of device.profiles) {
+            for (const resolver of profile.resolvers) {
+                const key = `${profile.name}\0${resolver.vrf}\0${resolver.name_server_ips.join(',')}`;
+                if (seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                unique.push({
+                    name: profile.name,
+                    vrf: resolver.vrf,
+                    name_servers: resolver.name_server_ips.join(', '),
+                });
+            }
+        }
+    }
+
+    return unique.sort(
+        (a, b) =>
+            a.name.localeCompare(b.name) ||
+            a.vrf.localeCompare(b.vrf),
+    );
+}
+
+function dnsInheritanceLabel(device: DnsDevice): string {
+    if (device.error) {
+        return device.error;
+    }
+    if (device.source === 'device') {
+        return 'Local override';
+    }
+    if (device.source === 'group') {
+        return device.group_name ?? '—';
+    }
+    if (device.source === 'site') {
+        return device.site_name ?? 'site';
+    }
+    if (device.source === 'site_collection') {
+        return device.site_collection_name ?? '—';
+    }
+
+    return '—';
+}
+
+function DnsProfilesCentralSection({
+    devices,
+    pending,
+}: {
+    devices: DnsDevice[];
+    pending: boolean;
+}) {
+    const uniqueProfiles = useMemo(
+        () => uniqueDnsProfileRows(devices),
+        [devices],
+    );
+
+    const sortedDevices = useMemo(
+        () => [...devices].sort((a, b) => a.device_name.localeCompare(b.device_name)),
+        [devices],
+    );
+
+    if (pending && devices.length === 0) {
+        return (
+            <p className="text-muted-foreground text-sm dark:text-white">
+                Waiting to fetch DNS profiles...
+            </p>
+        );
+    }
+
+    if (devices.length === 0) {
+        return (
+            <p className="text-muted-foreground text-sm dark:text-white">
+                No devices in deployment.
+            </p>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h3 className="mb-2 text-sm font-semibold dark:text-white">Profiles</h3>
+                {uniqueProfiles.length === 0 ? (
+                    <p className="text-muted-foreground text-sm dark:text-white/80">
+                        No DNS profiles returned.
+                    </p>
+                ) : (
+                    <div className="overflow-x-auto rounded-md border text-sm dark:border-white/20">
+                        <table className="w-full min-w-[20rem] dark:text-white">
+                            <thead>
+                                <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10">
+                                    <th className="px-3 py-2 font-medium">Profile</th>
+                                    <th className="px-3 py-2 font-medium">VRF</th>
+                                    <th className="px-3 py-2 font-medium">Name servers</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {uniqueProfiles.map((profile) => (
+                                    <tr
+                                        key={`${profile.name}-${profile.vrf}-${profile.name_servers}`}
+                                        className="border-b last:border-0 dark:border-white/20"
+                                    >
+                                        <td className="px-3 py-2">{profile.name}</td>
+                                        <td className="px-3 py-2">{profile.vrf || '—'}</td>
+                                        <td className="px-3 py-2 font-mono">
+                                            {profile.name_servers || '—'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div>
+                <h3 className="mb-2 text-sm font-semibold dark:text-white">Devices</h3>
+                <div className="overflow-x-auto rounded-md border text-sm dark:border-white/20">
+                    <table className="w-full min-w-[20rem] dark:text-white">
+                        <thead>
+                            <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10">
+                                <th className="px-3 py-2 font-medium">Device</th>
+                                <th className="px-3 py-2 font-medium">Inherited from</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedDevices.map((device) => {
+                                const inheritance = dnsInheritanceLabel(device);
+                                const hasError = Boolean(device.error);
+
+                                return (
+                                    <tr
+                                        key={device.device_id}
+                                        className="border-b last:border-0 dark:border-white/20"
+                                    >
+                                        <td className="px-3 py-2 font-medium">
+                                            {device.device_name}
+                                        </td>
+                                        <td
+                                            className={cn(
+                                                'px-3 py-2',
+                                                hasError && 'text-red-700 dark:text-red-300',
+                                            )}
+                                        >
+                                            {inheritance}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function StaticRoutesCentralSection({
@@ -1010,76 +1183,20 @@ export default function CriticalCheck() {
                                     </p>
                                 )}
                             </CardHeader>
-                            <CardContent className="space-y-4">
+                            <CardContent className="dark:text-white">
                                 {results.dns_scope_error && (
-                                    <p className="text-sm text-red-700 dark:text-white">
+                                    <p className="mb-4 text-sm text-red-700 dark:text-white">
                                         {results.dns_scope_error}
                                     </p>
                                 )}
-                                {!results.dns_scope_error &&
-                                    results.dns_results.length === 0 && (
-                                        <p className="text-muted-foreground text-sm dark:text-white">
-                                            {isRunning
-                                                ? 'Waiting to fetch DNS profiles...'
-                                                : 'No devices in deployment.'}
-                                        </p>
-                                    )}
-                                {!results.dns_scope_error &&
-                                    results.dns_results.map((device) => (
-                                        <div
-                                            key={device.device_id}
-                                            className="rounded-md border px-4 py-3"
-                                        >
-                                            <p className="font-medium dark:text-white">
-                                                {device.device_name}
-                                            </p>
-                                            {device.error ? (
-                                                <p className="mt-1 text-sm text-red-700 dark:text-white">
-                                                    {device.error}
-                                                </p>
-                                            ) : device.profiles.length === 0 ? (
-                                                <p className="text-muted-foreground mt-1 text-sm dark:text-white">
-                                                    No DNS profiles returned.
-                                                </p>
-                                            ) : (
-                                                <div className="mt-2 space-y-3 text-sm">
-                                                    {device.profiles.map((profile) => (
-                                                        <div key={profile.name}>
-                                                            <p className="font-medium dark:text-white">
-                                                                {profile.name}
-                                                            </p>
-                                                            {profile.resolvers.length === 0 ? (
-                                                                <p className="text-muted-foreground text-xs dark:text-white">
-                                                                    No resolvers.
-                                                                </p>
-                                                            ) : (
-                                                                <ul className="mt-1 list-inside list-disc space-y-1">
-                                                                    {profile.resolvers.map(
-                                                                        (resolver, idx) => (
-                                                                            <li
-                                                                                key={`${profile.name}-${resolver.vrf}-${idx}`}
-                                                                            >
-                                                                                VRF{' '}
-                                                                                {resolver.vrf ||
-                                                                                    '—'}
-                                                                                :{' '}
-                                                                                {resolver.name_server_ips.length >
-                                                                                0
-                                                                                    ? resolver.name_server_ips.join(
-                                                                                          ', ',
-                                                                                      )
-                                                                                    : '—'}
-                                                                            </li>
-                                                                        ),
-                                                                    )}
-                                                                </ul>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
+                                {!results.dns_scope_error && (
+                                    <DnsProfilesCentralSection
+                                        devices={results.dns_results}
+                                        pending={
+                                            isRunning && results.dns_results.length === 0
+                                        }
+                                    />
+                                )}
                             </CardContent>
                         </Card>
                     )}
