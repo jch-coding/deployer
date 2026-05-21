@@ -42,6 +42,7 @@ type DeviceError = {
 type StaticRouteRow = {
     profile_name: string;
     prefix: string;
+    next_hop: string;
 };
 
 type StaticRouteDevice = {
@@ -458,7 +459,7 @@ function uniqueStaticRouteProfiles(devices: StaticRouteDevice[]): StaticRouteRow
             continue;
         }
         for (const route of device.routes) {
-            const key = `${route.profile_name}\0${route.prefix}`;
+            const key = `${route.profile_name}\0${route.prefix}\0${route.next_hop}`;
             if (seen.has(key)) {
                 continue;
             }
@@ -536,17 +537,21 @@ function StaticRoutesCentralSection({
                                 <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10">
                                     <th className="px-3 py-2 font-medium">Profile</th>
                                     <th className="px-3 py-2 font-medium">Prefix</th>
+                                    <th className="px-3 py-2 font-medium">Next hop</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {uniqueProfiles.map((route) => (
                                     <tr
-                                        key={`${route.profile_name}-${route.prefix}`}
+                                        key={`${route.profile_name}-${route.prefix}-${route.next_hop}`}
                                         className="border-b last:border-0 dark:border-white/20"
                                     >
                                         <td className="px-3 py-2">{route.profile_name}</td>
                                         <td className="px-3 py-2 font-mono">
                                             {route.prefix || '—'}
+                                        </td>
+                                        <td className="px-3 py-2 font-mono">
+                                            {route.next_hop || '—'}
                                         </td>
                                     </tr>
                                 ))}

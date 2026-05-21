@@ -443,7 +443,7 @@ class DeploymentCriticalCheckService
      *     device_id: int,
      *     device_name: string,
      *     error: string|null,
-     *     routes: list<array{profile_name: string, prefix: string}>,
+     *     routes: list<array{profile_name: string, prefix: string, next_hop: string}>,
      *     source: 'device'|'site'|null,
      *     site_name: string|null
      * }
@@ -543,7 +543,7 @@ class DeploymentCriticalCheckService
     /**
      * @param  array{
      *     error?: string|null,
-     *     routes?: list<array{profile_name: string, prefix: string}>,
+     *     routes?: list<array{profile_name: string, prefix: string, next_hop: string}>,
      *     source?: 'device'|'site'|null,
      *     site_name?: string|null
      * }  $overrides
@@ -551,7 +551,7 @@ class DeploymentCriticalCheckService
      *     device_id: int,
      *     device_name: string,
      *     error: string|null,
-     *     routes: list<array{profile_name: string, prefix: string}>,
+     *     routes: list<array{profile_name: string, prefix: string, next_hop: string}>,
      *     source: 'device'|'site'|null,
      *     site_name: string|null
      * }
@@ -672,7 +672,7 @@ class DeploymentCriticalCheckService
 
     /**
      * @param  array<string, mixed>  $json
-     * @return list<array{profile_name: string, prefix: string}>
+     * @return list<array{profile_name: string, prefix: string, next_hop: string}>
      */
     protected function parseStaticRouteProfiles(array $json): array
     {
@@ -699,7 +699,7 @@ class DeploymentCriticalCheckService
     }
 
     /**
-     * @return list<array{profile_name: string, prefix: string}>
+     * @return list<array{profile_name: string, prefix: string, next_hop: string}>
      */
     protected function parseStaticRouteIpv4Entries(string $profileName, mixed $ipv4): array
     {
@@ -711,6 +711,7 @@ class DeploymentCriticalCheckService
             return [[
                 'profile_name' => $profileName,
                 'prefix' => (string) ($ipv4['prefix'] ?? ''),
+                'next_hop' => $this->formatStaticRouteNextHop($ipv4['next-hop'] ?? null),
             ]];
         }
 
@@ -722,10 +723,34 @@ class DeploymentCriticalCheckService
             $routes[] = [
                 'profile_name' => $profileName,
                 'prefix' => (string) ($entry['prefix'] ?? ''),
+                'next_hop' => $this->formatStaticRouteNextHop($entry['next-hop'] ?? null),
             ];
         }
 
         return $routes;
+    }
+
+    protected function formatStaticRouteNextHop(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        if (is_string($value) || is_numeric($value)) {
+            return (string) $value;
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if (is_array($value)) {
+            $encoded = json_encode($value, JSON_UNESCAPED_SLASHES);
+
+            return is_string($encoded) ? $encoded : '';
+        }
+
+        return '';
     }
 
     /**

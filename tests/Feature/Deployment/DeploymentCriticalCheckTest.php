@@ -40,15 +40,7 @@ function fakeCriticalCheckCentralApis(array $overrides = []): void
         '*portchannels*' => Http::response(['interface' => []], 200),
         '*ethernet-interfaces*' => Http::response(['interface' => []], 200),
         '*vlan-interfaces*' => Http::response(['interface' => []], 200),
-        '*static-route*' => Http::response([
-            'profile' => [
-                'name' => 'static-profile',
-                'ipv4' => [
-                    'prefix' => '0.0.0.0/0',
-                    'prefix-vrf-nexthop-id' => '1',
-                ],
-            ],
-        ], 200),
+        '*static-route*' => Http::response(staticRouteProfilePayload(), 200),
         '*dns*' => Http::response([
             'profile' => [
                 [
@@ -86,13 +78,17 @@ function criticalCheckStepUrl(Deployment $deployment, int $step, array $query = 
 /**
  * @return array<string, mixed>
  */
-function staticRouteProfilePayload(string $name = 'static-profile', string $prefix = '0.0.0.0/0'): array
-{
+function staticRouteProfilePayload(
+    string $name = 'static-profile',
+    string $prefix = '0.0.0.0/0',
+    string $nextHop = '192.168.1.1',
+): array {
     return [
         'profile' => [
             'name' => $name,
             'ipv4' => [
                 'prefix' => $prefix,
+                'next-hop' => $nextHop,
                 'prefix-vrf-nexthop-id' => '1',
             ],
         ],
@@ -318,7 +314,8 @@ test('deployment critical check displays static routes from central', function (
         ->assertJsonPath('partial.static_routes.0.error', null)
         ->assertJsonPath('partial.static_routes.0.source', 'device')
         ->assertJsonPath('partial.static_routes.0.routes.0.profile_name', 'static-profile')
-        ->assertJsonPath('partial.static_routes.0.routes.0.prefix', '0.0.0.0/0');
+        ->assertJsonPath('partial.static_routes.0.routes.0.prefix', '0.0.0.0/0')
+        ->assertJsonPath('partial.static_routes.0.routes.0.next_hop', '192.168.1.1');
 });
 
 test('deployment critical check inherits static routes from site when device level is empty', function () {
