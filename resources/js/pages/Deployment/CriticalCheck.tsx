@@ -2,6 +2,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import { AlarmClock, Check, ChevronDown, X } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import FailedInterfaceConfigTable from '@/components/Deployment/FailedInterfaceConfigTable';
+import PassedInterfacesSummary from '@/components/Deployment/PassedInterfacesSummary';
 import ProfileInheritanceFailuresTable, {
     collectProfileDeviceIds,
 } from '@/components/Deployment/ProfileInheritanceFailuresTable';
@@ -447,12 +448,18 @@ function DeviceInterfaceCheckCard({ group }: { group: DeviceInterfaceGroup }) {
                         No interfaces checked for this device.
                     </p>
                 ) : (
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <InterfaceStatusCard
-                            title="Passed"
-                            results={passed}
+                    <div className="space-y-4">
+                        <PassedInterfacesSummary
+                            count={passed.length}
                             emptyMessage="No interfaces passed verification."
-                        />
+                        >
+                            {passed.map((result) => (
+                                <InterfaceCheckRow
+                                    key={`${result.kind}-${result.device_interface_id}`}
+                                    result={result}
+                                />
+                            ))}
+                        </PassedInterfacesSummary>
                         <InterfaceStatusCard
                             title="Failed"
                             results={failed}

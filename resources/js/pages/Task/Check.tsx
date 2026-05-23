@@ -1,6 +1,7 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { Check as CheckIcon, ChevronDown, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import PassedInterfacesSummary from '@/components/Deployment/PassedInterfacesSummary';
 import ConfigurationDiff, {
     type DiffEntry,
 } from '@/components/ui/ConfigurationDiff';
@@ -257,12 +258,18 @@ function DeviceCheckSection({
                 </Card>
             )}
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <InterfaceStatusCard
-                    title="Passed"
-                    results={group.passed}
+            <div className="space-y-4">
+                <PassedInterfacesSummary
+                    count={group.passed.length}
                     emptyMessage="No interfaces passed verification."
-                />
+                >
+                    {group.passed.map((result) => (
+                        <InterfaceCheckRow
+                            key={result.device_interface_id}
+                            result={result}
+                        />
+                    ))}
+                </PassedInterfacesSummary>
                 <InterfaceStatusCard
                     title="Failed"
                     results={group.failed}
