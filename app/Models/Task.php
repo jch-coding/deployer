@@ -73,6 +73,9 @@ class Task extends Model
             'CONFIGURE_LAG_INTERFACE',
             'CONFIGURE_ETHERNET_INTERFACE',
             'CONFIGURE_VLAN_INTERFACE',
+            'ASSOCIATE_DEVICE_TO_SITE',
+            'ASSOCIATE_SITE_AND_NAME',
+            'UPDATE_SYSTEM_INFO',
         ], true);
     }
 

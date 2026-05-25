@@ -30,15 +30,29 @@ type InterfaceResult = {
     details?: DiffEntry[];
 };
 
+type DeviceResult = {
+    device_id: number;
+    device_name: string;
+    serial: string;
+    ok: boolean;
+    missing_in_central: boolean;
+    diff: DiffEntry[];
+    details?: DiffEntry[];
+};
+
+type CheckResult = InterfaceResult | DeviceResult;
+
 type DeviceError = {
     device_id: number;
     device_name: string;
     message: string;
 };
 
-type CheckKind = 'lag' | 'ethernet' | 'vlan';
+type InterfaceCheckKind = 'lag' | 'ethernet' | 'vlan';
+type DeviceCheckKind = 'site_association' | 'site_and_name' | 'device_name';
+type CheckKind = InterfaceCheckKind | DeviceCheckKind;
 
-type DeviceCheckGroup = {
+type InterfaceDeviceCheckGroup = {
     device_id: number;
     device_name: string;
     errors: string[];
@@ -46,24 +60,59 @@ type DeviceCheckGroup = {
     failed: InterfaceResult[];
 };
 
+type DeviceVerificationGroup = {
+    device_id: number;
+    device_name: string;
+    errors: string[];
+    passed: DeviceResult[];
+    failed: DeviceResult[];
+};
+
 const checkKindLabels: Record<
     CheckKind,
-    { title: string; breadcrumb: string; empty: string }
+    { title: string; breadcrumb: string; empty: string; relaunchLabel: string; relaunchDescription: string }
 > = {
     lag: {
         title: 'Verify LAG in Central',
         breadcrumb: 'Verify LAG in Central',
         empty: 'No LAG interfaces are attached to this task.',
+        relaunchLabel: 'Relaunch failed interfaces',
+        relaunchDescription: 'Creates a new task containing only the interfaces that failed verification.',
     },
     ethernet: {
         title: 'Verify ethernet in Central',
         breadcrumb: 'Verify ethernet in Central',
         empty: 'No ethernet interfaces are attached to this task.',
+        relaunchLabel: 'Relaunch failed interfaces',
+        relaunchDescription: 'Creates a new task containing only the interfaces that failed verification.',
     },
     vlan: {
         title: 'Verify VLAN in Central',
         breadcrumb: 'Verify VLAN in Central',
         empty: 'No VLAN interfaces are attached to this task.',
+        relaunchLabel: 'Relaunch failed interfaces',
+        relaunchDescription: 'Creates a new task containing only the interfaces that failed verification.',
+    },
+    site_association: {
+        title: 'Verify site association in Central',
+        breadcrumb: 'Verify site association in Central',
+        empty: 'No devices are attached to this task.',
+        relaunchLabel: 'Relaunch failed devices',
+        relaunchDescription: 'Creates a new task containing only the devices that failed verification.',
+    },
+    site_and_name: {
+        title: 'Verify site association and naming in Central',
+        breadcrumb: 'Verify site association and naming in Central',
+        empty: 'No devices are attached to this task.',
+        relaunchLabel: 'Relaunch failed devices',
+        relaunchDescription: 'Creates a new task containing only the devices that failed verification.',
+    },
+    device_name: {
+        title: 'Verify device naming in Central',
+        breadcrumb: 'Verify device naming in Central',
+        empty: 'No devices are attached to this task.',
+        relaunchLabel: 'Relaunch failed devices',
+        relaunchDescription: 'Creates a new task containing only the devices that failed verification.',
     },
 };
 
@@ -73,18 +122,26 @@ type CheckPageProps = SharedData & {
     check_kind: CheckKind;
     deployment: { id: number; name: string };
     device_errors: DeviceError[];
-    results: InterfaceResult[];
+    results: CheckResult[];
     summary: { total: number; passed: number; failed: number };
     can_relaunch_failed_verification: boolean;
 };
 
-function groupResultsByDevice(
+function isDeviceCheckKind(kind: CheckKind): kind is DeviceCheckKind {
+    return kind === 'site_association' || kind === 'site_and_name' || kind === 'device_name';
+}
+
+function isDeviceResult(result: CheckResult): result is DeviceResult {
+    return 'serial' in result && !('interface' in result);
+}
+
+function groupInterfaceResultsByDevice(
     results: InterfaceResult[],
     deviceErrors: DeviceError[],
-): DeviceCheckGroup[] {
-    const groups = new Map<number, DeviceCheckGroup>();
+): InterfaceDeviceCheckGroup[] {
+    const groups = new Map<number, InterfaceDeviceCheckGroup>();
 
-    const ensureGroup = (deviceId: number, deviceName: string): DeviceCheckGroup => {
+    const ensureGroup = (deviceId: number, deviceName: string): InterfaceDeviceCheckGroup => {
         const existing = groups.get(deviceId);
         if (existing) {
             if (deviceName && !existing.device_name) {
@@ -94,7 +151,7 @@ function groupResultsByDevice(
             return existing;
         }
 
-        const group: DeviceCheckGroup = {
+        const group: InterfaceDeviceCheckGroup = {
             device_id: deviceId,
             device_name: deviceName,
             errors: [],
@@ -135,15 +192,73 @@ function groupResultsByDevice(
         .sort((a, b) => a.device_name.localeCompare(b.device_name));
 }
 
-function InterfaceCheckRow({ result }: { result: InterfaceResult }) {
+function groupDeviceResults(
+    results: DeviceResult[],
+    deviceErrors: DeviceError[],
+): DeviceVerificationGroup[] {
+    const groups = new Map<number, DeviceVerificationGroup>();
+
+    const ensureGroup = (deviceId: number, deviceName: string): DeviceVerificationGroup => {
+        const existing = groups.get(deviceId);
+        if (existing) {
+            if (deviceName && !existing.device_name) {
+                existing.device_name = deviceName;
+            }
+
+            return existing;
+        }
+
+        const group: DeviceVerificationGroup = {
+            device_id: deviceId,
+            device_name: deviceName,
+            errors: [],
+            passed: [],
+            failed: [],
+        };
+        groups.set(deviceId, group);
+
+        return group;
+    };
+
+    for (const result of results) {
+        const group = ensureGroup(result.device_id, result.device_name);
+        if (result.ok) {
+            group.passed.push(result);
+        } else {
+            group.failed.push(result);
+        }
+    }
+
+    for (const error of deviceErrors) {
+        const group = ensureGroup(error.device_id, error.device_name);
+        if (!group.errors.includes(error.message)) {
+            group.errors.push(error.message);
+        }
+    }
+
+    return [...groups.values()].sort((a, b) => a.device_name.localeCompare(b.device_name));
+}
+
+function CheckRow({
+    label,
+    sublabel,
+    ok,
+    missingInCentral,
+    rows,
+}: {
+    label: string;
+    sublabel?: string;
+    ok: boolean;
+    missingInCentral: boolean;
+    rows: DiffEntry[];
+}) {
     const [open, setOpen] = useState(false);
-    const rows = result.details?.length ? result.details : result.diff;
     const hasDetails = rows.length > 0;
 
     return (
         <Collapsible open={open} onOpenChange={setOpen}>
             <div className="flex items-center gap-3 border-b border-border py-2.5 last:border-0 dark:border-white/20 dark:text-white">
-                {result.ok ? (
+                {ok ? (
                     <CheckIcon
                         className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400"
                         aria-label="Match"
@@ -155,8 +270,11 @@ function InterfaceCheckRow({ result }: { result: InterfaceResult }) {
                     />
                 )}
                 <div className="min-w-0 flex-1">
-                    <span className="font-medium">{result.interface}</span>
-                    {result.missing_in_central && (
+                    <span className="font-medium">{label}</span>
+                    {sublabel && (
+                        <span className="mt-0.5 block text-xs opacity-80">{sublabel}</span>
+                    )}
+                    {missingInCentral && (
                         <span className="mt-0.5 block text-xs opacity-80">
                             Not found in Central
                         </span>
@@ -188,6 +306,33 @@ function InterfaceCheckRow({ result }: { result: InterfaceResult }) {
                 </CollapsibleContent>
             )}
         </Collapsible>
+    );
+}
+
+function InterfaceCheckRow({ result }: { result: InterfaceResult }) {
+    const rows = result.details?.length ? result.details : result.diff;
+
+    return (
+        <CheckRow
+            label={result.interface}
+            ok={result.ok}
+            missingInCentral={result.missing_in_central}
+            rows={rows}
+        />
+    );
+}
+
+function DeviceCheckRow({ result }: { result: DeviceResult }) {
+    const rows = result.details?.length ? result.details : result.diff;
+
+    return (
+        <CheckRow
+            label={result.device_name}
+            sublabel={result.serial}
+            ok={result.ok}
+            missingInCentral={result.missing_in_central}
+            rows={rows}
+        />
     );
 }
 
@@ -225,11 +370,42 @@ function InterfaceStatusCard({
     );
 }
 
-function DeviceCheckSection({
+function DeviceStatusCard({
+    title,
+    results,
+    emptyMessage,
+}: {
+    title: string;
+    results: DeviceResult[];
+    emptyMessage: string;
+}) {
+    return (
+        <Card className="dark:text-white">
+            <CardHeader className="pb-2">
+                <CardTitle className="text-lg dark:text-white">{title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+                {results.length === 0 ? (
+                    <p className="text-muted-foreground text-sm dark:text-white/80">
+                        {emptyMessage}
+                    </p>
+                ) : (
+                    <div className="divide-y divide-border dark:divide-white/20">
+                        {results.map((result) => (
+                            <DeviceCheckRow key={result.device_id} result={result} />
+                        ))}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function InterfaceDeviceCheckSection({
     group,
     checkTitle,
 }: {
-    group: DeviceCheckGroup;
+    group: InterfaceDeviceCheckGroup;
     checkTitle: string;
 }) {
     return (
@@ -296,11 +472,29 @@ export default function Check() {
     const [isRelaunchingFailed, setIsRelaunchingFailed] = useState(false);
 
     const labels = checkKindLabels[check_kind];
+    const isDeviceCheck = isDeviceCheckKind(check_kind);
 
-    const deviceGroups = useMemo(
-        () => groupResultsByDevice(results, device_errors),
-        [results, device_errors],
-    );
+    const interfaceGroups = useMemo(() => {
+        if (isDeviceCheck) {
+            return [];
+        }
+
+        return groupInterfaceResultsByDevice(
+            results.filter((result): result is InterfaceResult => !isDeviceResult(result)),
+            device_errors,
+        );
+    }, [results, device_errors, isDeviceCheck]);
+
+    const deviceGroups = useMemo(() => {
+        if (!isDeviceCheck) {
+            return [];
+        }
+
+        return groupDeviceResults(
+            results.filter((result): result is DeviceResult => isDeviceResult(result)),
+            device_errors,
+        );
+    }, [results, device_errors, isDeviceCheck]);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -320,6 +514,10 @@ export default function Check() {
             href: checkTask(task.id).url,
         },
     ];
+
+    const groupsEmpty = isDeviceCheck
+        ? deviceGroups.length === 0
+        : interfaceGroups.length === 0;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -373,23 +571,59 @@ export default function Check() {
                             >
                                 {isRelaunchingFailed
                                     ? 'Starting task…'
-                                    : `Relaunch failed interfaces (${summary.failed})`}
+                                    : `${labels.relaunchLabel} (${summary.failed})`}
                             </Button>
                             <p className="text-muted-foreground mt-2 text-xs dark:text-white/70">
-                                Creates a new task containing only the interfaces that failed
-                                verification.
+                                {labels.relaunchDescription}
                             </p>
                         </CardContent>
                     )}
                 </Card>
 
-                {deviceGroups.length === 0 ? (
+                {groupsEmpty ? (
                     <p className="text-muted-foreground text-center text-sm dark:text-white/80">
                         {labels.empty}
                     </p>
+                ) : isDeviceCheck ? (
+                    <div className="space-y-4">
+                        {device_errors.length > 0 && (
+                            <Card className="border-red-200 dark:border-red-900/50 dark:text-white">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-lg text-red-700 dark:text-red-400">
+                                        Device errors
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-2 text-sm">
+                                    {device_errors.map((error) => (
+                                        <p
+                                            key={`${error.device_id}-${error.message}`}
+                                            className="text-red-700 dark:text-red-300"
+                                        >
+                                            {error.device_name}: {error.message}
+                                        </p>
+                                    ))}
+                                </CardContent>
+                            </Card>
+                        )}
+                        <PassedInterfacesSummary
+                            count={deviceGroups.reduce((count, group) => count + group.passed.length, 0)}
+                            emptyMessage="No devices passed verification."
+                        >
+                            {deviceGroups.flatMap((group) =>
+                                group.passed.map((result) => (
+                                    <DeviceCheckRow key={result.device_id} result={result} />
+                                )),
+                            )}
+                        </PassedInterfacesSummary>
+                        <DeviceStatusCard
+                            title="Failed"
+                            results={deviceGroups.flatMap((group) => group.failed)}
+                            emptyMessage="No devices failed verification."
+                        />
+                    </div>
                 ) : (
-                    deviceGroups.map((group) => (
-                        <DeviceCheckSection
+                    interfaceGroups.map((group) => (
+                        <InterfaceDeviceCheckSection
                             key={group.device_id}
                             group={group}
                             checkTitle={labels.title}

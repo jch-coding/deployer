@@ -58,6 +58,10 @@ class CentralAPIHelper
         'switches' => 'network-monitoring/v1/switches',
     ];
 
+    public array $deviceMonitoring = [
+        'devices' => 'network-monitoring/v1/devices',
+    ];
+
     public array $high_availability = [
         'switch_stack' => 'network-config/v1alpha1/stacks/',
     ];
@@ -1234,6 +1238,83 @@ class CentralAPIHelper
 
             return $response;
         }
+    }
+
+    /**
+     * Single-page GET for network-monitoring devices.
+     *
+     * @param  array<string, mixed>  $filter  Query parameters:
+     *                                        - limit: page size (0–1000)
+     *                                        - next: pagination cursor from a previous response
+     *                                        - filter: OData filter (siteId, siteName, model, status, deployment)
+     *                                        - sort: sort expression
+     * @return \GuzzleHttp\Promise\PromiseInterface|\Illuminate\Http\Client\Promises\LazyPromise|\Illuminate\Http\Client\Response|string[]
+     *
+     * @throws \Illuminate\Http\Client\ConnectionException
+     */
+    public function get_devices(array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->deviceMonitoring['devices']);
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get devices from central.'];
+            }
+
+            return $response;
+        }
+    }
+
+    /**
+     * Page through all devices using cursor pagination (limit + next).
+     *
+     * @param  array<string, mixed>  $queryParameters  Optional OData filter/sort (limit and next are managed internally)
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    public function get_all_devices(array $queryParameters = []): array
+    {
+        $allItems = [];
+        $limit = 100;
+        $next = null;
+
+        while (true) {
+            $params = array_merge($queryParameters, ['limit' => $limit]);
+            if ($next !== null && $next !== '') {
+                $params['next'] = $next;
+            }
+
+            $response = $this->get_devices($params);
+
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch devices from Central.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get devices from central.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            $allItems = array_merge($allItems, $pageItems);
+
+            $next = $response->json('next');
+            if ($next === null || $next === '') {
+                break;
+            }
+        }
+
+        return $allItems;
     }
 
     public function classic_get_sites()

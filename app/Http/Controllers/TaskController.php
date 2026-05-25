@@ -27,9 +27,10 @@ use App\Models\DeviceInterface;
 use App\Models\Site;
 use App\Models\Task;
 use App\Services\DeploymentCriticalCheckService;
-use App\Services\RelaunchFailedCriticalConfigService;
+use App\Services\DeviceCentralVerifier;
 use App\Services\EthernetInterfaceCentralVerifier;
 use App\Services\LagInterfaceCentralVerifier;
+use App\Services\RelaunchFailedCriticalConfigService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
 use App\TaskType;
@@ -388,19 +389,29 @@ class TaskController extends Controller
 
         $helper = new CentralAPIHelper($task->deployment->client);
 
-        $checkKind = match ($task->task_type) {
-            'CONFIGURE_LAG_INTERFACE' => 'lag',
-            'CONFIGURE_ETHERNET_INTERFACE' => 'ethernet',
-            'CONFIGURE_VLAN_INTERFACE' => 'vlan',
-            default => abort(404),
-        };
+        if ($this->isDeviceCentralCheckTask($task->task_type)) {
+            $checkKind = match ($task->task_type) {
+                'ASSOCIATE_DEVICE_TO_SITE' => 'site_association',
+                'ASSOCIATE_SITE_AND_NAME' => 'site_and_name',
+                'UPDATE_SYSTEM_INFO' => 'device_name',
+                default => abort(404),
+            };
+            $verification = (new DeviceCentralVerifier)->verify($task, $helper);
+        } else {
+            $checkKind = match ($task->task_type) {
+                'CONFIGURE_LAG_INTERFACE' => 'lag',
+                'CONFIGURE_ETHERNET_INTERFACE' => 'ethernet',
+                'CONFIGURE_VLAN_INTERFACE' => 'vlan',
+                default => abort(404),
+            };
 
-        $verification = match ($task->task_type) {
-            'CONFIGURE_LAG_INTERFACE' => (new LagInterfaceCentralVerifier)->verify($task, $helper),
-            'CONFIGURE_ETHERNET_INTERFACE' => (new EthernetInterfaceCentralVerifier)->verify($task, $helper),
-            'CONFIGURE_VLAN_INTERFACE' => (new VlanInterfaceCentralVerifier)->verify($task, $helper),
-            default => abort(404),
-        };
+            $verification = match ($task->task_type) {
+                'CONFIGURE_LAG_INTERFACE' => (new LagInterfaceCentralVerifier)->verify($task, $helper),
+                'CONFIGURE_ETHERNET_INTERFACE' => (new EthernetInterfaceCentralVerifier)->verify($task, $helper),
+                'CONFIGURE_VLAN_INTERFACE' => (new VlanInterfaceCentralVerifier)->verify($task, $helper),
+                default => abort(404),
+            };
+        }
 
         $passed = collect($verification['results'])->where('ok', true)->count();
         $failed = collect($verification['results'])->where('ok', false)->count();
@@ -437,6 +448,61 @@ class TaskController extends Controller
         }
 
         $helper = new CentralAPIHelper($task->deployment->client);
+
+        if ($this->isDeviceCentralCheckTask($task->task_type)) {
+            $verification = (new DeviceCentralVerifier)->verify($task, $helper);
+
+            $failedDeviceIds = collect($verification['results'])
+                ->where('ok', false)
+                ->pluck('device_id')
+                ->unique()
+                ->values();
+
+            if ($failedDeviceIds->isEmpty()) {
+                session()->flash('error', 'No devices failed verification; nothing to relaunch.');
+
+                return back();
+            }
+
+            $namePrefix = match ($task->task_type) {
+                'ASSOCIATE_DEVICE_TO_SITE' => 'associate_device_to_site_retry_',
+                'ASSOCIATE_SITE_AND_NAME' => 'associate_site_and_name_retry_',
+                'UPDATE_SYSTEM_INFO' => 'update_system_info_retry_',
+                default => 'device_task_retry_',
+            };
+
+            $jobQueue = $task->job_queue;
+            if (! is_string($jobQueue) || $jobQueue === '') {
+                $jobQueue = $this->allocateJobQueue($request, (string) $task->id);
+            }
+
+            $newTask = $task->deployment->tasks()->create([
+                'task_type' => $task->task_type,
+                'name' => $namePrefix.$task->deployment->name.now(),
+                'deployment_time' => $task->deployment_time,
+                'wait_time' => $task->wait_time,
+                'status' => 'IN_PROGRESS',
+                'job_queue' => $jobQueue,
+            ]);
+
+            $attachData = $failedDeviceIds
+                ->mapWithKeys(fn (int $id) => [$id => ['status' => 'PENDING']])
+                ->all();
+            $newTask->devices()->attach($attachData);
+
+            $batchId = $this->dispatchJob($newTask);
+
+            if ($batchId !== null) {
+                $newTask->forceFill(['batch_id' => $batchId])->save();
+            }
+
+            session()->flash(
+                'success',
+                'Started a new task for '.$failedDeviceIds->count().' device(s) that failed verification.',
+            );
+
+            return to_route('tasks.show', $newTask);
+        }
 
         $verification = match ($task->task_type) {
             'CONFIGURE_LAG_INTERFACE' => (new LagInterfaceCentralVerifier)->verify($task, $helper),
@@ -558,6 +624,15 @@ class TaskController extends Controller
             'supports_central_check' => $supports,
             'can_run_central_check' => $supports && $task->status === 'COMPLETED',
         ];
+    }
+
+    protected function isDeviceCentralCheckTask(string $taskType): bool
+    {
+        return in_array($taskType, [
+            'ASSOCIATE_DEVICE_TO_SITE',
+            'ASSOCIATE_SITE_AND_NAME',
+            'UPDATE_SYSTEM_INFO',
+        ], true);
     }
 
     /**

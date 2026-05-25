@@ -452,6 +452,43 @@ test('get_all_switches paginates with limit and next until cursor is null', func
     Http::assertSentCount(2);
 });
 
+test('get_all_devices paginates with limit and next until cursor is null', function () {
+    Http::fake(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        expect($query['limit'] ?? null)->toBe('100')
+            ->and($query['filter'] ?? null)->toBe('siteId eq site-1');
+
+        if (! isset($query['next'])) {
+            return Http::response([
+                'items' => [['serialNumber' => 'SN-1', 'siteId' => 'site-1']],
+                'count' => 1,
+                'total' => 2,
+                'next' => '2',
+            ], 200);
+        }
+
+        expect($query['next'])->toBe('2');
+
+        return Http::response([
+            'items' => [['serialNumber' => 'SN-2', 'siteId' => 'site-1']],
+            'count' => 1,
+            'total' => 2,
+            'next' => null,
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_all_devices(['filter' => 'siteId eq site-1']);
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(2)
+        ->and($result[0]['serialNumber'])->toBe('SN-1')
+        ->and($result[1]['serialNumber'])->toBe('SN-2');
+
+    Http::assertSentCount(2);
+});
+
 test('get_all_switches returns error when a page request fails', function () {
     Http::fake([
         '*network-monitoring/v1/switches*' => Http::response(['detail' => 'error'], 500),

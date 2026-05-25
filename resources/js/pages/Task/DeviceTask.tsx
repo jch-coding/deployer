@@ -1,4 +1,4 @@
-import { router, usePage, usePoll } from '@inertiajs/react';
+import { Link, router, usePage, usePoll } from '@inertiajs/react';
 import { PowerOffIcon, Trash2Icon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
@@ -9,7 +9,7 @@ import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { index as clientIndex } from '@/routes/clients';
 import  { show as showDeployment } from '@/routes/deployments';
-import { show as showTask, cancel, clear_queue } from '@/routes/tasks';
+import { show as showTask, cancel, clear_queue, check as checkTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -29,12 +29,14 @@ type DeviceTaskPageProps = SharedData & {
     devices: TaskDevice[];
     display_columns?: string[];
     deployment: { id: number; name: string };
+    can_run_central_check?: boolean;
 };
 
 export default function Show() {
-    const { current_client, flash, task, task_friendly_name, devices, display_columns, deployment } =
+    const { current_client, flash, task, task_friendly_name, devices, display_columns, deployment, can_run_central_check } =
         usePage<DeviceTaskPageProps>().props;
     const displayColumns = display_columns ?? [];
+    const canRunCentralCheck = can_run_central_check === true;
     const completedDevices= devices.filter(
         (device) => device.pivot.status === 'COMPLETED',
     );
@@ -107,6 +109,15 @@ export default function Show() {
             </div>
             <div className="mx-auto my-2 flex min-w-7xl gap-4">
                 <div className="max-w-[400px]">
+                    {canRunCentralCheck && (
+                        <div className="mb-2">
+                            <Button variant="outline" className="w-full" asChild>
+                                <Link href={checkTask(task.id).url}>
+                                    Verify in Central
+                                </Link>
+                            </Button>
+                        </div>
+                    )}
                     <Card className="h-[75vh] overflow-y-auto">
                         <CardHeader className="text-center text-2xl font-bold">
                             Progress
