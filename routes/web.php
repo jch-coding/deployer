@@ -4,6 +4,7 @@ use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DispatchController;
+use App\Http\Controllers\SiteController;
 use App\Http\Controllers\TaskController;
 use App\Http\Resources\ClientResource;
 use Illuminate\Support\Facades\Route;
@@ -64,6 +65,10 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
         Route::put('/devices/refresh-scope-id/{device}', 'refreshScopeId')->name('devices.refresh-scope-id');
         Route::delete('/devices/{device}', 'destroy')->name('devices.destroy');
+    });
+
+    Route::controller(SiteController::class)->group(function () {
+        Route::get('/sites', 'index')->name('sites.index');
     });
 
     Route::controller(DispatchController::class)->group(function () {

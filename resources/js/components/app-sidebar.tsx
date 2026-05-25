@@ -4,6 +4,7 @@ import {
     BookOpen,
     BuildingIcon,
     ListTodoIcon,
+    MapPin,
     ScrollText,
 } from 'lucide-react';
 import { AppearanceToggle } from '@/components/appearance-toggle';
@@ -22,6 +23,7 @@ import {
 import { documentation, usage } from '@/routes';
 import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
+import { index as sites_index } from '@/routes/sites'
 import { index as task_index } from '@/routes/tasks'
 import type { NavItem } from '@/types';
 
@@ -35,6 +37,11 @@ const mainNavItems: NavItem[] = [
         title: 'Deployments',
         href: deployment_index(),
         icon: ActivityIcon,
+    },
+    {
+        title: 'Sites',
+        href: sites_index(),
+        icon: MapPin,
     },
     {
         title: 'Tasks',
