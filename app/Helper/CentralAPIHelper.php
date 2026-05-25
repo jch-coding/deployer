@@ -392,6 +392,22 @@ class CentralAPIHelper
         return ['updated' => $updated, 'error' => null];
     }
 
+    public function getSystemInfo(Device $device)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters([
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $device->scope_id,
+                    'device-function' => $device->device_function,
+                ])->get($this->client->base_url.$this->system['system_info']);
+
+            return $response;
+        }
+    }
+
     public function updateSystemInfo(Device $device)
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -402,9 +418,7 @@ class CentralAPIHelper
                     'object-type' => 'LOCAL',
                     'scope-id' => $device->scope_id,
                     'device-function' => $device->device_function,
-                ])->withBody(json_encode([
-                    'hostname' => $device->name,
-                ]))->patch($this->client->base_url.$this->system['system_info']);
+                ])->patch($this->client->base_url.$this->system['system_info'], ['hostname' => $device->name]);
 
             return $response;
         }
@@ -420,9 +434,7 @@ class CentralAPIHelper
                     'object-type' => 'LOCAL',
                     'scope-id' => $device->scope_id,
                     'device-function' => $device->device_function,
-                ])->withBody(json_encode([
-                    'hostname' => $device->name,
-                ]))->post($this->client->base_url.$this->system['system_info']);
+                ])->post($this->client->base_url.$this->system['system_info'], ['hostname' => $device->name]);
 
             return $response;
         }
