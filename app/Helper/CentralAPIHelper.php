@@ -39,6 +39,7 @@ class CentralAPIHelper
 
     public array $configManagement = [
         'persona_assignment' => 'network-config/v1alpha1/persona-assignment/',
+        'persona_mapping' => 'network-config/v1alpha1/device-persona-mapping/',
     ];
 
     public array $interfaces = [
@@ -188,6 +189,121 @@ class CentralAPIHelper
         }
 
         return $central_site['scopeId'];
+    }
+
+    /**
+     * @return array{sites: array<int, array{scopeName: string, scopeId: string}>, error: string|null}
+     */
+    public function collectScopeManagementSites(): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'sites' => [],
+                'error' => 'Could not authenticate with Central to load sites.',
+            ];
+        }
+
+        $limit = 100;
+        $offset = 0;
+        $raw_items = [];
+
+        while (true) {
+            $central_sites = $this->get_sites([
+                'offset' => $offset,
+                'limit' => $limit,
+            ]);
+
+            if (is_array($central_sites) && array_key_exists('error', $central_sites)) {
+                return [
+                    'sites' => [],
+                    'error' => 'Could not load sites from Central.',
+                ];
+            }
+
+            if (! $central_sites->ok()) {
+                return [
+                    'sites' => [],
+                    'error' => 'Could not load sites from Central.',
+                ];
+            }
+
+            $page_items = $central_sites->json('items', []);
+            $raw_items = array_merge($raw_items, is_array($page_items) ? $page_items : []);
+
+            if (count($page_items) < $limit) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        return [
+            'sites' => $this->mapScopeManagementItems($raw_items),
+            'error' => null,
+        ];
+    }
+
+    /**
+     * @return array{groups: array<int, array{scopeName: string, scopeId: string}>, error: string|null}
+     */
+    public function collectScopeManagementDeviceGroups(): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'groups' => [],
+                'error' => 'Could not authenticate with Central to load device groups.',
+            ];
+        }
+
+        $response = $this->get_device_groups();
+
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return [
+                'groups' => [],
+                'error' => 'Could not load device groups from Central.',
+            ];
+        }
+
+        if (! $response->ok()) {
+            return [
+                'groups' => [],
+                'error' => 'Could not load device groups from Central.',
+            ];
+        }
+
+        $items = $response->json('items', []);
+
+        return [
+            'groups' => $this->mapScopeManagementItems(is_array($items) ? $items : []),
+            'error' => null,
+        ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $items
+     * @return array<int, array{scopeName: string, scopeId: string}>
+     */
+    private function mapScopeManagementItems(array $items): array
+    {
+        $mapped = [];
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $scopeName = trim((string) ($item['scopeName'] ?? ''));
+            if ($scopeName === '') {
+                continue;
+            }
+
+            $mapped[] = [
+                'scopeName' => $scopeName,
+                'scopeId' => trim((string) ($item['scopeId'] ?? '')),
+            ];
+        }
+
+        return $mapped;
     }
 
     /**

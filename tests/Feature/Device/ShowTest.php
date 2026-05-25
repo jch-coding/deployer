@@ -4,8 +4,11 @@ use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\Site;
 use App\Models\User;
 use App\SwitchSKU;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -13,10 +16,39 @@ beforeEach(function () {
         ->has(Client::factory())
         ->create();
     $this->client = $this->user->clients()->first();
-    $this->client->update(['current' => true]);
+    $this->client->update([
+        'current' => true,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
 });
 
+function fakeCentralScopeManagementApis(): void
+{
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-config/v1/sites')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'Central Site', 'scopeId' => 'scope-site'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'Central Group', 'scopeId' => 'scope-group'],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 404);
+    });
+}
+
 it('shows the device page with interface rows for the current client', function () {
+    fakeCentralScopeManagementApis();
+
     $deployment = Deployment::factory()->for($this->client)->create();
     $device = Device::factory()->create([
         'deployment_id' => $deployment->id,
@@ -58,7 +90,32 @@ it('shows the device page with interface rows for the current client', function 
                 ->etc()));
 });
 
+it('includes central sites and device groups on show', function () {
+    fakeCentralScopeManagementApis();
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('devices.show', $device))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Device/Show')
+            ->where('central_sites_error', null)
+            ->where('central_device_groups_error', null)
+            ->has('central_sites', 1)
+            ->has('central_device_groups', 1)
+            ->where('central_sites.0.scopeName', 'Central Site')
+            ->where('central_device_groups.0.scopeName', 'Central Group'));
+});
+
 it('includes sku in device props when set', function () {
+    fakeCentralScopeManagementApis();
+
     $deployment = Deployment::factory()->for($this->client)->create();
     $device = Device::factory()->create([
         'deployment_id' => $deployment->id,
@@ -102,6 +159,75 @@ it('updates shutdown_on_split from the interface edit endpoint', function () {
         'id' => $interface->id,
         'shutdown_on_split' => true,
     ]);
+});
+
+it('updates device site and group via metadata patch', function () {
+    fakeCentralScopeManagementApis();
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'group' => null,
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('devices.show', $device))
+        ->patch(route('devices.update-metadata', $device), [
+            'site' => 'Central Site',
+            'group' => 'Central Group',
+        ])
+        ->assertRedirect(route('devices.show', $device));
+
+    $device->refresh()->load('site');
+
+    expect($device->group)->toBe('Central Group')
+        ->and($device->site)->not->toBeNull()
+        ->and($device->site->name)->toBe('Central Site')
+        ->and($device->site->scope_id)->toBe('scope-site');
+});
+
+it('clears device site via metadata patch', function () {
+    fakeCentralScopeManagementApis();
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $site = Site::factory()->for($this->client)->create(['name' => 'Old Site']);
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'site_id' => $site->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('devices.show', $device))
+        ->patch(route('devices.update-metadata', $device), [
+            'site' => null,
+        ])
+        ->assertRedirect(route('devices.show', $device));
+
+    expect($device->fresh()->site_id)->toBeNull();
+});
+
+it('returns forbidden when patching metadata for another clients device', function () {
+    $otherUser = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $otherClient = $otherUser->clients()->first();
+
+    $deployment = Deployment::factory()->for($otherClient)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $otherClient->id,
+        'user_id' => $otherUser->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->patch(route('devices.update-metadata', $device), [
+            'group' => 'Central Group',
+        ])
+        ->assertForbidden();
 });
 
 it('returns forbidden when the device belongs to another client', function () {

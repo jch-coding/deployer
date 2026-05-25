@@ -8,7 +8,7 @@ use App\Helper\CentralAPIHelper;
 use App\Helper\CSVHelper;
 use App\Helper\InterfaceHelper;
 use App\Http\Requests\UpdateDeviceInterfacesRequest;
-use App\Services\DeviceInterfaceUpdateResolver;
+use App\Http\Requests\UpdateDeviceMetadataRequest;
 use App\Http\Resources\LacpProfileResource;
 use App\Http\Resources\StpProfileResource;
 use App\Http\Resources\SwitchPortResource;
@@ -21,6 +21,7 @@ use App\Models\LacpProfile;
 use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
+use App\Services\DeviceInterfaceUpdateResolver;
 use App\Support\TrunkVlanRanges;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -636,6 +637,22 @@ class DeviceController extends Controller
                 ];
             });
 
+        $client = $request->user()->currentClient();
+        $central = new CentralAPIHelper($client);
+        $sitesResult = $central->collectScopeManagementSites();
+        $groupsResult = $central->collectScopeManagementDeviceGroups();
+
+        $centralSites = self::ensureScopeNameInCentralList(
+            $sitesResult['sites'],
+            $device->site?->name,
+            $device->site?->scope_id,
+        );
+        $centralDeviceGroups = self::ensureScopeNameInCentralList(
+            $groupsResult['groups'],
+            $device->group,
+            null,
+        );
+
         return Inertia::render('Device/Show', [
             'device' => [
                 'id' => $device->id,
@@ -652,7 +669,74 @@ class DeviceController extends Controller
                 'name' => $device->deployment->name,
             ],
             'interfaces' => $interfaces,
+            'central_sites' => $centralSites,
+            'central_sites_error' => $sitesResult['error'],
+            'central_device_groups' => $centralDeviceGroups,
+            'central_device_groups_error' => $groupsResult['error'],
         ]);
+    }
+
+    public function updateMetadata(UpdateDeviceMetadataRequest $request, Device $device)
+    {
+        if ($request->user()->id !== $device->user_id || $request->user()->currentClient()?->id !== $device->client_id) {
+            abort(403);
+        }
+
+        $validated = $request->validated();
+
+        if (array_key_exists('site', $validated)) {
+            $siteName = $validated['site'];
+            if ($siteName === null || $siteName === '') {
+                $device->update(['site_id' => null]);
+            } else {
+                $site = Site::firstOrCreateForClient($device->client, $siteName);
+                $central = new CentralAPIHelper($device->client);
+                $centralSite = collect($central->collectScopeManagementSites()['sites'])
+                    ->firstWhere('scopeName', $siteName);
+                if (is_array($centralSite) && ($centralSite['scopeId'] ?? '') !== '') {
+                    $site->scope_id = $centralSite['scopeId'];
+                    $site->save();
+                }
+                $device->update(['site_id' => $site->id]);
+            }
+        }
+
+        if (array_key_exists('group', $validated)) {
+            $group = $validated['group'];
+            $device->update([
+                'group' => $group === null || $group === '' ? null : $group,
+            ]);
+        }
+
+        return back()->with('success', 'Device updated successfully.');
+    }
+
+    /**
+     * @param  array<int, array{scopeName: string, scopeId: string}>  $items
+     * @return array<int, array{scopeName: string, scopeId: string}>
+     */
+    private static function ensureScopeNameInCentralList(
+        array $items,
+        ?string $currentName,
+        ?string $currentScopeId,
+    ): array {
+        $currentName = $currentName !== null ? trim($currentName) : '';
+        if ($currentName === '') {
+            return $items;
+        }
+
+        foreach ($items as $item) {
+            if (($item['scopeName'] ?? '') === $currentName) {
+                return $items;
+            }
+        }
+
+        $items[] = [
+            'scopeName' => $currentName,
+            'scopeId' => trim((string) ($currentScopeId ?? '')),
+        ];
+
+        return $items;
     }
 
     public function updateInterfaces(UpdateDeviceInterfacesRequest $request, Device $device)

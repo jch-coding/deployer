@@ -167,37 +167,143 @@ function yesNo(value: boolean): string {
     return value ? 'Yes' : 'No';
 }
 
-function formatDeviceMetadata(device: {
+type CentralScopeOption = {
+    scopeName: string;
+    scopeId: string;
+};
+
+const METADATA_CHIP_CLASS =
+    'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-slate-700 dark:hover:text-white';
+
+function DeviceMetadataChip({
+    label,
+    value,
+}: {
+    label: string;
+    value: string | null;
+}) {
+    const display = value?.trim() ? value.trim() : '—';
+
+    return (
+        <span className={METADATA_CHIP_CLASS}>
+            <span className="font-medium">{label}</span>
+            <span>{display}</span>
+        </span>
+    );
+}
+
+function EditableDeviceMetadataSelectChip({
+    label,
+    value,
+    options,
+    centralError,
+    fieldError,
+    onSave,
+}: {
+    label: string;
+    value: string | null;
+    options: CentralScopeOption[];
+    centralError: string | null;
+    fieldError?: string;
+    onSave: (scopeName: string | null) => void;
+}) {
+    const [editing, setEditing] = useState(false);
+    const display = value?.trim() ? value.trim() : '—';
+    const editable = centralError === null;
+
+    if (editing && editable) {
+        return (
+            <div className="inline-flex flex-col gap-1">
+                <Select
+                    defaultOpen
+                    value={value?.trim() || '__none__'}
+                    onValueChange={(next) => {
+                        onSave(next === '__none__' ? null : next);
+                        setEditing(false);
+                    }}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setEditing(false);
+                        }
+                    }}
+                >
+                    <SelectTrigger
+                        className="h-8 min-w-[10rem] text-sm"
+                        aria-label={label}
+                    >
+                        <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="__none__">None</SelectItem>
+                        {options.map((opt) => (
+                            <SelectItem key={opt.scopeName} value={opt.scopeName}>
+                                {opt.scopeName}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                {fieldError ? (
+                    <span className="text-destructive text-xs">{fieldError}</span>
+                ) : null}
+            </div>
+        );
+    }
+
+    return (
+        <div className="inline-flex flex-col gap-1">
+            <button
+                type="button"
+                disabled={!editable}
+                onClick={() => {
+                    if (editable) {
+                        setEditing(true);
+                    }
+                }}
+                className={cn(
+                    METADATA_CHIP_CLASS,
+                    editable && 'cursor-pointer hover:bg-accent',
+                    !editable && 'cursor-default opacity-80',
+                )}
+                title={centralError ?? undefined}
+            >
+                <span className="font-medium">{label}</span>
+                <span>{display}</span>
+            </button>
+            {centralError ? (
+                <span className="text-muted-foreground text-xs">{centralError}</span>
+            ) : null}
+            {fieldError ? (
+                <span className="text-destructive text-xs">{fieldError}</span>
+            ) : null}
+        </div>
+    );
+}
+
+function buildMetadataChips(device: {
     site: string | null;
     group: string | null;
     serial: string | null;
     sku: string | null;
     scope_id: string | null;
     device_function: string | null;
-}): string | null {
-    const parts: string[] = [];
-    const pushLabeled = (label: string, value: string | null | undefined) => {
-        if (value == null) {
+}): { label: string; value: string | null }[] {
+    const chips: { label: string; value: string | null }[] = [];
+    const push = (label: string, val: string | null | undefined) => {
+        if (val == null) {
             return;
         }
-        const trimmed = String(value).trim();
+        const trimmed = String(val).trim();
         if (trimmed === '') {
             return;
         }
-        parts.push(`${label} ${trimmed}`);
+        chips.push({ label, value: trimmed });
     };
-    pushLabeled('Site', device.site);
-    pushLabeled('Group', device.group);
-    pushLabeled('Serial', device.serial);
-    pushLabeled('SKU', device.sku);
-    pushLabeled('Scope ID', device.scope_id);
-    if (device.device_function != null) {
-        const fn = String(device.device_function).trim();
-        if (fn !== '') {
-            parts.push(fn);
-        }
-    }
-    return parts.length > 0 ? parts.join(' · ') : null;
+    push('Serial', device.serial);
+    push('SKU', device.sku);
+    push('Scope ID', device.scope_id);
+    push('Function', device.device_function);
+
+    return chips;
 }
 
 function hasIpAddress(row: DeviceInterfaceRow): boolean {
@@ -786,6 +892,10 @@ type DeviceShowProps = {
         name: string;
     };
     interfaces: Paginator<DeviceInterfaceRow>;
+    central_sites: CentralScopeOption[];
+    central_sites_error: string | null;
+    central_device_groups: CentralScopeOption[];
+    central_device_groups_error: string | null;
     errors?: Record<string, string>;
 } & SharedData;
 
@@ -793,8 +903,17 @@ const BULK_BOOL_NOOP = '__noop__' as const;
 const BULK_ENUM_NOOP = '__noop__' as const;
 
 export default function Show() {
-    const { device, deployment, current_client, interfaces, errors } =
-        usePage<DeviceShowProps>().props;
+    const {
+        device,
+        deployment,
+        current_client,
+        interfaces,
+        errors,
+        central_sites,
+        central_sites_error,
+        central_device_groups,
+        central_device_groups_error,
+    } = usePage<DeviceShowProps>().props;
     const [isEditing, setIsEditing] = useState(false);
     const [drafts, setDrafts] = useState<Record<number, InterfaceDraftRow>>({});
     const [selectedInterfaceIds, setSelectedInterfaceIds] = useState<Set<number>>(() => new Set());
@@ -1185,7 +1304,24 @@ export default function Show() {
         );
     }, [columnVisibility]);
 
-    const deviceSubtitle = formatDeviceMetadata(device);
+    const readOnlyMetadataChips = buildMetadataChips(device);
+
+    const patchDeviceMetadata = useCallback(
+        (payload: { site?: string | null; group?: string | null }) => {
+            const body: { site?: string | null; group?: string | null } = {};
+            if ('site' in payload) {
+                body.site = payload.site;
+            }
+            if ('group' in payload) {
+                body.group = payload.group;
+            }
+            router.patch(`/devices/${device.id}`, body, {
+                preserveScroll: true,
+                only: ['device', 'errors', 'central_sites', 'central_device_groups'],
+            });
+        },
+        [device.id],
+    );
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -1232,11 +1368,31 @@ export default function Show() {
             <div className="space-y-4 p-4">
                 <div>
                     <h1 className="text-2xl font-semibold">{device.name}</h1>
-                    {deviceSubtitle ? (
-                        <p className="text-muted-foreground text-sm">
-                            {deviceSubtitle}
-                        </p>
-                    ) : null}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        <EditableDeviceMetadataSelectChip
+                            label="Site"
+                            value={device.site}
+                            options={central_sites}
+                            centralError={central_sites_error}
+                            fieldError={errors?.site}
+                            onSave={(site) => patchDeviceMetadata({ site })}
+                        />
+                        <EditableDeviceMetadataSelectChip
+                            label="Group"
+                            value={device.group}
+                            options={central_device_groups}
+                            centralError={central_device_groups_error}
+                            fieldError={errors?.group}
+                            onSave={(group) => patchDeviceMetadata({ group })}
+                        />
+                        {readOnlyMetadataChips.map((chip) => (
+                            <DeviceMetadataChip
+                                key={chip.label}
+                                label={chip.label}
+                                value={chip.value}
+                            />
+                        ))}
+                    </div>
                 </div>
                 <div>
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

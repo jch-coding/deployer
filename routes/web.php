@@ -58,6 +58,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::get('/devices/{device}', 'show')->name('devices.show');
+        Route::patch('/devices/{device}', 'updateMetadata')->name('devices.update-metadata');
         Route::patch('/devices/{device}/interfaces', 'updateInterfaces')->name('devices.interfaces.update');
         Route::delete('/devices/{device}/interfaces/{deviceInterface}', 'destroyInterface')->name('devices.interfaces.destroy');
         Route::put('/devices/edit/{device}', 'update')->name('devices.edit');
