@@ -68,6 +68,7 @@ test('sites index fetches devices when filters are applied', function () {
                     'model' => '6300',
                     'ipv4' => '10.0.0.1',
                     'status' => 'ONLINE',
+                    'deployment' => 'Standalone',
                     'siteName' => 'HQ',
                 ]],
                 'next' => null,
@@ -93,6 +94,7 @@ test('sites index fetches devices when filters are applied', function () {
             ->where('devices.0.deviceName', 'Switch-A')
             ->where('devices.0.serialNumber', 'SN12345')
             ->where('devices.0.status', 'ONLINE')
+            ->where('devices.0.deployment', 'Standalone')
             ->where('devices.0.siteName', 'HQ'));
 });
 

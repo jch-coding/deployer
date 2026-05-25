@@ -22,6 +22,7 @@ type DeviceRow = {
     model: string;
     ipv4: string;
     status: string;
+    deployment: string;
     siteName: string;
 };
 
@@ -183,6 +184,7 @@ export default function Index() {
                     </Badge>
                 ),
             },
+            { accessorKey: 'deployment', header: 'Deployment' },
             { accessorKey: 'siteName', header: 'Site Name' },
         ],
         [],

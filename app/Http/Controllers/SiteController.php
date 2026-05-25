@@ -92,6 +92,7 @@ class SiteController extends Controller
                             'model' => (string) ($item['model'] ?? ''),
                             'ipv4' => (string) ($item['ipv4'] ?? ''),
                             'status' => (string) ($item['status'] ?? ''),
+                            'deployment' => (string) ($item['deployment'] ?? ''),
                             'siteName' => (string) ($item['siteName'] ?? ''),
                         ],
                         $result,
