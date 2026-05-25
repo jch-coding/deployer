@@ -399,6 +399,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
+                    'view-type' => 'LOCAL',
                     'object-type' => 'LOCAL',
                     'scope-id' => $device->scope_id,
                     'device-function' => $device->device_function,
