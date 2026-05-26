@@ -64,6 +64,7 @@ class CentralAPIHelper
 
     public array $high_availability = [
         'switch_stack' => 'network-config/v1alpha1/stacks/',
+        'vsx' => 'network-config/v1alpha1/vsx-profiles/',
     ];
 
     public array $classic_monitoring = [
@@ -466,6 +467,87 @@ class CentralAPIHelper
             ];
             $response = Http::withToken($this->client->bearer_token)
                 ->post($this->client->base_url.$this->configManagement['persona_assignment'].$device_function, $body);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param array $vsx_profile = [
+     *  'name' => string,
+     *  'auto-role' => boolean,
+     *  'peer1' => [
+     *    'device-serial' => string,
+     *    'keepalive-device => [
+     *      'keepalive-type' => KA_ETHERNET | KA_PORTCHANNEL,
+     *      'keepalive-version' => IPV4 | IPV6,
+     *      'source-ip' => string,
+     *      'peer-ip' => string,
+     *      'ethernet-ifname | portchannel-ifname' => string,
+     *      'vrf' => string,
+     *   ],
+     *   'role' => VSX_PRIMARY | VSX_SECONDARY,
+     *   'ethernet-interface' => [
+     *      [
+     *        'ethernet-ifname' => string,
+     *        'vrf-forwarding' => string,
+     *        'ipv4-address' => string with netmask,
+     *        'existing-ethernet-ip' => boolean,
+     *      ]
+     *    'port-channel-interface' => [
+     *      [
+     *         'switchport' => [
+     *           'tag' => boolean,
+     *           'interface-mode' => ACCESS | TRUNK,
+     *           'access-vlan' => integer,
+     *           'native-vlan' => integer,
+     *           'trunk-vlan-all' => boolean,
+     *           'trunk-vlan-ranges' => string,
+     *           'trunk-vlan-all' => boolean,
+     *        ],
+     *         'ipv4-address' => string with netmask,
+     *         'existing-portchannel-ip' => boolean,
+     *         'portchannel-ifname' => string,
+     *         'enable' => boolean,
+     *         'description' => string,
+     *         'lacp-mode' => ACTIVE | PASSIVE | AUTO, 
+     *         'port-list' => [ string, ...],
+     *         'trunk-type' => LACP | TRUNK | DT_TRUNK | MULTI_CHASSIS | MULTI_CHASSIS_STATIC,
+     *         'routing' => boolean,
+     *         'vrf-forwarding' => string,
+     *      ],
+     *      'inter-switch-link' => [
+     *         'portchannel-interface' => string,
+     *       ],
+     *      'vrf' => [
+     *          [
+     *            'vrf-name' => string,
+     *            'existing-vrf' => boolean,
+     *          ], ...
+     *        ]
+     *     ]
+     *   ],
+     *   'peer2' => [ same as peer1 except 'device-serial' => string, 'role' => VSX_PRIMARY | VSX_SECONDARY, ],
+     *   'sync-features' => [
+     *      'system-mac' => string,
+     *    ]
+     *  ]
+     * ]
+     */
+    public function post_vsx_profile(array $vsx_profile = [], string $site_scope_id = '')
+    {
+        if (empty($site_scope_id)) {
+            return ['error' => 'site scope id is required.'];
+        }
+        $queryParameters = [
+            'view-type' => 'LOCAL',
+            'scope-id' => $site_scope_id,
+        ];
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->post($this->client->base_url.$this->high_availability['vsx'].$vsx_profile['name'], $vsx_profile);
 
             return $response;
         }
