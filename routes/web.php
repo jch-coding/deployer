@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CentralApiExplorerController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
@@ -69,6 +70,11 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(SiteController::class)->group(function () {
         Route::get('/sites', 'index')->name('sites.index');
+    });
+
+    Route::controller(CentralApiExplorerController::class)->group(function () {
+        Route::get('/central-api', 'index')->name('central-api.index');
+        Route::post('/central-api/execute', 'execute')->name('central-api.execute');
     });
 
     Route::controller(DispatchController::class)->group(function () {

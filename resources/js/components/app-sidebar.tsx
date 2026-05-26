@@ -1,6 +1,7 @@
 import {
     ActivityIcon,
     BookOpen,
+    Braces,
     BuildingIcon,
     ListTodoIcon,
     MapPin,
@@ -21,6 +22,7 @@ import { documentation, usage } from '@/routes';
 import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
 import { index as sites_index } from '@/routes/sites'
+import { index as central_api_index } from '@/routes/central-api';
 import { index as task_index } from '@/routes/tasks'
 import type { NavItem } from '@/types';
 
@@ -44,6 +46,11 @@ const mainNavItems: NavItem[] = [
         title: 'Tasks',
         href: task_index(),
         icon: ListTodoIcon,
+    },
+    {
+        title: 'Central API',
+        href: central_api_index(),
+        icon: Braces,
     },
 ];
 

@@ -1,0 +1,72 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Configuration Health",
+        "description": "Configuration Health APIs - device configuration status and issues.",
+        "version": "0.0.1"
+    },
+    "tags": [
+        {
+            "name": "Configuration Health",
+            "description": "Configuration Health APIs - To get details about configuration status for devices and issues with devices"
+        }
+    ],
+    "paths": {
+        "/network-config/v1alpha1/config-health/active-issue": {
+            "get": {
+                "operationId": "getActiveIssues",
+                "summary": "Returns active configuration issues for a device.",
+                "description": "This API is used to fetch active configuration issues for a device.",
+                "tags": ["Configuration Health"],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "serial",
+                        "required": true,
+                        "schema": { "type": "string" }
+                    }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/config-health/devices": {
+            "get": {
+                "operationId": "getConfigHealthDevices",
+                "summary": "Returns summary of configuration health for devices.",
+                "description": "This API is used to fetch configuration health information for all devices.",
+                "tags": ["Configuration Health"],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": true,
+                        "schema": { "type": "integer", "default": 100 }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": true,
+                        "schema": { "type": "integer", "default": 0 }
+                    },
+                    {
+                        "in": "query",
+                        "name": "sort",
+                        "required": false,
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "in": "query",
+                        "name": "filter",
+                        "required": false,
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "in": "query",
+                        "name": "search",
+                        "required": false,
+                        "schema": { "type": "string" }
+                    }
+                ]
+            }
+        }
+    }
+}

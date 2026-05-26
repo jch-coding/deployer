@@ -1,0 +1,164 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "High Availability",
+        "description": "Gateway clusters, switch stacks, VSF templates, and VSX profiles.",
+        "version": "v1alpha1"
+    },
+    "tags": [
+        {
+            "name": "Gw Cluster",
+            "description": "Gateway cluster profiles for HA and WLAN client continuity."
+        },
+        {
+            "name": "Switch Stack",
+            "description": "Switch stacks and VSF (Virtual Switching Framework)."
+        },
+        {
+            "name": "Vsf Template",
+            "description": "VSF stack templates."
+        },
+        {
+            "name": "Vsx",
+            "description": "VSX profiles for switch pairs."
+        }
+    ],
+    "paths": {
+        "/network-config/v1alpha1/gateway-clusters": {
+            "get": {
+                "operationId": "readGatewayClusters",
+                "summary": "Read the configured Gateway Cluster Profiles",
+                "description": "List gateway cluster profiles used for gateway HA and WLAN client continuity.",
+                "tags": ["Gw Cluster"],
+                "parameters": [
+                    { "in": "query", "name": "view-type", "required": false, "description": "LIBRARY or LOCAL.", "schema": { "type": "string", "default": "LIBRARY" } },
+                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "scope-id", "required": false, "description": "Required when view-type is LOCAL.", "schema": { "type": "string" } },
+                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer" } },
+                    { "in": "query", "name": "offset", "required": false, "schema": { "type": "integer" } }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/stacks": {
+            "get": {
+                "operationId": "readStacks",
+                "summary": "Read configured stacks",
+                "description": "Configure and manage switch stacks (VSF).",
+                "tags": ["Switch Stack"],
+                "parameters": [
+                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string", "default": "LIBRARY" } },
+                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer" } },
+                    { "in": "query", "name": "offset", "required": false, "schema": { "type": "integer" } }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/vsf-templates": {
+            "get": {
+                "operationId": "readVsfTemplates",
+                "summary": "Read configured VSF templates",
+                "description": "List VSF stack templates.",
+                "tags": ["Vsf Template"],
+                "parameters": [
+                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string", "default": "LIBRARY" } },
+                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer" } },
+                    { "in": "query", "name": "offset", "required": false, "schema": { "type": "integer" } }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/vsx-profiles": {
+            "get": {
+                "operationId": "readVsxProfiles",
+                "summary": "Read vsx profiles",
+                "description": "List VSX profiles for switch high availability pairs.",
+                "tags": ["Vsx"],
+                "parameters": [
+                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string", "default": "LIBRARY" } },
+                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer" } },
+                    { "in": "query", "name": "offset", "required": false, "schema": { "type": "integer" } }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/gateway-clusters/{name}": {
+            "get": {
+                "operationId": "readGatewayClusterByName",
+                "summary": "Read an existing gateway cluster profile configuration",
+                "tags": ["Gw Cluster"],
+                "parameters": [
+                    { "in": "path", "name": "name", "required": true, "schema": { "type": "string" } },
+                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/stacks/{name}": {
+            "get": {
+                "operationId": "readStackByName",
+                "summary": "Read existing stack configuration by name",
+                "tags": ["Switch Stack"],
+                "parameters": [
+                    { "in": "path", "name": "name", "required": true, "schema": { "type": "string" } },
+                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/vsf-templates/{name}": {
+            "get": {
+                "operationId": "readVsfTemplateByName",
+                "summary": "Read existing VSF template configuration by name",
+                "tags": ["Vsf Template"],
+                "parameters": [
+                    { "in": "path", "name": "name", "required": true, "schema": { "type": "string" } },
+                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/vsx-profiles/{name}": {
+            "get": {
+                "operationId": "readVsxByName",
+                "summary": "Read vsx profile by name",
+                "tags": ["Vsx"],
+                "parameters": [
+                    { "in": "path", "name": "name", "required": true, "schema": { "type": "string" } },
+                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
+                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
+                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } }
+                ]
+            }
+        }
+    }
+}

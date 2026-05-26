@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\BaseURL;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -53,13 +54,17 @@ class Client extends Model
     protected function baseURL(): Attribute
     {
         return Attribute::make(
-            get: fn (string $value) => "https://{$value}.api.central.arubanetworks.com/",
+            get: function (string|BaseURL $value): string {
+                $region = $value instanceof BaseURL ? $value->value : $value;
+
+                return "https://{$region}.api.central.arubanetworks.com/";
+            },
         );
     }
 
     public function handleBearerTokenAuth(bool $force = false)
     {
-        if ($force || $this->expires_at < now()) {
+        if ($force || $this->expires_at === null || $this->expires_at < now()) {
             $response = Http::asForm()->post($this->auth_url, [
                 'grant_type' => 'client_credentials',
                 'client_id' => $this->client_id,
