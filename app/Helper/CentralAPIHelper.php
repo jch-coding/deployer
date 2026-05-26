@@ -414,12 +414,13 @@ class CentralAPIHelper
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
+            $body = [ 'profile' => [ ['name' => 'sys-system-info-profile', 'hostname' => $device->name]]];
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
                     'object-type' => 'LOCAL',
                     'scope-id' => $device->scope_id,
                     'device-function' => $device->device_function,
-                ])->patch($this->client->base_url.$this->system['system_info'], ['hostname' => $device->name]);
+                ])->patch($this->client->base_url.$this->system['system_info'], $body);
 
             return $response;
         }
@@ -430,12 +431,13 @@ class CentralAPIHelper
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
+            $body = [ 'profile' => [ ['name' => 'sys-system-info-profile', 'hostname' => $device->name]]];
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
                     'object-type' => 'LOCAL',
                     'scope-id' => $device->scope_id,
                     'device-function' => $device->device_function,
-                ])->post($this->client->base_url.$this->system['system_info'], ['hostname' => $device->name]);
+                ])->post($this->client->base_url.$this->system['system_info'], $body);
 
             return $response;
         }
