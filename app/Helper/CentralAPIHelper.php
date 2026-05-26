@@ -533,6 +533,9 @@ class CentralAPIHelper
      *    ]
      *  ]
      * ]
+     * The keepalive interface/portchannel as well as the inter-switch-link portchannel can be configured as part of the vsx profile if they have not been configured yet.
+     * If the keepalive interface/portchannel and/or the inter-switch-link portchannel has been configured, the objects can be omitted in the vsx profile.
+     * @param string $site_scope_id 
      */
     public function post_vsx_profile(array $vsx_profile = [], string $site_scope_id = '')
     {
