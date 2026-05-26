@@ -131,7 +131,7 @@ test('a user can set a client as current', function () {
     $this->actingAs($user);
     $client = $user->clients->first();
     $this->put(route('clients.current', $client))
-         ->assertRedirect(route('clients.index'));
+         ->assertRedirect();
     expect($client->refresh()->current)->toBeTrue();
 });
 

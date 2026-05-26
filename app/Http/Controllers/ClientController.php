@@ -173,7 +173,7 @@ class ClientController extends Controller
         }
         $client->update(['current' => true]);
 
-        return to_route('clients.index');
+        return back();
     }
 
     /**

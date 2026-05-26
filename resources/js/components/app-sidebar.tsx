@@ -1,4 +1,3 @@
-import { Link, usePage } from '@inertiajs/react';
 import {
     ActivityIcon,
     BookOpen,
@@ -9,6 +8,7 @@ import {
 } from 'lucide-react';
 import { AppearanceToggle } from '@/components/appearance-toggle';
 import { NavFooter } from '@/components/nav-footer';
+import { NavClient } from '@/components/nav-client';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
@@ -16,9 +16,6 @@ import {
     SidebarContent,
     SidebarFooter,
     SidebarHeader,
-    SidebarMenu,
-    SidebarMenuButton,
-    SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { documentation, usage } from '@/routes';
 import { index as client_index } from '@/routes/clients'
@@ -64,19 +61,10 @@ const footerNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
-    const current_client = usePage().props.current_client;
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
-                <SidebarMenu>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild>
-                            <Link href={client_index()} className="text-slate-800 dark:text-slate-200 font-bold" prefetch>
-                                {current_client ? current_client.name : 'Client Not Set'}
-                            </Link>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                </SidebarMenu>
+                <NavClient />
             </SidebarHeader>
 
             <SidebarContent>

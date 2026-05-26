@@ -9,6 +9,7 @@ export type SharedData = {
     name: string;
     auth: Auth;
     sidebarOpen: boolean;
+    clients: { id: number; name: string }[];
     current_client: Client | null;
     flash?: {
         success?: string | null;

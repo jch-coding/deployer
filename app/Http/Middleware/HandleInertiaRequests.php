@@ -47,6 +47,7 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user()?->only(['id', 'name', 'email']),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'clients' => $request->user()?->clients()->orderBy('name')->get(['id', 'name']) ?? [],
             'current_client' => $current_client,
             'flash' => [
                 'success' => $request->hasSession() ? $request->session()->get('success') : null,
