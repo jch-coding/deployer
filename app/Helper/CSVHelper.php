@@ -29,11 +29,35 @@ class CSVHelper
     {
         if (($file = fopen($handle, 'r')) !== false) {
             $data = [];
+            $headers = null;
+            $nameCol = null;
             while (($row = fgetcsv($file)) !== false) {
-                $hasValue = array_filter($row, fn ($cell) => strlen(trim((string) $cell)) > 0);
-                if ($hasValue !== []) {
-                    array_push($data, $row);
+                $nonEmptyIndices = [];
+                foreach ($row as $idx => $cell) {
+                    if (strlen(trim((string) $cell)) > 0) {
+                        $nonEmptyIndices[] = $idx;
+                    }
                 }
+
+                // Preserve existing behavior: skip fully empty rows.
+                if ($nonEmptyIndices === []) {
+                    continue;
+                }
+
+                // First non-empty row is treated as headers.
+                if ($headers === null) {
+                    $headers = array_values($row);
+                    $nameCol = array_search('name', $headers, true);
+                    $data[] = $row;
+                    continue;
+                }
+
+                // If we can identify the name column, skip rows where it is the only populated field.
+                if (is_int($nameCol) && count($nonEmptyIndices) === 1 && $nonEmptyIndices[0] === $nameCol) {
+                    continue;
+                }
+
+                $data[] = $row;
             }
             fclose($file);
             $data = self::fillInDeviceSerialAndDeviceFunction($data);

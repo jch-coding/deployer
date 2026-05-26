@@ -85,6 +85,22 @@ it('only adds non-empty rows to the data array when processing a CSV file', func
         ->and($result[1])->toBe(['x', 'y']);
 });
 
+it('skips rows where only the name column is populated when processing a CSV file', function () {
+    $path = tempnam(sys_get_temp_dir(), 'csv_helper_');
+    file_put_contents($path, "name,serial,device_function\nonly-hostname,,\nhost2,SN0000000001,ACCESS_SWITCH\n");
+
+    try {
+        $result = CSVHelper::processCSVFile($path);
+    } finally {
+        unlink($path);
+    }
+
+    expect($result)->toBeArray()
+        ->and($result)->toHaveCount(2)
+        ->and($result[0])->toBe(['name', 'serial', 'device_function'])
+        ->and($result[1])->toBe(['host2', 'SN0000000001', 'ACCESS_SWITCH']);
+});
+
 it('returns an empty array if the CSVData is empty', function () {
     $result = CSVHelper::createDeviceArrays([]);
     expect($result)->toBeArray()->and($result)->toHaveCount(0);
