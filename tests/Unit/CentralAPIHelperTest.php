@@ -456,7 +456,7 @@ test('get_all_devices paginates with limit and next until cursor is null', funct
     Http::fake(function (Request $request) {
         parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
 
-        expect($query['limit'] ?? null)->toBe('100')
+        expect($query['limit'] ?? null)->toBe('1000')
             ->and($query['filter'] ?? null)->toBe('siteId eq site-1');
 
         if (! isset($query['next'])) {

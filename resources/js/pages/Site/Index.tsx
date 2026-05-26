@@ -3,6 +3,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
@@ -99,6 +100,10 @@ function buildQueryFromFilters(filters: SiteFilters): Record<string, string> {
     return query;
 }
 
+function hasActiveFilters(filters: SiteFilters): boolean {
+    return (Object.keys(filters) as (keyof SiteFilters)[]).some((key) => (filters[key] ?? '').trim() !== '');
+}
+
 const selectClassName =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
@@ -116,10 +121,20 @@ export default function Index() {
     } = usePage<SiteIndexProps>().props;
 
     const [localFilters, setLocalFilters] = useState<SiteFilters>(filters);
+    const [isSearching, setIsSearching] = useState(false);
+    const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
+    const [pageIndex, setPageIndex] = useState(0);
+
+    const hasActiveLocalFilters = useMemo(() => hasActiveFilters(localFilters), [localFilters]);
 
     useEffect(() => {
         setLocalFilters(filters);
+        setIsSearching(false);
     }, [filters]);
+
+    useEffect(() => {
+        setPageIndex(0);
+    }, [devices, pageSize]);
 
     const updateFilter = useCallback((patch: Partial<SiteFilters>) => {
         setLocalFilters((prev) => ({ ...prev, ...patch }));
@@ -147,26 +162,34 @@ export default function Index() {
         [site_options, updateFilter],
     );
 
-    useEffect(() => {
-        if (filtersMatchQuery(filters, localFilters)) {
+    const submitSearch = useCallback(() => {
+        if (isSearching) {
             return;
         }
 
-        const handle = window.setTimeout(() => {
-            router.get(
-                sitesIndex.url({ query: buildQueryFromFilters(localFilters) }),
-                {},
-                {
-                    preserveState: true,
-                    preserveScroll: true,
-                    replace: true,
-                    only: ['devices', 'filters', 'central_error', 'has_active_filters'],
-                },
-            );
-        }, 350);
+        if (filtersMatchQuery(filters, localFilters) && devices.length > 0) {
+            return;
+        }
 
-        return () => window.clearTimeout(handle);
-    }, [localFilters, filters]);
+        setIsSearching(true);
+
+        router.get(
+            sitesIndex.url({
+                query: {
+                    ...buildQueryFromFilters(localFilters),
+                    submitted: '1',
+                },
+            }),
+            {},
+            {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+                only: ['devices', 'filters', 'central_error', 'has_active_filters'],
+                onFinish: () => setIsSearching(false),
+            },
+        );
+    }, [devices.length, filters, isSearching, localFilters]);
 
     const columns = useMemo<ColumnDef<DeviceRow>[]>(
         () => [
@@ -200,6 +223,13 @@ export default function Index() {
             href: sitesIndex().url,
         },
     ];
+
+    const totalDevices = devices.length;
+    const totalPages = Math.max(1, Math.ceil(totalDevices / pageSize));
+    const safePageIndex = Math.min(pageIndex, totalPages - 1);
+    const start = safePageIndex * pageSize;
+    const end = Math.min(start + pageSize, totalDevices);
+    const pagedDevices = useMemo(() => devices.slice(start, end), [devices, end, start]);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -321,23 +351,83 @@ export default function Index() {
                     </select>
                 </div>
 
+                <div className="mt-4 flex justify-center">
+                    <Button
+                        type="button"
+                        onClick={submitSearch}
+                        disabled={!hasActiveLocalFilters || isSearching}
+                        className="gap-2"
+                        data-test="sites-search-button"
+                    >
+                        <Search className="size-4" aria-hidden />
+                        {isSearching ? 'Searching…' : 'Search'}
+                    </Button>
+                </div>
+
                 <div className="mt-4">
-                    {!has_active_filters ? (
+                    {!hasActiveLocalFilters ? (
                         <p className="text-center text-sm text-muted-foreground" data-test="sites-empty-filters">
                             Select at least one filter to load devices from Central.
                         </p>
                     ) : (
                         <>
-                            <p className="mb-3 text-sm text-muted-foreground" data-test="sites-result-count">
-                                {devices.length === 1
-                                    ? '1 device'
-                                    : `${devices.length} devices`}
-                            </p>
+                            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="text-sm text-muted-foreground" data-test="sites-result-count">
+                                    {totalDevices === 1 ? '1 device' : `${totalDevices} devices`}
+                                    {totalDevices > 0 ? ` (showing ${start + 1}–${end})` : null}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-muted-foreground">Per page</span>
+                                    <select
+                                        value={pageSize}
+                                        onChange={(e) => {
+                                            const next = Number(e.target.value);
+                                            if (next === 10 || next === 25 || next === 50 || next === 100) {
+                                                setPageSize(next);
+                                            }
+                                        }}
+                                        className={selectClassName}
+                                        data-test="sites-page-size"
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={25}>25</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                    </select>
+                                </div>
+                            </div>
                             <DataTable<DeviceRow, unknown>
-                                data={devices}
+                                data={pagedDevices}
                                 columns={columns}
                                 getRowId={(row) => row.serialNumber || row.deviceName}
                             />
+                            {totalDevices > 0 ? (
+                                <div className="mt-3 flex items-center justify-center gap-3">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+                                        disabled={safePageIndex <= 0}
+                                        data-test="sites-page-prev"
+                                    >
+                                        Prev
+                                    </Button>
+                                    <span className="text-sm text-muted-foreground" data-test="sites-page-indicator">
+                                        Page {safePageIndex + 1} of {totalPages}
+                                    </span>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                                        disabled={safePageIndex >= totalPages - 1}
+                                        data-test="sites-page-next"
+                                    >
+                                        Next
+                                    </Button>
+                                </div>
+                            ) : null}
                             {devices.length === 0 && !central_error && (
                                 <p
                                     className="mt-4 text-center text-sm text-muted-foreground"

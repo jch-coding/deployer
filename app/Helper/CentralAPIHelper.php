@@ -795,7 +795,7 @@ class CentralAPIHelper
         }
 
         $allItems = [];
-        $limit = 10;
+        $limit = 100;
         $next = null;
 
         while (true) {
@@ -814,7 +814,7 @@ class CentralAPIHelper
                 return ['error' => $message !== '' ? $message : 'Failed to fetch portchannels from Central.'];
             }
 
-            $pageItems = $response->json('interface', []);
+            $pageItems = $response->json('items', $response->json('interface', []));
             if (! is_array($pageItems)) {
                 $pageItems = [];
             }
@@ -1293,7 +1293,10 @@ class CentralAPIHelper
     public function get_all_devices(array $queryParameters = []): array
     {
         $allItems = [];
-        $limit = 100;
+        $requestedLimit = $queryParameters['limit'] ?? null;
+        unset($queryParameters['limit']);
+
+        $limit = is_numeric($requestedLimit) ? (int) $requestedLimit : 1000;
         $next = null;
 
         while (true) {

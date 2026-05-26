@@ -36,6 +36,7 @@ class SiteController extends Controller
             'model' => ['nullable', 'string', 'max:255'],
             'firmware_version' => ['nullable', 'string', 'max:255'],
             'deployment' => ['nullable', 'string', Rule::in(self::DEPLOYMENTS)],
+            'submitted' => ['nullable', 'boolean'],
         ]);
 
         $filters = [
@@ -49,6 +50,8 @@ class SiteController extends Controller
             'firmware_version' => trim((string) ($validated['firmware_version'] ?? '')),
             'deployment' => trim((string) ($validated['deployment'] ?? '')),
         ];
+
+        $submitted = (bool) ($validated['submitted'] ?? false);
 
         $helper = new CentralAPIHelper($currentClient);
         $sitesResult = $helper->collectScopeManagementSites();
@@ -65,7 +68,7 @@ class SiteController extends Controller
         $devices = [];
         $hasActiveFilters = $this->hasActiveFilters($filters);
 
-        if ($centralError === null && $hasActiveFilters) {
+        if ($centralError === null && $hasActiveFilters && $submitted) {
             $filter = $filterBuilder->build([
                 'siteId' => $filters['site_id'],
                 'siteName' => $filters['site_name'],

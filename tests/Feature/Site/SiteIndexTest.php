@@ -83,6 +83,7 @@ test('sites index fetches devices when filters are applied', function () {
     $this->get(route('sites.index', [
         'site_id' => 'scope-hq',
         'status' => 'ONLINE',
+        'submitted' => true,
     ]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
@@ -96,6 +97,52 @@ test('sites index fetches devices when filters are applied', function () {
             ->where('devices.0.status', 'ONLINE')
             ->where('devices.0.deployment', 'Standalone')
             ->where('devices.0.siteName', 'HQ'));
+});
+
+test('sites index does not fetch devices when filters are applied without submission', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-config/v1/sites')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'HQ', 'scopeId' => 'scope-hq'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
+            return Http::response([
+                'items' => [[
+                    'deviceName' => 'Switch-A',
+                    'serialNumber' => 'SN12345',
+                    'deviceFunction' => 'ACCESS_SWITCH',
+                    'model' => '6300',
+                    'ipv4' => '10.0.0.1',
+                    'status' => 'ONLINE',
+                    'deployment' => 'Standalone',
+                    'siteName' => 'HQ',
+                ]],
+                'next' => null,
+                'total' => 1,
+                'count' => 1,
+            ], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $this->get(route('sites.index', [
+        'site_id' => 'scope-hq',
+        'status' => 'ONLINE',
+    ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Site/Index')
+            ->where('has_active_filters', true)
+            ->where('filters.site_id', 'scope-hq')
+            ->where('filters.status', 'ONLINE')
+            ->where('devices', []));
+
+    Http::assertSentCount(1);
 });
 
 test('sites index rejects invalid filter enums', function () {
