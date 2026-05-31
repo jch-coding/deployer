@@ -84,7 +84,7 @@ class DeploymentController extends Controller
 
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
-            'devices' => $devicesQuery->paginate(10)->withQueryString(),
+            'devices' => $devicesQuery->paginate(20)->withQueryString(),
             'device_search' => $search,
             'tasks' => array_map(fn ($task) => [
                 'task_type' => $task->name,

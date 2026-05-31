@@ -545,6 +545,7 @@ class CentralAPIHelper
         $queryParameters = [
             'view-type' => 'LOCAL',
             'scope-id' => $site_scope_id,
+            'object-type' => 'LOCAL',
         ];
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
