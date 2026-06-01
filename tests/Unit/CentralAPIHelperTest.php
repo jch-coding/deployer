@@ -144,6 +144,72 @@ test('build_portchannel_from_device_interface includes switchport when creating 
     expect($actual)->toEqual($expected);
 });
 
+test('build_portchannel_from_device_interface includes lacp for MULTI_CHASSIS trunk type', function () {
+    $lacp_profile = LacpProfile::factory()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'port_list' => '1/1/1&1/1/2',
+        'trunk_type' => 'MULTI_CHASSIS',
+    ]);
+    $switch_port = SwitchPort::factory()->create([
+        'interface_mode' => 'TRUNK',
+        'access_vlan' => null,
+        'native_vlan' => 10,
+        'trunk_vlan_all' => 'true',
+        'trunk_vlan_ranges' => null,
+    ]);
+    $deviceInterface = DeviceInterface::factory()->create([
+        'interface' => '10',
+        'switch_port_id' => $switch_port->id,
+        'lacp_profile_id' => $lacp_profile->id,
+        'interface_kind' => InterfaceKind::LAG,
+    ]);
+
+    $actual = CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface);
+
+    expect($actual)
+        ->toHaveKey('trunk-type', 'MULTI_CHASSIS')
+        ->toHaveKey('lacp')
+        ->and($actual['lacp'])->toBe([
+            'mode' => 'ACTIVE',
+            'rate' => 'SLOW',
+        ]);
+});
+
+test('build_portchannel_from_device_interface omits lacp for non-lacp trunk types', function () {
+    $nonLacpTrunkTypes = ['TRUNK', 'DT_TRUNK', 'MULTI_CHASSIS_STATIC'];
+
+    foreach ($nonLacpTrunkTypes as $trunkType) {
+        $lacp_profile = LacpProfile::factory()->create([
+            'mode' => 'ACTIVE',
+            'rate' => 'SLOW',
+            'port_list' => '1/1/1&1/1/2',
+            'trunk_type' => $trunkType,
+        ]);
+        $switch_port = SwitchPort::factory()->create([
+            'interface_mode' => 'TRUNK',
+            'access_vlan' => null,
+            'native_vlan' => 10,
+            'trunk_vlan_all' => 'true',
+            'trunk_vlan_ranges' => null,
+        ]);
+        $deviceInterface = DeviceInterface::factory()->create([
+            'interface' => "20-{$trunkType}",
+            'switch_port_id' => $switch_port->id,
+            'lacp_profile_id' => $lacp_profile->id,
+            'interface_kind' => InterfaceKind::LAG,
+        ]);
+
+        $actual = CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface);
+
+        expect($actual)
+            ->toHaveKey('trunk-type', $trunkType)
+            ->toHaveKey('port-list')
+            ->toHaveKey('enable', true)
+            ->not->toHaveKey('lacp');
+    }
+});
+
 test('build_ethernet_interface_patch_body returns only name and description for LAG members', function () {
     $device = Device::factory()->create();
     $lacp_profile = LacpProfile::factory()->create([
@@ -625,5 +691,80 @@ test('get_all_interface_portchannels uses LOCAL device query parameters', functi
             && ($query['object-type'] ?? '') === 'LOCAL'
             && ($query['scope-id'] ?? '') === 'device-scope-456'
             && ($query['device-function'] ?? '') === 'ACCESS_SWITCH';
+    });
+});
+
+test('post_interface_portchannel omits lacp in request body for TRUNK trunk type', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'scope_id' => 'device-scope-post',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $switch_port = SwitchPort::factory()->create([
+        'interface_mode' => 'TRUNK',
+        'native_vlan' => 10,
+    ]);
+    $lacpProfile = LacpProfile::factory()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'port_list' => '1/1/1&1/1/2',
+        'trunk_type' => 'TRUNK',
+    ]);
+    $deviceInterface = DeviceInterface::factory()->for($device)->create([
+        'interface' => 'lag100',
+        'switch_port_id' => $switch_port->id,
+        'lacp_profile_id' => $lacpProfile->id,
+        'interface_kind' => InterfaceKind::LAG,
+    ]);
+
+    $helper->post_interface_portchannel($deviceInterface);
+
+    Http::assertSent(function (Request $request) {
+        $body = json_decode($request->body(), true);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/portchannels/lag100')
+            && ($body['trunk-type'] ?? null) === 'TRUNK'
+            && ! array_key_exists('lacp', $body);
+    });
+});
+
+test('patch_interface_portchannel includes lacp in request body for MULTI_CHASSIS trunk type', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'scope_id' => 'device-scope-patch',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $switch_port = SwitchPort::factory()->create([
+        'interface_mode' => 'TRUNK',
+        'native_vlan' => 20,
+    ]);
+    $lacpProfile = LacpProfile::factory()->create([
+        'mode' => 'PASSIVE',
+        'rate' => 'FAST',
+        'port_list' => '1/1/3&1/1/4',
+        'trunk_type' => 'MULTI_CHASSIS',
+    ]);
+    $deviceInterface = DeviceInterface::factory()->for($device)->create([
+        'interface' => 'lag200',
+        'switch_port_id' => $switch_port->id,
+        'lacp_profile_id' => $lacpProfile->id,
+        'interface_kind' => InterfaceKind::LAG,
+    ]);
+
+    $helper->patch_interface_portchannel($deviceInterface);
+
+    Http::assertSent(function (Request $request) {
+        $body = json_decode($request->body(), true);
+
+        return $request->method() === 'PATCH'
+            && str_contains($request->url(), 'network-config/v1alpha1/portchannels/lag200')
+            && ($body['trunk-type'] ?? null) === 'MULTI_CHASSIS'
+            && ($body['lacp']['mode'] ?? null) === 'PASSIVE'
+            && ($body['lacp']['rate'] ?? null) === 'FAST';
     });
 });

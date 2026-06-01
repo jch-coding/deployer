@@ -695,11 +695,16 @@ class CentralAPIHelper
             'mode' => $deviceInterface->lacp_profile->mode,
             'rate' => $deviceInterface->lacp_profile->rate,
         ];
+        $trunkType = $deviceInterface->lacp_profile->trunk_type;
         $switch_port_configuration['trunk-type'] = $deviceInterface->lacp_profile->trunk_type;
         $switch_port_configuration['port-list'] = $deviceInterface->lacp_profile->port_list;
         $switch_port_configuration['enable'] = $deviceInterface->enable;
 
-        return array_merge($switch_port_configuration, ['lacp' => $lacp_profile]);
+        if (in_array($trunkType, ['LACP', 'MULTI_CHASSIS'], true)) {
+            $switch_port_configuration['lacp'] = $lacp_profile;
+        }
+
+        return $switch_port_configuration;
     }
 
     public static function build_switchport_from_device_interface(DeviceInterface $deviceInterface, bool $forCreatingLAG = false)
