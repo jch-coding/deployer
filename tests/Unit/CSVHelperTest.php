@@ -189,13 +189,13 @@ it('maps device optional columns when creating device arrays', function () {
 it('maps interface, stp, and lacp optional columns when present', function () {
     $csvData = [
         [
-            'name', 'serial', 'device_function', 'interface', 'description', 'ip_address',
+            'name', 'serial', 'device_function', 'interface', 'description',
             'interface_mode', 'access_vlan', 'native_vlan', 'trunk_vlan_all', 'trunk_vlan_ranges',
             'admin_edge_port', 'admin_edge_port_trunk', 'bpdu_guard', 'loop_guard',
             'lacp_mode', 'trunk_type', 'port_list', 'lacp_rate',
         ],
         [
-            'SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1', 'to AP', '10.0.0.1/24',
+            'SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1', 'to AP',
             'TRUNK', '', '10', 'false', '10-20',
             'true', '', 'true', 'false',
             'ACTIVE', 'LACP', '1/1/1-1/1/2', 'FAST',
@@ -208,7 +208,6 @@ it('maps interface, stp, and lacp optional columns when present', function () {
         ->and($deviceArrays[0])->toMatchArray([
             'interface' => '1/1/1',
             'description' => 'to AP',
-            'ip_address' => '10.0.0.1/24',
             'interface_mode' => 'TRUNK',
             'native_vlan' => '10',
             'trunk_vlan_all' => false,
@@ -220,6 +219,33 @@ it('maps interface, stp, and lacp optional columns when present', function () {
             'port_list' => '1/1/1-1/1/2',
             'lacp_rate' => 'FAST',
         ]);
+});
+
+it('maps routed ethernet optional columns when ip_address is present', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'interface', 'description', 'ip_address', 'vrf_forwarding'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/53', 'routed uplink', '10.255.0.1/30', 'default'],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0])->toMatchArray([
+            'interface' => '1/1/53',
+            'description' => 'routed uplink',
+            'ip_address' => '10.255.0.1/30',
+            'vrf_forwarding' => 'default',
+        ]);
+});
+
+it('rejects ethernet rows that set ip_address together with switchport columns', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'interface', 'ip_address', 'interface_mode', 'native_vlan'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/10', '10.20.30.1/24', 'TRUNK', '20'],
+    ];
+
+    expect(fn () => CSVHelper::createDeviceArrays($csvData))
+        ->toThrow(Illuminate\Validation\ValidationException::class);
 });
 
 it('keeps missing optional columns absent from mapped rows', function () {

@@ -775,8 +775,38 @@ class CentralAPIHelper
         return false;
     }
 
+    public static function is_routed_ethernet_interface(DeviceInterface $deviceInterface): bool
+    {
+        return InterfaceHelper::isRoutedEthernetRow([
+            'ip_address' => $deviceInterface->ip_address,
+            'interface' => $deviceInterface->interface,
+        ]);
+    }
+
+    public static function build_routed_ethernet_interface_patch_body(DeviceInterface $deviceInterface): array
+    {
+        $ipv4 = [
+            'address' => $deviceInterface->ip_address,
+        ];
+        $vrfForwarding = $deviceInterface->vrf_forwarding;
+        if ($vrfForwarding !== null && trim($vrfForwarding) !== '') {
+            $ipv4['vrf-forwarding'] = $vrfForwarding;
+        }
+
+        return array_filter([
+            'name' => $deviceInterface->interface,
+            'description' => $deviceInterface->description,
+            'routing' => true,
+            'ipv4' => $ipv4,
+        ], fn ($value) => $value !== null);
+    }
+
     public static function build_ethernet_interface_patch_body(DeviceInterface $deviceInterface): array
     {
+        if (static::is_routed_ethernet_interface($deviceInterface)) {
+            return static::build_routed_ethernet_interface_patch_body($deviceInterface);
+        }
+
         if (static::is_ethernet_interface_part_of_any_lag($deviceInterface)) {
             return array_filter([
                 'name' => $deviceInterface->interface,

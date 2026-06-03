@@ -189,6 +189,11 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
         accepted: 'IP/CIDR notation. Example: 192.168.1.1/24.',
     },
     {
+        column: 'vrf_forwarding',
+        type: 'string',
+        accepted: 'VRF name for routed ethernet interfaces. Optional. Example: default.',
+    },
+    {
         column: 'port_profile',
         type: 'string',
         accepted: 'Port profile name to apply.',
@@ -318,12 +323,19 @@ export default function documentation() {
                             <p>
                                 <i>ex: 1/1/1 or 1/1/1-1/1/48 or 1/1/1&1/1/6-1/1/48</i>
                             </p>
+                            <p>
+                                When <code>ip_address</code> is set on an ethernet interface, only{' '}
+                                <code>interface</code>, <code>description</code>, <code>ip_address</code>, and{' '}
+                                <code>vrf_forwarding</code> may be used. Switchport, LAG, and port profile columns
+                                cannot appear on the same row.
+                            </p>
                             <ColumnPair
                                 required={['name', 'serial', 'device_function', 'interface']}
                                 optional={[
                                     'port_profile',
                                     'description',
                                     'ip_address',
+                                    'vrf_forwarding',
                                     'interface_mode',
                                     'access_vlan',
                                     'native_vlan',

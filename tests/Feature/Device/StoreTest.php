@@ -374,8 +374,8 @@ it('accepts snake_case optional headers and persists interface-related fields', 
 
     $uploadedFile = UploadedFile::fake()->createWithContent(
         'devices.csv',
-        'name,serial,device_function,interface,interface_mode,native_vlan,trunk_vlan_all,trunk_vlan_ranges,description,ip_address,admin_edge_port,bpdu_guard'.PHP_EOL.
-        'SW-2,SN_SNAKE_0001,ACCESS_SWITCH,1/1/10,TRUNK,20,false,20-30,Uplink Interface,10.20.30.1/24,true,true'.PHP_EOL
+        'name,serial,device_function,interface,interface_mode,native_vlan,trunk_vlan_all,trunk_vlan_ranges,description,admin_edge_port,bpdu_guard'.PHP_EOL.
+        'SW-2,SN_SNAKE_0001,ACCESS_SWITCH,1/1/10,TRUNK,20,false,20-30,Uplink Interface,true,true'.PHP_EOL
     );
 
     $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
@@ -387,7 +387,6 @@ it('accepts snake_case optional headers and persists interface-related fields', 
         'device_id' => $device->id,
         'interface' => '1/1/10',
         'description' => 'Uplink Interface',
-        'ip_address' => '10.20.30.1/24',
     ]);
     $this->assertDatabaseHas('switch_ports', [
         'interface_mode' => 'TRUNK',
@@ -399,6 +398,51 @@ it('accepts snake_case optional headers and persists interface-related fields', 
         'admin_edge_port' => true,
         'bpdu_guard' => true,
     ]);
+});
+
+it('persists routed ethernet interfaces with routing and optional vrf_forwarding', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,description,ip_address,vrf_forwarding'.PHP_EOL.
+        'SW-2,SN_ROUTE_0001,ACCESS_SWITCH,1/1/53,Routed uplink,10.255.0.1/30,my-vrf'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device = Device::query()->where('serial', 'SN_ROUTE_0001')->firstOrFail();
+    $interface = DeviceInterface::query()->where('device_id', $device->id)->where('interface', '1/1/53')->firstOrFail();
+
+    expect($interface->ip_address)->toBe('10.255.0.1/30')
+        ->and($interface->routing)->toBeTrue()
+        ->and($interface->vrf_forwarding)->toBe('my-vrf')
+        ->and($interface->switch_port_id)->toBeNull()
+        ->and($interface->stp_profile_id)->toBeNull()
+        ->and($interface->lacp_profile_id)->toBeNull()
+        ->and($interface->sw_profile)->toBeNull();
+});
+
+it('rejects csv rows that mix ip_address with switchport columns on ethernet interfaces', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,interface_mode,native_vlan,description,ip_address'.PHP_EOL.
+        'SW-2,SN_MIXED0001,ACCESS_SWITCH,1/1/10,TRUNK,20,Uplink Interface,10.20.30.1/24'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertSessionHasErrors();
 });
 
 it('does not create interfaces when optional interface column is present but blank', function () {

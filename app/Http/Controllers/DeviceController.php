@@ -412,23 +412,37 @@ class DeviceController extends Controller
                 $kind = $device_interface['interface_kind'] ?? InterfaceKind::ETHERNET;
                 $kindValue = $kind instanceof InterfaceKind ? $kind->value : (string) $kind;
 
+                $isRoutedEthernet = InterfaceHelper::isRoutedEthernetRow($device_interface);
+
                 $device_interface_config = [
                     'device_id' => $device->id,
                     'interface' => $device_interface['interface'],
                     'interface_kind' => $kindValue,
                     'description' => $device_interface['description'] ?? null,
                     'ip_address' => $device_interface['ip_address'] ?? null,
-                    'sw_profile' => $device_interface['port_profile'] ?? null,
-                    'shutdown_on_split' => BooleanHelper::toBoolean($device_interface['shutdown_on_split'] ?? false),
-                    'switch_port_id' => DeviceInterfaceUpdateResolver::resolveSwitchPortId($device_interface),
-                    'stp_profile_id' => DeviceInterfaceUpdateResolver::resolveStpProfileId($device_interface),
-                    'lacp_profile_id' => DeviceInterfaceUpdateResolver::resolveLacpProfileId($device_interface),
+                    'sw_profile' => $isRoutedEthernet ? null : ($device_interface['port_profile'] ?? null),
+                    'shutdown_on_split' => $isRoutedEthernet ? false : BooleanHelper::toBoolean($device_interface['shutdown_on_split'] ?? false),
+                    'switch_port_id' => $isRoutedEthernet ? null : DeviceInterfaceUpdateResolver::resolveSwitchPortId($device_interface),
+                    'stp_profile_id' => $isRoutedEthernet ? null : DeviceInterfaceUpdateResolver::resolveStpProfileId($device_interface),
+                    'lacp_profile_id' => $isRoutedEthernet ? null : DeviceInterfaceUpdateResolver::resolveLacpProfileId($device_interface),
                 ];
+
+                $upsertColumns = ['sw_profile', 'shutdown_on_split', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address', 'interface_kind'];
+
+                if ($isRoutedEthernet) {
+                    $device_interface_config['routing'] = true;
+                    $upsertColumns[] = 'routing';
+
+                    if (array_key_exists('vrf_forwarding', $device_interface) && trim((string) ($device_interface['vrf_forwarding'] ?? '')) !== '') {
+                        $device_interface_config['vrf_forwarding'] = trim((string) $device_interface['vrf_forwarding']);
+                        $upsertColumns[] = 'vrf_forwarding';
+                    }
+                }
 
                 DeviceInterface::upsert(
                     $device_interface_config,
                     ['interface', 'device_id', 'interface_kind'],
-                    ['sw_profile', 'shutdown_on_split', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address', 'interface_kind']
+                    $upsertColumns
                 );
                 $saved_interfaces++;
             }

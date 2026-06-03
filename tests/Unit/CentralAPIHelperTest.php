@@ -210,6 +210,73 @@ test('build_portchannel_from_device_interface omits lacp for non-lacp trunk type
     }
 });
 
+test('build_ethernet_interface_patch_body returns routed payload when ip_address is set', function () {
+    $deviceInterface = DeviceInterface::factory()->create([
+        'interface' => '1/1/10',
+        'ip_address' => '10.20.30.1/24',
+        'description' => 'Routed uplink',
+        'interface_kind' => InterfaceKind::ETHERNET,
+        'vrf_forwarding' => 'default',
+    ]);
+
+    $actual = CentralAPIHelper::build_ethernet_interface_patch_body($deviceInterface);
+
+    expect($actual)->toEqual([
+        'name' => '1/1/10',
+        'description' => 'Routed uplink',
+        'routing' => true,
+        'ipv4' => [
+            'address' => '10.20.30.1/24',
+            'vrf-forwarding' => 'default',
+        ],
+    ])->not->toHaveKeys(['switchport', 'stp', 'vsx', 'sw-profile']);
+});
+
+test('build_ethernet_interface_patch_body omits vrf-forwarding when vrf_forwarding is empty', function () {
+    $deviceInterface = DeviceInterface::factory()->create([
+        'interface' => '1/1/11',
+        'ip_address' => '10.20.30.2/24',
+        'description' => null,
+        'interface_kind' => InterfaceKind::ETHERNET,
+        'vrf_forwarding' => '',
+    ]);
+
+    $actual = CentralAPIHelper::build_ethernet_interface_patch_body($deviceInterface);
+
+    expect($actual)->toEqual([
+        'name' => '1/1/11',
+        'routing' => true,
+        'ipv4' => [
+            'address' => '10.20.30.2/24',
+        ],
+    ]);
+});
+
+test('build_ethernet_interface_patch_body uses routed payload for LAG member with ip_address', function () {
+    $device = Device::factory()->create();
+    $lacp_profile = LacpProfile::factory()->create([
+        'port_list' => '1/1/1&1/1/2',
+    ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => 'lag10',
+        'lacp_profile_id' => $lacp_profile->id,
+        'interface_kind' => InterfaceKind::LAG,
+    ]);
+    $member_interface = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/1',
+        'ip_address' => '10.0.0.1/30',
+        'interface_kind' => InterfaceKind::ETHERNET,
+    ]);
+
+    $actual = CentralAPIHelper::build_ethernet_interface_patch_body($member_interface);
+
+    expect($actual)->toHaveKey('routing', true)
+        ->toHaveKey('ipv4')
+        ->not->toHaveKey('switchport');
+});
+
 test('build_ethernet_interface_patch_body returns only name and description for LAG members', function () {
     $device = Device::factory()->create();
     $lacp_profile = LacpProfile::factory()->create([

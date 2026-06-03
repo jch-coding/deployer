@@ -25,6 +25,25 @@ class CSVHelper
         'shutdown_on_split',
     ];
 
+    private const ROUTED_ETHERNET_L2_CONFLICT_COLUMNS = [
+        'port_profile',
+        'interface_mode',
+        'access_vlan',
+        'native_vlan',
+        'trunk_vlan_all',
+        'trunk_vlan_ranges',
+        'admin_edge_port',
+        'admin_edge_port_trunk',
+        'bpdu_guard',
+        'loop_guard',
+        'shutdown_on_split',
+        'lacp_mode',
+        'lacp_rate',
+        'trunk_type',
+        'port_list',
+        'lacp_port_id',
+    ];
+
     public static function processCSVFile($handle)
     {
         if (($file = fopen($handle, 'r')) !== false) {
@@ -280,7 +299,32 @@ class CSVHelper
             }
         }
 
+        if (InterfaceHelper::isRoutedEthernetRow($row)) {
+            foreach (self::ROUTED_ETHERNET_L2_CONFLICT_COLUMNS as $column) {
+                if (! self::isCsvCellPopulated($row[$column] ?? null)) {
+                    continue;
+                }
+                $validationMessages[] = [
+                    'row' => $csvRowNumber,
+                    'column' => 'ip_address',
+                    'text' => "ip_address cannot be set together with {$column} on an ethernet interface.",
+                ];
+            }
+        }
+
         return $row;
+    }
+
+    private static function isCsvCellPopulated(mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+        if (is_string($value) && trim($value) === '') {
+            return false;
+        }
+
+        return $value !== '';
     }
 
     /**

@@ -57,4 +57,19 @@ final class InterfaceHelper
 
         return implode('/', $normalized);
     }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public static function isRoutedEthernetRow(array $row): bool
+    {
+        $ipAddress = $row['ip_address'] ?? null;
+        if ($ipAddress === null || trim((string) $ipAddress) === '') {
+            return false;
+        }
+
+        $iface = isset($row['interface']) ? (string) $row['interface'] : '';
+
+        return str_contains($iface, '/');
+    }
 }

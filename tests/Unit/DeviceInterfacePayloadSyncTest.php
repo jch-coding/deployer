@@ -53,3 +53,22 @@ test('payload attributes map lacp mode to lacp_mode', function () {
 
     expect($update)->toHaveKey('lacp_mode', 'PASSIVE');
 });
+
+test('payload attributes map ethernet routing and ipv4 vrf-forwarding', function () {
+    $device = Device::factory()->create();
+    $interface = DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/53',
+        'interface_kind' => InterfaceKind::ETHERNET,
+        'ip_address' => '10.255.0.1/30',
+    ]);
+
+    $resolver = new DeviceInterfaceUpdateResolver;
+    $update = $resolver->payloadAttributesToUpdate('ethernet', [
+        'routing' => true,
+        'ipv4.vrf-forwarding' => 'my-vrf',
+    ], $interface);
+
+    expect($update)->toHaveKey('routing', true)
+        ->and($update)->toHaveKey('vrf_forwarding', 'my-vrf');
+});

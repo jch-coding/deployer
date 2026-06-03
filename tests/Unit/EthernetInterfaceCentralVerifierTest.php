@@ -83,3 +83,26 @@ test('buildExpectedPayload uses full switchport body for standalone ethernet', f
         ->and($expected)->toHaveKey('switchport')
         ->and($expected['switchport']['access-vlan'])->toBe(50);
 });
+
+test('buildExpectedPayload uses routed body for ethernet with ip_address', function () {
+    $deviceInterface = DeviceInterface::factory()->create([
+        'interface' => '1/1/53',
+        'ip_address' => '10.255.0.1/30',
+        'description' => 'Routed uplink',
+        'vrf_forwarding' => 'my-vrf',
+        'interface_kind' => InterfaceKind::ETHERNET,
+    ]);
+
+    $verifier = new EthernetInterfaceCentralVerifier;
+    $expected = $verifier->buildExpectedPayload($deviceInterface);
+
+    expect($expected)->toEqual([
+        'name' => '1/1/53',
+        'description' => 'Routed uplink',
+        'routing' => true,
+        'ipv4' => [
+            'address' => '10.255.0.1/30',
+            'vrf-forwarding' => 'my-vrf',
+        ],
+    ]);
+});

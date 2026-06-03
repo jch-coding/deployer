@@ -152,6 +152,10 @@ class DeviceInterfaceUpdateResolver
 
             if ($path === 'ipv4.address') {
                 $update['ip_address'] = $value === '' ? null : (string) $value;
+            } elseif ($path === 'routing') {
+                $update['routing'] = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $value;
+            } elseif ($path === 'ipv4.vrf-forwarding') {
+                $update['vrf_forwarding'] = $value === '' ? null : (string) $value;
             } elseif ($path === 'enable') {
                 $update['enable'] = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $value;
             } elseif ($path === 'description') {
