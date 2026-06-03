@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\LacpProfile;
+use App\Models\Site;
 use App\Models\SwitchPort;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -834,4 +835,182 @@ test('patch_interface_portchannel includes lacp in request body for MULTI_CHASSI
             && ($body['lacp']['mode'] ?? null) === 'PASSIVE'
             && ($body['lacp']['rate'] ?? null) === 'FAST';
     });
+});
+
+function makeRoutedEthernetInterfaceForVrfTests(CentralAPIHelper $helper, array $deviceOverrides = [], array $interfaceOverrides = []): DeviceInterface
+{
+    $siteAttrs = ['scope_id' => 'site-scope-1'];
+    if (array_key_exists('site', $deviceOverrides)) {
+        $siteAttrs = array_merge($siteAttrs, $deviceOverrides['site']);
+        unset($deviceOverrides['site']);
+    }
+
+    $site = Site::factory()->for($helper->client)->create($siteAttrs);
+
+    $device = Device::factory()->for($helper->client)->for($site)->create([
+        'group' => 'MyGroup',
+        'scope_id' => 'device-scope-1',
+        'device_function' => 'ACCESS_SWITCH',
+        ...$deviceOverrides,
+    ]);
+
+    return DeviceInterface::factory()->for($device)->create([
+        'interface' => '1/1/53',
+        'ip_address' => '10.255.0.1/30',
+        'vrf_forwarding' => 'my-vrf',
+        'routing' => true,
+        'interface_kind' => InterfaceKind::ETHERNET,
+        ...$interfaceOverrides,
+    ]);
+}
+
+test('ensureVrfForRoutedInterface skips default vrf', function () {
+    Http::fake();
+
+    $helper = makeCentralApiHelperForSwitches();
+    $deviceInterface = makeRoutedEthernetInterfaceForVrfTests($helper, [], [
+        'vrf_forwarding' => 'default',
+    ]);
+
+    $result = $helper->ensureVrfForRoutedInterface($deviceInterface);
+
+    expect($result)->toBe(['ok' => true]);
+    Http::assertNothingSent();
+});
+
+test('ensureVrfForRoutedInterface does not post when vrf exists at latest non-empty scope', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
+        }
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+        $scopeId = $query['scope-id'] ?? null;
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return match ($scopeId) {
+                'group-scope-1' => Http::response(['vrf' => []], 200),
+                'site-scope-1' => Http::response(['vrf' => [['name' => 'my-vrf']]], 200),
+                'device-scope-1' => Http::response(['vrf' => []], 200),
+                default => Http::response(['vrf' => []], 200),
+            };
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $deviceInterface = makeRoutedEthernetInterfaceForVrfTests($helper);
+
+    $result = $helper->ensureVrfForRoutedInterface($deviceInterface);
+
+    expect($result)->toBe(['ok' => true]);
+    Http::assertSentCount(4);
+    Http::assertNotSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/vrfs/'));
+});
+
+test('ensureVrfForRoutedInterface posts vrf at group scope when missing', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
+        }
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return Http::response(['vrf' => []], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($request->url(), '/vrfs/my-vrf')) {
+            expect($query['scope-id'] ?? null)->toBe('group-scope-1')
+                ->and($query['view-type'] ?? null)->toBe('LOCAL')
+                ->and($query['device-function'] ?? null)->toBe('ACCESS_SWITCH');
+
+            return Http::response(['name' => 'my-vrf'], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $deviceInterface = makeRoutedEthernetInterfaceForVrfTests($helper);
+
+    $result = $helper->ensureVrfForRoutedInterface($deviceInterface);
+
+    expect($result)->toBe(['ok' => true, 'created' => true]);
+});
+
+test('ensureVrfForRoutedInterface posts vrf at site scope when device has no group', function () {
+    Http::fake(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return Http::response(['vrf' => []], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($request->url(), '/vrfs/my-vrf')) {
+            expect($query['scope-id'] ?? null)->toBe('site-scope-1');
+
+            return Http::response(['name' => 'my-vrf'], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $deviceInterface = makeRoutedEthernetInterfaceForVrfTests($helper, ['group' => null]);
+
+    $result = $helper->ensureVrfForRoutedInterface($deviceInterface);
+
+    expect($result)->toBe(['ok' => true, 'created' => true]);
+});
+
+test('ensureVrfForRoutedInterface returns error when group and site scope cannot be resolved for post', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return Http::response(['vrf' => []], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $deviceInterface = makeRoutedEthernetInterfaceForVrfTests($helper, [
+        'group' => null,
+        'site' => ['scope_id' => null],
+    ], []);
+
+    $result = $helper->ensureVrfForRoutedInterface($deviceInterface);
+
+    expect($result)->toHaveKey('error');
+});
+
+test('ensureVrfForRoutedInterface checks vrf against latest non-empty scope response', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
+        }
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+        $scopeId = $query['scope-id'] ?? null;
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return match ($scopeId) {
+                'group-scope-1' => Http::response(['vrf' => []], 200),
+                'site-scope-1' => Http::response(['vrf' => [['name' => 'other-vrf']]], 200),
+                'device-scope-1' => Http::response(['vrf' => [['name' => 'my-vrf']]], 200),
+                default => Http::response(['vrf' => []], 200),
+            };
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $deviceInterface = makeRoutedEthernetInterfaceForVrfTests($helper);
+
+    $result = $helper->ensureVrfForRoutedInterface($deviceInterface);
+
+    expect($result)->toBe(['ok' => true]);
+    Http::assertNotSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/vrfs/'));
 });

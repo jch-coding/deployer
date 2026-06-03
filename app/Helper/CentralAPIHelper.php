@@ -35,6 +35,7 @@ class CentralAPIHelper
 
     public array $routing_and_overlays = [
         'static_route' => 'network-config/v1alpha1/static-route',
+        'vrf' => 'network-config/v1alpha1/vrfs',
     ];
 
     public array $configManagement = [
@@ -415,7 +416,7 @@ class CentralAPIHelper
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
-            $body = [ 'profile' => [ ['name' => 'sys-system-info-profile', 'hostname' => $device->name]]];
+            $body = ['profile' => [['name' => 'sys-system-info-profile', 'hostname' => $device->name]]];
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
                     'object-type' => 'LOCAL',
@@ -432,7 +433,7 @@ class CentralAPIHelper
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
-            $body = [ 'profile' => [ ['name' => 'sys-system-info-profile', 'hostname' => $device->name]]];
+            $body = ['profile' => [['name' => 'sys-system-info-profile', 'hostname' => $device->name]]];
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters([
                     'object-type' => 'LOCAL',
@@ -473,69 +474,68 @@ class CentralAPIHelper
     }
 
     /**
-     * @param array $vsx_profile = [
-     *  'name' => string,
-     *  'auto-role' => boolean,
-     *  'peer1' => [
-     *    'device-serial' => string,
-     *    'keepalive-device => [
-     *      'keepalive-type' => KA_ETHERNET | KA_PORTCHANNEL,
-     *      'keepalive-version' => IPV4 | IPV6,
-     *      'source-ip' => string,
-     *      'peer-ip' => string,
-     *      'ethernet-ifname | portchannel-ifname' => string,
-     *      'vrf' => string,
-     *   ],
-     *   'role' => VSX_PRIMARY | VSX_SECONDARY,
-     *   'ethernet-interface' => [
-     *      [
-     *        'ethernet-ifname' => string,
-     *        'vrf-forwarding' => string,
-     *        'ipv4-address' => string with netmask,
-     *        'existing-ethernet-ip' => boolean,
-     *      ]
-     *    'port-channel-interface' => [
-     *      [
-     *         'switchport' => [
-     *           'tag' => boolean,
-     *           'interface-mode' => ACCESS | TRUNK,
-     *           'access-vlan' => integer,
-     *           'native-vlan' => integer,
-     *           'trunk-vlan-all' => boolean,
-     *           'trunk-vlan-ranges' => string,
-     *           'trunk-vlan-all' => boolean,
-     *        ],
-     *         'ipv4-address' => string with netmask,
-     *         'existing-portchannel-ip' => boolean,
-     *         'portchannel-ifname' => string,
-     *         'enable' => boolean,
-     *         'description' => string,
-     *         'lacp-mode' => ACTIVE | PASSIVE | AUTO, 
-     *         'port-list' => [ string, ...],
-     *         'trunk-type' => LACP | TRUNK | DT_TRUNK | MULTI_CHASSIS | MULTI_CHASSIS_STATIC,
-     *         'routing' => boolean,
-     *         'vrf-forwarding' => string,
-     *      ],
-     *      'inter-switch-link' => [
-     *         'portchannel-interface' => string,
-     *       ],
-     *      'vrf' => [
-     *          [
-     *            'vrf-name' => string,
-     *            'existing-vrf' => boolean,
-     *          ], ...
-     *        ]
-     *     ]
-     *   ],
-     *   'peer2' => [ same as peer1 except 'device-serial' => string, 'role' => VSX_PRIMARY | VSX_SECONDARY, ],
-     *   'sync-features' => [
-     *      'system-mac' => string,
-     *    ]
-     *  ]
-     * ]
-     * The keepalive interface/portchannel as well as the inter-switch-link portchannel can be configured as part of the vsx profile if they have not been configured yet.
-     * If the keepalive interface/portchannel and/or the inter-switch-link portchannel has been configured, the objects can be omitted in the vsx profile.
-     * @param string $site_scope_id 
+     * @param  array  $vsx_profile  = [
+     *                              'name' => string,
+     *                              'auto-role' => boolean,
+     *                              'peer1' => [
+     *                              'device-serial' => string,
+     *                              'keepalive-device => [
+     *                              'keepalive-type' => KA_ETHERNET | KA_PORTCHANNEL,
+     *                              'keepalive-version' => IPV4 | IPV6,
+     *                              'source-ip' => string,
+     *                              'peer-ip' => string,
+     *                              'ethernet-ifname | portchannel-ifname' => string,
+     *                              'vrf' => string,
+     *                              ],
+     *                              'role' => VSX_PRIMARY | VSX_SECONDARY,
+     *                              'ethernet-interface' => [
+     *                              [
+     *                              'ethernet-ifname' => string,
+     *                              'vrf-forwarding' => string,
+     *                              'ipv4-address' => string with netmask,
+     *                              'existing-ethernet-ip' => boolean,
+     *                              ]
+     *                              'port-channel-interface' => [
+     *                              [
+     *                              'switchport' => [
+     *                              'tag' => boolean,
+     *                              'interface-mode' => ACCESS | TRUNK,
+     *                              'access-vlan' => integer,
+     *                              'native-vlan' => integer,
+     *                              'trunk-vlan-all' => boolean,
+     *                              'trunk-vlan-ranges' => string,
+     *                              'trunk-vlan-all' => boolean,
+     *                              ],
+     *                              'ipv4-address' => string with netmask,
+     *                              'existing-portchannel-ip' => boolean,
+     *                              'portchannel-ifname' => string,
+     *                              'enable' => boolean,
+     *                              'description' => string,
+     *                              'lacp-mode' => ACTIVE | PASSIVE | AUTO,
+     *                              'port-list' => [ string, ...],
+     *                              'trunk-type' => LACP | TRUNK | DT_TRUNK | MULTI_CHASSIS | MULTI_CHASSIS_STATIC,
+     *                              'routing' => boolean,
+     *                              'vrf-forwarding' => string,
+     *                              ],
+     *                              'inter-switch-link' => [
+     *                              'portchannel-interface' => string,
+     *                              ],
+     *                              'vrf' => [
+     *                              [
+     *                              'vrf-name' => string,
+     *                              'existing-vrf' => boolean,
+     *                              ], ...
+     *                              ]
+     *                              ]
+     *                              ],
+     *                              'peer2' => [ same as peer1 except 'device-serial' => string, 'role' => VSX_PRIMARY | VSX_SECONDARY, ],
+     *                              'sync-features' => [
+     *                              'system-mac' => string,
+     *                              ]
+     *                              ]
+     *                              ]
+     *                              The keepalive interface/portchannel as well as the inter-switch-link portchannel can be configured as part of the vsx profile if they have not been configured yet.
+     *                              If the keepalive interface/portchannel and/or the inter-switch-link portchannel has been configured, the objects can be omitted in the vsx profile.
      */
     public function post_vsx_profile(array $vsx_profile = [], string $site_scope_id = '')
     {
@@ -1183,6 +1183,222 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->delete($this->client->base_url.$this->routing_and_overlays['static_route'].'/'.$profile_name);
+
+            return $response;
+        }
+    }
+
+    public function get_vrf($vrf_name = '', $queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->routing_and_overlays['vrf'].'/'.$vrf_name);
+
+            return $response;
+        }
+    }
+
+    public function get_vrfs($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->routing_and_overlays['vrf']);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @return array{view-type: string, scope-id: string, device-function: string}
+     */
+    public static function localVrfQueryParameters(Device $device, string $scopeId): array
+    {
+        return [
+            'view-type' => 'LOCAL',
+            'scope-id' => $scopeId,
+            'device-function' => static::deviceFunctionQueryValue($device),
+        ];
+    }
+
+    public function resolveGroupScopeId(Device $device): ?string
+    {
+        if (! filled($device->group)) {
+            return null;
+        }
+
+        $scopeId = $this->get_scopeid_for_device_group($device->group);
+        if (is_array($scopeId) && array_key_exists('error', $scopeId)) {
+            return null;
+        }
+
+        if (! is_string($scopeId) || $scopeId === '') {
+            return null;
+        }
+
+        return $scopeId;
+    }
+
+    public function resolveSiteScopeId(Device $device): ?string
+    {
+        $site = $device->site;
+        if ($site === null) {
+            return null;
+        }
+
+        if (filled($site->scope_id)) {
+            return (string) $site->scope_id;
+        }
+
+        $scopeId = $this->get_site_scope_id($site);
+        if ($scopeId !== null && $scopeId !== '') {
+            $site->scope_id = $scopeId;
+            $site->save();
+        }
+
+        return $scopeId;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function resolveVrfLookupScopeIds(Device $device): array
+    {
+        $scopeIds = [];
+
+        $groupScopeId = $this->resolveGroupScopeId($device);
+        if ($groupScopeId !== null) {
+            $scopeIds[] = $groupScopeId;
+        }
+
+        $siteScopeId = $this->resolveSiteScopeId($device);
+        if ($siteScopeId !== null) {
+            $scopeIds[] = $siteScopeId;
+        }
+
+        if (filled($device->scope_id)) {
+            $scopeIds[] = (string) $device->scope_id;
+        }
+
+        return $scopeIds;
+    }
+
+    /**
+     * @param  list<string>  $scopeIds
+     * @return list<array<string, mixed>>|null
+     */
+    public function fetchVrfsFromScopes(Device $device, array $scopeIds): ?array
+    {
+        $latestVrfs = null;
+
+        foreach ($scopeIds as $scopeId) {
+            $response = $this->get_vrfs(static::localVrfQueryParameters($device, $scopeId));
+            if (is_array($response) && array_key_exists('error', $response)) {
+                continue;
+            }
+
+            if (! $response->ok()) {
+                continue;
+            }
+
+            $vrfs = $response->json('vrf', []);
+            if (is_array($vrfs) && $vrfs !== []) {
+                $latestVrfs = $vrfs;
+            }
+        }
+
+        return $latestVrfs;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $vrfs
+     */
+    public static function vrfNameExists(array $vrfs, string $name): bool
+    {
+        foreach ($vrfs as $vrf) {
+            if (is_array($vrf) && ($vrf['name'] ?? null) === $name) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function resolveVrfPostScopeId(Device $device): ?string
+    {
+        if (filled($device->group)) {
+            $groupScopeId = $this->resolveGroupScopeId($device);
+            if ($groupScopeId !== null) {
+                return $groupScopeId;
+            }
+        }
+
+        return $this->resolveSiteScopeId($device);
+    }
+
+    /**
+     * @return array{ok: true, created?: bool}|array{error: string}
+     */
+    public function ensureVrfForRoutedInterface(DeviceInterface $deviceInterface): array
+    {
+        if (! static::is_routed_ethernet_interface($deviceInterface)) {
+            return ['ok' => true];
+        }
+
+        $vrfName = trim((string) ($deviceInterface->vrf_forwarding ?? ''));
+        if ($vrfName === '' || $vrfName === 'default') {
+            return ['ok' => true];
+        }
+
+        $device = $deviceInterface->device;
+        if ($device === null) {
+            return ['error' => 'Device not found for interface.'];
+        }
+
+        $vrfs = $this->fetchVrfsFromScopes($device, $this->resolveVrfLookupScopeIds($device));
+        if ($vrfs !== null && static::vrfNameExists($vrfs, $vrfName)) {
+            return ['ok' => true];
+        }
+
+        $postScopeId = $this->resolveVrfPostScopeId($device);
+        if ($postScopeId === null) {
+            return ['error' => 'Could not resolve group or site scope ID to create VRF.'];
+        }
+
+        $response = $this->post_vrf(
+            ['name' => $vrfName],
+            static::localVrfQueryParameters($device, $postScopeId),
+        );
+
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return ['error' => (string) $response['error']];
+        }
+
+        if (! $response->ok()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return ['error' => $message !== '' ? $message : 'Failed to create VRF in Central.'];
+        }
+
+        return ['ok' => true, 'created' => true];
+    }
+
+    /**
+     * @param  array  $vrf  = [ 'name' => string ]
+     */
+    public function post_vrf(array $vrf, array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->routing_and_overlays['vrf'].'/'.$vrf['name'], $vrf);
 
             return $response;
         }
