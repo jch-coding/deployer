@@ -75,44 +75,40 @@ class UpdateSystemInfo extends BaseTaskJob
             }
 
             $messageStr = $this->responseMessageString($response);
-            if (str_contains($messageStr, 'System Info doesn\'t exist')) {
-                $message = 'Failed to update system info for device '.$this->device->name.' Trying to create system info profile...';
-                Log::error($message);
-                $this->task->processTaskStatusLog($message, true);
-                $createResponse = $this->centralAPIHelper->postSystemInfo($this->device);
-                if (is_array($createResponse) || ! $createResponse instanceof Response) {
-                    $detail = is_array($createResponse)
-                        ? ($createResponse['error'] ?? json_encode($createResponse))
-                        : 'Invalid response from Central';
-                    Log::error('postSystemInfo failed: '.$detail);
-                    $this->task->processTaskStatusLog('Failed to create system info for device '.$this->device->name, true);
-                    $this->release($this->wait_time * 60);
-
-                    return;
-                }
-
-                if ($createResponse->successful()) {
-                    $this->markDevicePivotCompletedAndMaybeFinishTask($pivotForDevice);
-                    $message = 'System info for '.$this->device->name.' created successfully';
-                    Log::info($message);
-                    $this->task->processTaskStatusLog($message);
-
-                    return;
-                }
-
-                $message = 'Failed to create system info for device '.$this->device->name;
-                Log::error($message);
-                $this->task->processTaskStatusLog($message, true);
-                $this->release($this->wait_time * 60);
-
-                return;
-            }
-
             $message = 'Failed to update system info for device '.$this->device->name.' with error: '.$messageStr;
             Log::error($message);
-            $this->task->processTaskStatusLog($message, true);
-            $this->release($this->wait_time * 60);
+            $this->task->processTaskStatusLog($message.' Trying to create system info profile...', true);
+            $this->attemptPostSystemInfo($pivotForDevice);
         }, 'Update system info');
+    }
+
+    private function attemptPostSystemInfo($pivot): void
+    {
+        $createResponse = $this->centralAPIHelper->postSystemInfo($this->device);
+        if (is_array($createResponse) || ! $createResponse instanceof Response) {
+            $detail = is_array($createResponse)
+                ? ($createResponse['error'] ?? json_encode($createResponse))
+                : 'Invalid response from Central';
+            Log::error('postSystemInfo failed: '.$detail);
+            $this->task->processTaskStatusLog('Failed to create system info for device '.$this->device->name, true);
+            $this->release($this->wait_time * 60);
+
+            return;
+        }
+
+        if ($createResponse->successful()) {
+            $this->markDevicePivotCompletedAndMaybeFinishTask($pivot);
+            $message = 'System info for '.$this->device->name.' created successfully';
+            Log::info($message);
+            $this->task->processTaskStatusLog($message);
+
+            return;
+        }
+
+        $message = 'Failed to create system info for device '.$this->device->name;
+        Log::error($message);
+        $this->task->processTaskStatusLog($message, true);
+        $this->release($this->wait_time * 60);
     }
 
     private function markDevicePivotCompletedAndMaybeFinishTask($pivot): void

@@ -84,8 +84,11 @@ it('keeps device pivot pending when system info update fails', function () {
     $failureResponse->shouldReceive('successful')->andReturn(false);
     $failureResponse->shouldReceive('json')->with('message')->andReturn('boom');
     $failureResponse->shouldReceive('body')->andReturn('');
+    $postFailureResponse = Mockery::mock(Response::class);
+    $postFailureResponse->shouldReceive('successful')->andReturn(false);
     $centralApi->shouldReceive('getScopeIdFromCentral')->never();
     $centralApi->shouldReceive('updateSystemInfo')->once()->with($device)->andReturn($failureResponse);
+    $centralApi->shouldReceive('postSystemInfo')->once()->with($device)->andReturn($postFailureResponse);
 
     $job = new UpdateSystemInfo($device, $task, $centralApi);
     $job->handle();
