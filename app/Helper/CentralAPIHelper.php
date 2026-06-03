@@ -31,6 +31,7 @@ class CentralAPIHelper
         'system_info' => 'network-config/v1alpha1/system-info',
         'dns' => 'network-config/v1alpha1/dns',
         'ntp' => 'network-config/v1alpha1/ntp',
+        'local_management' => 'network-config/v1alpha1/local-management',
     ];
 
     public array $routing_and_overlays = [
@@ -1670,6 +1671,32 @@ class CentralAPIHelper
         }
 
         return $allItems;
+    }
+
+    public function get_local_management_profiles($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->system['local_management']);
+
+            return $response;
+        }
+    }
+
+    public function delete_local_management_profile($profile_name, $queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->delete($this->client->base_url.$this->system['local_management'].'/'.$profile_name);
+
+            return $response;
+        }
     }
 
     public function classic_get_sites()
