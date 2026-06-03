@@ -9,6 +9,7 @@ use App\Models\DeviceInterface;
 use App\Models\LacpProfile;
 use App\Models\Task;
 use App\Models\User;
+use App\SwitchSKU;
 use Illuminate\Bus\ChainedBatch;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
@@ -48,7 +49,7 @@ beforeEach(function () {
     $this->actingAs($this->user);
 });
 
-test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES stores four composite sibling tasks', function () {
+test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES stores five composite sibling tasks', function () {
     Bus::fake();
 
     $devices = Device::factory(2)->create([
@@ -64,7 +65,7 @@ test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES stores four composite sibling 
 
     $response->assertSessionHasNoErrors();
     $tasks = $this->deployment->refresh()->tasks()->orderBy('composite_order')->get();
-    expect($tasks)->toHaveCount(4);
+    expect($tasks)->toHaveCount(5);
     expect($tasks->pluck('composite_group_id')->unique())->toHaveCount(1);
     expect($tasks->every(fn (Task $t) => $t->composite_kind === 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES'))->toBeTrue();
     expect($tasks->pluck('task_type')->all())->toBe([
@@ -72,13 +73,67 @@ test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES stores four composite sibling 
         'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE',
         'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
         'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
+        'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE',
     ]);
+    expect($tasks->pluck('override_device_scope')->unique()->values()->all())->toBe(['vsf_only']);
     expect($tasks->pluck('job_queue')->unique())->toHaveCount(1);
     expect($tasks->first()->job_queue)->toMatch('/^q\d+$/');
 
     $first = $tasks->firstWhere('composite_order', 1);
     expect($first)->not->toBeNull();
     $response->assertRedirect(route('tasks.show', $first));
+});
+
+test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES with all device scope stores override_device_scope on siblings', function () {
+    Bus::fake();
+
+    $devices = Device::factory(1)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES',
+        'deployment_time' => 1,
+        'override_device_scope' => 'all',
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $tasks = $this->deployment->refresh()->tasks()->orderBy('composite_order')->get();
+    expect($tasks)->toHaveCount(5);
+    expect($tasks->pluck('override_device_scope')->unique()->values()->all())->toBe(['all']);
+});
+
+test('creating REMOVE_VSF_PROFILE_LOCAL_OVERRIDES with vsf_only marks non-SKU devices completed on attach', function () {
+    Bus::fake();
+
+    $withSku = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'sku' => SwitchSKU::JL658A->name,
+    ]);
+    $withoutSku = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'sku' => null,
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES',
+        'deployment_time' => 1,
+        'override_device_scope' => 'vsf_only',
+        'devices' => [
+            ['id' => $withSku->id],
+            ['id' => $withoutSku->id],
+        ],
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->firstWhere('composite_order', 1);
+    expect($task)->not->toBeNull();
+    expect($task->devices()->where('devices.id', $withSku->id)->first()->pivot->status)->toBe('PENDING');
+    expect($task->devices()->where('devices.id', $withoutSku->id)->first()->pivot->status)->toBe('COMPLETED');
 });
 
 test('creating CONFIGURE_ALL_INTERFACE stores three composite sibling tasks', function () {
@@ -199,6 +254,7 @@ test('composite task show uses MultiJobTask and includes sub_jobs', function () 
         ['REMOVE_LOCAL_OVERRIDE_DNS_PROFILE', 2],
         ['REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE', 3],
         ['REMOVE_LOCAL_OVERRIDE_NTP_PROFILE', 4],
+        ['REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE', 5],
     ];
 
     $created = [];
@@ -226,7 +282,7 @@ test('composite task show uses MultiJobTask and includes sub_jobs', function () 
         ->assertInertia(fn (Assert $page) => $page
             ->component('Task/MultiJobTask')
             ->where('logical_friendly_name', 'Remove VSF profile local overrides')
-            ->has('sub_jobs', 4)
+            ->has('sub_jobs', 5)
             ->has('sub_jobs.0', fn (Assert $job) => $job
                 ->where('task_type', 'REMOVE_LOCAL_OVERRIDE_VLANS')
                 ->where('friendly_label', 'Remove local VLAN overrides')

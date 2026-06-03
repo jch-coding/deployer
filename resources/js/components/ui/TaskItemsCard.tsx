@@ -40,6 +40,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
+    const [overrideDeviceScope, setOverrideDeviceScope] = useState<'vsf_only' | 'all'>('vsf_only')
     const filteredDevices = useMemo(() => {
         const q = deviceSearch.trim().toLowerCase();
         return devices.filter((device) => {
@@ -76,6 +77,9 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
             devices: devices_for_task,
             deployment_time: deploymentTimeTotalMinutes,
             wait_time: waitTimeMinutes,
+            ...(task === 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES'
+                ? { override_device_scope: overrideDeviceScope }
+                : {}),
         }
         router.post(store(deployment.id).url, taskData)
     }
@@ -91,6 +95,29 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                     </Badge>
                 ) : null}
                 <CardDescription>{task_friendly_description}</CardDescription>
+                {task === 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES' ? (
+                    <div className="mt-3 space-y-1">
+                        <label htmlFor="override-device-scope" className="text-sm font-medium">
+                            Device scope
+                        </label>
+                        <select
+                            id="override-device-scope"
+                            value={overrideDeviceScope}
+                            onChange={(e) =>
+                                setOverrideDeviceScope(e.target.value as 'vsf_only' | 'all')
+                            }
+                            className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full max-w-[16rem] rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                            data-test="override-device-scope"
+                        >
+                            <option value="vsf_only">VSF devices only (has SKU)</option>
+                            <option value="all">All selected devices</option>
+                        </select>
+                        <p className="text-muted-foreground text-xs">
+                            VSF only clears overrides on devices with a SKU. All devices runs on every
+                            selected device regardless of SKU.
+                        </p>
+                    </div>
+                ) : null}
             </CardHeader>
             <CardContent className="flex w-full flex-wrap items-center gap-2">
                 <div className="flex flex-wrap items-center gap-2">

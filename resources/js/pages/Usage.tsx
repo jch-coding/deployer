@@ -54,7 +54,7 @@ const deploymentTasks = [
     {
         title: 'Remove VSF profile local overrides',
         description:
-            'Clears VLAN, DNS, NTP, and static route local overrides introduced during VSF onboarding.',
+            'Clears VLAN, DNS, NTP, static route, and local management profile overrides introduced during VSF onboarding. Choose VSF devices only or all selected devices.',
         requiresClassicCentral: false,
     },
     {

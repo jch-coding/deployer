@@ -17,6 +17,7 @@ use App\Jobs\CreateVSFProfileJob;
 use App\Jobs\MoveDevicesToGroupJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Jobs\RemoveLocalOverrideDNSJob;
+use App\Jobs\RemoveLocalOverrideLocalManagementProfileJob;
 use App\Jobs\RemoveLocalOverrideNTPJob;
 use App\Jobs\RemoveLocalOverrideStaticRouteJob;
 use App\Jobs\RemoveLocalOverrideVlansJob;
@@ -77,6 +78,7 @@ class TaskController extends Controller
         'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE' => [],
         'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE' => [],
         'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE' => [],
+        'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE' => [],
         'ADD_VLANS_FOR_DEVICE_GROUP' => [
             'group',
         ],
@@ -746,6 +748,7 @@ class TaskController extends Controller
             'devices' => ['nullable', 'array'],
             'deployment_time' => ['required', 'integer'],
             'vlan_site_prefix' => ['nullable', 'string', 'max:64'],
+            'override_device_scope' => ['nullable', Rule::in(['vsf_only', 'all'])],
         ]);
 
         $isAddVlans = $validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP';
@@ -769,61 +772,50 @@ class TaskController extends Controller
             $compositeGroupId = (string) Str::uuid();
             $compositeKind = 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES';
             $jobQueue = $this->allocateJobQueue($request, $shardEntropy);
-            $remove_vlans_task = $deployment->tasks()->create([
-                'task_type' => 'REMOVE_LOCAL_OVERRIDE_VLANS',
-                'name' => 'task_for_'.$deployment->name.now(),
-                'deployment_time' => $validated['deployment_time'],
-                'status' => 'IN_PROGRESS',
-                'job_queue' => $jobQueue,
-                'composite_group_id' => $compositeGroupId,
-                'composite_kind' => $compositeKind,
-                'composite_order' => 1,
-            ]);
-            $remove_dns_task = $deployment->tasks()->create([
-                'task_type' => 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE',
-                'name' => 'task_for_'.$deployment->name.now(),
-                'deployment_time' => $validated['deployment_time'],
-                'status' => 'IN_PROGRESS',
-                'job_queue' => $jobQueue,
-                'composite_group_id' => $compositeGroupId,
-                'composite_kind' => $compositeKind,
-                'composite_order' => 2,
-            ]);
-            $remove_static_route_task = $deployment->tasks()->create([
-                'task_type' => 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
-                'name' => 'task_for_'.$deployment->name.now(),
-                'deployment_time' => $validated['deployment_time'],
-                'status' => 'IN_PROGRESS',
-                'job_queue' => $jobQueue,
-                'composite_group_id' => $compositeGroupId,
-                'composite_kind' => $compositeKind,
-                'composite_order' => 3,
-            ]);
-            $remove_ntp_task = $deployment->tasks()->create([
-                'task_type' => 'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
-                'name' => 'task_for_'.$deployment->name.now(),
-                'deployment_time' => $validated['deployment_time'],
-                'status' => 'IN_PROGRESS',
-                'job_queue' => $jobQueue,
-                'composite_group_id' => $compositeGroupId,
-                'composite_kind' => $compositeKind,
-                'composite_order' => 4,
-            ]);
-            $device_collection = Collection::make($validated['devices']);
-            $remove_vlans_task->devices()->attach($device_collection->pluck('id'));
-            $remove_dns_task->devices()->attach($device_collection->pluck('id'));
-            $remove_static_route_task->devices()->attach($device_collection->pluck('id'));
-            $remove_ntp_task->devices()->attach($device_collection->pluck('id'));
+            $overrideDeviceScope = $validated['override_device_scope'] ?? 'vsf_only';
+            $selectedDeviceIds = Collection::make($validated['devices'])
+                ->pluck('id')
+                ->filter(fn ($id) => $id !== null)
+                ->map(fn ($id) => (int) $id)
+                ->values();
+            $selectedDevices = Device::query()
+                ->where('deployment_id', $deployment->id)
+                ->whereIn('id', $selectedDeviceIds)
+                ->get();
+            $deviceAttachData = $selectedDevices->mapWithKeys(function (Device $device) use ($overrideDeviceScope) {
+                $status = ($overrideDeviceScope === 'vsf_only' && ! $device->sku) ? 'COMPLETED' : 'PENDING';
 
-            $batch = $this->dispatchJob($remove_vlans_task);
-            $remove_vlans_task->update(['batch_id' => $batch]);
-            $batch = $this->dispatchJob($remove_dns_task);
-            $remove_dns_task->update(['batch_id' => $batch]);
-            $batch = $this->dispatchJob($remove_static_route_task);
-            $remove_static_route_task->update(['batch_id' => $batch]);
-            $batch = $this->dispatchJob($remove_ntp_task);
-            $remove_ntp_task->update(['batch_id' => $batch]);
-            $task = $remove_vlans_task;
+                return [$device->id => ['status' => $status]];
+            })->all();
+
+            $compositeTaskDefinitions = [
+                ['task_type' => 'REMOVE_LOCAL_OVERRIDE_VLANS', 'composite_order' => 1],
+                ['task_type' => 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE', 'composite_order' => 2],
+                ['task_type' => 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE', 'composite_order' => 3],
+                ['task_type' => 'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE', 'composite_order' => 4],
+                ['task_type' => 'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE', 'composite_order' => 5],
+            ];
+
+            $createdTasks = collect();
+            foreach ($compositeTaskDefinitions as $definition) {
+                $subTask = $deployment->tasks()->create([
+                    'task_type' => $definition['task_type'],
+                    'name' => 'task_for_'.$deployment->name.now(),
+                    'deployment_time' => $validated['deployment_time'],
+                    'status' => 'IN_PROGRESS',
+                    'job_queue' => $jobQueue,
+                    'composite_group_id' => $compositeGroupId,
+                    'composite_kind' => $compositeKind,
+                    'composite_order' => $definition['composite_order'],
+                    'override_device_scope' => $overrideDeviceScope,
+                ]);
+                $subTask->devices()->attach($deviceAttachData);
+                $batch = $this->dispatchJob($subTask);
+                $subTask->update(['batch_id' => $batch]);
+                $createdTasks->push($subTask);
+            }
+
+            $task = $createdTasks->first();
         } elseif ($validated['task_type'] === 'CONFIGURE_ALL_INTERFACE') {
             $selectedDeviceIds = Collection::make($validated['devices'])
                 ->pluck('id')
@@ -1522,20 +1514,24 @@ class TaskController extends Controller
                 $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new CreateVSFProfileJob($device, $task, $centralAPIHelper))->toArray();
                 break;
             case 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE':
-                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
-                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideDnsJob($task, $device, $centralAPIHelper))->toArray();
+                $devices_for_local_override = $this->devicesForLocalOverrideRemoval($task);
+                $jobs[] = $devices_for_local_override->map(fn ($device) => new RemoveLocalOverrideDnsJob($task, $device, $centralAPIHelper))->toArray();
                 break;
             case 'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE':
-                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
-                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideNtpJob($task, $device, $centralAPIHelper))->toArray();
+                $devices_for_local_override = $this->devicesForLocalOverrideRemoval($task);
+                $jobs[] = $devices_for_local_override->map(fn ($device) => new RemoveLocalOverrideNtpJob($task, $device, $centralAPIHelper))->toArray();
                 break;
             case 'REMOVE_LOCAL_OVERRIDE_VLANS':
-                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
-                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideVlansJob($task, $device, $centralAPIHelper))->toArray();
+                $devices_for_local_override = $this->devicesForLocalOverrideRemoval($task);
+                $jobs[] = $devices_for_local_override->map(fn ($device) => new RemoveLocalOverrideVlansJob($task, $device, $centralAPIHelper))->toArray();
                 break;
             case 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE':
-                $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
-                $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new RemoveLocalOverrideStaticRouteJob($task, $device, $centralAPIHelper))->toArray();
+                $devices_for_local_override = $this->devicesForLocalOverrideRemoval($task);
+                $jobs[] = $devices_for_local_override->map(fn ($device) => new RemoveLocalOverrideStaticRouteJob($task, $device, $centralAPIHelper))->toArray();
+                break;
+            case 'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE':
+                $devices_for_local_override = $this->devicesForLocalOverrideRemoval($task);
+                $jobs[] = $devices_for_local_override->map(fn ($device) => new RemoveLocalOverrideLocalManagementProfileJob($task, $device, $centralAPIHelper))->toArray();
                 break;
             case 'CONFIGURE_ETHERNET_INTERFACE':
                 if ($task->deviceInterfaces->isNotEmpty()) {
@@ -1652,5 +1648,17 @@ class TaskController extends Controller
     public static function get_unique_sw_profiles(Collection $devices)
     {
         return $devices->map(fn ($device) => $device->interfaces_sw_profiles->unique('sw_profile'))->collapse()->unique('sw_profile');
+    }
+
+    protected function devicesForLocalOverrideRemoval(Task $task): Collection
+    {
+        $inProgress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+        $scope = $task->override_device_scope ?? 'vsf_only';
+
+        if ($scope === 'all') {
+            return $inProgress;
+        }
+
+        return $inProgress->filter(fn ($device) => $device->sku);
     }
 }

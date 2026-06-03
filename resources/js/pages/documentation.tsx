@@ -490,8 +490,9 @@ export default function documentation() {
                                     REMOVE_VSF_PROFILE_LOCAL_OVERRIDES
                                 </code>
                                 . Device-based: clears local overrides introduced during VSF onboarding by
-                                running remove tasks for VLANs, DNS profile, static routes, and NTP profile in
-                                sequence.
+                                running remove tasks for VLANs, DNS profile, static routes, NTP profile, and
+                                local management profile in sequence. Choose VSF devices only (has SKU) or all
+                                selected devices when launching the task.
                             </p>
                             <p className="text-muted-foreground text-sm">
                                 Select devices on the deployment when starting the task; CSV rows identify

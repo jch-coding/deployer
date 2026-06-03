@@ -118,6 +118,7 @@ class Task extends Model
             'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE',
             'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
             'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
+            'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE',
             'ADD_VLANS_FOR_DEVICE_GROUP',
             'CREATE_NEW_CENTRAL_CX_GROUP',
         ];
@@ -159,6 +160,8 @@ class Task extends Model
                 return 'Remove local NTP overrides';
             case 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE':
                 return 'Remove local static route overrides';
+            case 'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE':
+                return 'Remove local management profile overrides';
             case 'ASSOCIATE_DEVICE_TO_SITE':
                 return 'Associate Devices to Site';
             case 'ASSOCIATE_SITE_AND_NAME':
@@ -204,7 +207,7 @@ class Task extends Model
             case 'CREATE_VSF_PROFILE':
                 return 'Create autostack VSF Profile';
             case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
-                return 'Remove VLANs, DNS, NTP and Static Route Overrides introduced by the VSF onboarding';
+                return 'Remove VLANs, DNS, NTP, static route, and local management profile overrides introduced by the VSF onboarding';
             case 'REMOVE_LOCAL_OVERRIDE_VLANS':
                 return 'Remove VLAN overrides from devices';
             case 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE':
@@ -213,6 +216,8 @@ class Task extends Model
                 return 'Remove NTP profile overrides from devices';
             case 'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE':
                 return 'Remove static route overrides from devices';
+            case 'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE':
+                return 'Remove local management profile overrides from devices';
             case 'MOVE_DEVICE_TO_GROUP':
                 return 'Move devices to a device group';
             case 'ASSIGN_DEVICE_FUNCTION':
