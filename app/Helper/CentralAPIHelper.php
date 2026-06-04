@@ -1870,7 +1870,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @param  array<string, mixed>  $queryParameters
+     * @param  array<string, mixed>  $queryParameters  Query parameters: limit (default 1000 in collect), offset, sku_type (default all)
      * @return \Illuminate\Http\Client\Response|array{error: string}
      */
     public function classic_get_device_inventory(array $queryParameters = [])
@@ -1892,7 +1892,7 @@ class CentralAPIHelper
     public function classic_collect_device_inventory(): array
     {
         $allDevices = [];
-        $limit = 100;
+        $limit = 1000;
         $offset = 0;
 
         while (true) {

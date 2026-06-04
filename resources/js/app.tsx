@@ -3,6 +3,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../css/app.css';
+import { LicensingVisitLoader } from '@/components/licensing-visit-loader';
 import { initializeTheme } from './hooks/use-appearance';
 import { configureEcho } from '@laravel/echo-react';
 
@@ -24,6 +25,7 @@ createInertiaApp({
 
         root.render(
             <StrictMode>
+                <LicensingVisitLoader />
                 <App {...props} />
             </StrictMode>,
         );
