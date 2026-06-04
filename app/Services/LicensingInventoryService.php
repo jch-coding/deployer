@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Helper\CentralAPIHelper;
+use App\Helper\GreenLakeAPIHelper;
 use App\Models\Client;
 use App\Models\ClientSubscription;
 use App\Models\Device;
@@ -28,11 +29,15 @@ class LicensingInventoryService
      *     licensing_synced_at: string|null
      * }
      */
-    public function build(Client $client, CentralAPIHelper $helper, array $filters = []): array
-    {
+    public function build(
+        Client $client,
+        CentralAPIHelper $centralHelper,
+        GreenLakeAPIHelper $greenLakeHelper,
+        array $filters = [],
+    ): array {
         if ($this->licensingSyncService->needsInitialSync($client)) {
             try {
-                $this->licensingSyncService->syncFromCentral($client, $helper);
+                $this->licensingSyncService->syncFromCentral($client, $centralHelper, $greenLakeHelper);
                 $client->refresh();
             } catch (LicensingSyncException $e) {
                 return $this->emptyPayload($e->getMessage(), licensingSyncedAt: null);
@@ -60,11 +65,14 @@ class LicensingInventoryService
      *     licensing_synced_at: string|null
      * }
      */
-    public function resolveLicensingOptions(Client $client, CentralAPIHelper $helper): array
-    {
+    public function resolveLicensingOptions(
+        Client $client,
+        CentralAPIHelper $centralHelper,
+        GreenLakeAPIHelper $greenLakeHelper,
+    ): array {
         if ($this->licensingSyncService->needsInitialSync($client)) {
             try {
-                $this->licensingSyncService->syncFromCentral($client, $helper);
+                $this->licensingSyncService->syncFromCentral($client, $centralHelper, $greenLakeHelper);
                 $client->refresh();
             } catch (LicensingSyncException $e) {
                 return [
@@ -122,7 +130,7 @@ class LicensingInventoryService
     {
         if ($client->licensing_synced_at === null) {
             return $this->emptyPayload(
-                $client->licensing_sync_error ?? 'Licensing has not been synced yet. Use Renew licensing to fetch from Central.',
+                $client->licensing_sync_error ?? 'Licensing has not been synced yet. Use Renew licensing to refresh data.',
                 licensingSyncedAt: null,
             );
         }
@@ -204,6 +212,8 @@ class LicensingInventoryService
             'subscription_status' => (string) ($subscription['status'] ?? ''),
             'subscription_type' => (string) ($subscription['subscription_type'] ?? ''),
             'acpapp_name' => (string) ($subscription['acpapp_name'] ?? ''),
+            'tags' => GreenLakeAPIHelper::normalizeTagKeys($subscription['tags'] ?? []),
+            'greenlake_device_id' => $row->greenlake_device_id,
             'device_sku' => (string) ($deviceSkusBySerial[$serial] ?? ''),
             'deployer_device_id' => $row->deployer_device_id,
         ];
@@ -273,6 +283,31 @@ class LicensingInventoryService
     private function applyFilters(array $devices, array $filters): array
     {
         return array_values(array_filter($devices, function (array $device) use ($filters): bool {
+            if (! $this->matchesTextFilter((string) ($device['serial'] ?? ''), $filters['serial_number'] ?? '')) {
+                return false;
+            }
+
+            if (! $this->matchesTextFilter((string) ($device['name'] ?? ''), $filters['device_name'] ?? '')) {
+                return false;
+            }
+
+            if (! $this->matchesTextFilter((string) ($device['subscription_key'] ?? ''), $filters['subscription_key'] ?? '')) {
+                return false;
+            }
+
+            if (! $this->matchesTextFilter((string) ($device['model'] ?? ''), $filters['model'] ?? '')) {
+                return false;
+            }
+
+            $tagKeys = $device['tags'] ?? [];
+            if (! is_array($tagKeys)) {
+                $tagKeys = GreenLakeAPIHelper::normalizeTagKeys($tagKeys);
+            }
+
+            if (! $this->matchesTagFilter($tagKeys, $filters['subscription_tags'] ?? '')) {
+                return false;
+            }
+
             if (($filters['license_type'] ?? '') !== '' && ($device['license_type'] ?? '') !== $filters['license_type']) {
                 return false;
             }
@@ -295,6 +330,55 @@ class LicensingInventoryService
 
             return true;
         }));
+    }
+
+    private function matchesTextFilter(string $haystack, string $needle): bool
+    {
+        $needle = trim($needle);
+        if ($needle === '') {
+            return true;
+        }
+
+        return str_contains(mb_strtolower($haystack), mb_strtolower($needle));
+    }
+
+    /**
+     * @param  array<int, string>  $tagKeys
+     */
+    private function matchesTagFilter(array $tagKeys, string $rawTags): bool
+    {
+        $rawTags = trim($rawTags);
+        if ($rawTags === '') {
+            return true;
+        }
+
+        $tokens = array_values(array_filter(
+            array_map(fn ($token) => trim($token), explode(',', $rawTags)),
+            fn ($token) => $token !== '',
+        ));
+
+        if ($tokens === []) {
+            return true;
+        }
+
+        foreach ($tokens as $token) {
+            $tokenLower = mb_strtolower($token);
+            $matched = false;
+
+            foreach ($tagKeys as $tagKey) {
+                if (str_contains(mb_strtolower((string) $tagKey), $tokenLower)) {
+                    $matched = true;
+
+                    break;
+                }
+            }
+
+            if (! $matched) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function dateInRange(?int $epochMs, string $from, string $to): bool
@@ -368,6 +452,7 @@ class LicensingInventoryService
 
             $normalized = $subscription;
             $normalized['device_categories'] = $this->inferDeviceCategories((string) ($normalized['license_type'] ?? ''));
+            $normalized['tags'] = GreenLakeAPIHelper::normalizeTagKeys($normalized['tags'] ?? []);
             $available[] = $normalized;
         }
 

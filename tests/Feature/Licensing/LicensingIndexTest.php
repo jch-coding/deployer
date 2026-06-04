@@ -21,6 +21,8 @@ beforeEach(function () {
         'classic_refresh_token' => 'refresh',
         'classic_expires_in' => now()->addHour(),
         'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
         'current' => true,
     ]);
     $this->deployment = Deployment::factory()->for($this->client)->create(['name' => 'Main']);
@@ -56,6 +58,10 @@ test('licensing index renders device inventory enriched with subscription metada
             'subscription_type' => 'NONE',
             'available' => 10,
             'acpapp_name' => 'nms',
+            'tags' => [
+                'pool-a' => 'pool-a-value',
+                'pool-b' => 'pool-b-value',
+            ],
         ]],
     );
 
@@ -79,6 +85,8 @@ test('licensing index renders device inventory enriched with subscription metada
             ->where('enabled_services.0', 'advanced_ap')
             ->has('available_subscriptions', 1)
             ->where('available_subscriptions.0.subscription_key', 'KEY-001')
+            ->where('available_subscriptions.0.tags', ['pool-a', 'pool-b'])
+            ->where('devices.0.tags', ['pool-a', 'pool-b'])
             ->where('subscription_summary.total_devices', 1));
 
     expect($this->client->refresh()->licensing_synced_at)->not->toBeNull();
@@ -167,15 +175,18 @@ test('licensing index filters by subscription_sku and license_type', function ()
             ->where('filters.license_type', 'Advanced AP'));
 });
 
-test('licensing assign resolves subscription key and posts to classic assign endpoint', function () {
+test('licensing assign patches GreenLake devices with subscription id', function () {
     $this->client->update([
         'licensing_enabled_services' => ['advanced_ap'],
         'licensing_synced_at' => now(),
         'licensing_sync_error' => null,
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
     ]);
 
     $this->client->clientSubscriptions()->create([
         'subscription_key' => 'KEY-POOL',
+        'greenlake_subscription_id' => 'gl-sub-pool',
         'subscription_sku' => 'Q9Y65AAE',
         'license_type' => 'Advanced AP',
         'status' => 'OK',
@@ -185,6 +196,7 @@ test('licensing assign resolves subscription key and posts to classic assign end
     LicensingInventoryDevice::create([
         'client_id' => $this->client->id,
         'serial' => 'SN-001',
+        'greenlake_device_id' => 'gl-dev-001',
         'model' => 'AP-515',
         'device_type' => 'IAP',
         'name' => 'SN-001',
@@ -193,18 +205,21 @@ test('licensing assign resolves subscription key and posts to classic assign end
         'subscription_key' => 'KEY-POOL',
     ]);
 
-    Http::fake(function (\Illuminate\Http\Client\Request $request) {
-        if (str_contains($request->url(), 'subscriptions/assign')) {
-            expect($request->data())->toMatchArray([
-                'serials' => ['SN-001', 'SN-002'],
-                'service_name' => ['advanced_ap'],
-            ]);
+    LicensingInventoryDevice::create([
+        'client_id' => $this->client->id,
+        'serial' => 'SN-002',
+        'greenlake_device_id' => 'gl-dev-002',
+        'model' => 'AP-515',
+        'device_type' => 'IAP',
+        'name' => 'SN-002',
+        'licensed' => false,
+        'assigned_services' => [],
+        'subscription_key' => '',
+    ]);
 
-            return Http::response(['message' => 'ok'], 200);
-        }
-
-        return Http::response([], 404);
-    });
+    Http::fake([
+        'https://global.api.greenlake.hpe.com/*' => Http::response([], 200),
+    ]);
 
     $this->post(route('licensing.assign'), [
         'subscription_key' => 'KEY-POOL',
@@ -212,6 +227,72 @@ test('licensing assign resolves subscription key and posts to classic assign end
     ])
         ->assertRedirect()
         ->assertSessionHas('success');
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request): bool {
+        return $request->method() === 'PATCH'
+            && str_contains($request->url(), '/devices/v1/devices')
+            && ($request->data()['subscription'][0]['id'] ?? '') === 'gl-sub-pool';
+    });
+});
+
+test('licensing index filters by serial number device name subscription key tags and model', function () {
+    seedLicensingCache(
+        $this->client,
+        devices: [
+            [
+                'serial' => 'SN-FILTER-A',
+                'model' => 'AP-515',
+                'name' => 'Lobby AP',
+                'device_type' => 'IAP',
+                'services' => ['advanced_ap'],
+                'subscription_key' => 'KEY-TAG-A',
+            ],
+            [
+                'serial' => 'SN-FILTER-B',
+                'model' => 'CX-6300',
+                'name' => 'Core Switch',
+                'device_type' => 'MAS',
+                'services' => ['advanced_switch_6300'],
+                'subscription_key' => 'KEY-TAG-B',
+            ],
+        ],
+        subscriptions: [
+            [
+                'subscription_key' => 'KEY-TAG-A',
+                'sku' => 'Q9Y65AAE',
+                'license_type' => 'Advanced AP',
+                'status' => 'OK',
+                'available' => 5,
+                'tags' => ['pool-a' => 'a', 'pool-b' => 'b'],
+            ],
+            [
+                'subscription_key' => 'KEY-TAG-B',
+                'sku' => 'OTHER-SKU',
+                'license_type' => 'Advanced Switch',
+                'status' => 'OK',
+                'available' => 5,
+                'tags' => ['pool-c' => 'c'],
+            ],
+        ],
+    );
+
+    $this->get(route('licensing.index', [
+        'serial_number' => 'filter-a',
+        'device_name' => 'lobby',
+        'subscription_key' => 'key-tag-a',
+        'subscription_tags' => 'pool-a,pool-b',
+        'model' => 'ap-515',
+    ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('devices', 1)
+            ->where('devices.0.serial', 'SN-FILTER-A')
+            ->where('filters.serial_number', 'filter-a')
+            ->where('filters.device_name', 'lobby')
+            ->where('filters.subscription_key', 'key-tag-a')
+            ->where('filters.subscription_tags', 'pool-a,pool-b')
+            ->where('filters.model', 'ap-515')
+            ->where('has_active_filters', true));
 });
 
 test('licensing queue route is removed', function () {

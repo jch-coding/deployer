@@ -3,19 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
+use App\Helper\GreenLakeAPIHelper;
 use App\Models\Client;
+use App\Models\LicensingInventoryDevice;
 use App\Services\LicensingInventoryService;
 use App\Services\LicensingSubscriptionResolver;
 use App\Services\LicensingSyncException;
 use App\Services\LicensingSyncService;
-use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class LicensingController extends Controller
 {
-    private const SERIALS_PER_REQUEST = 25;
-
     public function index(Request $request, LicensingInventoryService $inventoryService)
     {
         $currentClient = $request->user()->currentClient();
@@ -34,6 +33,11 @@ class LicensingController extends Controller
             'license_type' => ['nullable', 'string', 'max:255'],
             'subscription_sku' => ['nullable', 'string', 'max:255'],
             'service' => ['nullable', 'string', 'max:255'],
+            'serial_number' => ['nullable', 'string', 'max:255'],
+            'device_name' => ['nullable', 'string', 'max:255'],
+            'subscription_key' => ['nullable', 'string', 'max:255'],
+            'subscription_tags' => ['nullable', 'string', 'max:255'],
+            'model' => ['nullable', 'string', 'max:255'],
         ]);
 
         $filters = [
@@ -44,10 +48,16 @@ class LicensingController extends Controller
             'license_type' => trim((string) ($validated['license_type'] ?? '')),
             'subscription_sku' => trim((string) ($validated['subscription_sku'] ?? '')),
             'service' => trim((string) ($validated['service'] ?? '')),
+            'serial_number' => trim((string) ($validated['serial_number'] ?? '')),
+            'device_name' => trim((string) ($validated['device_name'] ?? '')),
+            'subscription_key' => trim((string) ($validated['subscription_key'] ?? '')),
+            'subscription_tags' => trim((string) ($validated['subscription_tags'] ?? '')),
+            'model' => trim((string) ($validated['model'] ?? '')),
         ];
 
-        $helper = new CentralAPIHelper($currentClient);
-        $payload = $inventoryService->build($currentClient, $helper, $filters);
+        $centralHelper = new CentralAPIHelper($currentClient);
+        $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
+        $payload = $inventoryService->build($currentClient, $centralHelper, $greenLakeHelper, $filters);
 
         return Inertia::render('Licensing/Index', [
             'devices' => $payload['devices'],
@@ -74,14 +84,15 @@ class LicensingController extends Controller
             return to_route('clients.index');
         }
 
-        $helper = new CentralAPIHelper($currentClient);
+        $centralHelper = new CentralAPIHelper($currentClient);
+        $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
 
         try {
-            $licensingSyncService->syncFromCentral($currentClient, $helper);
+            $licensingSyncService->syncFromCentral($currentClient, $centralHelper, $greenLakeHelper);
             $currentClient->refresh();
             session()->flash(
                 'success',
-                'Licensing data renewed from Central at '.$currentClient->licensing_synced_at?->format('M j, Y g:i A').'.',
+                'Licensing data renewed at '.$currentClient->licensing_synced_at?->format('M j, Y g:i A').'.',
             );
         } catch (LicensingSyncException $e) {
             session()->flash('error', $e->getMessage());
@@ -101,6 +112,86 @@ class LicensingController extends Controller
     public function unassign(Request $request, LicensingInventoryService $inventoryService)
     {
         return $this->runUnassignAction($request, $inventoryService);
+    }
+
+    public function removeFromWorkspace(Request $request, LicensingInventoryService $inventoryService)
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            session()->flash('error', 'Please set current client to manage licensing');
+
+            return to_route('clients.index');
+        }
+
+        $validated = $request->validate([
+            'serials' => ['required', 'array', 'min:1'],
+            'serials.*' => ['string', 'max:255'],
+        ]);
+
+        $serials = $this->normalizeSerials($validated['serials']);
+        $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
+        $licensingContext = $this->loadLicensingContext($currentClient, $inventoryService);
+
+        if ($licensingContext['central_error'] !== null) {
+            return back()->withErrors(['serials' => $licensingContext['central_error']]);
+        }
+
+        $inventoryBySerial = collect($licensingContext['inventory_devices'])->keyBy('serial');
+        $serialByDeviceId = [];
+        $deviceIds = [];
+        foreach ($serials as $serial) {
+            $device = $inventoryBySerial->get($serial);
+            $greenlakeDeviceId = is_array($device)
+                ? trim((string) ($device['greenlake_device_id'] ?? ''))
+                : '';
+            if ($greenlakeDeviceId === '') {
+                return back()->withErrors([
+                    'serials' => "Device {$serial} is not linked in GreenLake. Renew licensing and try again.",
+                ]);
+            }
+            $deviceIds[] = $greenlakeDeviceId;
+            $serialByDeviceId[$greenlakeDeviceId] = $serial;
+        }
+
+        $result = $greenLakeHelper->removeDevicesFromWorkspace($deviceIds);
+
+        $successfulSerials = [];
+        foreach ($result['results'] as $deviceResult) {
+            if (! ($deviceResult['success'] ?? false)) {
+                continue;
+            }
+
+            $deviceId = (string) ($deviceResult['device_id'] ?? '');
+            if ($deviceId !== '' && isset($serialByDeviceId[$deviceId])) {
+                $successfulSerials[] = $serialByDeviceId[$deviceId];
+            }
+        }
+
+        $successCount = count($successfulSerials);
+
+        if ($successCount > 0) {
+            LicensingInventoryDevice::query()
+                ->where('client_id', $currentClient->id)
+                ->whereIn('serial', $successfulSerials)
+                ->delete();
+        }
+
+        if ($successCount === 0 && $result['error'] !== null) {
+            session()->flash('error', $result['error']);
+
+            return back();
+        }
+
+        $failures = $successCount < count($serials)
+            ? ['Some devices failed to remove from GreenLake workspace.']
+            : [];
+
+        return $this->finishRemoveFromWorkspaceAction(
+            $failures,
+            $successCount,
+            count($serials),
+        );
     }
 
     private function runAssignAction(
@@ -123,8 +214,9 @@ class LicensingController extends Controller
         ]);
 
         $serials = $this->normalizeSerials($validated['serials']);
-        $helper = new CentralAPIHelper($currentClient);
-        $licensingContext = $this->loadLicensingContext($currentClient, $helper, $inventoryService);
+        $centralHelper = new CentralAPIHelper($currentClient);
+        $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
+        $licensingContext = $this->loadLicensingContext($currentClient, $inventoryService);
 
         if ($licensingContext['central_error'] !== null) {
             return back()->withErrors(['subscription_key' => $licensingContext['central_error']]);
@@ -139,33 +231,47 @@ class LicensingController extends Controller
             return back()->withErrors(['subscription_key' => $capacityError['error']]);
         }
 
-        $resolved = $resolver->resolveServiceName(
-            $validated['subscription_key'],
-            $licensingContext['enabled_services'],
-            $licensingContext['subscriptions_by_key'],
-            $licensingContext['inventory_devices'],
-        );
-        if (isset($resolved['error'])) {
-            return back()->withErrors(['subscription_key' => $resolved['error']]);
+        $subscription = $licensingContext['subscriptions_by_key'][$validated['subscription_key']] ?? null;
+        $greenlakeSubscriptionId = is_array($subscription)
+            ? trim((string) ($subscription['greenlake_subscription_id'] ?? ''))
+            : '';
+        if ($greenlakeSubscriptionId === '') {
+            return back()->withErrors([
+                'subscription_key' => 'GreenLake subscription id is missing. Renew licensing and try again.',
+            ]);
         }
 
-        $serviceName = $resolved['service_name'];
-        $failures = [];
-        $successCount = 0;
-
-        foreach (array_chunk($serials, self::SERIALS_PER_REQUEST) as $chunk) {
-            $response = $helper->classic_assign_subscription($chunk, $serviceName);
-
-            if (! is_array($response) && $response instanceof Response && $response->ok()) {
-                $successCount += count($chunk);
-
-                continue;
+        $inventoryBySerial = collect($licensingContext['inventory_devices'])->keyBy('serial');
+        $deviceIds = [];
+        foreach ($serials as $serial) {
+            $device = $inventoryBySerial->get($serial);
+            $greenlakeDeviceId = is_array($device)
+                ? trim((string) ($device['greenlake_device_id'] ?? ''))
+                : '';
+            if ($greenlakeDeviceId === '') {
+                return back()->withErrors([
+                    'serials' => "Device {$serial} is not linked in GreenLake. Renew licensing and try again.",
+                ]);
             }
-
-            $failures[] = $this->formatSubscriptionError($response, $chunk);
+            $deviceIds[] = $greenlakeDeviceId;
         }
 
-        return $this->finishSubscriptionAction($failures, $successCount, count($serials), 'assigned');
+        $result = $greenLakeHelper->assignSubscriptionToDevices($deviceIds, $greenlakeSubscriptionId);
+        if ($result['error'] !== null) {
+            session()->flash('error', $result['error']);
+
+            return back();
+        }
+
+        $failed = array_filter($result['responses'], fn ($response) => ! $response->ok());
+        $successCount = count($serials) - count($failed);
+
+        return $this->finishSubscriptionAction(
+            $failed !== [] ? ['Some devices failed to assign on GreenLake.'] : [],
+            $successCount,
+            count($serials),
+            'assigned',
+        );
     }
 
     private function runUnassignAction(Request $request, LicensingInventoryService $inventoryService)
@@ -179,50 +285,58 @@ class LicensingController extends Controller
         }
 
         $validated = $request->validate([
-            'service_name' => ['required', 'string', 'max:255'],
             'serials' => ['required', 'array', 'min:1'],
             'serials.*' => ['string', 'max:255'],
         ]);
 
         $serials = $this->normalizeSerials($validated['serials']);
-        $helper = new CentralAPIHelper($currentClient);
-        $licensingContext = $this->loadLicensingContext($currentClient, $helper, $inventoryService);
+        $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
+        $licensingContext = $this->loadLicensingContext($currentClient, $inventoryService);
 
         if ($licensingContext['central_error'] !== null) {
-            return back()->withErrors(['service_name' => $licensingContext['central_error']]);
-        }
-
-        if (! in_array($validated['service_name'], $licensingContext['enabled_services'], true)) {
-            return back()->withErrors(['service_name' => 'Selected service is not enabled for this client.']);
+            return back()->withErrors(['serials' => $licensingContext['central_error']]);
         }
 
         $inventoryBySerial = collect($licensingContext['inventory_devices'])->keyBy('serial');
+        $deviceIds = [];
         foreach ($serials as $serial) {
             $device = $inventoryBySerial->get($serial);
-            $assigned = is_array($device) ? ($device['assigned_services'] ?? []) : [];
-            if (! is_array($assigned) || ! in_array($validated['service_name'], $assigned, true)) {
+            $subscriptionKey = is_array($device)
+                ? trim((string) ($device['subscription_key'] ?? ''))
+                : '';
+            if ($subscriptionKey === '') {
                 return back()->withErrors([
-                    'service_name' => "Service {$validated['service_name']} is not assigned to device {$serial}.",
+                    'serials' => "Device {$serial} has no subscription to remove.",
                 ]);
             }
-        }
 
-        $failures = [];
-        $successCount = 0;
-
-        foreach (array_chunk($serials, self::SERIALS_PER_REQUEST) as $chunk) {
-            $response = $helper->classic_unassign_subscription($chunk, $validated['service_name']);
-
-            if (! is_array($response) && $response instanceof Response && $response->ok()) {
-                $successCount += count($chunk);
-
-                continue;
+            $greenlakeDeviceId = is_array($device)
+                ? trim((string) ($device['greenlake_device_id'] ?? ''))
+                : '';
+            if ($greenlakeDeviceId === '') {
+                return back()->withErrors([
+                    'serials' => "Device {$serial} is not linked in GreenLake. Renew licensing and try again.",
+                ]);
             }
-
-            $failures[] = $this->formatSubscriptionError($response, $chunk);
+            $deviceIds[] = $greenlakeDeviceId;
         }
 
-        return $this->finishSubscriptionAction($failures, $successCount, count($serials), 'unassigned');
+        $result = $greenLakeHelper->unassignSubscriptionFromDevices($deviceIds);
+        if ($result['error'] !== null) {
+            session()->flash('error', $result['error']);
+
+            return back();
+        }
+
+        $failed = array_filter($result['responses'], fn ($response) => ! $response->ok());
+        $successCount = count($serials) - count($failed);
+
+        return $this->finishSubscriptionAction(
+            $failed !== [] ? ['Some devices failed to unassign on GreenLake.'] : [],
+            $successCount,
+            count($serials),
+            'unassigned',
+        );
     }
 
     /**
@@ -247,7 +361,6 @@ class LicensingController extends Controller
      */
     private function loadLicensingContext(
         Client $client,
-        CentralAPIHelper $helper,
         LicensingInventoryService $inventoryService,
     ): array {
         $payload = $inventoryService->buildFromCache($client, []);
@@ -265,6 +378,7 @@ class LicensingController extends Controller
             return [
                 'serial' => $device['serial'],
                 'subscription_key' => $device['subscription_key'],
+                'greenlake_device_id' => $device['greenlake_device_id'] ?? '',
                 'services' => $device['assigned_services'],
                 'assigned_services' => $device['assigned_services'],
             ];
@@ -276,6 +390,34 @@ class LicensingController extends Controller
             'inventory_devices' => $inventoryDevices,
             'central_error' => null,
         ];
+    }
+
+    /**
+     * @param  array<int, string>  $failures
+     */
+    private function finishRemoveFromWorkspaceAction(array $failures, int $successCount, int $total)
+    {
+        if ($failures !== [] && $successCount === 0) {
+            session()->flash('error', implode(' ', $failures));
+
+            return back();
+        }
+
+        if ($failures !== []) {
+            session()->flash(
+                'success',
+                "{$successCount} device(s) removed from workspace. Some devices failed: ".implode(' ', $failures)
+                .' Devices may reappear after Renew licensing if GreenLake still lists them.',
+            );
+        } else {
+            session()->flash(
+                'success',
+                "{$total} device(s) removed from workspace successfully."
+                .' They may reappear after Renew licensing if GreenLake still lists them.',
+            );
+        }
+
+        return back();
     }
 
     /**
@@ -296,29 +438,6 @@ class LicensingController extends Controller
         }
 
         return back();
-    }
-
-    /**
-     * @param  array<int, string>  $serials
-     */
-    private function formatSubscriptionError(mixed $response, array $serials): string
-    {
-        $prefix = 'Batch ('.implode(', ', $serials).'): ';
-
-        if (is_array($response)) {
-            return $prefix.($response['error'] ?? json_encode($response));
-        }
-
-        if ($response instanceof Response) {
-            $json = $response->json();
-            if (is_array($json) && isset($json['message'])) {
-                return $prefix.(string) $json['message'];
-            }
-
-            return $prefix.$response->body();
-        }
-
-        return $prefix.'unknown error';
     }
 
     /**

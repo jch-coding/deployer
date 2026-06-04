@@ -19,6 +19,8 @@ beforeEach(function () {
         'classic_refresh_token' => 'refresh',
         'classic_expires_in' => now()->addHour(),
         'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
         'current' => true,
     ]);
     Deployment::factory()->for($this->client)->create(['name' => 'Main']);
@@ -64,6 +66,42 @@ test('licensing renew syncs data from central into database', function () {
         ->and($this->client->licensing_enabled_services)->toContain('advanced_ap')
         ->and(ClientSubscription::where('client_id', $this->client->id)->count())->toBe(1)
         ->and(LicensingInventoryDevice::where('client_id', $this->client->id)->count())->toBe(1);
+});
+
+test('licensing renew persists paginated GreenLake subscriptions and devices', function () {
+    $subscriptions = [];
+    for ($i = 0; $i < 2; $i++) {
+        $subscriptions[] = [
+            'id' => "gl-sub-page-{$i}",
+            'key' => "KEY-PAGE-{$i}",
+            'sku' => "SKU-{$i}",
+            'tierDescription' => "License {$i}",
+            'quantity' => 5,
+            'availableQuantity' => 2,
+            'subscriptionStatus' => 'ACTIVE',
+        ];
+    }
+
+    $devices = [];
+    for ($i = 0; $i < 2; $i++) {
+        $devices[] = [
+            'id' => "gl-dev-page-{$i}",
+            'serialNumber' => "SN-PAGE-{$i}",
+            'model' => 'AP-515',
+            'deviceType' => 'IAP',
+            'subscription' => [['id' => "gl-sub-page-{$i}"]],
+        ];
+    }
+
+    fakeLicensingApis($devices, $subscriptions);
+
+    $this->from(route('licensing.index'))
+        ->post(route('licensing.renew'))
+        ->assertRedirect(route('licensing.index'))
+        ->assertSessionHas('success');
+
+    expect(ClientSubscription::where('client_id', $this->client->id)->count())->toBe(2)
+        ->and(LicensingInventoryDevice::where('client_id', $this->client->id)->count())->toBe(2);
 });
 
 test('licensing renew flashes error when central sync fails', function () {

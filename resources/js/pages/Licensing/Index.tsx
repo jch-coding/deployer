@@ -14,8 +14,9 @@ import { index as clientsIndex } from '@/routes/clients';
 import LicenseSelect, {
     type AvailableSubscription,
 } from '@/components/licensing/LicenseSelect';
+import { subscriptionTagKeys } from '@/lib/subscription-tags';
 import RenewLicensingButton from '@/components/licensing/RenewLicensingButton';
-import { assign, index as licensingIndex, unassign } from '@/routes/licensing';
+import { assign, index as licensingIndex, remove, unassign } from '@/routes/licensing';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 type LicensingDeviceRow = {
@@ -27,6 +28,7 @@ type LicensingDeviceRow = {
     licensed: boolean;
     assigned_services: string[];
     subscription_key: string;
+    tags: string[] | Record<string, string>;
     subscription_sku: string;
     license_type: string;
     start_date: number | null;
@@ -46,6 +48,26 @@ type LicensingFilters = {
     license_type: string;
     subscription_sku: string;
     service: string;
+    serial_number: string;
+    device_name: string;
+    subscription_key: string;
+    subscription_tags: string;
+    model: string;
+};
+
+const emptyFilters: LicensingFilters = {
+    start_date_from: '',
+    start_date_to: '',
+    end_date_from: '',
+    end_date_to: '',
+    license_type: '',
+    subscription_sku: '',
+    service: '',
+    serial_number: '',
+    device_name: '',
+    subscription_key: '',
+    subscription_tags: '',
+    model: '',
 };
 
 type LicensingIndexProps = {
@@ -113,6 +135,7 @@ export default function Index() {
         subscription_summary,
         filter_options,
         filters,
+        has_active_filters,
         central_error,
         available_subscriptions,
         licensing_synced_at,
@@ -127,7 +150,6 @@ export default function Index() {
     const [selectedSubscriptionKey, setSelectedSubscriptionKey] = useState(
         available_subscriptions[0]?.subscription_key ?? '',
     );
-    const [selectedUnassignService, setSelectedUnassignService] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const breadcrumbs: BreadcrumbItem[] = [
@@ -166,27 +188,15 @@ export default function Index() {
         [available_subscriptions, selectedSubscriptionKey],
     );
 
-    const unassignServiceOptions = useMemo(() => {
-        const services = new Set<string>();
-        devices
-            .filter((device) => selectedSerials.includes(device.serial))
-            .forEach((device) => {
-                device.assigned_services.forEach((service) => services.add(service));
-            });
-
-        return Array.from(services).sort();
-    }, [devices, selectedSerials]);
-
-    useEffect(() => {
-        if (unassignServiceOptions.length === 0) {
-            setSelectedUnassignService('');
-
-            return;
-        }
-        if (!unassignServiceOptions.includes(selectedUnassignService)) {
-            setSelectedUnassignService(unassignServiceOptions[0]);
-        }
-    }, [unassignServiceOptions, selectedUnassignService]);
+    const selectedDevicesWithSubscription = useMemo(
+        () =>
+            devices.filter(
+                (device) =>
+                    selectedSerials.includes(device.serial) &&
+                    (device.subscription_key ?? '').trim() !== '',
+            ),
+        [devices, selectedSerials],
+    );
 
     useEffect(() => {
         if (flash?.success) {
@@ -280,8 +290,8 @@ export default function Index() {
             return;
         }
 
-        if (!selectedUnassignService) {
-            toast.error('Select a service to remove from the selected devices.');
+        if (selectedDevicesWithSubscription.length === 0) {
+            toast.error('Selected devices must have a subscription to remove.');
 
             return;
         }
@@ -290,7 +300,6 @@ export default function Index() {
         router.post(
             unassign.url(),
             {
-                service_name: selectedUnassignService,
                 serials: selectedSerials,
             },
             {
@@ -298,7 +307,59 @@ export default function Index() {
                 onFinish: () => setIsSubmitting(false),
             },
         );
-    }, [selectedSerials, selectedUnassignService]);
+    }, [selectedSerials, selectedDevicesWithSubscription.length]);
+
+    const runRemoveFromWorkspaceAction = useCallback(() => {
+        if (selectedSerials.length === 0) {
+            toast.error('Select at least one device.');
+
+            return;
+        }
+
+        if (
+            !window.confirm(
+                `Remove ${selectedSerials.length} device(s) from the GreenLake workspace? This unassigns their subscription and application.`,
+            )
+        ) {
+            return;
+        }
+
+        setIsSubmitting(true);
+        router.post(
+            remove.url(),
+            {
+                serials: selectedSerials,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => setRowSelection({}),
+                onFinish: () => setIsSubmitting(false),
+            },
+        );
+    }, [selectedSerials]);
+
+    const clearFilters = useCallback(() => {
+        setLocalFilters(emptyFilters);
+        setIsSearching(true);
+        router.get(
+            licensingIndex.url(),
+            {},
+            {
+                preserveState: true,
+                preserveScroll: true,
+                only: [
+                    'devices',
+                    'filters',
+                    'has_active_filters',
+                    'subscription_summary',
+                    'filter_options',
+                    'central_error',
+                    'available_subscriptions',
+                ],
+                onFinish: () => setIsSearching(false),
+            },
+        );
+    }, []);
 
     const columns = useMemo<ColumnDef<LicensingDeviceRow>[]>(
         () => [
@@ -345,7 +406,31 @@ export default function Index() {
                         ? row.original.assigned_services.join(', ')
                         : '—',
             },
-            { accessorKey: 'subscription_key', header: 'Subscription key' },
+            {
+                accessorKey: 'subscription_key',
+                header: 'Subscription key',
+                cell: ({ row }) => {
+                    const key = row.original.subscription_key || '—';
+                    const tags = subscriptionTagKeys(row.original.tags);
+
+                    if (tags.length === 0) {
+                        return key;
+                    }
+
+                    return (
+                        <div className="flex flex-col gap-1">
+                            <span>{key}</span>
+                            <div className="flex flex-wrap gap-1">
+                                {tags.map((tag) => (
+                                    <Badge key={tag} variant="secondary" className="text-xs font-normal">
+                                        {tag}
+                                    </Badge>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                },
+            },
             { accessorKey: 'license_type', header: 'License type' },
             {
                 accessorKey: 'start_date',
@@ -498,10 +583,62 @@ export default function Index() {
                             </option>
                         ))}
                     </select>
-                    <Button onClick={submitSearch} disabled={isSearching}>
-                        <Search className="mr-2 size-4" />
-                        {isSearching ? 'Applying…' : 'Apply filters'}
-                    </Button>
+                    <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-1">
+                        <Button onClick={submitSearch} disabled={isSearching}>
+                            <Search className="mr-2 size-4" />
+                            {isSearching ? 'Applying…' : 'Apply filters'}
+                        </Button>
+                        {has_active_filters && (
+                            <Button variant="outline" onClick={clearFilters} disabled={isSearching}>
+                                Clear filters
+                            </Button>
+                        )}
+                    </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="relative">
+                        <Search
+                            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden
+                        />
+                        <Input
+                            type="search"
+                            value={localFilters.serial_number}
+                            onChange={(e) => updateFilter({ serial_number: e.target.value })}
+                            placeholder="Serial number"
+                            className="pl-9"
+                            data-test="licensing-filter-serial-number"
+                        />
+                    </div>
+                    <Input
+                        type="search"
+                        value={localFilters.device_name}
+                        onChange={(e) => updateFilter({ device_name: e.target.value })}
+                        placeholder="Device name"
+                        data-test="licensing-filter-device-name"
+                    />
+                    <Input
+                        type="search"
+                        value={localFilters.subscription_key}
+                        onChange={(e) => updateFilter({ subscription_key: e.target.value })}
+                        placeholder="Subscription key"
+                        data-test="licensing-filter-subscription-key"
+                    />
+                    <Input
+                        type="search"
+                        value={localFilters.subscription_tags}
+                        onChange={(e) => updateFilter({ subscription_tags: e.target.value })}
+                        placeholder="Subscription tags (comma-separated)"
+                        data-test="licensing-filter-subscription-tags"
+                    />
+                    <Input
+                        type="search"
+                        value={localFilters.model}
+                        onChange={(e) => updateFilter({ model: e.target.value })}
+                        placeholder="Model"
+                        data-test="licensing-filter-model"
+                    />
                 </div>
 
                 <div className="flex flex-wrap items-end gap-3 rounded-lg border p-4">
@@ -516,30 +653,8 @@ export default function Index() {
                             onChange={setSelectedSubscriptionKey}
                         />
                         <p className="mt-1 text-xs text-muted-foreground">
-                            Central assigns a service tier from this license pool; a specific
-                            subscription key cannot be targeted via API.
+                            GreenLake assigns the selected subscription key directly to each device.
                         </p>
-                    </div>
-                    <div className="min-w-[220px] flex-1">
-                        <label className="mb-1 block text-sm font-medium" htmlFor="licensing-unassign-service">
-                            Service to remove
-                        </label>
-                        <select
-                            id="licensing-unassign-service"
-                            value={selectedUnassignService}
-                            onChange={(e) => setSelectedUnassignService(e.target.value)}
-                            className={selectClassName}
-                            disabled={unassignServiceOptions.length === 0}
-                        >
-                            {unassignServiceOptions.length === 0 && (
-                                <option value="">Select licensed devices first</option>
-                            )}
-                            {unassignServiceOptions.map((service) => (
-                                <option key={service} value={service}>
-                                    {service}
-                                </option>
-                            ))}
-                        </select>
                     </div>
                     <Button
                         variant="default"
@@ -557,11 +672,19 @@ export default function Index() {
                         disabled={
                             isSubmitting ||
                             selectedSerials.length === 0 ||
-                            !selectedUnassignService
+                            selectedDevicesWithSubscription.length === 0
                         }
                         onClick={runUnassignAction}
                     >
                         Unassign now ({selectedSerials.length})
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        disabled={isSubmitting || selectedSerials.length === 0}
+                        onClick={runRemoveFromWorkspaceAction}
+                        data-test="licensing-remove-from-workspace"
+                    >
+                        Remove from workspace ({selectedSerials.length})
                     </Button>
                 </div>
 

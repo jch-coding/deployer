@@ -78,6 +78,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/licensing/renew', 'renew')->name('licensing.renew');
         Route::post('/licensing/assign', 'assign')->name('licensing.assign');
         Route::post('/licensing/unassign', 'unassign')->name('licensing.unassign');
+        Route::post('/licensing/remove', 'removeFromWorkspace')->name('licensing.remove');
     });
 
     Route::controller(CentralApiExplorerController::class)->group(function () {
