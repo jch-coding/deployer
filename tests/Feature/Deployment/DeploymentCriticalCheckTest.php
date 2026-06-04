@@ -63,6 +63,7 @@ function fakeCriticalCheckCentralApis(array $overrides = []): void
                 ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope-from-central'],
             ],
         ], 200),
+        '*local-management*' => Http::response(localManagementProfilePayload(), 200),
     ], $overrides));
 }
 
@@ -142,6 +143,70 @@ function dnsRequestQuery(\Illuminate\Http\Client\Request $request): array
     return is_array($query) ? $query : [];
 }
 
+/**
+ * @return array<string, mixed>
+ */
+function localManagementProfilePayload(string $name = 'local-mgmt-profile'): array
+{
+    return [
+        'profile' => [
+            ['name' => $name],
+        ],
+    ];
+}
+
+/**
+ * @return array<string, string>
+ */
+function localManagementRequestQuery(\Illuminate\Http\Client\Request $request): array
+{
+    parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+    return is_array($query) ? $query : [];
+}
+
+function fakeCriticalCheckCentralApisWithLocalManagementHandler(callable $localManagementHandler): void
+{
+    Http::fake(function (\Illuminate\Http\Client\Request $request) use ($localManagementHandler) {
+        $url = $request->url();
+
+        if (str_contains($url, 'local-management')) {
+            return $localManagementHandler($request);
+        }
+
+        if (str_contains($url, 'portchannels')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'ethernet-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'vlan-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+        if (str_contains($url, 'static-route')) {
+            return Http::response(staticRouteProfilePayload(), 200);
+        }
+        if (str_contains($url, 'device-groups')) {
+            return Http::response(['items' => []], 200);
+        }
+        if (str_contains($url, 'network-config/v1/sites')) {
+            return Http::response(['items' => []], 200);
+        }
+        if (str_contains($url, 'dns')) {
+            return Http::response(dnsProfilePayload(), 200);
+        }
+        if (str_contains($url, 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope-from-central'],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+}
+
 function fakeCriticalCheckCentralApisWithDnsHandler(callable $dnsHandler): void
 {
     Http::fake(function (\Illuminate\Http\Client\Request $request) use ($dnsHandler) {
@@ -175,6 +240,9 @@ function fakeCriticalCheckCentralApisWithDnsHandler(callable $dnsHandler): void
                     ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope-from-central'],
                 ],
             ], 200);
+        }
+        if (str_contains($url, 'local-management')) {
+            return Http::response(localManagementProfilePayload(), 200);
         }
 
         return Http::response([], 200);
@@ -228,6 +296,9 @@ function fakeCriticalCheckCentralApisWithStaticRouteHandler(callable $staticRout
                     ],
                 ],
             ], 200);
+        }
+        if (str_contains($url, 'local-management')) {
+            return Http::response(localManagementProfilePayload(), 200);
         }
 
         return Http::response([], 200);
@@ -378,7 +449,7 @@ test('deployment critical check page loads immediately without results', functio
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/CriticalCheck')
-            ->where('total_steps', 5)
+            ->where('total_steps', 6)
             ->where('device_count', 1)
             ->has('lag_results', 0)
             ->has('ethernet_results', 0)
@@ -743,6 +814,9 @@ test('deployment critical check inherits dns profiles from device group when dev
                 ],
             ], 200);
         }
+        if (str_contains($url, 'local-management')) {
+            return Http::response(localManagementProfilePayload(), 200);
+        }
 
         return Http::response([], 200);
     });
@@ -918,6 +992,184 @@ test('deployment critical check reports dns scope error when wcd not found', fun
     ]))
         ->assertOk()
         ->assertJsonPath('partial.dns_results', []);
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 5, [
+        'dns_scope_error' => 'Site collection "WCD" was not found in Central.',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.local_management_results', []);
+});
+
+test('deployment critical check displays local management profiles from central', function () {
+    fakeCriticalCheckCentralApis();
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 5, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.local_management_results.0.source', 'device')
+        ->assertJsonPath('partial.local_management_results.0.profiles.0.name', 'local-mgmt-profile');
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        if (! str_contains($request->url(), 'local-management')) {
+            return false;
+        }
+        $query = localManagementRequestQuery($request);
+
+        return ($query['object-type'] ?? '') === 'LOCAL'
+            && ($query['scope-id'] ?? '') === 'device-scope-123';
+    });
+});
+
+test('deployment critical check inherits local management profiles from site when device level is empty', function () {
+    fakeCriticalCheckCentralApisWithLocalManagementHandler(function (\Illuminate\Http\Client\Request $request) {
+        $query = localManagementRequestQuery($request);
+
+        if (($query['object-type'] ?? '') === 'LOCAL') {
+            return Http::response([], 200);
+        }
+
+        if (($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'site-scope-123') {
+            return Http::response(localManagementProfilePayload('site-local-mgmt'), 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 5, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.local_management_results.0.source', 'site')
+        ->assertJsonPath('partial.local_management_results.0.site_name', 'TestSite')
+        ->assertJsonPath('partial.local_management_results.0.profiles.0.name', 'site-local-mgmt');
+});
+
+test('deployment critical check inherits local management profiles from device group when device level is empty', function () {
+    $this->device->update(['group' => 'WHSE-TEST-ACCESS']);
+
+    Http::fake(function (\Illuminate\Http\Client\Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'device-groups')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WHSE-TEST-ACCESS', 'scopeId' => 'group-scope-456'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($url, 'local-management')) {
+            $query = localManagementRequestQuery($request);
+
+            if (($query['object-type'] ?? '') === 'LOCAL') {
+                return Http::response([], 200);
+            }
+
+            if (($query['object-type'] ?? '') === 'SHARED'
+                && ($query['scope-id'] ?? '') === 'group-scope-456') {
+                return Http::response(localManagementProfilePayload('group-local-mgmt'), 200);
+            }
+
+            return Http::response([], 200);
+        }
+
+        if (str_contains($url, 'portchannels')
+            || str_contains($url, 'ethernet-interfaces')
+            || str_contains($url, 'vlan-interfaces')) {
+            return Http::response(['interface' => []], 200);
+        }
+
+        if (str_contains($url, 'static-route')) {
+            return Http::response(staticRouteProfilePayload(), 200);
+        }
+
+        if (str_contains($url, 'dns')) {
+            return Http::response(dnsProfilePayload(), 200);
+        }
+
+        if (str_contains($url, 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope-from-central'],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 5, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.local_management_results.0.source', 'group')
+        ->assertJsonPath('partial.local_management_results.0.group_name', 'WHSE-TEST-ACCESS')
+        ->assertJsonPath('partial.local_management_results.0.profiles.0.name', 'group-local-mgmt');
+});
+
+test('deployment critical check inherits local management profiles from site collection when lower levels are empty', function () {
+    fakeCriticalCheckCentralApisWithLocalManagementHandler(function (\Illuminate\Http\Client\Request $request) {
+        $query = localManagementRequestQuery($request);
+
+        if (($query['object-type'] ?? '') === 'LOCAL') {
+            return Http::response([], 200);
+        }
+
+        if (($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'site-scope-123') {
+            return Http::response([], 200);
+        }
+
+        if (($query['object-type'] ?? '') === 'SHARED'
+            && ($query['scope-id'] ?? '') === 'wcd-scope-from-central') {
+            return Http::response(localManagementProfilePayload('wcd-local-mgmt'), 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 5, [
+        'dns_scope_id' => 'wcd-scope-from-central',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.local_management_results.0.source', 'site_collection')
+        ->assertJsonPath('partial.local_management_results.0.site_collection_name', 'WCD')
+        ->assertJsonPath('partial.local_management_results.0.profiles.0.name', 'wcd-local-mgmt');
+});
+
+test('deployment critical check reports empty local management profile when all inheritance levels are empty', function () {
+    fakeCriticalCheckCentralApisWithLocalManagementHandler(
+        fn () => Http::response([], 200),
+    );
+
+    $scope = $this->getJson(criticalCheckStepUrl($this->deployment, 0))
+        ->assertOk()
+        ->json();
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 5, [
+        'dns_scope_id' => $scope['partial']['dns_scope_id'],
+    ]))
+        ->assertOk()
+        ->assertJsonPath('partial.local_management_results.0.source', null)
+        ->assertJsonPath('partial.local_management_results.0.profiles', [])
+        ->assertJsonPath(
+            'partial.local_management_results.0.error',
+            'Empty local management profile for this device.',
+        );
 });
 
 test('deployment critical check resolves static routes at device level when site scope is missing', function () {

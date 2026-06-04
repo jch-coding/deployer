@@ -302,6 +302,8 @@ class DeploymentController extends Controller
             'profile_device_ids.static_route.*' => ['integer'],
             'profile_device_ids.dns' => ['sometimes', 'array'],
             'profile_device_ids.dns.*' => ['integer'],
+            'profile_device_ids.local_management' => ['sometimes', 'array'],
+            'profile_device_ids.local_management.*' => ['integer'],
         ]);
 
         try {

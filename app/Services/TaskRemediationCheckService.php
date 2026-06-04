@@ -75,6 +75,7 @@ class TaskRemediationCheckService
                 'vlan' => $this->verifyVlanForDevice($device, $scope['vlan_interface_ids'], $helper),
                 'static' => $this->staticPartialForDevice($device, $scope['static_device_ids'], $helper),
                 'dns' => $this->dnsPartialForDevice($device, $scope['dns_device_ids'], $helper, $context),
+                'local_management' => $this->localManagementPartialForDevice($device, $scope['local_management_device_ids'], $helper, $context),
                 default => [],
             };
         }
@@ -107,7 +108,8 @@ class TaskRemediationCheckService
      *     ethernet_interface_ids: Collection<int, int>,
      *     vlan_interface_ids: Collection<int, int>,
      *     static_device_ids: Collection<int, int>,
-     *     dns_device_ids: Collection<int, int>
+     *     dns_device_ids: Collection<int, int>,
+     *     local_management_device_ids: Collection<int, int>
      * }
      */
     public function buildScope(Collection $siblings): array
@@ -123,6 +125,7 @@ class TaskRemediationCheckService
         $vlanInterfaceIds = collect();
         $staticDeviceIds = collect();
         $dnsDeviceIds = collect();
+        $localManagementDeviceIds = collect();
 
         foreach ($siblings as $sub) {
             match ($sub->task_type) {
@@ -141,6 +144,9 @@ class TaskRemediationCheckService
                 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE' => $dnsDeviceIds = $dnsDeviceIds->merge(
                     $sub->devices->pluck('id')
                 ),
+                'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE' => $localManagementDeviceIds = $localManagementDeviceIds->merge(
+                    $sub->devices->pluck('id')
+                ),
                 default => null,
             };
         }
@@ -150,6 +156,7 @@ class TaskRemediationCheckService
         $vlanInterfaceIds = $vlanInterfaceIds->unique()->values();
         $staticDeviceIds = $staticDeviceIds->unique()->values();
         $dnsDeviceIds = $dnsDeviceIds->unique()->values();
+        $localManagementDeviceIds = $localManagementDeviceIds->unique()->values();
 
         $deviceIds = collect()
             ->merge(
@@ -157,6 +164,7 @@ class TaskRemediationCheckService
             )
             ->merge($staticDeviceIds)
             ->merge($dnsDeviceIds)
+            ->merge($localManagementDeviceIds)
             ->unique()
             ->values();
 
@@ -174,6 +182,7 @@ class TaskRemediationCheckService
             'vlan_interface_ids' => $vlanInterfaceIds,
             'static_device_ids' => $staticDeviceIds,
             'dns_device_ids' => $dnsDeviceIds,
+            'local_management_device_ids' => $localManagementDeviceIds,
         ];
     }
 
@@ -293,9 +302,27 @@ class TaskRemediationCheckService
         return $method->invoke($this->deploymentCheck, $device, $helper, $context);
     }
 
+    /**
+     * @param  Collection<int, int>  $localManagementDeviceIds
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    protected function localManagementPartialForDevice(Device $device, Collection $localManagementDeviceIds, CentralAPIHelper $helper, array $context): array
+    {
+        if (! $localManagementDeviceIds->contains($device->id)) {
+            return [];
+        }
+
+        $reflection = new \ReflectionClass($this->deploymentCheck);
+        $method = $reflection->getMethod('fetchLocalManagementForDeviceStep');
+        $method->setAccessible(true);
+
+        return $method->invoke($this->deploymentCheck, $device, $helper, $context);
+    }
+
     protected function phasesPerDevice(bool $includeEthernet): int
     {
-        return $includeEthernet ? 5 : 4;
+        return $includeEthernet ? 6 : 5;
     }
 
     protected function phaseNameForIndex(bool $includeEthernet, int $phase): ?string
@@ -307,6 +334,7 @@ class TaskRemediationCheckService
                 2 => 'vlan',
                 3 => 'static',
                 4 => 'dns',
+                5 => 'local_management',
                 default => null,
             };
         }
@@ -316,6 +344,7 @@ class TaskRemediationCheckService
             1 => 'vlan',
             2 => 'static',
             3 => 'dns',
+            4 => 'local_management',
             default => null,
         };
     }
@@ -328,6 +357,7 @@ class TaskRemediationCheckService
             'vlan' => "Checking VLAN interfaces for {$device->name}...",
             'static' => "Fetching static routes for {$device->name}...",
             'dns' => "Fetching DNS profiles for {$device->name}...",
+            'local_management' => "Fetching local management profiles for {$device->name}...",
             default => 'Running remediation check...',
         };
     }

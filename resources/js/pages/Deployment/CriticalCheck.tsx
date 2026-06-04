@@ -83,6 +83,21 @@ type DnsDevice = {
     site_collection_name: string | null;
 };
 
+type LocalManagementProfile = {
+    name: string;
+};
+
+type LocalManagementDevice = {
+    device_id: number;
+    device_name: string;
+    error: string | null;
+    profiles: LocalManagementProfile[];
+    source: 'device' | 'group' | 'site' | 'site_collection' | null;
+    group_name: string | null;
+    site_name: string | null;
+    site_collection_name: string | null;
+};
+
 type Summary = {
     lag_total: number;
     lag_passed: number;
@@ -107,6 +122,7 @@ type CheckResults = {
     dns_scope_error: string | null;
     dns_site_collection_name: string;
     dns_results: DnsDevice[];
+    local_management_results: LocalManagementDevice[];
     summary: Summary;
 };
 
@@ -164,6 +180,7 @@ function emptyCheckResults(): CheckResults {
         dns_scope_error: null,
         dns_site_collection_name: 'WCD',
         dns_results: [],
+        local_management_results: [],
         summary: emptySummary,
     };
 }
@@ -193,6 +210,10 @@ function mergeCheckResults(
         vlan_results: [...current.vlan_results, ...(partial.vlan_results ?? [])],
         static_routes: [...current.static_routes, ...(partial.static_routes ?? [])],
         dns_results: [...current.dns_results, ...(partial.dns_results ?? [])],
+        local_management_results: [
+            ...current.local_management_results,
+            ...(partial.local_management_results ?? []),
+        ],
         dns_scope_id:
             partial.dns_scope_id !== undefined
                 ? partial.dns_scope_id
@@ -571,6 +592,154 @@ function dnsInheritanceLabel(device: DnsDevice): string {
     return '—';
 }
 
+function uniqueLocalManagementProfileNames(
+    devices: LocalManagementDevice[],
+): LocalManagementProfile[] {
+    const seen = new Set<string>();
+    const unique: LocalManagementProfile[] = [];
+
+    for (const device of devices) {
+        if (device.error) {
+            continue;
+        }
+        for (const profile of device.profiles) {
+            if (seen.has(profile.name)) {
+                continue;
+            }
+            seen.add(profile.name);
+            unique.push(profile);
+        }
+    }
+
+    return unique.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function localManagementInheritanceLabel(device: LocalManagementDevice): string {
+    if (device.error) {
+        return device.error;
+    }
+    if (device.source === 'device') {
+        return 'Local override';
+    }
+    if (device.source === 'group') {
+        return device.group_name ?? '—';
+    }
+    if (device.source === 'site') {
+        return device.site_name ?? 'site';
+    }
+    if (device.source === 'site_collection') {
+        return device.site_collection_name ?? '—';
+    }
+
+    return '—';
+}
+
+function LocalManagementCentralSection({
+    devices,
+    pending,
+}: {
+    devices: LocalManagementDevice[];
+    pending: boolean;
+}) {
+    const uniqueProfiles = useMemo(
+        () => uniqueLocalManagementProfileNames(devices),
+        [devices],
+    );
+
+    const sortedDevices = useMemo(
+        () => [...devices].sort((a, b) => a.device_name.localeCompare(b.device_name)),
+        [devices],
+    );
+
+    if (pending && devices.length === 0) {
+        return (
+            <p className="text-muted-foreground text-sm dark:text-white">
+                Waiting to fetch local management profiles...
+            </p>
+        );
+    }
+
+    if (devices.length === 0) {
+        return (
+            <p className="text-muted-foreground text-sm dark:text-white">
+                No devices in deployment.
+            </p>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h3 className="mb-2 text-sm font-semibold dark:text-white">Profiles</h3>
+                {uniqueProfiles.length === 0 ? (
+                    <p className="text-muted-foreground text-sm dark:text-white/80">
+                        No local management profiles returned.
+                    </p>
+                ) : (
+                    <div className="overflow-x-auto rounded-md border text-sm dark:border-white/20">
+                        <table className="w-full min-w-[20rem] dark:text-white">
+                            <thead>
+                                <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10">
+                                    <th className="px-3 py-2 font-medium">Profile</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {uniqueProfiles.map((profile) => (
+                                    <tr
+                                        key={profile.name}
+                                        className="border-b last:border-0 dark:border-white/20"
+                                    >
+                                        <td className="px-3 py-2">{profile.name}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div>
+                <h3 className="mb-2 text-sm font-semibold dark:text-white">Devices</h3>
+                <div className="overflow-x-auto rounded-md border text-sm dark:border-white/20">
+                    <table className="w-full min-w-[20rem] dark:text-white">
+                        <thead>
+                            <tr className="border-b bg-muted/50 text-left dark:border-white/20 dark:bg-white/10">
+                                <th className="px-3 py-2 font-medium">Device</th>
+                                <th className="px-3 py-2 font-medium">Inherited from</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedDevices.map((device) => {
+                                const inheritance = localManagementInheritanceLabel(device);
+                                const hasError = Boolean(device.error);
+
+                                return (
+                                    <tr
+                                        key={device.device_id}
+                                        className="border-b last:border-0 dark:border-white/20"
+                                    >
+                                        <td className="px-3 py-2 font-medium">
+                                            {device.device_name}
+                                        </td>
+                                        <td
+                                            className={cn(
+                                                'px-3 py-2',
+                                                hasError && 'text-red-700 dark:text-red-300',
+                                            )}
+                                        >
+                                            {inheritance}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function DnsProfilesCentralSection({
     devices,
     pending,
@@ -887,10 +1056,11 @@ export default function CriticalCheck() {
         dns_site_collection_name:
             initialResults.dns_site_collection_name ?? 'WCD',
         dns_results: initialResults.dns_results ?? [],
+        local_management_results: initialResults.local_management_results ?? [],
         summary: initialResults.summary ?? emptySummary,
     }));
 
-    const phasesPerDevice = includeEthernet ? 5 : 4;
+    const phasesPerDevice = includeEthernet ? 6 : 5;
     const totalSteps = totalStepsProp ?? 1 + device_count * phasesPerDevice;
 
     const [progress, setProgress] = useState<StepProgress>({
@@ -921,8 +1091,17 @@ export default function CriticalCheck() {
         [results.ethernet_results],
     );
     const profileDeviceIds = useMemo(
-        () => collectProfileDeviceIds(results.static_routes, results.dns_results),
-        [results.static_routes, results.dns_results],
+        () =>
+            collectProfileDeviceIds(
+                results.static_routes,
+                results.dns_results,
+                results.local_management_results,
+            ),
+        [
+            results.static_routes,
+            results.dns_results,
+            results.local_management_results,
+        ],
     );
     const hasRemediationWork = useMemo(
         () =>
@@ -930,7 +1109,8 @@ export default function CriticalCheck() {
             failedVlan.length > 0 ||
             (ranWithEthernet && failedEthernet.length > 0) ||
             profileDeviceIds.static_route.length > 0 ||
-            profileDeviceIds.dns.length > 0,
+            profileDeviceIds.dns.length > 0 ||
+            profileDeviceIds.local_management.length > 0,
         [
             failedLag.length,
             failedVlan.length,
@@ -982,7 +1162,7 @@ export default function CriticalCheck() {
     ]);
 
     const runCheck = useCallback(async () => {
-        const stepTotal = 1 + device_count * (includeEthernet ? 5 : 4);
+        const stepTotal = 1 + device_count * (includeEthernet ? 6 : 5);
         let context: StepContext = {};
         let accumulated = emptyCheckResults();
 
@@ -1352,6 +1532,37 @@ export default function CriticalCheck() {
                             </CardContent>
                         </Card>
                     )}
+
+                    {hasStarted && (
+                        <Card className="dark:text-white">
+                            <CardHeader className="pb-2">
+                                <h2 className="text-lg font-semibold dark:text-white">
+                                    Local management profiles (Central)
+                                </h2>
+                                {results.dns_site_collection_name && (
+                                    <p className="text-muted-foreground text-xs dark:text-white">
+                                        Site Collection - {results.dns_site_collection_name}
+                                    </p>
+                                )}
+                            </CardHeader>
+                            <CardContent className="dark:text-white">
+                                {results.dns_scope_error && (
+                                    <p className="mb-4 text-sm text-red-700 dark:text-white">
+                                        {results.dns_scope_error}
+                                    </p>
+                                )}
+                                {!results.dns_scope_error && (
+                                    <LocalManagementCentralSection
+                                        devices={results.local_management_results}
+                                        pending={
+                                            isRunning &&
+                                            results.local_management_results.length === 0
+                                        }
+                                    />
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
 
                 {checkState === 'complete' && !isRemediationVerify && (
@@ -1387,6 +1598,7 @@ export default function CriticalCheck() {
                             <ProfileInheritanceFailuresTable
                                 staticRoutes={results.static_routes}
                                 dnsResults={results.dns_results}
+                                localManagementResults={results.local_management_results}
                             />
                             <div className="flex flex-wrap items-center gap-3">
                                 <Button

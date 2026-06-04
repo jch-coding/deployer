@@ -48,6 +48,7 @@ class DeploymentCriticalCheckService
             'dns_scope_error' => null,
             'dns_site_collection_name' => self::WCD_SITE_COLLECTION_NAME,
             'dns_results' => [],
+            'local_management_results' => [],
             'summary' => [
                 'lag_total' => 0,
                 'lag_passed' => 0,
@@ -111,6 +112,7 @@ class DeploymentCriticalCheckService
                 'vlan' => $this->verifyVlanForDevices($deviceCollection, $helper),
                 'static' => ['static_routes' => [$this->fetchStaticRouteForDevice($device, $helper)]],
                 'dns' => $this->fetchDnsForDeviceStep($device, $helper, $context),
+                'local_management' => $this->fetchLocalManagementForDeviceStep($device, $helper, $context),
                 default => [],
             };
         }
@@ -161,7 +163,7 @@ class DeploymentCriticalCheckService
      */
     public function mergePartialResults(array $accumulated, array $partial): array
     {
-        foreach (['lag_device_errors', 'ethernet_device_errors', 'vlan_device_errors', 'lag_results', 'ethernet_results', 'vlan_results', 'static_routes', 'dns_results'] as $listKey) {
+        foreach (['lag_device_errors', 'ethernet_device_errors', 'vlan_device_errors', 'lag_results', 'ethernet_results', 'vlan_results', 'static_routes', 'dns_results', 'local_management_results'] as $listKey) {
             if (! array_key_exists($listKey, $partial)) {
                 continue;
             }
@@ -228,7 +230,7 @@ class DeploymentCriticalCheckService
 
     protected function phasesPerDevice(bool $includeEthernet): int
     {
-        return $includeEthernet ? 5 : 4;
+        return $includeEthernet ? 6 : 5;
     }
 
     /**
@@ -248,6 +250,7 @@ class DeploymentCriticalCheckService
                 2 => 'vlan',
                 3 => 'static',
                 4 => 'dns',
+                5 => 'local_management',
                 default => null,
             };
         }
@@ -257,6 +260,7 @@ class DeploymentCriticalCheckService
             1 => 'vlan',
             2 => 'static',
             3 => 'dns',
+            4 => 'local_management',
             default => null,
         };
     }
@@ -287,6 +291,7 @@ class DeploymentCriticalCheckService
             'vlan' => "Checking VLAN interfaces for {$name}...",
             'static' => "Fetching static routes for {$name}...",
             'dns' => "Fetching DNS profiles for {$name}...",
+            'local_management' => "Fetching local management profiles for {$name}...",
             default => 'Running check...',
         };
     }
@@ -683,6 +688,289 @@ class DeploymentCriticalCheckService
      * }
      */
     protected function dnsDeviceResult(Device $device, array $overrides = []): array
+    {
+        return [
+            'device_id' => $device->id,
+            'device_name' => $device->name,
+            'error' => $overrides['error'] ?? null,
+            'profiles' => $overrides['profiles'] ?? [],
+            'source' => $overrides['source'] ?? null,
+            'group_name' => $overrides['group_name'] ?? null,
+            'site_name' => $overrides['site_name'] ?? null,
+            'site_collection_name' => $overrides['site_collection_name'] ?? null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{local_management_results: list<array<string, mixed>>}
+     */
+    protected function fetchLocalManagementForDeviceStep(Device $device, CentralAPIHelper $helper, array $context): array
+    {
+        if (! empty($context['dns_scope_error'])) {
+            return [
+                'local_management_results' => [],
+            ];
+        }
+
+        $siteCollectionScopeId = $context['dns_scope_id'] ?? self::DEFAULT_DNS_SCOPE_ID;
+        $siteCollectionName = self::WCD_SITE_COLLECTION_NAME;
+
+        return [
+            'local_management_results' => [
+                $this->fetchLocalManagementForDevice($device, $helper, $siteCollectionScopeId, $siteCollectionName),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{
+     *     device_id: int,
+     *     device_name: string,
+     *     error: string|null,
+     *     profiles: list<array{name: string}>,
+     *     source: 'device'|'group'|'site'|'site_collection'|null,
+     *     group_name: string|null,
+     *     site_name: string|null,
+     *     site_collection_name: string|null
+     * }
+     */
+    protected function fetchLocalManagementForDevice(
+        Device $device,
+        CentralAPIHelper $helper,
+        string $siteCollectionScopeId,
+        string $siteCollectionName,
+    ): array {
+        if (! $device->device_function) {
+            return $this->localManagementDeviceResult($device, [
+                'error' => 'Device function not available for this device.',
+            ]);
+        }
+
+        if (filled($device->scope_id)) {
+            $deviceMatch = $this->fetchLocalManagementWithQueryParams(
+                $device,
+                $helper,
+                $this->localManagementQueryParams($device, 'device'),
+            );
+
+            if ($deviceMatch !== null) {
+                if (isset($deviceMatch['error'])) {
+                    return $this->localManagementDeviceResult($device, $deviceMatch);
+                }
+
+                return $this->localManagementDeviceResult($device, [
+                    'profiles' => $deviceMatch['profiles'],
+                    'source' => 'device',
+                ]);
+            }
+        }
+
+        $groupName = trim((string) ($device->group ?? ''));
+        if ($groupName !== '') {
+            $groupScopeId = $this->deviceGroupScopeIdsByName($helper)[$groupName] ?? null;
+
+            if ($groupScopeId !== null) {
+                $groupMatch = $this->fetchLocalManagementWithQueryParams(
+                    $device,
+                    $helper,
+                    $this->localManagementQueryParams($device, 'group', $groupScopeId),
+                );
+
+                if ($groupMatch !== null) {
+                    if (isset($groupMatch['error'])) {
+                        return $this->localManagementDeviceResult($device, $groupMatch);
+                    }
+
+                    return $this->localManagementDeviceResult($device, [
+                        'profiles' => $groupMatch['profiles'],
+                        'source' => 'group',
+                        'group_name' => $groupName,
+                    ]);
+                }
+            }
+        }
+
+        $site = $device->site;
+        if ($site !== null && filled($site->scope_id)) {
+            $siteMatch = $this->fetchLocalManagementWithQueryParams(
+                $device,
+                $helper,
+                $this->localManagementQueryParams($device, 'site'),
+            );
+
+            if ($siteMatch !== null) {
+                if (isset($siteMatch['error'])) {
+                    return $this->localManagementDeviceResult($device, $siteMatch);
+                }
+
+                return $this->localManagementDeviceResult($device, [
+                    'profiles' => $siteMatch['profiles'],
+                    'source' => 'site',
+                    'site_name' => $site->name,
+                ]);
+            }
+        }
+
+        if (filled($siteCollectionScopeId)) {
+            $siteCollectionMatch = $this->fetchLocalManagementWithQueryParams(
+                $device,
+                $helper,
+                $this->localManagementQueryParams($device, 'site_collection', $siteCollectionScopeId),
+            );
+
+            if ($siteCollectionMatch !== null) {
+                if (isset($siteCollectionMatch['error'])) {
+                    return $this->localManagementDeviceResult($device, $siteCollectionMatch);
+                }
+
+                return $this->localManagementDeviceResult($device, [
+                    'profiles' => $siteCollectionMatch['profiles'],
+                    'source' => 'site_collection',
+                    'site_collection_name' => $siteCollectionName,
+                ]);
+            }
+        }
+
+        return $this->localManagementDeviceResult($device, [
+            'error' => 'Empty local management profile for this device.',
+        ]);
+    }
+
+    /**
+     * @param  array<string, string>  $queryParams
+     * @return array{profiles: list<array{name: string}>}|array{error: string}|null
+     */
+    protected function fetchLocalManagementWithQueryParams(
+        Device $device,
+        CentralAPIHelper $helper,
+        array $queryParams,
+    ): ?array {
+        $response = $helper->get_local_management_profiles($queryParams);
+
+        if (! $this->responseOk($response)) {
+            return [
+                'error' => $this->responseErrorMessage($response, 'Failed to fetch local management profiles from Central.'),
+            ];
+        }
+
+        $json = $response instanceof Response ? $response->json() : [];
+        if (! is_array($json)) {
+            $json = [];
+        }
+
+        if ($this->localManagementResponseHasProfiles($json)) {
+            return [
+                'profiles' => $this->parseLocalManagementProfiles($json),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  'device'|'group'|'site'|'site_collection'  $level
+     * @return array<string, string>
+     */
+    protected function localManagementQueryParams(Device $device, string $level, ?string $scopeId = null): array
+    {
+        $params = [
+            'view-type' => 'LOCAL',
+            'device-function' => CentralAPIHelper::deviceFunctionQueryValue($device),
+        ];
+
+        if ($level === 'device') {
+            return [
+                ...$params,
+                'object-type' => 'LOCAL',
+                'scope-id' => (string) $device->scope_id,
+            ];
+        }
+
+        if ($level === 'group') {
+            return [
+                ...$params,
+                'object-type' => 'SHARED',
+                'scope-id' => (string) $scopeId,
+            ];
+        }
+
+        if ($level === 'site') {
+            return [
+                ...$params,
+                'object-type' => 'SHARED',
+                'scope-id' => (string) ($device->site?->scope_id ?? ''),
+            ];
+        }
+
+        return [
+            ...$params,
+            'object-type' => 'SHARED',
+            'scope-id' => (string) $scopeId,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     */
+    protected function localManagementResponseHasProfiles(array $json): bool
+    {
+        return count($this->parseLocalManagementProfiles($json)) > 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     * @return list<array{name: string}>
+     */
+    protected function parseLocalManagementProfiles(array $json): array
+    {
+        $profiles = $json['profile'] ?? [];
+        if (! is_array($profiles)) {
+            return [];
+        }
+
+        if ($this->isAssociativeArray($profiles) && array_key_exists('name', $profiles)) {
+            $profiles = [$profiles];
+        }
+
+        $parsed = [];
+        foreach ($profiles as $profile) {
+            if (! is_array($profile)) {
+                continue;
+            }
+
+            $name = (string) ($profile['name'] ?? '');
+            if ($name === '') {
+                continue;
+            }
+
+            $parsed[] = ['name' => $name];
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param  array{
+     *     error?: string|null,
+     *     profiles?: list<array{name: string}>,
+     *     source?: 'device'|'group'|'site'|'site_collection'|null,
+     *     group_name?: string|null,
+     *     site_name?: string|null,
+     *     site_collection_name?: string|null
+     * }  $overrides
+     * @return array{
+     *     device_id: int,
+     *     device_name: string,
+     *     error: string|null,
+     *     profiles: list<array{name: string}>,
+     *     source: 'device'|'group'|'site'|'site_collection'|null,
+     *     group_name: string|null,
+     *     site_name: string|null,
+     *     site_collection_name: string|null
+     * }
+     */
+    protected function localManagementDeviceResult(Device $device, array $overrides = []): array
     {
         return [
             'device_id' => $device->id,

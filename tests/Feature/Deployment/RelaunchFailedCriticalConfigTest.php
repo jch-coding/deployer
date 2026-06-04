@@ -55,11 +55,35 @@ test('relaunch failed critical config creates composite tasks for failures', fun
     expect($tasks->first()->remediation_context)->toMatchArray(['include_ethernet' => false]);
 });
 
+test('relaunch failed critical config creates task for local management profile failures', function () {
+    $response = $this->post(route('deployments.relaunch_failed_critical_config', $this->deployment), [
+        'deployment_time' => 5,
+        'wait_time' => 2,
+        'include_ethernet' => false,
+        'failed_interface_ids' => [
+            'lag' => [],
+            'vlan' => [],
+            'ethernet' => [],
+        ],
+        'profile_device_ids' => [
+            'static_route' => [],
+            'dns' => [],
+            'local_management' => [$this->device->id],
+        ],
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+    expect($task)->not->toBeNull();
+    expect($task->task_type)->toBe('REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE');
+    expect($task->composite_kind)->toBe(RelaunchFailedCriticalConfigService::COMPOSITE_KIND);
+});
+
 test('relaunch failed critical config rejects empty failure sets', function () {
     $this->post(route('deployments.relaunch_failed_critical_config', $this->deployment), [
         'deployment_time' => 1,
         'wait_time' => 1,
         'failed_interface_ids' => ['lag' => [], 'vlan' => [], 'ethernet' => []],
-        'profile_device_ids' => ['static_route' => [], 'dns' => []],
+        'profile_device_ids' => ['static_route' => [], 'dns' => [], 'local_management' => []],
     ])->assertSessionHasErrors('relaunch');
 });

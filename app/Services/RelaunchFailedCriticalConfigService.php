@@ -9,7 +9,6 @@ use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Task;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class RelaunchFailedCriticalConfigService
@@ -22,7 +21,7 @@ class RelaunchFailedCriticalConfigService
      *     wait_time: int,
      *     include_ethernet: bool,
      *     failed_interface_ids: array{lag?: list<int>, vlan?: list<int>, ethernet?: list<int>},
-     *     profile_device_ids: array{static_route?: list<int>, dns?: list<int>}
+     *     profile_device_ids: array{static_route?: list<int>, dns?: list<int>, local_management?: list<int>}
      * }  $payload
      */
     public function create(Deployment $deployment, array $payload, Request $request): Task
@@ -34,6 +33,7 @@ class RelaunchFailedCriticalConfigService
             : collect();
         $staticDeviceIds = collect($payload['profile_device_ids']['static_route'] ?? [])->map(fn ($id) => (int) $id)->unique()->values();
         $dnsDeviceIds = collect($payload['profile_device_ids']['dns'] ?? [])->map(fn ($id) => (int) $id)->unique()->values();
+        $localManagementDeviceIds = collect($payload['profile_device_ids']['local_management'] ?? [])->map(fn ($id) => (int) $id)->unique()->values();
 
         $definitions = collect();
         if ($lagIds->isNotEmpty()) {
@@ -50,6 +50,9 @@ class RelaunchFailedCriticalConfigService
         }
         if ($dnsDeviceIds->isNotEmpty()) {
             $definitions->push(['task_type' => 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE', 'device_ids' => $dnsDeviceIds]);
+        }
+        if ($localManagementDeviceIds->isNotEmpty()) {
+            $definitions->push(['task_type' => 'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE', 'device_ids' => $localManagementDeviceIds]);
         }
 
         if ($definitions->isEmpty()) {
