@@ -4,138 +4,197 @@ namespace App\Services;
 
 use App\Helper\CentralAPIHelper;
 use App\Models\Client;
+use App\Models\ClientSubscription;
 use App\Models\Device;
+use App\Models\LicensingInventoryDevice;
 use Carbon\Carbon;
 
 class LicensingInventoryService
 {
+    public function __construct(
+        private readonly LicensingSyncService $licensingSyncService,
+    ) {}
+
     /**
      * @param  array<string, string>  $filters
      * @return array{
      *     devices: array<int, array<string, mixed>>,
      *     enabled_services: array<int, string>,
+     *     available_subscriptions: array<int, array<string, mixed>>,
+     *     subscriptions_by_key: array<string, array<string, mixed>>,
      *     subscription_summary: array<string, mixed>,
      *     filter_options: array<string, mixed>,
-     *     central_error: string|null
+     *     central_error: string|null,
+     *     licensing_synced_at: string|null
      * }
      */
     public function build(Client $client, CentralAPIHelper $helper, array $filters = []): array
     {
-        $enabledResult = $helper->classic_parse_enabled_services($helper->classic_get_enabled_services());
-        if (isset($enabledResult['error'])) {
-            return $this->emptyPayload($enabledResult['error']);
+        if ($this->licensingSyncService->needsInitialSync($client)) {
+            try {
+                $this->licensingSyncService->syncFromCentral($client, $helper);
+                $client->refresh();
+            } catch (LicensingSyncException $e) {
+                return $this->emptyPayload($e->getMessage(), licensingSyncedAt: null);
+            }
         }
 
-        $subscriptionsResult = $helper->classic_parse_subscriptions($helper->classic_get_subscriptions());
-        if (isset($subscriptionsResult['error'])) {
-            return $this->emptyPayload($subscriptionsResult['error'], $enabledResult['services']);
+        return $this->buildFromCache($client, $filters);
+    }
+
+    /**
+     * @return array{
+     *     enabled_services: array<int, string>,
+     *     available_subscriptions: array<int, array<string, mixed>>,
+     *     subscriptions_by_key: array<string, array<string, mixed>>,
+     *     central_error: string|null,
+     *     licensing_synced_at: string|null
+     * }
+     */
+    /**
+     * @return array{
+     *     enabled_services: array<int, string>,
+     *     available_subscriptions: array<int, array<string, mixed>>,
+     *     subscriptions_by_key: array<string, array<string, mixed>>,
+     *     central_error: string|null,
+     *     licensing_synced_at: string|null
+     * }
+     */
+    public function resolveLicensingOptions(Client $client, CentralAPIHelper $helper): array
+    {
+        if ($this->licensingSyncService->needsInitialSync($client)) {
+            try {
+                $this->licensingSyncService->syncFromCentral($client, $helper);
+                $client->refresh();
+            } catch (LicensingSyncException $e) {
+                return [
+                    'enabled_services' => [],
+                    'available_subscriptions' => [],
+                    'subscriptions_by_key' => [],
+                    'central_error' => $e->getMessage(),
+                    'licensing_synced_at' => null,
+                ];
+            }
         }
 
-        $inventoryResult = $helper->classic_collect_device_inventory();
-        if (array_key_exists('error', $inventoryResult)) {
-            return $this->emptyPayload((string) $inventoryResult['error'], $enabledResult['services']);
+        return $this->buildLicensingOptionsFromCache($client);
+    }
+
+    public function buildLicensingOptionsFromCache(Client $client): array
+    {
+        if ($client->licensing_synced_at === null) {
+            return [
+                'enabled_services' => [],
+                'available_subscriptions' => [],
+                'subscriptions_by_key' => [],
+                'central_error' => $client->licensing_sync_error ?? 'Licensing has not been synced yet. Use Renew licensing to fetch from Central.',
+                'licensing_synced_at' => null,
+            ];
         }
 
-        $subscriptionsByKey = $this->indexSubscriptions($subscriptionsResult['subscriptions']);
+        $subscriptions = $client->clientSubscriptions()->get();
+        $subscriptionsArray = $subscriptions->map(fn (ClientSubscription $s) => $s->toNormalizedArray())->all();
+        $subscriptionsByKey = $this->indexNormalizedSubscriptions($subscriptionsArray);
+
+        return [
+            'enabled_services' => $client->licensing_enabled_services ?? [],
+            'available_subscriptions' => $this->buildAvailableSubscriptions($subscriptionsArray, []),
+            'subscriptions_by_key' => $subscriptionsByKey,
+            'central_error' => $client->licensing_sync_error,
+            'licensing_synced_at' => $client->licensing_synced_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @param  array<string, string>  $filters
+     * @return array{
+     *     devices: array<int, array<string, mixed>>,
+     *     enabled_services: array<int, string>,
+     *     available_subscriptions: array<int, array<string, mixed>>,
+     *     subscriptions_by_key: array<string, array<string, mixed>>,
+     *     subscription_summary: array<string, mixed>,
+     *     filter_options: array<string, mixed>,
+     *     central_error: string|null,
+     *     licensing_synced_at: string|null
+     * }
+     */
+    public function buildFromCache(Client $client, array $filters = []): array
+    {
+        if ($client->licensing_synced_at === null) {
+            return $this->emptyPayload(
+                $client->licensing_sync_error ?? 'Licensing has not been synced yet. Use Renew licensing to fetch from Central.',
+                licensingSyncedAt: null,
+            );
+        }
+
+        $enabledServices = $client->licensing_enabled_services ?? [];
+        $subscriptions = $client->clientSubscriptions()->get();
+        $subscriptionsArray = $subscriptions->map(fn (ClientSubscription $s) => $s->toNormalizedArray())->all();
+        $subscriptionsByKey = $this->indexNormalizedSubscriptions($subscriptionsArray);
+
         $deviceSkusBySerial = Device::query()
             ->where('client_id', $client->id)
             ->whereNotNull('sku')
             ->pluck('sku', 'serial')
             ->map(fn ($sku) => $sku instanceof \BackedEnum ? $sku->name : (string) $sku)
             ->all();
-        $deviceIdsBySerial = Device::query()
-            ->where('client_id', $client->id)
-            ->pluck('id', 'serial')
-            ->map(fn ($id) => (int) $id)
-            ->all();
 
-        $devices = array_map(
-            fn (array $item): array => $this->enrichDeviceRow($item, $subscriptionsByKey, $deviceSkusBySerial, $deviceIdsBySerial),
-            $inventoryResult,
-        );
+        $inventoryRows = $client->licensingInventoryDevices()->get();
+        $rawInventoryForAvailable = [];
 
-        $filterOptions = $this->buildFilterOptions($devices, $subscriptionsResult['subscriptions']);
+        $devices = $inventoryRows->map(function (LicensingInventoryDevice $row) use (
+            $subscriptionsByKey,
+            $deviceSkusBySerial,
+            &$rawInventoryForAvailable,
+        ): array {
+            $rawInventoryForAvailable[] = [
+                'serial' => $row->serial,
+                'subscription_key' => $row->subscription_key,
+                'services' => $row->assigned_services ?? [],
+            ];
+
+            return $this->enrichInventoryRow($row, $subscriptionsByKey, $deviceSkusBySerial);
+        })->all();
+
+        $filterOptions = $this->buildFilterOptions($devices, $subscriptionsArray);
         $devices = $this->applyFilters($devices, $filters);
-        $summary = $this->buildSummary($devices, $subscriptionsResult['subscriptions']);
+        $summary = $this->buildSummary($devices, $subscriptionsArray);
+        $availableSubscriptions = $this->buildAvailableSubscriptions($subscriptionsArray, $rawInventoryForAvailable);
 
         return [
             'devices' => array_values($devices),
-            'enabled_services' => $enabledResult['services'],
+            'enabled_services' => $enabledServices,
+            'available_subscriptions' => $availableSubscriptions,
+            'subscriptions_by_key' => $subscriptionsByKey,
             'subscription_summary' => $summary,
             'filter_options' => $filterOptions,
-            'central_error' => null,
-        ];
-    }
-
-    /**
-     * @param  array<int, array<string, mixed>>  $subscriptions
-     * @return array<string, array<string, mixed>>
-     */
-    private function indexSubscriptions(array $subscriptions): array
-    {
-        $indexed = [];
-
-        foreach ($subscriptions as $subscription) {
-            if (! is_array($subscription)) {
-                continue;
-            }
-
-            $key = (string) ($subscription['subscription_key'] ?? '');
-            if ($key === '') {
-                continue;
-            }
-
-            $indexed[$key] = $this->normalizeSubscription($subscription);
-        }
-
-        return $indexed;
-    }
-
-    /**
-     * @param  array<string, mixed>  $subscription
-     * @return array<string, mixed>
-     */
-    private function normalizeSubscription(array $subscription): array
-    {
-        return [
-            'subscription_key' => (string) ($subscription['subscription_key'] ?? ''),
-            'subscription_sku' => (string) ($subscription['sku'] ?? ''),
-            'license_type' => (string) ($subscription['license_type'] ?? ''),
-            'start_date' => $this->normalizeEpoch($subscription['start_date'] ?? null),
-            'end_date' => $this->normalizeEpoch($subscription['end_date'] ?? null),
-            'status' => (string) ($subscription['status'] ?? ''),
-            'subscription_type' => (string) ($subscription['subscription_type'] ?? ''),
-            'available' => (int) ($subscription['available'] ?? 0),
-            'acpapp_name' => (string) ($subscription['acpapp_name'] ?? ''),
+            'central_error' => $client->licensing_sync_error,
+            'licensing_synced_at' => $client->licensing_synced_at?->toIso8601String(),
         ];
     }
 
     /**
      * @param  array<string, array<string, mixed>>  $subscriptionsByKey
      * @param  array<string, string>  $deviceSkusBySerial
-     * @param  array<string, int>  $deviceIdsBySerial
-     * @param  array<string, mixed>  $item
      * @return array<string, mixed>
      */
-    private function enrichDeviceRow(array $item, array $subscriptionsByKey, array $deviceSkusBySerial, array $deviceIdsBySerial): array
-    {
-        $serial = (string) ($item['serial'] ?? '');
-        $subscriptionKey = (string) ($item['subscription_key'] ?? $item['subscriptionKey'] ?? '');
-        $services = $item['services'] ?? [];
-        if (! is_array($services)) {
-            $services = [];
-        }
-        $services = array_values(array_filter($services, fn ($service) => is_string($service) && $service !== ''));
-
+    private function enrichInventoryRow(
+        LicensingInventoryDevice $row,
+        array $subscriptionsByKey,
+        array $deviceSkusBySerial,
+    ): array {
+        $serial = $row->serial;
+        $subscriptionKey = $row->subscription_key;
+        $services = $row->assigned_services ?? [];
         $subscription = $subscriptionsByKey[$subscriptionKey] ?? null;
 
         return [
             'serial' => $serial,
-            'model' => (string) ($item['model'] ?? ''),
-            'mac' => (string) ($item['mac'] ?? $item['macaddr'] ?? ''),
-            'device_type' => (string) ($item['device_type'] ?? ''),
-            'name' => (string) ($item['name'] ?? $serial),
-            'licensed' => (bool) ($item['licensed'] ?? ($services !== [])),
+            'model' => $row->model,
+            'mac' => $row->mac,
+            'device_type' => $row->device_type,
+            'name' => $row->name !== '' ? $row->name : $serial,
+            'licensed' => $row->licensed,
             'assigned_services' => $services,
             'subscription_key' => $subscriptionKey,
             'subscription_sku' => (string) ($subscription['subscription_sku'] ?? ''),
@@ -146,8 +205,28 @@ class LicensingInventoryService
             'subscription_type' => (string) ($subscription['subscription_type'] ?? ''),
             'acpapp_name' => (string) ($subscription['acpapp_name'] ?? ''),
             'device_sku' => (string) ($deviceSkusBySerial[$serial] ?? ''),
-            'deployer_device_id' => $deviceIdsBySerial[$serial] ?? null,
+            'deployer_device_id' => $row->deployer_device_id,
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $subscriptions
+     * @return array<string, array<string, mixed>>
+     */
+    private function indexNormalizedSubscriptions(array $subscriptions): array
+    {
+        $indexed = [];
+
+        foreach ($subscriptions as $subscription) {
+            $key = (string) ($subscription['subscription_key'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+
+            $indexed[$key] = $subscription;
+        }
+
+        return $indexed;
     }
 
     /**
@@ -170,14 +249,11 @@ class LicensingInventoryService
         }
 
         foreach ($subscriptions as $subscription) {
-            if (! is_array($subscription)) {
-                continue;
-            }
             $licenseType = (string) ($subscription['license_type'] ?? '');
             if ($licenseType !== '') {
                 $licenseTypes[$licenseType] = true;
             }
-            $subscriptionSku = (string) ($subscription['sku'] ?? '');
+            $subscriptionSku = (string) ($subscription['subscription_sku'] ?? '');
             if ($subscriptionSku !== '') {
                 $subscriptionSkus[$subscriptionSku] = true;
             }
@@ -259,9 +335,6 @@ class LicensingInventoryService
         $availablePool = 0;
 
         foreach ($subscriptions as $subscription) {
-            if (! is_array($subscription)) {
-                continue;
-            }
             $availablePool += (int) ($subscription['available'] ?? 0);
         }
 
@@ -274,17 +347,55 @@ class LicensingInventoryService
         ];
     }
 
-    private function normalizeEpoch(mixed $value): ?int
+    /**
+     * @param  array<int, array<string, mixed>>  $subscriptions
+     * @param  array<int, array<string, mixed>>  $inventoryDevices
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildAvailableSubscriptions(array $subscriptions, array $inventoryDevices): array
     {
-        if ($value === null || $value === '') {
-            return null;
+        $available = [];
+
+        foreach ($subscriptions as $subscription) {
+            if ((int) ($subscription['available'] ?? 0) <= 0) {
+                continue;
+            }
+
+            $status = strtoupper((string) ($subscription['status'] ?? ''));
+            if ($status !== '' && $status !== 'OK') {
+                continue;
+            }
+
+            $normalized = $subscription;
+            $normalized['device_categories'] = $this->inferDeviceCategories((string) ($normalized['license_type'] ?? ''));
+            $available[] = $normalized;
         }
 
-        if (is_numeric($value)) {
-            return (int) $value;
+        usort($available, fn (array $a, array $b): int => strcmp(
+            (string) ($a['license_type'] ?? ''),
+            (string) ($b['license_type'] ?? ''),
+        ));
+
+        return $available;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function inferDeviceCategories(string $licenseType): array
+    {
+        $categories = [];
+        $upper = strtoupper($licenseType);
+
+        if (str_contains($upper, 'AP') || str_contains($upper, 'ACCESS POINT')) {
+            $categories[] = 'ap';
         }
 
-        return null;
+        if (str_contains($upper, 'SWITCH')) {
+            $categories[] = 'switch';
+        }
+
+        return $categories === [] ? ['ap', 'switch'] : array_values(array_unique($categories));
     }
 
     /**
@@ -292,16 +403,24 @@ class LicensingInventoryService
      * @return array{
      *     devices: array<int, array<string, mixed>>,
      *     enabled_services: array<int, string>,
+     *     available_subscriptions: array<int, array<string, mixed>>,
+     *     subscriptions_by_key: array<string, array<string, mixed>>,
      *     subscription_summary: array<string, mixed>,
      *     filter_options: array<string, mixed>,
-     *     central_error: string|null
+     *     central_error: string|null,
+     *     licensing_synced_at: string|null
      * }
      */
-    private function emptyPayload(string $error, array $enabledServices = []): array
-    {
+    private function emptyPayload(
+        string $error,
+        array $enabledServices = [],
+        ?string $licensingSyncedAt = null,
+    ): array {
         return [
             'devices' => [],
             'enabled_services' => $enabledServices,
+            'available_subscriptions' => [],
+            'subscriptions_by_key' => [],
             'subscription_summary' => [
                 'total_devices' => 0,
                 'licensed_devices' => 0,
@@ -314,6 +433,7 @@ class LicensingInventoryService
                 'subscription_skus' => [],
             ],
             'central_error' => $error,
+            'licensing_synced_at' => $licensingSyncedAt,
         ];
     }
 }

@@ -3,7 +3,6 @@ import {
     BookOpen,
     Braces,
     BuildingIcon,
-    KeyRound,
     ListTodoIcon,
     MapPin,
     ScrollText,
@@ -11,6 +10,7 @@ import {
 import { AppearanceToggle } from '@/components/appearance-toggle';
 import { NavFooter } from '@/components/nav-footer';
 import { NavClient } from '@/components/nav-client';
+import { NavLicensing } from '@/components/nav-licensing';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
@@ -24,7 +24,6 @@ import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
 import { index as sites_index } from '@/routes/sites'
 import { index as central_api_index } from '@/routes/central-api';
-import { index as licensing_index } from '@/routes/licensing';
 import { index as task_index } from '@/routes/tasks'
 import type { NavItem } from '@/types';
 
@@ -48,11 +47,6 @@ const mainNavItems: NavItem[] = [
         title: 'Tasks',
         href: task_index(),
         icon: ListTodoIcon,
-    },
-    {
-        title: 'Licensing',
-        href: licensing_index(),
-        icon: KeyRound,
     },
     {
         title: 'Central API',
@@ -83,6 +77,9 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain items={mainNavItems} />
+                <div className="px-2 py-0">
+                    <NavLicensing />
+                </div>
             </SidebarContent>
 
             <SidebarFooter>

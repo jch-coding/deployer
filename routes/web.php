@@ -75,9 +75,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(LicensingController::class)->group(function () {
         Route::get('/licensing', 'index')->name('licensing.index');
+        Route::post('/licensing/renew', 'renew')->name('licensing.renew');
         Route::post('/licensing/assign', 'assign')->name('licensing.assign');
         Route::post('/licensing/unassign', 'unassign')->name('licensing.unassign');
-        Route::post('/licensing/queue', 'queue')->name('licensing.queue');
     });
 
     Route::controller(CentralApiExplorerController::class)->group(function () {

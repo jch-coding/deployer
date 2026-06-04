@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Services\DeploymentCriticalCheckService;
 use App\Services\DeviceInterfacePayloadSync;
 use App\Services\FinalizeExpiredTasksService;
+use App\Services\LicensingInventoryService;
 use App\Services\RelaunchFailedCriticalConfigService;
 use App\TaskType;
 use Carbon\Carbon;
@@ -36,8 +37,12 @@ class DeploymentController extends Controller
         ]);
     }
 
-    public function show(Request $request, Deployment $deployment, FinalizeExpiredTasksService $finalizeExpiredTasks)
-    {
+    public function show(
+        Request $request,
+        Deployment $deployment,
+        FinalizeExpiredTasksService $finalizeExpiredTasks,
+        LicensingInventoryService $licensingInventoryService,
+    ) {
         $deployment->load('devices');
 
         $finalizeExpiredTasks->run((int) $deployment->id);
@@ -82,10 +87,32 @@ class DeploymentController extends Controller
             });
         }
 
+        $licensingOptions = [
+            'enabled_services' => [],
+            'available_subscriptions' => [],
+            'central_licensing_error' => null,
+        ];
+        $currentClient = $request->user()->currentClient();
+        $licensingSyncedAt = null;
+        if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
+            $licensingHelper = new CentralAPIHelper($currentClient);
+            $licensingPayload = $licensingInventoryService->resolveLicensingOptions($currentClient, $licensingHelper);
+            $licensingOptions = [
+                'enabled_services' => $licensingPayload['enabled_services'],
+                'available_subscriptions' => $licensingPayload['available_subscriptions'],
+                'central_licensing_error' => $licensingPayload['central_error'],
+            ];
+            $licensingSyncedAt = $licensingPayload['licensing_synced_at'];
+        }
+
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
             'devices' => $devicesQuery->paginate(20)->withQueryString(),
             'device_search' => $search,
+            'enabled_services' => $licensingOptions['enabled_services'],
+            'available_subscriptions' => $licensingOptions['available_subscriptions'],
+            'central_licensing_error' => $licensingOptions['central_licensing_error'],
+            'licensing_synced_at' => $licensingSyncedAt,
             'tasks' => array_map(fn ($task) => [
                 'task_type' => $task->name,
                 'friendly_name' => Task::getTaskFriendlyName($task->name),

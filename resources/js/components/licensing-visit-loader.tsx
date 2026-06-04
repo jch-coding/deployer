@@ -2,8 +2,8 @@ import { router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 
-function isLicensingInventoryVisit(url: string | URL, method: string): boolean {
-    if (method.toLowerCase() !== 'get') {
+function isLicensingRenewVisit(url: string | URL, method: string): boolean {
+    if (method.toLowerCase() !== 'post') {
         return false;
     }
 
@@ -12,7 +12,7 @@ function isLicensingInventoryVisit(url: string | URL, method: string): boolean {
             ? new URL(url, window.location.origin).pathname
             : url.pathname;
 
-    return pathname === '/licensing' || pathname.endsWith('/licensing');
+    return pathname === '/licensing/renew' || pathname.endsWith('/licensing/renew');
 }
 
 export function LicensingVisitLoader() {
@@ -23,7 +23,10 @@ export function LicensingVisitLoader() {
 
         const removeStartListener = router.on('start', (event) => {
             const visit = event.detail.visit;
-            if (isLicensingInventoryVisit(visit.url, visit.method)) {
+            if (visit.prefetch) {
+                return;
+            }
+            if (isLicensingRenewVisit(visit.url, visit.method)) {
                 setLoading(true);
             }
         });
@@ -53,10 +56,10 @@ export function LicensingVisitLoader() {
         >
             <div className="flex flex-col items-center gap-3 rounded-lg border bg-card px-8 py-6 shadow-lg">
                 <Spinner className="size-8" />
-                <p className="text-sm font-medium">Loading licensing inventory from Central…</p>
+                <p className="text-sm font-medium">Renewing licensing data from Central…</p>
                 <p className="max-w-sm text-center text-xs text-muted-foreground">
-                    Fetching device inventory, subscriptions, and enabled services. This may take a
-                    moment for large accounts.
+                    Fetching subscriptions and device inventory. This may take a moment for large
+                    accounts.
                 </p>
             </div>
         </div>

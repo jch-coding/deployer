@@ -28,6 +28,7 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
+import type { AvailableSubscription } from '@/components/licensing/LicenseSelect';
 import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
 import {
@@ -80,6 +81,10 @@ type DeploymentPageProps = {
     deployment: DeploymentSummary;
     tasks: Task[];
     latest_tasks: Task[];
+    available_subscriptions: AvailableSubscription[];
+    enabled_services: string[];
+    central_licensing_error: string | null;
+    licensing_synced_at: string | null;
 } & SharedData;
 export default function Show() {
     const {
@@ -118,12 +123,21 @@ export default function Show() {
     const tasks = usePage<DeploymentPageProps>().props.tasks;
     const latest_tasks = usePage<DeploymentPageProps>().props.latest_tasks;
     const [submitting, setSubmitting] = useState(false);
+    const {
+        available_subscriptions = [],
+        enabled_services = [],
+        central_licensing_error,
+        licensing_synced_at = null,
+    } = usePage<DeploymentPageProps>().props;
+
     const classicCentralTaskTypes = new Set([
         'ASSOCIATE_DEVICE_TO_SITE',
         'ASSOCIATE_SITE_AND_NAME',
         'PREPROVISION_DEVICE_TO_GROUP',
         'MOVE_DEVICE_TO_GROUP',
         'ADD_VLANS_TO_DEVICE_GROUP',
+        'ASSIGN_SUBSCRIPTION',
+        'UNASSIGN_SUBSCRIPTION',
     ]);
 
     useEffect(() => {
@@ -418,6 +432,23 @@ export default function Show() {
                                     requiresClassicCentral={classicCentralTaskTypes.has(
                                         task.task_type,
                                     )}
+                                    available_subscriptions={
+                                        task.task_type === 'ASSIGN_SUBSCRIPTION'
+                                            ? available_subscriptions
+                                            : undefined
+                                    }
+                                    enabled_services={
+                                        task.task_type === 'UNASSIGN_SUBSCRIPTION'
+                                            ? enabled_services
+                                            : task.task_type === 'ASSIGN_SUBSCRIPTION'
+                                              ? enabled_services
+                                              : undefined
+                                    }
+                                    licensing_synced_at={
+                                        task.task_type === 'ASSIGN_SUBSCRIPTION'
+                                            ? licensing_synced_at
+                                            : undefined
+                                    }
                                 />
                             );
                         })}

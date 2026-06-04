@@ -11,7 +11,11 @@ import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
-import { assign, index as licensingIndex, queue, unassign } from '@/routes/licensing';
+import LicenseSelect, {
+    type AvailableSubscription,
+} from '@/components/licensing/LicenseSelect';
+import RenewLicensingButton from '@/components/licensing/RenewLicensingButton';
+import { assign, index as licensingIndex, unassign } from '@/routes/licensing';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 type LicensingDeviceRow = {
@@ -44,14 +48,10 @@ type LicensingFilters = {
     service: string;
 };
 
-type DeploymentOption = {
-    id: number;
-    name: string;
-};
-
 type LicensingIndexProps = {
     devices: LicensingDeviceRow[];
     enabled_services: string[];
+    available_subscriptions: AvailableSubscription[];
     subscription_summary: {
         total_devices: number;
         licensed_devices: number;
@@ -66,7 +66,7 @@ type LicensingIndexProps = {
     filters: LicensingFilters;
     has_active_filters: boolean;
     central_error: string | null;
-    deployments: DeploymentOption[];
+    licensing_synced_at: string | null;
 } & SharedData;
 
 const selectClassName =
@@ -114,7 +114,8 @@ export default function Index() {
         filter_options,
         filters,
         central_error,
-        deployments,
+        available_subscriptions,
+        licensing_synced_at,
         flash,
     } = usePage<LicensingIndexProps>().props;
 
@@ -123,10 +124,10 @@ export default function Index() {
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-    const [selectedService, setSelectedService] = useState(enabled_services[0] ?? '');
-    const [selectedDeploymentId, setSelectedDeploymentId] = useState<string>(
-        deployments[0] ? String(deployments[0].id) : '',
+    const [selectedSubscriptionKey, setSelectedSubscriptionKey] = useState(
+        available_subscriptions[0]?.subscription_key ?? '',
     );
+    const [selectedUnassignService, setSelectedUnassignService] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const breadcrumbs: BreadcrumbItem[] = [
@@ -143,11 +144,49 @@ export default function Index() {
         setPageIndex(0);
     }, [devices, pageSize]);
 
+    const selectedSerials = useMemo(
+        () =>
+            Object.keys(rowSelection)
+                .filter((key) => rowSelection[key])
+                .map((serial) => serial),
+        [rowSelection],
+    );
+
     useEffect(() => {
-        if (enabled_services.length > 0 && !enabled_services.includes(selectedService)) {
-            setSelectedService(enabled_services[0]);
+        if (
+            available_subscriptions.length > 0 &&
+            !available_subscriptions.some((s) => s.subscription_key === selectedSubscriptionKey)
+        ) {
+            setSelectedSubscriptionKey(available_subscriptions[0].subscription_key);
         }
-    }, [enabled_services, selectedService]);
+    }, [available_subscriptions, selectedSubscriptionKey]);
+
+    const selectedSubscription = useMemo(
+        () => available_subscriptions.find((s) => s.subscription_key === selectedSubscriptionKey),
+        [available_subscriptions, selectedSubscriptionKey],
+    );
+
+    const unassignServiceOptions = useMemo(() => {
+        const services = new Set<string>();
+        devices
+            .filter((device) => selectedSerials.includes(device.serial))
+            .forEach((device) => {
+                device.assigned_services.forEach((service) => services.add(service));
+            });
+
+        return Array.from(services).sort();
+    }, [devices, selectedSerials]);
+
+    useEffect(() => {
+        if (unassignServiceOptions.length === 0) {
+            setSelectedUnassignService('');
+
+            return;
+        }
+        if (!unassignServiceOptions.includes(selectedUnassignService)) {
+            setSelectedUnassignService(unassignServiceOptions[0]);
+        }
+    }, [unassignServiceOptions, selectedUnassignService]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -157,22 +196,6 @@ export default function Index() {
             toast.error(flash.error);
         }
     }, [flash?.success, flash?.error]);
-
-    const selectedSerials = useMemo(
-        () =>
-            Object.keys(rowSelection)
-                .filter((key) => rowSelection[key])
-                .map((serial) => serial),
-        [rowSelection],
-    );
-
-    const selectedDeviceIds = useMemo(
-        () =>
-            devices
-                .filter((device) => selectedSerials.includes(device.serial) && device.deployer_device_id !== null)
-                .map((device) => device.deployer_device_id as number),
-        [devices, selectedSerials],
-    );
 
     const paginatedDevices = useMemo(() => {
         const start = pageIndex * pageSize;
@@ -205,80 +228,77 @@ export default function Index() {
                     'subscription_summary',
                     'filter_options',
                     'central_error',
+                    'available_subscriptions',
                 ],
                 onFinish: () => setIsSearching(false),
             },
         );
     }, [filters, isSearching, localFilters]);
 
-    const runSyncAction = useCallback(
-        (action: 'assign' | 'unassign') => {
-            if (selectedSerials.length === 0) {
-                toast.error('Select at least one device.');
+    const runAssignAction = useCallback(() => {
+        if (selectedSerials.length === 0) {
+            toast.error('Select at least one device.');
 
-                return;
-            }
+            return;
+        }
 
-            if (!selectedService) {
-                toast.error('Select a service.');
+        if (!selectedSubscriptionKey) {
+            toast.error('Select a license.');
 
-                return;
-            }
+            return;
+        }
 
-            setIsSubmitting(true);
-            const route = action === 'assign' ? assign : unassign;
-            router.post(
-                route.url(),
-                {
-                    service_name: selectedService,
-                    serials: selectedSerials,
-                },
-                {
-                    preserveScroll: true,
-                    onFinish: () => setIsSubmitting(false),
-                },
+        if (
+            selectedSubscription &&
+            selectedSerials.length > selectedSubscription.available
+        ) {
+            toast.error(
+                `Only ${selectedSubscription.available} seat(s) available on this license.`,
             );
-        },
-        [selectedSerials, selectedService],
-    );
 
-    const runQueueAction = useCallback(
-        (action: 'assign' | 'unassign') => {
-            if (selectedDeviceIds.length === 0) {
-                toast.error('Select at least one device that exists in Deployer for this client to queue a task.');
+            return;
+        }
 
-                return;
-            }
+        setIsSubmitting(true);
+        router.post(
+            assign.url(),
+            {
+                subscription_key: selectedSubscriptionKey,
+                serials: selectedSerials,
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => setIsSubmitting(false),
+            },
+        );
+    }, [selectedSerials, selectedSubscription, selectedSubscriptionKey]);
 
-            if (!selectedService) {
-                toast.error('Select a service.');
+    const runUnassignAction = useCallback(() => {
+        if (selectedSerials.length === 0) {
+            toast.error('Select at least one device.');
 
-                return;
-            }
+            return;
+        }
 
-            if (!selectedDeploymentId) {
-                toast.error('Select a deployment for the task.');
+        if (!selectedUnassignService) {
+            toast.error('Select a service to remove from the selected devices.');
 
-                return;
-            }
+            return;
+        }
 
-            setIsSubmitting(true);
-            router.post(
-                queue.url(),
-                {
-                    action,
-                    service_name: selectedService,
-                    deployment_id: Number(selectedDeploymentId),
-                    device_ids: selectedDeviceIds,
-                    deployment_time: 3,
-                },
-                {
-                    onFinish: () => setIsSubmitting(false),
-                },
-            );
-        },
-        [selectedDeploymentId, selectedDeviceIds, selectedService],
-    );
+        setIsSubmitting(true);
+        router.post(
+            unassign.url(),
+            {
+                service_name: selectedUnassignService,
+                serials: selectedSerials,
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => setIsSubmitting(false),
+            },
+        );
+    }, [selectedSerials, selectedUnassignService]);
 
     const columns = useMemo<ColumnDef<LicensingDeviceRow>[]>(
         () => [
@@ -347,9 +367,15 @@ export default function Index() {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="flex flex-col gap-6 p-4 md:p-6">
-                <div className="flex items-center gap-2">
-                    <KeyRound className="size-6 text-muted-foreground" />
-                    <h1 className="text-2xl font-semibold tracking-tight">Licensing</h1>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                        <KeyRound className="size-6 text-muted-foreground" />
+                        <h1 className="text-2xl font-semibold tracking-tight">Licensing</h1>
+                    </div>
+                    <RenewLicensingButton
+                        licensingSyncedAt={licensing_synced_at}
+                        showSyncedHint
+                    />
                 </div>
 
                 {central_error && (
@@ -479,68 +505,63 @@ export default function Index() {
                 </div>
 
                 <div className="flex flex-wrap items-end gap-3 rounded-lg border p-4">
+                    <div className="min-w-[280px] flex-1">
+                        <label className="mb-1 block text-sm font-medium" htmlFor="licensing-license">
+                            Available license
+                        </label>
+                        <LicenseSelect
+                            id="licensing-license"
+                            value={selectedSubscriptionKey}
+                            subscriptions={available_subscriptions}
+                            onChange={setSelectedSubscriptionKey}
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Central assigns a service tier from this license pool; a specific
+                            subscription key cannot be targeted via API.
+                        </p>
+                    </div>
                     <div className="min-w-[220px] flex-1">
-                        <label className="mb-1 block text-sm font-medium" htmlFor="licensing-service">
-                            Service
+                        <label className="mb-1 block text-sm font-medium" htmlFor="licensing-unassign-service">
+                            Service to remove
                         </label>
                         <select
-                            id="licensing-service"
-                            value={selectedService}
-                            onChange={(e) => setSelectedService(e.target.value)}
+                            id="licensing-unassign-service"
+                            value={selectedUnassignService}
+                            onChange={(e) => setSelectedUnassignService(e.target.value)}
                             className={selectClassName}
+                            disabled={unassignServiceOptions.length === 0}
                         >
-                            {enabled_services.map((service) => (
+                            {unassignServiceOptions.length === 0 && (
+                                <option value="">Select licensed devices first</option>
+                            )}
+                            {unassignServiceOptions.map((service) => (
                                 <option key={service} value={service}>
                                     {service}
                                 </option>
                             ))}
                         </select>
                     </div>
-                    <div className="min-w-[220px] flex-1">
-                        <label className="mb-1 block text-sm font-medium" htmlFor="licensing-deployment">
-                            Deployment (for queued tasks)
-                        </label>
-                        <select
-                            id="licensing-deployment"
-                            value={selectedDeploymentId}
-                            onChange={(e) => setSelectedDeploymentId(e.target.value)}
-                            className={selectClassName}
-                        >
-                            {deployments.length === 0 && <option value="">No deployments</option>}
-                            {deployments.map((deployment) => (
-                                <option key={deployment.id} value={deployment.id}>
-                                    {deployment.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
                     <Button
                         variant="default"
-                        disabled={isSubmitting || selectedSerials.length === 0}
-                        onClick={() => runSyncAction('assign')}
+                        disabled={
+                            isSubmitting ||
+                            selectedSerials.length === 0 ||
+                            !selectedSubscriptionKey
+                        }
+                        onClick={runAssignAction}
                     >
                         Assign now ({selectedSerials.length})
                     </Button>
                     <Button
                         variant="secondary"
-                        disabled={isSubmitting || selectedSerials.length === 0}
-                        onClick={() => runSyncAction('unassign')}
+                        disabled={
+                            isSubmitting ||
+                            selectedSerials.length === 0 ||
+                            !selectedUnassignService
+                        }
+                        onClick={runUnassignAction}
                     >
                         Unassign now ({selectedSerials.length})
-                    </Button>
-                    <Button
-                        variant="outline"
-                        disabled={isSubmitting || selectedDeviceIds.length === 0 || !selectedDeploymentId}
-                        onClick={() => runQueueAction('assign')}
-                    >
-                        Queue assign task ({selectedDeviceIds.length})
-                    </Button>
-                    <Button
-                        variant="outline"
-                        disabled={isSubmitting || selectedDeviceIds.length === 0 || !selectedDeploymentId}
-                        onClick={() => runQueueAction('unassign')}
-                    >
-                        Queue unassign task ({selectedDeviceIds.length})
                     </Button>
                 </div>
 

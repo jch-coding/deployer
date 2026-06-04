@@ -33,6 +33,8 @@ use App\Services\DeploymentCriticalCheckService;
 use App\Services\DeviceCentralVerifier;
 use App\Services\EthernetInterfaceCentralVerifier;
 use App\Services\LagInterfaceCentralVerifier;
+use App\Services\LicensingInventoryService;
+use App\Services\LicensingSubscriptionResolver;
 use App\Services\RelaunchFailedCriticalConfigService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
@@ -45,6 +47,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class TaskController extends Controller
@@ -743,14 +746,24 @@ class TaskController extends Controller
         }
     }
 
-    public function store(Request $request, Deployment $deployment)
-    {
+    public function store(
+        Request $request,
+        Deployment $deployment,
+        LicensingInventoryService $licensingInventoryService,
+        LicensingSubscriptionResolver $licensingSubscriptionResolver,
+    ) {
         $validated = $request->validate([
             'task_type' => ['required', Rule::in(array_map(fn ($task) => $task->name, TaskType::cases()))],
             'devices' => ['nullable', 'array'],
+            'devices.*.id' => ['sometimes', 'integer'],
+            'devices.*.subscription_key' => ['sometimes', 'string', 'max:255'],
+            'devices.*.service_name' => ['sometimes', 'string', 'max:255'],
             'deployment_time' => ['required', 'integer'],
             'vlan_site_prefix' => ['nullable', 'string', 'max:64'],
             'override_device_scope' => ['nullable', Rule::in(['vsf_only', 'all'])],
+            'licensing_mode' => ['nullable', Rule::in(['uniform', 'per_device'])],
+            'subscription_key' => ['nullable', 'string', 'max:255'],
+            'service_name' => ['nullable', 'string', 'max:255'],
         ]);
 
         $isAddVlans = $validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP';
@@ -983,6 +996,15 @@ class TaskController extends Controller
             }
 
             $task = $createdVlanTasks->first();
+        } elseif (in_array($validated['task_type'], ['ASSIGN_SUBSCRIPTION', 'UNASSIGN_SUBSCRIPTION'], true)) {
+            $task = $this->storeLicensingTask(
+                $request,
+                $deployment,
+                $validated,
+                $shardEntropy,
+                $licensingInventoryService,
+                $licensingSubscriptionResolver,
+            );
         } else {
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
@@ -1001,6 +1023,170 @@ class TaskController extends Controller
         }
 
         return to_route('tasks.show', $task);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function storeLicensingTask(
+        Request $request,
+        Deployment $deployment,
+        array $validated,
+        string $shardEntropy,
+        LicensingInventoryService $licensingInventoryService,
+        LicensingSubscriptionResolver $licensingSubscriptionResolver,
+    ): Task {
+        $isAssign = $validated['task_type'] === 'ASSIGN_SUBSCRIPTION';
+        $licensingMode = $validated['licensing_mode'] ?? 'uniform';
+        $deviceRows = Collection::make($validated['devices'] ?? []);
+        $deviceIds = $deviceRows
+            ->pluck('id')
+            ->filter(fn ($id) => $id !== null)
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $selectedDevices = Device::query()
+            ->where('deployment_id', $deployment->id)
+            ->whereIn('id', $deviceIds)
+            ->get()
+            ->keyBy('id');
+
+        if ($selectedDevices->count() !== $deviceIds->count()) {
+            throw ValidationException::withMessages(['devices' => 'One or more selected devices are invalid for this deployment.']);
+        }
+
+        $deployment->loadMissing('client');
+        $helper = new CentralAPIHelper($deployment->client);
+        $licensingOptions = $licensingInventoryService->resolveLicensingOptions($deployment->client, $helper);
+        if ($licensingOptions['central_error'] !== null) {
+            throw ValidationException::withMessages(['devices' => $licensingOptions['central_error']]);
+        }
+
+        $enabledServices = $licensingOptions['enabled_services'];
+        $subscriptionsByKey = $licensingOptions['subscriptions_by_key'];
+        $cachedPayload = $licensingInventoryService->buildFromCache($deployment->client, []);
+        $inventoryDevices = array_map(
+            fn (array $device): array => [
+                'serial' => $device['serial'],
+                'subscription_key' => $device['subscription_key'],
+                'services' => $device['assigned_services'],
+            ],
+            $cachedPayload['devices'],
+        );
+
+        $attachData = [];
+        $taskServiceName = null;
+        $taskSubscriptionKey = null;
+
+        if ($licensingMode === 'per_device') {
+            foreach ($deviceRows as $row) {
+                $deviceId = (int) ($row['id'] ?? 0);
+                if (! $selectedDevices->has($deviceId)) {
+                    continue;
+                }
+
+                if ($isAssign) {
+                    $subscriptionKey = trim((string) ($row['subscription_key'] ?? ''));
+                    if ($subscriptionKey === '') {
+                        throw ValidationException::withMessages(['devices' => 'Each device must have a license selected.']);
+                    }
+
+                    $resolved = $licensingSubscriptionResolver->resolveServiceName(
+                        $subscriptionKey,
+                        $enabledServices,
+                        $subscriptionsByKey,
+                        $inventoryDevices,
+                    );
+                    if (isset($resolved['error'])) {
+                        throw ValidationException::withMessages(['devices' => $resolved['error']]);
+                    }
+
+                    $attachData[$deviceId] = [
+                        'status' => 'PENDING',
+                        'licensing_service_name' => $resolved['service_name'],
+                    ];
+                } else {
+                    $serviceName = trim((string) ($row['service_name'] ?? ''));
+                    if ($serviceName === '' || ! in_array($serviceName, $enabledServices, true)) {
+                        throw ValidationException::withMessages(['devices' => 'Each device must have a valid service to unassign.']);
+                    }
+
+                    $attachData[$deviceId] = [
+                        'status' => 'PENDING',
+                        'licensing_service_name' => $serviceName,
+                    ];
+                }
+            }
+        } else {
+            if ($isAssign) {
+                $subscriptionKey = trim((string) ($validated['subscription_key'] ?? ''));
+                if ($subscriptionKey === '') {
+                    throw ValidationException::withMessages(['subscription_key' => 'Select a license to assign.']);
+                }
+
+                $capacityError = $licensingSubscriptionResolver->validateCapacity(
+                    $subscriptionKey,
+                    $deviceIds->count(),
+                    $subscriptionsByKey,
+                );
+                if ($capacityError !== null) {
+                    throw ValidationException::withMessages(['subscription_key' => $capacityError['error']]);
+                }
+
+                $resolved = $licensingSubscriptionResolver->resolveServiceName(
+                    $subscriptionKey,
+                    $enabledServices,
+                    $subscriptionsByKey,
+                    $inventoryDevices,
+                );
+                if (isset($resolved['error'])) {
+                    throw ValidationException::withMessages(['subscription_key' => $resolved['error']]);
+                }
+
+                $taskServiceName = $resolved['service_name'];
+                $taskSubscriptionKey = $subscriptionKey;
+            } else {
+                $taskServiceName = trim((string) ($validated['service_name'] ?? ''));
+                if ($taskServiceName === '' || ! in_array($taskServiceName, $enabledServices, true)) {
+                    throw ValidationException::withMessages(['service_name' => 'Select a valid service to unassign.']);
+                }
+            }
+
+            foreach ($deviceIds as $deviceId) {
+                $attachData[$deviceId] = ['status' => 'PENDING'];
+                if (! $isAssign) {
+                    $attachData[$deviceId]['licensing_service_name'] = $taskServiceName;
+                }
+            }
+        }
+
+        if ($attachData === []) {
+            throw ValidationException::withMessages(['devices' => 'Select at least one device.']);
+        }
+
+        if ($isAssign && $licensingMode === 'uniform') {
+            foreach ($deviceIds as $deviceId) {
+                $attachData[$deviceId]['licensing_service_name'] = $taskServiceName;
+            }
+        }
+
+        $task = $deployment->tasks()->create([
+            'task_type' => $validated['task_type'],
+            'name' => 'task_for_'.$deployment->name.now(),
+            'deployment_time' => $validated['deployment_time'],
+            'status' => 'IN_PROGRESS',
+            'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+            'licensing_service_name' => $taskServiceName,
+            'licensing_subscription_key' => $taskSubscriptionKey,
+        ]);
+
+        $task->devices()->attach($attachData);
+        $batchId = $this->dispatchJob($task);
+        if ($batchId !== null) {
+            $task->forceFill(['batch_id' => $batchId])->save();
+        }
+
+        return $task;
     }
 
     public function checkCentralGroup(Request $request, Deployment $deployment)
@@ -1619,20 +1805,36 @@ class TaskController extends Controller
                 $jobs[] = [new AddVlansToDeviceGroup($group, $vlans, $task, $centralAPIHelper)];
                 break;
             case 'ASSIGN_SUBSCRIPTION':
-                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
-                $chunked = array_chunk($in_progress->map(fn ($device) => ['id' => $device->id, 'serial' => $device->serial])->all(), 25);
-                $jobs[] = array_map(
-                    fn (array $devices) => new AssignSubscriptionJob($devices, $task, $centralAPIHelper),
-                    $chunked,
-                );
-                break;
             case 'UNASSIGN_SUBSCRIPTION':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
-                $chunked = array_chunk($in_progress->map(fn ($device) => ['id' => $device->id, 'serial' => $device->serial])->all(), 25);
-                $jobs[] = array_map(
-                    fn (array $devices) => new UnassignSubscriptionJob($devices, $task, $centralAPIHelper),
-                    $chunked,
-                );
+                $devices_by_service = $in_progress->groupBy(function ($device) use ($task): string {
+                    $service = trim((string) ($device->pivot->licensing_service_name ?? ''));
+                    if ($service === '') {
+                        $service = trim((string) ($task->licensing_service_name ?? ''));
+                    }
+
+                    return $service;
+                })->filter(fn ($group, string $service) => $service !== '');
+                $jobClass = $task->task_type === 'ASSIGN_SUBSCRIPTION'
+                    ? AssignSubscriptionJob::class
+                    : UnassignSubscriptionJob::class;
+                $subscriptionJobs = [];
+                foreach ($devices_by_service as $serviceName => $serviceDevices) {
+                    foreach ($serviceDevices->chunk(25) as $deviceChunk) {
+                        $subscriptionJobs[] = new $jobClass(
+                            $deviceChunk->map(fn ($device) => [
+                                'id' => $device->id,
+                                'serial' => $device->serial,
+                            ])->all(),
+                            (string) $serviceName,
+                            $task,
+                            $centralAPIHelper,
+                        );
+                    }
+                }
+                if ($subscriptionJobs !== []) {
+                    $jobs[] = $subscriptionJobs;
+                }
                 break;
         }
 

@@ -91,6 +91,11 @@ class CentralAPIHelper
 
     public function __construct(public Client $client) {}
 
+    private function classicApiUrl(string $path): string
+    {
+        return rtrim($this->client->classicBaseUrlString(), '/').$path;
+    }
+
     /**
      * Query parameters for LOCAL device-scoped interface GET/POST/PATCH calls.
      *
@@ -1714,7 +1719,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->classic_access_token)
-                ->get($this->client->classic_base_url.$this->classic_monitoring['sites']);
+                ->get($this->classicApiUrl($this->classic_monitoring['sites']));
 
             return $response;
         }
@@ -1738,7 +1743,7 @@ class CentralAPIHelper
         while (true) {
             $response = Http::withToken($this->client->classic_access_token)
                 ->withQueryParameters(['limit' => $limit, 'offset' => $offset])
-                ->get($this->client->classic_base_url.$this->classic_monitoring['sites']);
+                ->get($this->classicApiUrl($this->classic_monitoring['sites']));
 
             if (! $response->ok()) {
                 return ['error' => 'Could not load sites from Central.'];
@@ -1772,7 +1777,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         }
         $response = Http::withToken($this->client->classic_access_token)
-            ->post($this->client->classic_base_url.$this->classic_monitoring['sites'].'/associations', $device_to_site_body);
+            ->post($this->classicApiUrl($this->classic_monitoring['sites'].'/associations'), $device_to_site_body);
 
         return $response;
     }
@@ -1783,7 +1788,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         }
         $response = Http::withToken($this->client->classic_access_token)
-            ->post($this->client->classic_base_url.$this->classic_monitoring['sites'].'/associate', $device_to_site_body);
+            ->post($this->classicApiUrl($this->classic_monitoring['sites'].'/associate'), $device_to_site_body);
 
         return $response;
     }
@@ -1795,7 +1800,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->classic_access_token)
                 ->withQueryParameters(['limit' => 20, 'offset' => 0])
-                ->get($this->client->classic_base_url.$this->classic_configuration['groups']);
+                ->get($this->classicApiUrl($this->classic_configuration['groups']));
 
             return $response;
         }
@@ -1811,7 +1816,7 @@ class CentralAPIHelper
         }
 
         return Http::withToken($this->client->classic_access_token)
-            ->get($this->client->classic_base_url.$this->classic_subscription['subscriptions']);
+            ->get($this->classicApiUrl($this->classic_subscription['subscriptions']));
     }
 
     /**
@@ -1845,7 +1850,7 @@ class CentralAPIHelper
         }
 
         return Http::withToken($this->client->classic_access_token)
-            ->get($this->client->classic_base_url.$this->classic_subscription['enabled_services']);
+            ->get($this->classicApiUrl($this->classic_subscription['enabled_services']));
     }
 
     /**
@@ -1883,7 +1888,7 @@ class CentralAPIHelper
 
         return Http::withToken($this->client->classic_access_token)
             ->withQueryParameters($params)
-            ->get($this->client->classic_base_url.$this->classic_subscription['device_inventory']);
+            ->get($this->classicApiUrl($this->classic_subscription['device_inventory']));
     }
 
     /**
@@ -1945,7 +1950,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->classic_access_token)
-                ->post($this->client->classic_base_url.$this->classic_subscription['unassign_subscription'], ['serials' => $serials, 'service_name' => [$service_name]]);
+                ->post($this->classicApiUrl($this->classic_subscription['unassign_subscription']), ['serials' => $serials, 'service_name' => [$service_name]]);
 
             return $response;
         }
@@ -1957,7 +1962,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->classic_access_token)
-                ->post($this->client->classic_base_url.$this->classic_subscription['assign_subscription'], ['serials' => $serials, 'service_name' => [$service_name]]);
+                ->post($this->classicApiUrl($this->classic_subscription['assign_subscription']), ['serials' => $serials, 'service_name' => [$service_name]]);
 
             return $response;
         }
@@ -1970,7 +1975,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->classic_access_token)
-                ->get($this->client->classic_base_url.$this->classic_subscription['subscription_status']);
+                ->get($this->classicApiUrl($this->classic_subscription['subscription_status']));
 
             return $response;
         }
@@ -2006,7 +2011,7 @@ class CentralAPIHelper
 
         $response = Http::withToken($this->client->classic_access_token)
             ->withQueryParameters(['group' => $group_name])
-            ->post($this->client->classic_base_url.$this->classic_configuration['groupsv3'], $body);
+            ->post($this->classicApiUrl($this->classic_configuration['groupsv3']), $body);
 
         return $response;
     }
@@ -2029,7 +2034,7 @@ class CentralAPIHelper
         while (true) {
             $response = Http::withToken($this->client->classic_access_token)
                 ->withQueryParameters(['limit' => $limit, 'offset' => $offset])
-                ->get($this->client->classic_base_url.$this->classic_configuration['groups']);
+                ->get($this->classicApiUrl($this->classic_configuration['groups']));
 
             if (! $response->ok()) {
                 return ['error' => 'Could not load groups from Central.'];
@@ -2066,7 +2071,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         }
         $response = Http::withToken($this->client->classic_access_token)
-            ->post($this->client->classic_base_url.$this->classic_configuration['move_devices_to_group'], ['group' => $group, 'serials' => $device_serials]);
+            ->post($this->classicApiUrl($this->classic_configuration['move_devices_to_group']), ['group' => $group, 'serials' => $device_serials]);
 
         return $response;
     }
@@ -2077,7 +2082,7 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         }
         $response = Http::withToken($this->client->classic_access_token)
-            ->post($this->client->classic_base_url.$this->classic_configuration['preprovision_devices_to_group'], ['group_name' => $group, 'device_id' => $device_serials]);
+            ->post($this->classicApiUrl($this->classic_configuration['preprovision_devices_to_group']), ['group_name' => $group, 'device_id' => $device_serials]);
 
         return $response;
     }

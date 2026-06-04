@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\BaseURL;
+use App\ClassicBaseUrl;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -37,9 +38,22 @@ class Client extends Model
         return $this->hasMany(Site::class);
     }
 
+    public function clientSubscriptions(): HasMany
+    {
+        return $this->hasMany(ClientSubscription::class);
+    }
+
+    public function licensingInventoryDevices(): HasMany
+    {
+        return $this->hasMany(LicensingInventoryDevice::class);
+    }
+
     protected function casts(): array
     {
         return [
+            'licensing_enabled_services' => 'array',
+            'licensing_synced_at' => 'datetime',
+            'classic_base_url' => ClassicBaseUrl::class,
             'current' => 'boolean',
             'client_secret' => 'encrypted',
             'bearer_token' => 'encrypted',
@@ -134,6 +148,13 @@ class Client extends Model
         return $this->classic_client_id !== null && $this->classic_client_secret !== null && $this->classic_username !== null && $this->classic_password !== null;
     }
 
+    public function classicBaseUrlString(): string
+    {
+        $base = $this->classic_base_url;
+
+        return $base instanceof ClassicBaseUrl ? $base->value : (string) $base;
+    }
+
     public function updateClassicRefreshToken(string $refreshToken): bool
     {
         $this->classic_refresh_token = $refreshToken;
@@ -151,7 +172,7 @@ class Client extends Model
             'client_id' => $this->classic_client_id,
             'client_secret' => $this->classic_client_secret,
             'refresh_token' => $this->classic_refresh_token,
-        ])->post($this->classic_base_url.'oauth2/token/');
+        ])->post($this->classicBaseUrlString().'oauth2/token/');
 
         return $response;
     }
@@ -160,7 +181,7 @@ class Client extends Model
     {
         $response = Http::withQueryParameters([
             'client_id' => $this->classic_client_id,
-        ])->post($this->classic_base_url.'oauth2/authorize/central/api/login', [
+        ])->post($this->classicBaseUrlString().'oauth2/authorize/central/api/login', [
             'username' => $this->classic_username,
             'password' => $this->classic_password,
         ]);
@@ -188,14 +209,14 @@ class Client extends Model
             'client_id' => $this->classic_client_id,
             'response_type' => 'code',
             'scope' => 'all',
-        ])->post($this->classic_base_url.'oauth2/authorize/central/api/', ['customer_id' => $this->customer_id]);
+        ])->post($this->classicBaseUrlString().'oauth2/authorize/central/api/', ['customer_id' => $this->customer_id]);
 
         return $response;
     }
 
     public function acquireTokens(string $auth_code)
     {
-        $response = Http::post($this->classic_base_url.'oauth2/token/', [
+        $response = Http::post($this->classicBaseUrlString().'oauth2/token/', [
             'grant_type' => 'authorization_code',
             'client_id' => $this->classic_client_id,
             'client_secret' => $this->classic_client_secret,

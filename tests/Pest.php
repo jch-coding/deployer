@@ -41,7 +41,45 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+use App\Helper\CentralAPIHelper;
+use App\Models\Client;
+use App\Services\LicensingSyncService;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+
+function fakeLicensingCentralApis(array $devices = [], array $subscriptions = []): void
 {
-    // ..
+    Http::fake(function (Request $request) use ($devices, $subscriptions) {
+        if (str_contains($request->url(), '/platform/licensing/v1/services/enabled')) {
+            return Http::response([
+                'services' => [
+                    'services' => ['advanced_ap', 'advanced_switch_6300'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($request->url(), '/platform/licensing/v1/subscriptions')
+            && $request->method() === 'GET') {
+            return Http::response([
+                'subscriptions' => $subscriptions,
+            ], 200);
+        }
+
+        if (str_contains($request->url(), '/platform/device_inventory/v1/devices')) {
+            return Http::response([
+                'total' => count($devices),
+                'devices' => $devices,
+            ], 200);
+        }
+
+        return Http::response([], 404);
+    });
+}
+
+function seedLicensingCache(Client $client, array $devices = [], array $subscriptions = []): void
+{
+    fakeLicensingCentralApis($devices, $subscriptions);
+    $client = $client->fresh();
+    app(LicensingSyncService::class)->syncFromCentral($client, new CentralAPIHelper($client));
+    $client->refresh();
 }
