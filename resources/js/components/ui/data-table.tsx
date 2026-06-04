@@ -59,12 +59,14 @@ function stickyCellClass(
         return undefined;
     }
     const leftClass =
-        idx === 0 ? 'left-0' : idx === 1 ? 'left-14' : `left-[${idx * 3.5}rem]`;
+        idx === 0 ? 'left-0' : idx === 1 ? 'left-14' : idx === 2 ? 'left-28' : undefined;
     const z = variant === 'head' ? 'z-30' : 'z-20';
     const bg = variant === 'head' ? 'bg-muted' : 'bg-background';
+    const isSelectColumn = columnId === 'select';
     return cn(
         'sticky border-r border-border shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.25)]',
         leftClass,
+        isSelectColumn && 'w-14 min-w-14 max-w-14 px-1',
         z,
         bg,
         variant === 'body' &&

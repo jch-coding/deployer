@@ -14,6 +14,7 @@ class LicensingInventoryDevice extends Model
     protected $fillable = [
         'client_id',
         'serial',
+        'greenlake_device_id',
         'model',
         'mac',
         'device_type',

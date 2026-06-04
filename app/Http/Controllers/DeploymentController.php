@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
+use App\Helper\GreenLakeAPIHelper;
 use App\Models\Deployment;
 use App\Models\DeviceInterface;
 use App\Models\Task;
@@ -95,8 +96,13 @@ class DeploymentController extends Controller
         $currentClient = $request->user()->currentClient();
         $licensingSyncedAt = null;
         if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
-            $licensingHelper = new CentralAPIHelper($currentClient);
-            $licensingPayload = $licensingInventoryService->resolveLicensingOptions($currentClient, $licensingHelper);
+            $centralHelper = new CentralAPIHelper($currentClient);
+            $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
+            $licensingPayload = $licensingInventoryService->resolveLicensingOptions(
+                $currentClient,
+                $centralHelper,
+                $greenLakeHelper,
+            );
             $licensingOptions = [
                 'enabled_services' => $licensingPayload['enabled_services'],
                 'available_subscriptions' => $licensingPayload['available_subscriptions'],

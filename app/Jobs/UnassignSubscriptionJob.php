@@ -2,21 +2,17 @@
 
 namespace App\Jobs;
 
-use App\Helper\CentralAPIHelper;
+use App\Helper\GreenLakeAPIHelper;
 use App\Models\Task;
-use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class UnassignSubscriptionJob extends BaseTaskJob
 {
-    private const SERIALS_PER_REQUEST = 25;
-
     public function __construct(
         public array $devices,
-        public string $serviceName,
         public Task $task,
-        public CentralAPIHelper $centralAPIHelper,
+        public GreenLakeAPIHelper $greenLakeAPIHelper,
     ) {
         $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
     }
@@ -30,40 +26,43 @@ class UnassignSubscriptionJob extends BaseTaskJob
 
     public function unassignSubscriptions(): void
     {
-        $serviceName = trim($this->serviceName);
-        if ($serviceName === '') {
-            $message = 'No licensing service name configured for this job.';
-            Log::error($message);
-            $this->task->processTaskStatusLog($message);
+        $deviceIds = [];
+        foreach ($this->devices as $device) {
+            $greenlakeDeviceId = trim((string) ($device['greenlake_device_id'] ?? ''));
+            if ($greenlakeDeviceId !== '') {
+                $deviceIds[] = $greenlakeDeviceId;
+            }
+        }
+
+        if ($deviceIds === []) {
+            $this->failTask('No GreenLake device ids available for license unassignment.');
 
             return;
         }
 
-        $chunks = array_chunk($this->devices, self::SERIALS_PER_REQUEST);
+        $result = $this->greenLakeAPIHelper->unassignSubscriptionFromDevices($deviceIds);
+        $ok = $result['error'] === null && array_filter(
+            $result['responses'],
+            fn ($response) => ! $response->ok(),
+        ) === [];
 
-        foreach ($chunks as $chunk) {
-            $serials = array_map(fn ($device) => (string) $device['serial'], $chunk);
-            $response = $this->centralAPIHelper->classic_unassign_subscription($serials, $serviceName);
-            $ok = ! is_array($response) && $response instanceof Response && $response->ok();
-
-            if ($ok) {
-                foreach ($chunk as $device) {
-                    $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
-                }
-                $message = array_reduce(
-                    $serials,
-                    fn (string $carry, string $serial) => $carry."\nUnassigned license ({$serviceName}) from device {$serial}",
-                    ''
-                );
-                $this->task->processTaskStatusLog($message);
-            } else {
-                foreach ($chunk as $device) {
-                    $this->markDeviceFailed($device['id']);
-                }
-                $errorDetail = $this->formatSubscriptionError($response);
-                Log::error('Failed to unassign subscription with error '.$errorDetail);
-                $this->task->processTaskStatusLog("\nFailed to unassign license ({$serviceName}): {$errorDetail}");
+        if ($ok) {
+            foreach ($this->devices as $device) {
+                $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
             }
+            $message = array_reduce(
+                $this->devices,
+                fn (string $carry, array $device) => $carry."\nUnassigned license from device ".($device['serial'] ?? ''),
+                ''
+            );
+            $this->task->processTaskStatusLog($message);
+        } else {
+            foreach ($this->devices as $device) {
+                $this->markDeviceFailed($device['id']);
+            }
+            $errorDetail = $result['error'] ?? 'GreenLake unassign failed.';
+            Log::error('Failed to unassign subscription with error '.$errorDetail);
+            $this->task->processTaskStatusLog("\nFailed to unassign license: {$errorDetail}");
         }
 
         $this->task->load('devices');
@@ -73,24 +72,6 @@ class UnassignSubscriptionJob extends BaseTaskJob
         } elseif ($this->allTaskDevicesFailed()) {
             $this->failTask('All devices failed license unassignment.');
         }
-    }
-
-    private function formatSubscriptionError(mixed $response): string
-    {
-        if (is_array($response)) {
-            return $response['error'] ?? json_encode($response);
-        }
-
-        if ($response instanceof Response) {
-            $json = $response->json();
-            if (is_array($json) && isset($json['message'])) {
-                return (string) $json['message'];
-            }
-
-            return $response->body();
-        }
-
-        return 'unknown error';
     }
 
     public function failed(?Throwable $exception): void

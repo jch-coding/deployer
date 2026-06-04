@@ -251,6 +251,12 @@ test('CONFIGURE_ALL_INTERFACE creates only ethernet subtask when only ethernet i
 test('ASSIGN_SUBSCRIPTION stores licensing fields and dispatches subscription jobs', function () {
     Bus::fake();
 
+    $devices = Device::factory(2)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'CAMPUS_AP',
+    ]);
+
     $this->client->update([
         'classic_base_url' => ClassicBaseUrl::US1,
         'classic_client_id' => 'classic-id',
@@ -260,25 +266,28 @@ test('ASSIGN_SUBSCRIPTION stores licensing fields and dispatches subscription jo
         'classic_refresh_token' => 'refresh',
         'classic_expires_in' => now()->addHour(),
         'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
     ]);
 
     seedLicensingCache(
         $this->client,
-        devices: [],
+        devices: $devices->map(fn ($device) => [
+            'serial' => $device->serial,
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'services' => [],
+            'subscription_key' => '',
+        ])->all(),
         subscriptions: [[
             'subscription_key' => 'KEY-POOL',
+            'greenlake_subscription_id' => 'gl-sub-KEY-POOL',
             'sku' => 'Q9Y65AAE',
             'license_type' => 'Advanced AP',
             'status' => 'OK',
             'available' => 10,
         ]],
     );
-
-    $devices = Device::factory(2)->create([
-        'deployment_id' => $this->deployment->id,
-        'client_id' => $this->client->id,
-        'device_function' => 'CAMPUS_AP',
-    ]);
 
     $response = $this->post(route('tasks.store', $this->deployment), [
         'task_type' => 'ASSIGN_SUBSCRIPTION',
@@ -293,7 +302,7 @@ test('ASSIGN_SUBSCRIPTION stores licensing fields and dispatches subscription jo
 
     expect($task)->not()->toBeNull()
         ->and($task->task_type)->toBe('ASSIGN_SUBSCRIPTION')
-        ->and($task->licensing_service_name)->toBe('advanced_ap')
+        ->and($task->licensing_service_name)->toBe('gl-sub-KEY-POOL')
         ->and($task->licensing_subscription_key)->toBe('KEY-POOL')
         ->and($task->devices)->toHaveCount(2);
 
@@ -301,7 +310,7 @@ test('ASSIGN_SUBSCRIPTION stores licensing fields and dispatches subscription jo
     Bus::assertBatched(function ($batch): bool {
         return $batch->jobs->count() === 1
             && $batch->jobs->first() instanceof AssignSubscriptionJob
-            && $batch->jobs->first()->serviceName === 'advanced_ap';
+            && $batch->jobs->first()->greenlakeSubscriptionId === 'gl-sub-KEY-POOL';
     });
 
     $task->refresh();

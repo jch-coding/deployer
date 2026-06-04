@@ -14,6 +14,7 @@ class ClientSubscription extends Model
     protected $fillable = [
         'client_id',
         'subscription_key',
+        'greenlake_subscription_id',
         'subscription_sku',
         'license_type',
         'start_date',
@@ -21,7 +22,9 @@ class ClientSubscription extends Model
         'status',
         'subscription_type',
         'available',
+        'quantity',
         'acpapp_name',
+        'tags',
     ];
 
     protected function casts(): array
@@ -30,6 +33,8 @@ class ClientSubscription extends Model
             'start_date' => 'integer',
             'end_date' => 'integer',
             'available' => 'integer',
+            'quantity' => 'integer',
+            'tags' => 'array',
         ];
     }
 
@@ -45,6 +50,7 @@ class ClientSubscription extends Model
     {
         return [
             'subscription_key' => $this->subscription_key,
+            'greenlake_subscription_id' => $this->greenlake_subscription_id,
             'subscription_sku' => $this->subscription_sku,
             'license_type' => $this->license_type,
             'start_date' => $this->start_date,
@@ -52,7 +58,9 @@ class ClientSubscription extends Model
             'status' => $this->status,
             'subscription_type' => $this->subscription_type,
             'available' => $this->available,
+            'quantity' => $this->quantity,
             'acpapp_name' => $this->acpapp_name,
+            'tags' => $this->tags ?? [],
         ];
     }
 }

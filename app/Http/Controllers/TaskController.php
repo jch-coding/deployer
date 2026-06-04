@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
+use App\Helper\GreenLakeAPIHelper;
 use App\InterfaceKind;
 use App\JobQueueShard;
 use App\Jobs\AddVlansToDeviceGroup;
@@ -1056,26 +1057,23 @@ class TaskController extends Controller
         }
 
         $deployment->loadMissing('client');
-        $helper = new CentralAPIHelper($deployment->client);
-        $licensingOptions = $licensingInventoryService->resolveLicensingOptions($deployment->client, $helper);
+        $centralHelper = new CentralAPIHelper($deployment->client);
+        $greenLakeHelper = new GreenLakeAPIHelper($deployment->client);
+        $licensingOptions = $licensingInventoryService->resolveLicensingOptions(
+            $deployment->client,
+            $centralHelper,
+            $greenLakeHelper,
+        );
         if ($licensingOptions['central_error'] !== null) {
             throw ValidationException::withMessages(['devices' => $licensingOptions['central_error']]);
         }
 
-        $enabledServices = $licensingOptions['enabled_services'];
         $subscriptionsByKey = $licensingOptions['subscriptions_by_key'];
         $cachedPayload = $licensingInventoryService->buildFromCache($deployment->client, []);
-        $inventoryDevices = array_map(
-            fn (array $device): array => [
-                'serial' => $device['serial'],
-                'subscription_key' => $device['subscription_key'],
-                'services' => $device['assigned_services'],
-            ],
-            $cachedPayload['devices'],
-        );
+        $inventoryBySerial = collect($cachedPayload['devices'])->keyBy('serial');
 
         $attachData = [];
-        $taskServiceName = null;
+        $taskGreenlakeSubscriptionId = null;
         $taskSubscriptionKey = null;
 
         if ($licensingMode === 'per_device') {
@@ -1085,36 +1083,33 @@ class TaskController extends Controller
                     continue;
                 }
 
+                $serial = (string) $selectedDevices->get($deviceId)->serial;
+                $inventoryRow = $inventoryBySerial->get($serial);
+
                 if ($isAssign) {
                     $subscriptionKey = trim((string) ($row['subscription_key'] ?? ''));
                     if ($subscriptionKey === '') {
                         throw ValidationException::withMessages(['devices' => 'Each device must have a license selected.']);
                     }
 
-                    $resolved = $licensingSubscriptionResolver->resolveServiceName(
-                        $subscriptionKey,
-                        $enabledServices,
-                        $subscriptionsByKey,
-                        $inventoryDevices,
-                    );
-                    if (isset($resolved['error'])) {
-                        throw ValidationException::withMessages(['devices' => $resolved['error']]);
+                    $greenlakeSubscriptionId = $this->resolveGreenlakeSubscriptionId($subscriptionsByKey, $subscriptionKey);
+                    if ($greenlakeSubscriptionId === null) {
+                        throw ValidationException::withMessages(['devices' => 'Selected subscription is not linked in GreenLake. Renew licensing and try again.']);
                     }
 
                     $attachData[$deviceId] = [
                         'status' => 'PENDING',
-                        'licensing_service_name' => $resolved['service_name'],
+                        'licensing_service_name' => $greenlakeSubscriptionId,
                     ];
                 } else {
-                    $serviceName = trim((string) ($row['service_name'] ?? ''));
-                    if ($serviceName === '' || ! in_array($serviceName, $enabledServices, true)) {
-                        throw ValidationException::withMessages(['devices' => 'Each device must have a valid service to unassign.']);
+                    $subscriptionKey = is_array($inventoryRow)
+                        ? trim((string) ($inventoryRow['subscription_key'] ?? ''))
+                        : '';
+                    if ($subscriptionKey === '') {
+                        throw ValidationException::withMessages(['devices' => "Device {$serial} has no subscription to remove."]);
                     }
 
-                    $attachData[$deviceId] = [
-                        'status' => 'PENDING',
-                        'licensing_service_name' => $serviceName,
-                    ];
+                    $attachData[$deviceId] = ['status' => 'PENDING'];
                 }
             }
         } else {
@@ -1133,29 +1128,18 @@ class TaskController extends Controller
                     throw ValidationException::withMessages(['subscription_key' => $capacityError['error']]);
                 }
 
-                $resolved = $licensingSubscriptionResolver->resolveServiceName(
-                    $subscriptionKey,
-                    $enabledServices,
-                    $subscriptionsByKey,
-                    $inventoryDevices,
-                );
-                if (isset($resolved['error'])) {
-                    throw ValidationException::withMessages(['subscription_key' => $resolved['error']]);
+                $taskGreenlakeSubscriptionId = $this->resolveGreenlakeSubscriptionId($subscriptionsByKey, $subscriptionKey);
+                if ($taskGreenlakeSubscriptionId === null) {
+                    throw ValidationException::withMessages(['subscription_key' => 'Selected subscription is not linked in GreenLake. Renew licensing and try again.']);
                 }
 
-                $taskServiceName = $resolved['service_name'];
                 $taskSubscriptionKey = $subscriptionKey;
-            } else {
-                $taskServiceName = trim((string) ($validated['service_name'] ?? ''));
-                if ($taskServiceName === '' || ! in_array($taskServiceName, $enabledServices, true)) {
-                    throw ValidationException::withMessages(['service_name' => 'Select a valid service to unassign.']);
-                }
             }
 
             foreach ($deviceIds as $deviceId) {
                 $attachData[$deviceId] = ['status' => 'PENDING'];
-                if (! $isAssign) {
-                    $attachData[$deviceId]['licensing_service_name'] = $taskServiceName;
+                if ($isAssign && $taskGreenlakeSubscriptionId !== null) {
+                    $attachData[$deviceId]['licensing_service_name'] = $taskGreenlakeSubscriptionId;
                 }
             }
         }
@@ -1164,19 +1148,13 @@ class TaskController extends Controller
             throw ValidationException::withMessages(['devices' => 'Select at least one device.']);
         }
 
-        if ($isAssign && $licensingMode === 'uniform') {
-            foreach ($deviceIds as $deviceId) {
-                $attachData[$deviceId]['licensing_service_name'] = $taskServiceName;
-            }
-        }
-
         $task = $deployment->tasks()->create([
             'task_type' => $validated['task_type'],
             'name' => 'task_for_'.$deployment->name.now(),
             'deployment_time' => $validated['deployment_time'],
             'status' => 'IN_PROGRESS',
             'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
-            'licensing_service_name' => $taskServiceName,
+            'licensing_service_name' => $taskGreenlakeSubscriptionId,
             'licensing_subscription_key' => $taskSubscriptionKey,
         ]);
 
@@ -1806,34 +1784,55 @@ class TaskController extends Controller
                 break;
             case 'ASSIGN_SUBSCRIPTION':
             case 'UNASSIGN_SUBSCRIPTION':
+                $greenLakeAPIHelper = new GreenLakeAPIHelper($task->deployment->client);
+                $inventoryBySerial = collect(
+                    $this->licensingInventoryDevicesForTask($task),
+                )->keyBy('serial');
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
-                $devices_by_service = $in_progress->groupBy(function ($device) use ($task): string {
-                    $service = trim((string) ($device->pivot->licensing_service_name ?? ''));
-                    if ($service === '') {
-                        $service = trim((string) ($task->licensing_service_name ?? ''));
-                    }
+                $isAssign = $task->task_type === 'ASSIGN_SUBSCRIPTION';
+                if ($isAssign) {
+                    $devices_by_subscription = $in_progress->groupBy(function ($device) use ($task): string {
+                        $subscriptionId = trim((string) ($device->pivot->licensing_service_name ?? ''));
+                        if ($subscriptionId === '') {
+                            $subscriptionId = trim((string) ($task->licensing_service_name ?? ''));
+                        }
 
-                    return $service;
-                })->filter(fn ($group, string $service) => $service !== '');
-                $jobClass = $task->task_type === 'ASSIGN_SUBSCRIPTION'
-                    ? AssignSubscriptionJob::class
-                    : UnassignSubscriptionJob::class;
-                $subscriptionJobs = [];
-                foreach ($devices_by_service as $serviceName => $serviceDevices) {
-                    foreach ($serviceDevices->chunk(25) as $deviceChunk) {
-                        $subscriptionJobs[] = new $jobClass(
+                        return $subscriptionId;
+                    })->filter(fn ($group, string $subscriptionId) => $subscriptionId !== '');
+                    $subscriptionJobs = [];
+                    foreach ($devices_by_subscription as $subscriptionId => $subscriptionDevices) {
+                        foreach ($subscriptionDevices->chunk(25) as $deviceChunk) {
+                            $subscriptionJobs[] = new AssignSubscriptionJob(
+                                $deviceChunk->map(fn ($device) => [
+                                    'id' => $device->id,
+                                    'serial' => $device->serial,
+                                    'greenlake_device_id' => (string) ($inventoryBySerial->get($device->serial)['greenlake_device_id'] ?? ''),
+                                ])->all(),
+                                (string) $subscriptionId,
+                                $task,
+                                $greenLakeAPIHelper,
+                            );
+                        }
+                    }
+                    if ($subscriptionJobs !== []) {
+                        $jobs[] = $subscriptionJobs;
+                    }
+                } else {
+                    $subscriptionJobs = [];
+                    foreach ($in_progress->chunk(25) as $deviceChunk) {
+                        $subscriptionJobs[] = new UnassignSubscriptionJob(
                             $deviceChunk->map(fn ($device) => [
                                 'id' => $device->id,
                                 'serial' => $device->serial,
+                                'greenlake_device_id' => (string) ($inventoryBySerial->get($device->serial)['greenlake_device_id'] ?? ''),
                             ])->all(),
-                            (string) $serviceName,
                             $task,
-                            $centralAPIHelper,
+                            $greenLakeAPIHelper,
                         );
                     }
-                }
-                if ($subscriptionJobs !== []) {
-                    $jobs[] = $subscriptionJobs;
+                    if ($subscriptionJobs !== []) {
+                        $jobs[] = $subscriptionJobs;
+                    }
                 }
                 break;
         }
@@ -1880,5 +1879,31 @@ class TaskController extends Controller
         }
 
         return $inProgress->filter(fn ($device) => $device->sku);
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $subscriptionsByKey
+     */
+    protected function resolveGreenlakeSubscriptionId(array $subscriptionsByKey, string $subscriptionKey): ?string
+    {
+        $subscription = $subscriptionsByKey[$subscriptionKey] ?? null;
+        if (! is_array($subscription)) {
+            return null;
+        }
+
+        $id = trim((string) ($subscription['greenlake_subscription_id'] ?? ''));
+
+        return $id !== '' ? $id : null;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    protected function licensingInventoryDevicesForTask(Task $task): array
+    {
+        $task->loadMissing('deployment.client');
+
+        return app(LicensingInventoryService::class)
+            ->buildFromCache($task->deployment->client, [])['devices'];
     }
 }
