@@ -42,6 +42,10 @@ class GreenLakeAPIHelper
             return ['error' => 'failed to get access token for GreenLake.'];
         }
 
+        $queryParameters = array_merge([
+            'select' => 'id,key,sku,tierDescription,quantity,availableQuantity,subscriptionStatus,productType,startTime,endTime,tags,tier',
+        ], $queryParameters);
+
         return Http::withToken($this->client->bearer_token)
             ->acceptJson()
             ->withQueryParameters($queryParameters)
@@ -234,18 +238,23 @@ class GreenLakeAPIHelper
     public function normalizeGreenLakeSubscription(array $item): array
     {
         $status = (string) ($item['subscriptionStatus'] ?? '');
-        $normalizedStatus = $this->normalizeSubscriptionStatus($status);
+        $normalizedStatus = self::normalizeSubscriptionStatus($status);
 
         return [
-            'subscription_key' => (string) ($item['key'] ?? ''),
+            'subscription_key' => (string) ($item['key'] ?? $item['subscriptionKey'] ?? ''),
             'subscription_sku' => (string) ($item['sku'] ?? ''),
             'license_type' => (string) ($item['tierDescription'] ?? ''),
             'start_date' => $this->normalizeDateTime($item['startTime'] ?? null),
             'end_date' => $this->normalizeDateTime($item['endTime'] ?? null),
             'status' => $normalizedStatus,
             'subscription_type' => (string) ($item['productType'] ?? ''),
-            'available' => (int) ($item['availableQuantity'] ?? 0),
-            'quantity' => (int) ($item['quantity'] ?? 0),
+            'available' => (int) (
+                $item['availableQuantity']
+                ?? $item['available']
+                ?? $item['unassignedQuantity']
+                ?? 0
+            ),
+            'quantity' => (int) ($item['quantity'] ?? $item['totalQuantity'] ?? 0),
             'acpapp_name' => '',
             'tags' => self::normalizeTagKeys($item['tags'] ?? []),
             'greenlake_subscription_id' => (string) ($item['id'] ?? ''),
@@ -253,18 +262,44 @@ class GreenLakeAPIHelper
         ];
     }
 
-    public function normalizeSubscriptionStatus(string $status): string
+    public static function normalizeSubscriptionStatus(string $status): string
     {
         $upper = strtoupper(trim($status));
         if ($upper === '') {
             return '';
         }
 
-        if (in_array($upper, ['ACTIVE', 'OK', 'VALID', 'ENABLED'], true)) {
+        if (in_array($upper, ['ACTIVE', 'OK', 'VALID', 'ENABLED', 'AVAILABLE', 'SUBSCRIBED', 'IN_USE', 'ASSIGNED'], true)) {
             return 'OK';
         }
 
         return $status;
+    }
+
+    public static function subscriptionIsAssignable(string $status): bool
+    {
+        $raw = trim($status);
+        if ($raw === '') {
+            return true;
+        }
+
+        if (self::normalizeSubscriptionStatus($raw) === 'OK') {
+            return true;
+        }
+
+        $upper = strtoupper($raw);
+
+        return ! in_array($upper, [
+            'EXPIRED',
+            'TERMINATED',
+            'CANCELLED',
+            'CANCELED',
+            'REVOKED',
+            'SUSPENDED',
+            'INACTIVE',
+            'FAILED',
+            'DISABLED',
+        ], true);
     }
 
     private function normalizeDateTime(mixed $value): ?int

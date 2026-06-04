@@ -104,9 +104,16 @@ class LicensingInventoryService
         $subscriptionsArray = $subscriptions->map(fn (ClientSubscription $s) => $s->toNormalizedArray())->all();
         $subscriptionsByKey = $this->indexNormalizedSubscriptions($subscriptionsArray);
 
+        $inventoryForAvailable = $client->licensingInventoryDevices()
+            ->get(['subscription_key'])
+            ->map(fn (LicensingInventoryDevice $row): array => [
+                'subscription_key' => $row->subscription_key,
+            ])
+            ->all();
+
         return [
             'enabled_services' => $client->licensing_enabled_services ?? [],
-            'available_subscriptions' => $this->buildAvailableSubscriptions($subscriptionsArray, []),
+            'available_subscriptions' => $this->buildAvailableSubscriptions($subscriptionsArray, $inventoryForAvailable),
             'subscriptions_by_key' => $subscriptionsByKey,
             'central_error' => $client->licensing_sync_error,
             'licensing_synced_at' => $client->licensing_synced_at?->toIso8601String(),
@@ -438,19 +445,37 @@ class LicensingInventoryService
      */
     private function buildAvailableSubscriptions(array $subscriptions, array $inventoryDevices): array
     {
-        $available = [];
+        $assignedByKey = [];
 
-        foreach ($subscriptions as $subscription) {
-            if ((int) ($subscription['available'] ?? 0) <= 0) {
+        foreach ($inventoryDevices as $device) {
+            if (! is_array($device)) {
                 continue;
             }
 
-            $status = strtoupper((string) ($subscription['status'] ?? ''));
-            if ($status !== '' && $status !== 'OK') {
+            $key = trim((string) ($device['subscription_key'] ?? ''));
+            if ($key === '') {
+                continue;
+            }
+
+            $assignedByKey[$key] = ($assignedByKey[$key] ?? 0) + 1;
+        }
+
+        $available = [];
+
+        foreach ($subscriptions as $subscription) {
+            if (! GreenLakeAPIHelper::subscriptionIsAssignable((string) ($subscription['status'] ?? ''))) {
+                continue;
+            }
+
+            $subscriptionKey = trim((string) ($subscription['subscription_key'] ?? ''));
+            $poolAvailable = $this->resolvePoolAvailableSeats($subscription, $assignedByKey);
+
+            if ($poolAvailable <= 0) {
                 continue;
             }
 
             $normalized = $subscription;
+            $normalized['available'] = $poolAvailable;
             $normalized['device_categories'] = $this->inferDeviceCategories((string) ($normalized['license_type'] ?? ''));
             $normalized['tags'] = GreenLakeAPIHelper::normalizeTagKeys($normalized['tags'] ?? []);
             $available[] = $normalized;
@@ -462,6 +487,20 @@ class LicensingInventoryService
         ));
 
         return $available;
+    }
+
+    /**
+     * @param  array<string, int>  $assignedByKey
+     */
+    private function resolvePoolAvailableSeats(array $subscription, array $assignedByKey): int
+    {
+        $subscriptionKey = trim((string) ($subscription['subscription_key'] ?? ''));
+        $fromApi = (int) ($subscription['available'] ?? 0);
+        $quantity = (int) ($subscription['quantity'] ?? 0);
+        $assigned = $subscriptionKey !== '' ? ($assignedByKey[$subscriptionKey] ?? 0) : 0;
+        $fromInventory = $quantity > 0 ? max(0, $quantity - $assigned) : 0;
+
+        return max($fromApi, $fromInventory);
     }
 
     /**

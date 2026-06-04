@@ -125,6 +125,7 @@ export default function LicenseSelect({
 
     return (
         <Select
+            key={subscriptions.map((s) => s.subscription_key).join('|') || 'empty'}
             value={value === '' ? undefined : value}
             onValueChange={onChange}
             disabled={isDisabled}

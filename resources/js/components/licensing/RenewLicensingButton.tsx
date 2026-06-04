@@ -36,6 +36,21 @@ export default function RenewLicensingButton({
             {},
             {
                 preserveScroll: true,
+                onSuccess: () => {
+                    router.reload({
+                        only: [
+                            'devices',
+                            'available_subscriptions',
+                            'subscription_summary',
+                            'filter_options',
+                            'enabled_services',
+                            'licensing_synced_at',
+                            'central_error',
+                            'filters',
+                            'has_active_filters',
+                        ],
+                    });
+                },
                 onFinish: () => setIsRenewing(false),
             },
         );

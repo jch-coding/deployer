@@ -19,6 +19,13 @@ test('normalizeTagKeys extracts keys from key-value maps and objects', function 
     expect(GreenLakeAPIHelper::normalizeTagKeys(['legacy-key-only']))->toBe(['legacy-key-only']);
 });
 
+test('subscriptionIsAssignable accepts common GreenLake statuses', function () {
+    expect(GreenLakeAPIHelper::subscriptionIsAssignable('ACTIVE'))->toBeTrue()
+        ->and(GreenLakeAPIHelper::subscriptionIsAssignable('SUBSCRIBED'))->toBeTrue()
+        ->and(GreenLakeAPIHelper::subscriptionIsAssignable(''))->toBeTrue()
+        ->and(GreenLakeAPIHelper::subscriptionIsAssignable('EXPIRED'))->toBeFalse();
+});
+
 test('parseSubscriptions normalizes GreenLake items', function () {
     $client = Client::factory()->create([
         'bearer_token' => 'test-token',

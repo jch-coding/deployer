@@ -98,7 +98,7 @@ class LicensingController extends Controller
             session()->flash('error', $e->getMessage());
         }
 
-        return back();
+        return to_route('licensing.index', $request->query());
     }
 
     public function assign(

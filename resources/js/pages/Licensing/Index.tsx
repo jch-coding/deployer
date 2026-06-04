@@ -175,10 +175,19 @@ export default function Index() {
     );
 
     useEffect(() => {
-        if (
-            available_subscriptions.length > 0 &&
-            !available_subscriptions.some((s) => s.subscription_key === selectedSubscriptionKey)
-        ) {
+        if (available_subscriptions.length === 0) {
+            if (selectedSubscriptionKey !== '') {
+                setSelectedSubscriptionKey('');
+            }
+
+            return;
+        }
+
+        const hasSelection = available_subscriptions.some(
+            (s) => s.subscription_key === selectedSubscriptionKey,
+        );
+
+        if (!hasSelection) {
             setSelectedSubscriptionKey(available_subscriptions[0].subscription_key);
         }
     }, [available_subscriptions, selectedSubscriptionKey]);
@@ -647,6 +656,7 @@ export default function Index() {
                             Available license
                         </label>
                         <LicenseSelect
+                            key={`license-select-${available_subscriptions.length}-${available_subscriptions[0]?.subscription_key ?? 'none'}`}
                             id="licensing-license"
                             value={selectedSubscriptionKey}
                             subscriptions={available_subscriptions}

@@ -66,6 +66,12 @@ test('licensing renew syncs data from central into database', function () {
         ->and($this->client->licensing_enabled_services)->toContain('advanced_ap')
         ->and(ClientSubscription::where('client_id', $this->client->id)->count())->toBe(1)
         ->and(LicensingInventoryDevice::where('client_id', $this->client->id)->count())->toBe(1);
+
+    $this->get(route('licensing.index'))
+        ->assertOk()
+        ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->has('available_subscriptions', 1)
+            ->where('available_subscriptions.0.subscription_key', 'KEY-RENEW'));
 });
 
 test('licensing renew persists paginated GreenLake subscriptions and devices', function () {

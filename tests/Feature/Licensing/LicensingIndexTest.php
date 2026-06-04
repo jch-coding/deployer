@@ -235,6 +235,77 @@ test('licensing assign patches GreenLake devices with subscription id', function
     });
 });
 
+test('licensing index keeps GreenLake available seats when inventory assignment count is higher', function () {
+    $this->client->update([
+        'licensing_synced_at' => now(),
+        'licensing_enabled_services' => ['advanced_ap'],
+    ]);
+
+    $this->client->clientSubscriptions()->create([
+        'subscription_key' => 'KEY-API',
+        'subscription_sku' => 'Q9Y65AAE',
+        'license_type' => 'Advanced AP',
+        'status' => 'OK',
+        'available' => 8,
+        'quantity' => 10,
+    ]);
+
+    foreach (range(1, 10) as $index) {
+        LicensingInventoryDevice::create([
+            'client_id' => $this->client->id,
+            'serial' => "SN-{$index}",
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'name' => "SN-{$index}",
+            'licensed' => true,
+            'assigned_services' => ['advanced_ap'],
+            'subscription_key' => 'KEY-API',
+        ]);
+    }
+
+    $this->get(route('licensing.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('available_subscriptions', 1)
+            ->where('available_subscriptions.0.subscription_key', 'KEY-API')
+            ->where('available_subscriptions.0.available', 8));
+});
+
+test('licensing index lists pools with open seats when GreenLake available quantity is zero', function () {
+    $this->client->update([
+        'licensing_synced_at' => now(),
+        'licensing_enabled_services' => ['advanced_ap'],
+    ]);
+
+    $this->client->clientSubscriptions()->create([
+        'subscription_key' => 'KEY-POOL',
+        'subscription_sku' => 'Q9Y65AAE',
+        'license_type' => 'Advanced AP',
+        'status' => 'OK',
+        'available' => 0,
+        'quantity' => 10,
+        'tags' => ['pool-a'],
+    ]);
+
+    LicensingInventoryDevice::create([
+        'client_id' => $this->client->id,
+        'serial' => 'SN-ASSIGNED',
+        'model' => 'AP-515',
+        'device_type' => 'IAP',
+        'name' => 'SN-ASSIGNED',
+        'licensed' => true,
+        'assigned_services' => ['advanced_ap'],
+        'subscription_key' => 'KEY-POOL',
+    ]);
+
+    $this->get(route('licensing.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('available_subscriptions', 1)
+            ->where('available_subscriptions.0.subscription_key', 'KEY-POOL')
+            ->where('available_subscriptions.0.available', 9));
+});
+
 test('licensing index filters by serial number device name subscription key tags and model', function () {
     seedLicensingCache(
         $this->client,
