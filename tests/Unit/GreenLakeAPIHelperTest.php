@@ -63,6 +63,24 @@ test('parseSubscriptions normalizes GreenLake items', function () {
         ->and($result['subscriptions'][0]['tags'])->toBe(['pool-a', 'pool-b']);
 });
 
+test('handleBearerTokenAuth refreshes when bearer token is blank but expiry is still valid', function () {
+    $client = Client::factory()->create([
+        'client_id' => 'gl-client-id',
+        'client_secret' => 'gl-client-secret',
+        'bearer_token' => null,
+        'expires_at' => now()->addHour(),
+    ]);
+
+    Http::fake([
+        'https://sso.common.cloud.hpe.com/as/token.oauth2' => Http::response([
+            'access_token' => 'fresh-token',
+        ], 200),
+    ]);
+
+    expect($client->handleBearerTokenAuth())->toBeTrue()
+        ->and($client->refresh()->bearer_token)->toBe('fresh-token');
+});
+
 test('getSubscriptions returns error when bearer token unavailable', function () {
     $client = Client::factory()->create([
         'bearer_token' => null,
@@ -79,6 +97,39 @@ test('getSubscriptions returns error when bearer token unavailable', function ()
 
     expect($result)->toBeArray()
         ->and($result)->toHaveKey('error');
+});
+
+test('collectSubscriptions uses API-friendly page size by default', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake(function (Request $request) {
+        if (! str_contains($request->url(), '/subscriptions/v1/subscriptions') || $request->method() !== 'GET') {
+            return Http::response([], 404);
+        }
+
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        if ((int) ($query['limit'] ?? 0) > 100) {
+            return Http::response(['message' => 'limit too large'], 400);
+        }
+
+        return Http::response([
+            'items' => [
+                ['id' => 'sub-1', 'key' => 'KEY-1', 'sku' => 'SKU-1', 'tierDescription' => 'AP', 'availableQuantity' => 1, 'quantity' => 1, 'subscriptionStatus' => 'ACTIVE'],
+            ],
+            'total' => 1,
+            'remainingRecords' => false,
+        ], 200);
+    });
+
+    $items = $helper->collectSubscriptions();
+
+    expect($items)->toHaveCount(1)
+        ->and($items[0]['key'])->toBe('KEY-1');
 });
 
 test('collectSubscriptions paginates until all items are fetched', function () {

@@ -53,6 +53,7 @@ class Client extends Model
         return [
             'licensing_enabled_services' => 'array',
             'licensing_synced_at' => 'datetime',
+            'expires_at' => 'datetime',
             'classic_base_url' => ClassicBaseUrl::class,
             'current' => 'boolean',
             'client_secret' => 'encrypted',
@@ -78,23 +79,28 @@ class Client extends Model
 
     public function handleBearerTokenAuth(bool $force = false)
     {
-        if ($force || $this->expires_at === null || $this->expires_at < now()) {
-            $response = Http::asForm()->post($this->auth_url, [
-                'grant_type' => 'client_credentials',
-                'client_id' => $this->client_id,
-                'client_secret' => $this->client_secret,
-            ]);
+        $needsToken = $force
+            || blank($this->bearer_token)
+            || $this->expires_at === null
+            || $this->expires_at < now();
 
-            if ($response->ok()) {
-                $this->bearer_token = $response->json('access_token');
-                $this->expires_at = now()->addHour();
-                $this->save();
-            }
-
-            return $response->ok();
+        if (! $needsToken) {
+            return true;
         }
 
-        return true;
+        $response = Http::asForm()->post($this->auth_url, [
+            'grant_type' => 'client_credentials',
+            'client_id' => $this->client_id,
+            'client_secret' => $this->client_secret,
+        ]);
+
+        if ($response->ok()) {
+            $this->bearer_token = $response->json('access_token');
+            $this->expires_at = now()->addHour();
+            $this->save();
+        }
+
+        return $response->ok() && ! blank($this->bearer_token);
     }
 
     public function handleClassicBearerToken(bool $force = false)

@@ -43,6 +43,7 @@ class GreenLakeAPIHelper
         }
 
         return Http::withToken($this->client->bearer_token)
+            ->acceptJson()
             ->withQueryParameters($queryParameters)
             ->get($this->apiUrl($this->subscriptions['list']));
     }
@@ -87,9 +88,11 @@ class GreenLakeAPIHelper
     }
 
     /**
+     * GreenLake subscription list defaults to 50 per page; large limit values can be rejected.
+     *
      * @return array<int, array<string, mixed>>|array{error: string}
      */
-    public function collectSubscriptions(int $limit = 1000): array
+    public function collectSubscriptions(int $limit = 50): array
     {
         $allItems = [];
         $offset = 0;
@@ -105,26 +108,18 @@ class GreenLakeAPIHelper
             }
 
             if (! $response->ok()) {
-                return ['error' => 'failed to get subscriptions from GreenLake.'];
+                return ['error' => $this->formatSubscriptionFetchError($response, $offset, $limit)];
             }
 
-            $pageItems = $response->json('items', []);
-            if (! is_array($pageItems)) {
-                $pageItems = [];
-            }
+            $pageItems = $this->parseSubscriptionPageItems($response);
 
             if ($pageItems === []) {
                 break;
             }
 
-            $allItems = array_merge($allItems, array_values(array_filter($pageItems, fn ($item) => is_array($item))));
+            $allItems = array_merge($allItems, $pageItems);
 
-            $total = $response->json('total');
-            if (is_numeric($total) && count($allItems) >= (int) $total) {
-                break;
-            }
-
-            if (count($pageItems) < $limit) {
+            if (! $this->shouldFetchNextSubscriptionPage($response, count($pageItems), $limit, count($allItems))) {
                 break;
             }
 
@@ -132,6 +127,59 @@ class GreenLakeAPIHelper
         }
 
         return $allItems;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseSubscriptionPageItems(Response $response): array
+    {
+        $items = $response->json('items', []);
+        if (! is_array($items)) {
+            $items = [];
+        }
+
+        return array_values(array_filter($items, fn ($item) => is_array($item)));
+    }
+
+    private function shouldFetchNextSubscriptionPage(
+        Response $response,
+        int $pageCount,
+        int $limit,
+        int $collectedTotal,
+    ): bool {
+        $remaining = $response->json('remainingRecords');
+        if ($remaining === false) {
+            return false;
+        }
+
+        if ($remaining === true) {
+            return true;
+        }
+
+        $total = $response->json('total') ?? $response->json('count');
+        if (is_numeric($total) && $collectedTotal >= (int) $total) {
+            return false;
+        }
+
+        return $pageCount >= $limit;
+    }
+
+    private function formatSubscriptionFetchError(Response $response, int $offset, int $limit): string
+    {
+        $message = $this->extractErrorMessage($response);
+
+        return "failed to get subscriptions from GreenLake (HTTP {$response->status()}, offset {$offset}, limit {$limit}): {$message}";
+    }
+
+    /**
+     * Distinguishes collect* error payloads from successful numeric lists.
+     */
+    public static function isCollectError(mixed $result): bool
+    {
+        return is_array($result)
+            && isset($result['error'])
+            && ! array_is_list($result);
     }
 
     /**

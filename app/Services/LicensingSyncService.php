@@ -33,7 +33,7 @@ class LicensingSyncService
         }
 
         $greenLakeSubscriptionItems = $greenLakeHelper->collectSubscriptions();
-        if (array_key_exists('error', $greenLakeSubscriptionItems)) {
+        if (GreenLakeAPIHelper::isCollectError($greenLakeSubscriptionItems)) {
             $error = (string) $greenLakeSubscriptionItems['error'];
             $this->recordSyncError($client, $error);
             throw new LicensingSyncException($error);
@@ -53,7 +53,7 @@ class LicensingSyncService
         );
 
         $greenLakeDevicesResult = $greenLakeHelper->collectDevices();
-        if (array_key_exists('error', $greenLakeDevicesResult)) {
+        if (GreenLakeAPIHelper::isCollectError($greenLakeDevicesResult)) {
             $error = (string) $greenLakeDevicesResult['error'];
             $this->recordSyncError($client, $error);
             throw new LicensingSyncException($error);
