@@ -5,6 +5,7 @@ use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DispatchController;
+use App\Http\Controllers\LicensingController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\TaskController;
 use App\Http\Resources\ClientResource;
@@ -70,6 +71,13 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(SiteController::class)->group(function () {
         Route::get('/sites', 'index')->name('sites.index');
+    });
+
+    Route::controller(LicensingController::class)->group(function () {
+        Route::get('/licensing', 'index')->name('licensing.index');
+        Route::post('/licensing/assign', 'assign')->name('licensing.assign');
+        Route::post('/licensing/unassign', 'unassign')->name('licensing.unassign');
+        Route::post('/licensing/queue', 'queue')->name('licensing.queue');
     });
 
     Route::controller(CentralApiExplorerController::class)->group(function () {

@@ -119,6 +119,8 @@ class Task extends Model
             'REMOVE_LOCAL_OVERRIDE_NTP_PROFILE',
             'REMOVE_LOCAL_OVERRIDE_STATIC_ROUTE',
             'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE',
+            'ASSIGN_SUBSCRIPTION',
+            'UNASSIGN_SUBSCRIPTION',
             'ADD_VLANS_FOR_DEVICE_GROUP',
             'CREATE_NEW_CENTRAL_CX_GROUP',
         ];
@@ -174,6 +176,10 @@ class Task extends Model
                 return 'Assign Device Function to Devices';
             case 'ADD_VLANS_TO_DEVICE_GROUP':
                 return 'Add VLANs to device groups';
+            case 'ASSIGN_SUBSCRIPTION':
+                return 'Assign Subscription';
+            case 'UNASSIGN_SUBSCRIPTION':
+                return 'Unassign Subscription';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Add VLANs to device group (single group)';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -224,6 +230,10 @@ class Task extends Model
                 return 'Assign device function to devices';
             case 'ADD_VLANS_TO_DEVICE_GROUP':
                 return 'Add VLAN templates to Central device groups by group name, or use a site prefix to target WHSE-{prefix}-ACCESS/CORE/MGMT/DMZ/SERVER.';
+            case 'ASSIGN_SUBSCRIPTION':
+                return 'Assign a Classic Central subscription service to selected devices.';
+            case 'UNASSIGN_SUBSCRIPTION':
+                return 'Unassign a Classic Central subscription service from selected devices.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Adds VLAN definitions to one Central device group.';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -266,6 +276,9 @@ class Task extends Model
                 return ['group'];
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
                 return ['group'];
+            case 'ASSIGN_SUBSCRIPTION':
+            case 'UNASSIGN_SUBSCRIPTION':
+                return ['name', 'serial', 'device_function'];
             default:
                 return [];
         }

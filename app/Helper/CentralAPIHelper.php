@@ -86,6 +86,7 @@ class CentralAPIHelper
         'unassign_subscription' => '/platform/licensing/v1/subscriptions/unassign',
         'assign_subscription' => '/platform/licensing/v1/subscriptions/assign',
         'subscription_status' => '/platform/licensing/v1/subscriptions/stats',
+        'device_inventory' => '/platform/device_inventory/v1/devices',
     ];
 
     public function __construct(public Client $client) {}
@@ -1800,33 +1801,142 @@ class CentralAPIHelper
         }
     }
 
+    /**
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
     public function classic_get_subscriptions()
     {
         if (! $this->client->handleClassicBearerToken()) {
             return ['error' => 'failed to get access token from central.'];
-        } else {
-            $response = Http::withToken($this->client->classic_access_token)
-                ->get($this->client->classic_base_url.$this->classic_subscription['subscriptions']);
-
-            return $response;
         }
+
+        return Http::withToken($this->client->classic_access_token)
+            ->get($this->client->classic_base_url.$this->classic_subscription['subscriptions']);
     }
 
+    /**
+     * @return array{subscriptions: array<int, array<string, mixed>>}|array{error: string}
+     */
+    public function classic_parse_subscriptions(mixed $response): array
+    {
+        if (is_array($response) && isset($response['error'])) {
+            return ['error' => (string) $response['error']];
+        }
+
+        if (! $response instanceof \Illuminate\Http\Client\Response || ! $response->ok()) {
+            return ['error' => 'failed to get subscriptions from central.'];
+        }
+
+        $subscriptions = $response->json('subscriptions', []);
+        if (! is_array($subscriptions)) {
+            $subscriptions = [];
+        }
+
+        return ['subscriptions' => $subscriptions];
+    }
+
+    /**
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
     public function classic_get_enabled_services()
     {
         if (! $this->client->handleClassicBearerToken()) {
             return ['error' => 'failed to get access token from central.'];
-        } else {
-            $response = Http::withToken($this->client->classic_access_token)
-                ->get($this->client->classic_base_url.$this->classic_subscription['enabled_services']);
-
-            return $response;
         }
+
+        return Http::withToken($this->client->classic_access_token)
+            ->get($this->client->classic_base_url.$this->classic_subscription['enabled_services']);
     }
 
     /**
-     * @param array $serials
-     * @param string $service_name can be retrieved using the classic_get_enabled_services() method. For devices, most likely advanced_ap, advanced_switch_6100, advanced_switch_8300_foundation_ap, etc. will be used.
+     * @return array{services: array<int, string>}|array{error: string}
+     */
+    public function classic_parse_enabled_services(mixed $response): array
+    {
+        if (is_array($response) && isset($response['error'])) {
+            return ['error' => (string) $response['error']];
+        }
+
+        if (! $response instanceof \Illuminate\Http\Client\Response || ! $response->ok()) {
+            return ['error' => 'failed to get enabled services from central.'];
+        }
+
+        $services = $response->json('services.services', []);
+        if (! is_array($services)) {
+            $services = [];
+        }
+
+        return ['services' => array_values(array_filter($services, fn ($service) => is_string($service) && $service !== ''))];
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
+    public function classic_get_device_inventory(array $queryParameters = [])
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $params = array_merge(['sku_type' => 'all'], $queryParameters);
+
+        return Http::withToken($this->client->classic_access_token)
+            ->withQueryParameters($params)
+            ->get($this->client->classic_base_url.$this->classic_subscription['device_inventory']);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    public function classic_collect_device_inventory(): array
+    {
+        $allDevices = [];
+        $limit = 100;
+        $offset = 0;
+
+        while (true) {
+            $response = $this->classic_get_device_inventory([
+                'limit' => $limit,
+                'offset' => $offset,
+            ]);
+
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch device inventory from Central.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get device inventory from central.'];
+            }
+
+            $pageDevices = $response->json('devices', []);
+            if (! is_array($pageDevices)) {
+                $pageDevices = [];
+            }
+
+            if ($pageDevices === []) {
+                break;
+            }
+
+            $allDevices = array_merge($allDevices, $pageDevices);
+
+            $total = $response->json('total');
+            if (is_numeric($total) && count($allDevices) >= (int) $total) {
+                break;
+            }
+
+            if (count($pageDevices) < $limit) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        return $allDevices;
+    }
+
+    /**
+     * @param  string  $service_name  can be retrieved using the classic_get_enabled_services() method. For devices, most likely advanced_ap, advanced_switch_6100, advanced_switch_8300_foundation_ap, etc. will be used.
      * @return \Illuminate\Http\Client\Response|array{error: string}
      */
     public function classic_unassign_subscription(array $serials, string $service_name)
@@ -1840,6 +1950,7 @@ class CentralAPIHelper
             return $response;
         }
     }
+
     public function classic_assign_subscription(array $serials, string $service_name)
     {
         if (! $this->client->handleClassicBearerToken()) {

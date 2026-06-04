@@ -7,6 +7,7 @@ use App\InterfaceKind;
 use App\JobQueueShard;
 use App\Jobs\AddVlansToDeviceGroup;
 use App\Jobs\AssignDeviceFunctionJob;
+use App\Jobs\AssignSubscriptionJob;
 use App\Jobs\AssociateDeviceToSiteJob;
 use App\Jobs\AssociateSiteAndNameJob;
 use App\Jobs\ConfigureEthernetInterface;
@@ -21,6 +22,7 @@ use App\Jobs\RemoveLocalOverrideLocalManagementProfileJob;
 use App\Jobs\RemoveLocalOverrideNTPJob;
 use App\Jobs\RemoveLocalOverrideStaticRouteJob;
 use App\Jobs\RemoveLocalOverrideVlansJob;
+use App\Jobs\UnassignSubscriptionJob;
 use App\Jobs\UpdateSystemInfo;
 use App\Models\Deployment;
 use App\Models\Device;
@@ -1615,6 +1617,22 @@ class TaskController extends Controller
                     }
                 }
                 $jobs[] = [new AddVlansToDeviceGroup($group, $vlans, $task, $centralAPIHelper)];
+                break;
+            case 'ASSIGN_SUBSCRIPTION':
+                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+                $chunked = array_chunk($in_progress->map(fn ($device) => ['id' => $device->id, 'serial' => $device->serial])->all(), 25);
+                $jobs[] = array_map(
+                    fn (array $devices) => new AssignSubscriptionJob($devices, $task, $centralAPIHelper),
+                    $chunked,
+                );
+                break;
+            case 'UNASSIGN_SUBSCRIPTION':
+                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+                $chunked = array_chunk($in_progress->map(fn ($device) => ['id' => $device->id, 'serial' => $device->serial])->all(), 25);
+                $jobs[] = array_map(
+                    fn (array $devices) => new UnassignSubscriptionJob($devices, $task, $centralAPIHelper),
+                    $chunked,
+                );
                 break;
         }
 
