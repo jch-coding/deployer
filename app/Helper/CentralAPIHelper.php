@@ -80,6 +80,14 @@ class CentralAPIHelper
         'groupsv3' => 'configuration/v3/groups',
     ];
 
+    public array $classic_subscription = [
+        'subscriptions' => '/platform/licensing/v1/subscriptions',
+        'enabled_services' => '/platform/licensing/v1/services/enabled',
+        'unassign_subscription' => '/platform/licensing/v1/subscriptions/unassign',
+        'assign_subscription' => '/platform/licensing/v1/subscriptions/assign',
+        'subscription_status' => '/platform/licensing/v1/subscriptions/stats',
+    ];
+
     public function __construct(public Client $client) {}
 
     /**
@@ -1787,6 +1795,71 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->classic_access_token)
                 ->withQueryParameters(['limit' => 20, 'offset' => 0])
                 ->get($this->client->classic_base_url.$this->classic_configuration['groups']);
+
+            return $response;
+        }
+    }
+
+    public function classic_get_subscriptions()
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->get($this->client->classic_base_url.$this->classic_subscription['subscriptions']);
+
+            return $response;
+        }
+    }
+
+    public function classic_get_enabled_services()
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->get($this->client->classic_base_url.$this->classic_subscription['enabled_services']);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param array $serials
+     * @param string $service_name can be retrieved using the classic_get_enabled_services() method. For devices, most likely advanced_ap, advanced_switch_6100, advanced_switch_8300_foundation_ap, etc. will be used.
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
+    public function classic_unassign_subscription(array $serials, string $service_name)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->post($this->client->classic_base_url.$this->classic_subscription['unassign_subscription'], ['serials' => $serials, 'service_name' => [$service_name]]);
+
+            return $response;
+        }
+    }
+    public function classic_assign_subscription(array $serials, string $service_name)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->post($this->client->classic_base_url.$this->classic_subscription['assign_subscription'], ['serials' => $serials, 'service_name' => [$service_name]]);
+
+            return $response;
+        }
+
+    }
+
+    public function classic_get_subscription_status()
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->classic_access_token)
+                ->get($this->client->classic_base_url.$this->classic_subscription['subscription_status']);
 
             return $response;
         }
