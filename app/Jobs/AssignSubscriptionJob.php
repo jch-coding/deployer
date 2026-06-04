@@ -12,8 +12,12 @@ class AssignSubscriptionJob extends BaseTaskJob
 {
     private const SERIALS_PER_REQUEST = 25;
 
-    public function __construct(public array $devices, public Task $task, public CentralAPIHelper $centralAPIHelper)
-    {
+    public function __construct(
+        public array $devices,
+        public string $serviceName,
+        public Task $task,
+        public CentralAPIHelper $centralAPIHelper,
+    ) {
         $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
     }
 
@@ -26,9 +30,9 @@ class AssignSubscriptionJob extends BaseTaskJob
 
     public function assignSubscriptions(): void
     {
-        $serviceName = trim((string) ($this->task->licensing_service_name ?? ''));
+        $serviceName = trim($this->serviceName);
         if ($serviceName === '') {
-            $message = 'No licensing service name configured for this task.';
+            $message = 'No licensing service name configured for this job.';
             Log::error($message);
             $this->task->processTaskStatusLog($message);
 
@@ -48,7 +52,7 @@ class AssignSubscriptionJob extends BaseTaskJob
                 }
                 $message = array_reduce(
                     $serials,
-                    fn (string $carry, string $serial) => $carry."\nAssigned subscription service {$serviceName} to device {$serial}",
+                    fn (string $carry, string $serial) => $carry."\nAssigned license ({$serviceName}) to device {$serial}",
                     ''
                 );
                 $this->task->processTaskStatusLog($message);
@@ -58,7 +62,7 @@ class AssignSubscriptionJob extends BaseTaskJob
                 }
                 $errorDetail = $this->formatSubscriptionError($response);
                 Log::error('Failed to assign subscription with error '.$errorDetail);
-                $this->task->processTaskStatusLog("\nFailed to assign subscription for service {$serviceName}: {$errorDetail}");
+                $this->task->processTaskStatusLog("\nFailed to assign license ({$serviceName}): {$errorDetail}");
             }
         }
 
@@ -67,7 +71,7 @@ class AssignSubscriptionJob extends BaseTaskJob
         if ($this->task->allTrackedItemsCompleted()) {
             $this->task->update(['status' => 'COMPLETED']);
         } elseif ($this->allTaskDevicesFailed()) {
-            $this->failTask('All devices failed subscription assignment.');
+            $this->failTask('All devices failed license assignment.');
         }
     }
 
@@ -93,6 +97,6 @@ class AssignSubscriptionJob extends BaseTaskJob
     {
         $this->logFailedException($exception);
         $this->markAllDevicesFailed();
-        $this->failTask('Failed assigning subscriptions. Task timed out or failed.');
+        $this->failTask('Failed assigning licenses. Task timed out or failed.');
     }
 }

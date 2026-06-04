@@ -26,7 +26,7 @@ class Task extends Model
 
     public function devices(): BelongsToMany
     {
-        return $this->belongsToMany(Device::class)->withPivot('status')->withTimestamps();
+        return $this->belongsToMany(Device::class)->withPivot('status', 'licensing_service_name')->withTimestamps();
     }
 
     public function deviceInterfaces(): BelongsToMany
@@ -231,9 +231,9 @@ class Task extends Model
             case 'ADD_VLANS_TO_DEVICE_GROUP':
                 return 'Add VLAN templates to Central device groups by group name, or use a site prefix to target WHSE-{prefix}-ACCESS/CORE/MGMT/DMZ/SERVER.';
             case 'ASSIGN_SUBSCRIPTION':
-                return 'Assign a Classic Central subscription service to selected devices.';
+                return 'Assign an available license to selected devices.';
             case 'UNASSIGN_SUBSCRIPTION':
-                return 'Unassign a Classic Central subscription service from selected devices.';
+                return 'Remove a license service from selected devices.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Adds VLAN definitions to one Central device group.';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
