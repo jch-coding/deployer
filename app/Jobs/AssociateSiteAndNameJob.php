@@ -30,6 +30,7 @@ class AssociateSiteAndNameJob extends BaseTaskJob
                 $sites_result = $this->centralAPIHelper->classic_get_sites();
                 if (isset($sites_result['error'])) {
                     Log::error($sites_result['error']);
+                    $this->task->processTaskStatusLog($sites_result['error'], true);
                     $this->fail($sites_result['error']);
 
                     return;
@@ -38,6 +39,7 @@ class AssociateSiteAndNameJob extends BaseTaskJob
                 $found_site = array_find($site_list, fn ($classic_site) => $classic_site['site_name'] === $this->device->site->name);
                 if (! $found_site) {
                     Log::error('Site '.$this->device->site->name.' not found in classic central');
+                    $this->task->processTaskStatusLog('Site '.$this->device->site->name.' not found in classic central', true);
                     $this->fail('Site '.$this->device->site->name.' not found in classic central');
 
                     return;
