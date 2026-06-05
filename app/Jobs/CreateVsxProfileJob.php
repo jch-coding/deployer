@@ -123,8 +123,7 @@ class CreateVsxProfileJob extends BaseTaskJob
 
             $response = $this->centralAPIHelper->post_vsx_profile(
                 $payload,
-                $siteScopeId,
-                CentralAPIHelper::deviceFunctionQueryValue($primary)
+                $siteScopeId
             );
 
             if (is_array($response) && array_key_exists('error', $response)) {

@@ -1144,6 +1144,26 @@ test('buildVsxProfilePayload builds paired keepalive ip mapping', function () {
         ->and($payload['peer2']['keepalive-device']['peer-ip'])->toBe('1.1.1.1');
 });
 
+test('post_vsx_profile sends site scope and service persona query parameters', function () {
+    Http::fake(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        expect($request->method())->toBe('POST')
+            ->and($query)->toMatchArray([
+                'object-type' => 'LOCAL',
+                'scope-id' => 'site-scope-99',
+                'device-function' => 'SERVICE_PERSONA',
+            ]);
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $response = $helper->post_vsx_profile(['name' => 'vsx-pair-1'], 'site-scope-99');
+
+    expect($response->ok())->toBeTrue();
+});
+
 test('ensureVsxKeepAliveVrf skips post when vrf exists at group scope', function () {
     Http::fake(function (Request $request) {
         if (str_contains($request->url(), 'device-groups')) {

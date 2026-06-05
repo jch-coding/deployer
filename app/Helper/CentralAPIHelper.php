@@ -556,7 +556,7 @@ class CentralAPIHelper
      *                              The keepalive interface/portchannel as well as the inter-switch-link portchannel can be configured as part of the vsx profile if they have not been configured yet.
      *                              If the keepalive interface/portchannel and/or the inter-switch-link portchannel has been configured, the objects can be omitted in the vsx profile.
      */
-    public function post_vsx_profile(array $vsx_profile = [], string $site_scope_id = '', ?string $device_function = null)
+    public function post_vsx_profile(array $vsx_profile = [], string $site_scope_id = '')
     {
         if (empty($site_scope_id)) {
             return ['error' => 'site scope id is required.'];
@@ -564,7 +564,7 @@ class CentralAPIHelper
         $queryParameters = [
             'scope-id' => $site_scope_id,
             'object-type' => 'LOCAL',
-            'device-function' => $device_function ?? 'SERVICE_PERSONA',
+            'device-function' => 'SERVICE_PERSONA',
         ];
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];

@@ -80,7 +80,10 @@ it('creates vsx profile and marks both devices completed on success', function (
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
     mockSuccessfulVsxPrerequisites($centralApi);
-    $centralApi->shouldReceive('post_vsx_profile')->once()->andReturn($successResponse);
+    $centralApi->shouldReceive('post_vsx_profile')
+        ->once()
+        ->with(Mockery::type('array'), 'site-scope-id')
+        ->andReturn($successResponse);
 
     $job = new CreateVsxProfileJob(
         'vsx-pair-1',
