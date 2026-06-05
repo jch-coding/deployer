@@ -2237,9 +2237,9 @@ class CentralAPIHelper
         return [
             'name' => '255',
             'routing' => true,
+            'vrf-forwarding' => self::VSX_KEEPALIVE_VRF,
             'ipv4' => [
                 'address' => $address,
-                'vrf-forwarding' => self::VSX_KEEPALIVE_VRF,
             ],
             'trunk-type' => 'LACP',
             'lacp' => ['mode' => 'ACTIVE'],
@@ -2279,9 +2279,38 @@ class CentralAPIHelper
     public static function vsxPortchannelMatchesExpected(array $expected, array $actual): array
     {
         $diffs = [];
-        static::compareVsxPortchannelNodes($expected, $actual, '', $diffs);
+        static::compareVsxPortchannelNodes($expected, static::normalizeVsxPortchannelActual($actual), '', $diffs);
 
         return $diffs;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected static function normalizeVsxPortchannelActual(array $actual): array
+    {
+        $normalized = $actual;
+
+        if (! array_key_exists('vrf-forwarding', $normalized) && is_array($actual['ipv4'] ?? null)) {
+            $vrf = $actual['ipv4']['vrf-forwarding'] ?? null;
+            if ($vrf !== null) {
+                $normalized['vrf-forwarding'] = $vrf;
+            }
+        }
+
+        if (isset($normalized['ipv4']) && is_array($normalized['ipv4'])) {
+            $normalized['ipv4'] = array_filter([
+                'address' => $normalized['ipv4']['address'] ?? null,
+            ], fn ($value) => $value !== null);
+        }
+
+        if (isset($normalized['lacp']) && is_array($normalized['lacp'])) {
+            $normalized['lacp'] = array_filter([
+                'mode' => $normalized['lacp']['mode'] ?? null,
+            ], fn ($value) => $value !== null);
+        }
+
+        return $normalized;
     }
 
     /**

@@ -1023,6 +1023,8 @@ test('buildVsxKeepaliveLagPayload uses role-specific keepalive address', functio
 
     expect($primary['ipv4']['address'])->toBe('1.1.1.1/30')
         ->and($secondary['ipv4']['address'])->toBe('1.1.1.2/30')
+        ->and($primary['vrf-forwarding'])->toBe('WHSE-VSX-Keep-Alive')
+        ->and($primary['ipv4'])->not->toHaveKey('vrf-forwarding')
         ->and($primary['port-list'])->toBe($ports);
 });
 
@@ -1081,6 +1083,37 @@ test('vsxPortchannelMatchesExpected reports mismatched keepalive ip', function (
 
     expect($diffs)->not->toBeEmpty()
         ->and($diffs[0]['path'])->toBe('ipv4.address');
+});
+
+test('vsxPortchannelMatchesExpected accepts central keepalive portchannel shape', function () {
+    $expected = CentralAPIHelper::buildVsxKeepaliveLagPayload(['1/1/23', '1/1/24'], App\VsxRole::VSX_SECONDARY);
+    $actual = [
+        'name' => '255',
+        'port-list' => ['1/1/24', '1/1/23'],
+        'enable' => true,
+        'description' => 'NY1-MDF-SVR-SW1 [VSX Keep-Alive]',
+        'routing' => true,
+        'vrf-forwarding' => 'WHSE-VSX-Keep-Alive',
+        'lacp' => [
+            'mode' => 'ACTIVE',
+            'fallback-static' => false,
+            'rate' => 'SLOW',
+        ],
+        'ip' => ['mtu' => 1500],
+        'ipv4' => ['address' => '1.1.1.2/30'],
+        'ip-directed-broadcast-enable' => false,
+        'vsx' => ['shutdown-on-split' => false],
+        'trunk-type' => 'LACP',
+        'metadata' => [
+            'count_objects_in_module' => [
+                'LOCAL' => 2,
+                'SHARED' => 0,
+                'ANY' => 2,
+            ],
+        ],
+    ];
+
+    expect(CentralAPIHelper::vsxPortchannelMatchesExpected($expected, $actual))->toBe([]);
 });
 
 test('buildVsxProfilePayload builds paired keepalive ip mapping', function () {
