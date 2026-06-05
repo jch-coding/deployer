@@ -26,7 +26,12 @@ class Task extends Model
 
     public function devices(): BelongsToMany
     {
-        return $this->belongsToMany(Device::class)->withPivot('status', 'licensing_service_name')->withTimestamps();
+        return $this->belongsToMany(Device::class)->withPivot(
+            'status',
+            'licensing_service_name',
+            'license_tag',
+            'license_type',
+        )->withTimestamps();
     }
 
     public function deviceInterfaces(): BelongsToMany
@@ -236,7 +241,7 @@ class Task extends Model
             case 'ADD_VLANS_TO_DEVICE_GROUP':
                 return 'Add VLAN templates to Central device groups by group name, or use a site prefix to target WHSE-{prefix}-ACCESS/CORE/MGMT/DMZ/SERVER.';
             case 'ASSIGN_SUBSCRIPTION':
-                return 'Assign an available license to selected devices.';
+                return 'Assign licenses from a tag and license type pool to selected devices.';
             case 'UNASSIGN_SUBSCRIPTION':
                 return 'Remove a license service from selected devices.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
@@ -264,7 +269,7 @@ class Task extends Model
             case 'CREATE_VSF_PROFILE':
                 return ['name', 'serial', 'device_function', 'interface', 'sku'];
             case 'CREATE_VSX_PROFILE':
-                return ['name', 'serial', 'device_function', 'group', 'vsx_profile', 'vsx_role', 'vsx_system_mac'];
+                return ['name', 'serial', 'device_function', 'group', 'site', 'vsx_profile', 'vsx_role', 'vsx_system_mac'];
             case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
                 return ['name', 'serial', 'device_function'];
             case 'ASSOCIATE_DEVICE_TO_SITE':

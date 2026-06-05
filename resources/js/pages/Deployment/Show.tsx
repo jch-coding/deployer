@@ -4,6 +4,7 @@ import { Download, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { toast } from 'sonner';
+import type { LicenseTypeOption } from '@/lib/license-types';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
 import { Button } from '@/components/ui/button';
@@ -74,6 +75,44 @@ type Task = {
     required_columns: string[];
 };
 
+function formatCsvUploadErrorMessage(message: string | string[]): string {
+    return Array.isArray(message) ? message.join(' ') : message;
+}
+
+function groupCsvUploadErrors(
+    errors: Record<string, string | string[]>,
+): {
+    headerErrors: Array<{ key: string; message: string }>;
+    rowErrors: Array<{ key: string; message: string }>;
+    otherErrors: Array<{ key: string; message: string }>;
+} {
+    const headerErrors: Array<{ key: string; message: string }> = [];
+    const rowErrors: Array<{ key: string; message: string }> = [];
+    const otherErrors: Array<{ key: string; message: string }> = [];
+
+    for (const [key, message] of Object.entries(errors)) {
+        const entry = {
+            key,
+            message: formatCsvUploadErrorMessage(message),
+        };
+        if (key.startsWith('CSV headers:')) {
+            headerErrors.push(entry);
+        } else if (key.startsWith('Row ')) {
+            rowErrors.push(entry);
+        } else {
+            otherErrors.push(entry);
+        }
+    }
+
+    rowErrors.sort((a, b) => {
+        const rowA = Number.parseInt(a.key.match(/^Row (\d+)/)?.[1] ?? '0', 10);
+        const rowB = Number.parseInt(b.key.match(/^Row (\d+)/)?.[1] ?? '0', 10);
+        return rowA - rowB || a.key.localeCompare(b.key);
+    });
+
+    return { headerErrors, rowErrors, otherErrors };
+}
+
 type DeploymentPageProps = {
     devices: Paginator<DeviceDef>;
     device_search?: string;
@@ -83,6 +122,8 @@ type DeploymentPageProps = {
     latest_tasks: Task[];
     available_subscriptions: AvailableSubscription[];
     enabled_services: string[];
+    license_tags: string[];
+    license_type_options: string[];
     central_licensing_error: string | null;
     licensing_synced_at: string | null;
 } & SharedData;
@@ -126,6 +167,8 @@ export default function Show() {
     const {
         available_subscriptions = [],
         enabled_services = [],
+        license_tags = [],
+        license_type_options = [],
         central_licensing_error,
         licensing_synced_at = null,
     } = usePage<DeploymentPageProps>().props;
@@ -265,6 +308,8 @@ export default function Show() {
         'CREATE_VSF_PROFILE',
         'CREATE_VSX_PROFILE',
         'ADD_VLANS_TO_DEVICE_GROUP',
+        'ASSIGN_SUBSCRIPTION',
+        'UNASSIGN_SUBSCRIPTION',
     ]);
 
     const isDeviceBasedTask = (task_type: string) =>
@@ -450,6 +495,16 @@ export default function Show() {
                                             ? licensing_synced_at
                                             : undefined
                                     }
+                                    license_tags={
+                                        task.task_type === 'ASSIGN_SUBSCRIPTION'
+                                            ? license_tags
+                                            : undefined
+                                    }
+                                    license_type_options={
+                                        task.task_type === 'ASSIGN_SUBSCRIPTION'
+                                            ? (license_type_options as LicenseTypeOption[])
+                                            : undefined
+                                    }
                                 />
                             );
                         })}
@@ -508,14 +563,57 @@ export default function Show() {
                                     disabled={submitting}
                                 />
                                 {errors && Object.keys(errors).length > 0 && (
-                                    <div className="space-y-1 text-xs text-red-500">
-                                        {Object.entries(errors).map(([key, message]) => (
-                                            <p key={key}>
-                                                {Array.isArray(message)
-                                                    ? `${key}: ${message.join(' ')}`
-                                                    : `${key}: ${message}`}
-                                            </p>
-                                        ))}
+                                    <div className="space-y-2 text-xs text-red-500">
+                                        {(() => {
+                                            const {
+                                                headerErrors,
+                                                rowErrors,
+                                                otherErrors,
+                                            } = groupCsvUploadErrors(errors);
+
+                                            return (
+                                                <>
+                                                    {headerErrors.length > 0 && (
+                                                        <div className="space-y-1">
+                                                            <p className="font-medium">
+                                                                CSV header issues
+                                                            </p>
+                                                            {headerErrors.map(
+                                                                ({ key, message }) => (
+                                                                    <p key={key}>
+                                                                        {message}
+                                                                    </p>
+                                                                ),
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {rowErrors.length > 0 && (
+                                                        <div className="space-y-1">
+                                                            <p className="font-medium">
+                                                                Row issues
+                                                            </p>
+                                                            {rowErrors.map(
+                                                                ({ key, message }) => (
+                                                                    <p key={key}>
+                                                                        <span className="font-medium">
+                                                                            {key}:
+                                                                        </span>{' '}
+                                                                        {message}
+                                                                    </p>
+                                                                ),
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {otherErrors.map(
+                                                        ({ key, message }) => (
+                                                            <p key={key}>
+                                                                {key}: {message}
+                                                            </p>
+                                                        ),
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 )}
                                 <DialogFooter className="mt-4 flex-row-reverse sm:justify-start">

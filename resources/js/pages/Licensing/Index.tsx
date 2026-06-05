@@ -9,6 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
+import {
+    PaginationEllipsis,
+    PaginationItem,
+    PaginationLink,
+} from '@/components/ui/pagination';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import LicenseSelect, {
@@ -126,6 +131,45 @@ function licensedBadgeClass(licensed: boolean): string {
         : 'bg-amber-100 text-amber-800 border-amber-200';
 }
 
+type PaginationPageItem = number | 'ellipsis';
+
+function getVisiblePageNumbers(currentPageIndex: number, totalPages: number): PaginationPageItem[] {
+    if (totalPages <= 1) {
+        return totalPages === 1 ? [1] : [];
+    }
+
+    const currentPage = currentPageIndex + 1;
+    const delta = 2;
+    const range: number[] = [];
+    const rangeWithDots: PaginationPageItem[] = [];
+    let previousPage: number | undefined;
+
+    for (let page = 1; page <= totalPages; page++) {
+        if (
+            page === 1 ||
+            page === totalPages ||
+            (page >= currentPage - delta && page <= currentPage + delta)
+        ) {
+            range.push(page);
+        }
+    }
+
+    for (const page of range) {
+        if (previousPage !== undefined) {
+            if (page - previousPage === 2) {
+                rangeWithDots.push(previousPage + 1);
+            } else if (page - previousPage !== 1) {
+                rangeWithDots.push('ellipsis');
+            }
+        }
+
+        rangeWithDots.push(page);
+        previousPage = page;
+    }
+
+    return rangeWithDots;
+}
+
 export default function Index() {
     const {
         current_client,
@@ -228,6 +272,10 @@ export default function Index() {
     }, [filteredDevices, pageIndex, pageSize]);
 
     const totalPages = Math.max(1, Math.ceil(filteredDevices.length / pageSize));
+    const visiblePageNumbers = useMemo(
+        () => getVisiblePageNumbers(pageIndex, totalPages),
+        [pageIndex, totalPages],
+    );
 
     const updateServerFilter = useCallback((patch: Partial<LicensingServerFilters>) => {
         setLocalFilters((prev) => ({ ...prev, ...patch }));
@@ -541,30 +589,62 @@ export default function Index() {
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <Input
-                        type="date"
-                        value={localFilters.start_date_from}
-                        onChange={(e) => updateServerFilter({ start_date_from: e.target.value })}
-                        aria-label="Start date from"
-                    />
-                    <Input
-                        type="date"
-                        value={localFilters.start_date_to}
-                        onChange={(e) => updateServerFilter({ start_date_to: e.target.value })}
-                        aria-label="Start date to"
-                    />
-                    <Input
-                        type="date"
-                        value={localFilters.end_date_from}
-                        onChange={(e) => updateServerFilter({ end_date_from: e.target.value })}
-                        aria-label="End date from"
-                    />
-                    <Input
-                        type="date"
-                        value={localFilters.end_date_to}
-                        onChange={(e) => updateServerFilter({ end_date_to: e.target.value })}
-                        aria-label="End date to"
-                    />
+                    <div>
+                        <label
+                            className="mb-1 block text-sm font-medium"
+                            htmlFor="licensing-start-date-from"
+                        >
+                            Start date from
+                        </label>
+                        <Input
+                            id="licensing-start-date-from"
+                            type="date"
+                            value={localFilters.start_date_from}
+                            onChange={(e) => updateServerFilter({ start_date_from: e.target.value })}
+                        />
+                    </div>
+                    <div>
+                        <label
+                            className="mb-1 block text-sm font-medium"
+                            htmlFor="licensing-start-date-to"
+                        >
+                            Start date to
+                        </label>
+                        <Input
+                            id="licensing-start-date-to"
+                            type="date"
+                            value={localFilters.start_date_to}
+                            onChange={(e) => updateServerFilter({ start_date_to: e.target.value })}
+                        />
+                    </div>
+                    <div>
+                        <label
+                            className="mb-1 block text-sm font-medium"
+                            htmlFor="licensing-end-date-from"
+                        >
+                            End date from
+                        </label>
+                        <Input
+                            id="licensing-end-date-from"
+                            type="date"
+                            value={localFilters.end_date_from}
+                            onChange={(e) => updateServerFilter({ end_date_from: e.target.value })}
+                        />
+                    </div>
+                    <div>
+                        <label
+                            className="mb-1 block text-sm font-medium"
+                            htmlFor="licensing-end-date-to"
+                        >
+                            End date to
+                        </label>
+                        <Input
+                            id="licensing-end-date-to"
+                            type="date"
+                            value={localFilters.end_date_to}
+                            onChange={(e) => updateServerFilter({ end_date_to: e.target.value })}
+                        />
+                    </div>
                     <select
                         value={localFilters.license_type}
                         onChange={(e) => updateServerFilter({ license_type: e.target.value })}
@@ -614,55 +694,57 @@ export default function Index() {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-end gap-3 rounded-lg border p-4">
-                    <div className="min-w-[280px] flex-1">
-                        <label className="mb-1 block text-sm font-medium" htmlFor="licensing-license">
-                            Available license
-                        </label>
-                        <LicenseSelect
-                            key={`license-select-${available_subscriptions.length}-${available_subscriptions[0]?.subscription_key ?? 'none'}`}
-                            id="licensing-license"
-                            value={selectedSubscriptionKey}
-                            subscriptions={available_subscriptions}
-                            onChange={setSelectedSubscriptionKey}
-                        />
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            GreenLake assigns the selected subscription key directly to each device.
-                        </p>
+                <div className="rounded-lg border p-4">
+                    <div className="flex flex-wrap items-end gap-3">
+                        <div className="min-w-[280px] flex-1">
+                            <label className="mb-1 block text-sm font-medium" htmlFor="licensing-license">
+                                Available license
+                            </label>
+                            <LicenseSelect
+                                key={`license-select-${available_subscriptions.length}-${available_subscriptions[0]?.subscription_key ?? 'none'}`}
+                                id="licensing-license"
+                                value={selectedSubscriptionKey}
+                                subscriptions={available_subscriptions}
+                                onChange={setSelectedSubscriptionKey}
+                            />
+                        </div>
+                        <Button
+                            variant="default"
+                            disabled={
+                                isSubmitting ||
+                                selectedSerials.length === 0 ||
+                                !selectedSubscriptionKey
+                            }
+                            onClick={runAssignAction}
+                        >
+                            Assign now ({selectedSerials.length})
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            disabled={
+                                isSubmitting ||
+                                selectedSerials.length === 0 ||
+                                selectedDevicesWithSubscription.length === 0
+                            }
+                            onClick={runUnassignAction}
+                        >
+                            Unassign now ({selectedSerials.length})
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            disabled={isSubmitting || selectedSerials.length === 0}
+                            onClick={runRemoveFromWorkspaceAction}
+                            data-test="licensing-remove-from-workspace"
+                        >
+                            Remove from workspace ({selectedSerials.length})
+                        </Button>
                     </div>
-                    <Button
-                        variant="default"
-                        disabled={
-                            isSubmitting ||
-                            selectedSerials.length === 0 ||
-                            !selectedSubscriptionKey
-                        }
-                        onClick={runAssignAction}
-                    >
-                        Assign now ({selectedSerials.length})
-                    </Button>
-                    <Button
-                        variant="secondary"
-                        disabled={
-                            isSubmitting ||
-                            selectedSerials.length === 0 ||
-                            selectedDevicesWithSubscription.length === 0
-                        }
-                        onClick={runUnassignAction}
-                    >
-                        Unassign now ({selectedSerials.length})
-                    </Button>
-                    <Button
-                        variant="destructive"
-                        disabled={isSubmitting || selectedSerials.length === 0}
-                        onClick={runRemoveFromWorkspaceAction}
-                        data-test="licensing-remove-from-workspace"
-                    >
-                        Remove from workspace ({selectedSerials.length})
-                    </Button>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        GreenLake assigns the selected subscription key directly to each device.
+                    </p>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div className="relative">
                         <Search
                             className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
@@ -705,6 +787,20 @@ export default function Index() {
                         placeholder="Model"
                         data-test="licensing-filter-model"
                     />
+                    <select
+                        value={tableFilters.licensed}
+                        onChange={(e) =>
+                            updateTableFilter({
+                                licensed: e.target.value as LicensingTableFilters['licensed'],
+                            })
+                        }
+                        className={selectClassName}
+                        data-test="licensing-filter-licensed"
+                    >
+                        <option value="">All licensed states</option>
+                        <option value="yes">Licensed: Yes</option>
+                        <option value="no">Licensed: No</option>
+                    </select>
                 </div>
                 {hasActiveLicensingTableFilters(tableFilters) && (
                     <div className="flex justify-end">
@@ -755,9 +851,27 @@ export default function Index() {
                         >
                             Previous
                         </Button>
-                        <span>
-                            Page {pageIndex + 1} of {totalPages}
-                        </span>
+                        <ul className="flex flex-row items-center gap-1">
+                            {visiblePageNumbers.map((item, index) => (
+                                <PaginationItem key={item === 'ellipsis' ? `ellipsis-${index}` : `page-${item}`}>
+                                    {item === 'ellipsis' ? (
+                                        <PaginationEllipsis />
+                                    ) : (
+                                        <PaginationLink
+                                            href="#"
+                                            size="icon"
+                                            isActive={pageIndex === item - 1}
+                                            onClick={(event) => {
+                                                event.preventDefault();
+                                                setPageIndex(item - 1);
+                                            }}
+                                        >
+                                            {item}
+                                        </PaginationLink>
+                                    )}
+                                </PaginationItem>
+                            ))}
+                        </ul>
                         <Button
                             variant="outline"
                             size="sm"

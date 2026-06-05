@@ -1,11 +1,14 @@
 import { subscriptionTagKeys } from '@/lib/subscription-tags';
 
+export type LicensingLicensedFilter = '' | 'yes' | 'no';
+
 export type LicensingTableFilters = {
     serial_number: string;
     device_name: string;
     subscription_key: string;
     subscription_tags: string;
     model: string;
+    licensed: LicensingLicensedFilter;
 };
 
 export const emptyLicensingTableFilters: LicensingTableFilters = {
@@ -14,6 +17,7 @@ export const emptyLicensingTableFilters: LicensingTableFilters = {
     subscription_key: '',
     subscription_tags: '',
     model: '',
+    licensed: '',
 };
 
 export function matchesLicensingTextFilter(haystack: string, needle: string): boolean {
@@ -48,7 +52,15 @@ export function matchesLicensingTagFilter(tagKeys: string[], rawTags: string): b
 }
 
 export function hasActiveLicensingTableFilters(filters: LicensingTableFilters): boolean {
-    return Object.values(filters).some((value) => value.trim() !== '');
+    return (Object.keys(filters) as (keyof LicensingTableFilters)[]).some((key) => {
+        const value = filters[key];
+
+        if (key === 'licensed') {
+            return value !== '';
+        }
+
+        return value.trim() !== '';
+    });
 }
 
 type LicensingDeviceLike = {
@@ -57,6 +69,7 @@ type LicensingDeviceLike = {
     model: string;
     subscription_key: string;
     tags: string[] | Record<string, string>;
+    licensed: boolean;
 };
 
 export function filterLicensingDevices<T extends LicensingDeviceLike>(
@@ -81,6 +94,14 @@ export function filterLicensingDevices<T extends LicensingDeviceLike>(
         }
 
         if (!matchesLicensingTagFilter(subscriptionTagKeys(device.tags), filters.subscription_tags)) {
+            return false;
+        }
+
+        if (filters.licensed === 'yes' && !device.licensed) {
+            return false;
+        }
+
+        if (filters.licensed === 'no' && device.licensed) {
             return false;
         }
 

@@ -334,8 +334,9 @@ it('throws when sku is not a valid SKU', function () {
         ]);
         expect(false)->toBeTrue('expected ValidationException');
     } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('Row 2: sku')
-            ->and($e->errors()['Row 2: sku'][0])->toContain('not a valid SKU');
+        expect($e->errors())->toHaveKey('Row 2 (SW-1 / SN0000000001): sku')
+            ->and($e->errors()['Row 2 (SW-1 / SN0000000001): sku'][0])->toContain('not a valid SKU')
+            ->and($e->errors()['Row 2 (SW-1 / SN0000000001): sku'][0])->toContain('device SW-1');
     }
 });
 
@@ -347,8 +348,8 @@ it('throws when interface_mode is not valid', function () {
         ]);
         expect(false)->toBeTrue('expected ValidationException');
     } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('Row 2: interface_mode')
-            ->and($e->errors()['Row 2: interface_mode'][0])->toContain('Allowed values: ACCESS, TRUNK');
+        expect($e->errors())->toHaveKey('Row 2 (SW-1 / SN0000000001): interface_mode')
+            ->and($e->errors()['Row 2 (SW-1 / SN0000000001): interface_mode'][0])->toContain('Allowed values: ACCESS, TRUNK');
     }
 });
 
@@ -360,8 +361,8 @@ it('throws when trunk_type is not valid', function () {
         ]);
         expect(false)->toBeTrue('expected ValidationException');
     } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('Row 2: trunk_type')
-            ->and($e->errors()['Row 2: trunk_type'][0])->toContain('MULTI_CHASSIS_STATIC');
+        expect($e->errors())->toHaveKey('Row 2 (SW-1 / SN0000000001): trunk_type')
+            ->and($e->errors()['Row 2 (SW-1 / SN0000000001): trunk_type'][0])->toContain('MULTI_CHASSIS_STATIC');
     }
 });
 
@@ -373,8 +374,8 @@ it('throws when lacp_mode is not valid', function () {
         ]);
         expect(false)->toBeTrue('expected ValidationException');
     } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('Row 2: lacp_mode')
-            ->and($e->errors()['Row 2: lacp_mode'][0])->toContain('ACTIVE, PASSIVE, AUTO');
+        expect($e->errors())->toHaveKey('Row 2 (SW-1 / SN0000000001): lacp_mode')
+            ->and($e->errors()['Row 2 (SW-1 / SN0000000001): lacp_mode'][0])->toContain('ACTIVE, PASSIVE, AUTO');
     }
 });
 
@@ -386,8 +387,8 @@ it('throws when lacp_rate is not valid', function () {
         ]);
         expect(false)->toBeTrue('expected ValidationException');
     } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('Row 2: lacp_rate')
-            ->and($e->errors()['Row 2: lacp_rate'][0])->toContain('FAST, SLOW');
+        expect($e->errors())->toHaveKey('Row 2 (SW-1 / SN0000000001): lacp_rate')
+            ->and($e->errors()['Row 2 (SW-1 / SN0000000001): lacp_rate'][0])->toContain('FAST, SLOW');
     }
 });
 
@@ -435,9 +436,9 @@ it('aggregates multiple validation errors for a single row', function () {
         expect(false)->toBeTrue('expected ValidationException');
     } catch (ValidationException $e) {
         expect($e->errors())->toHaveKeys([
-            'Row 2: sku',
-            'Row 2: interface_mode',
-            'Row 2: lacp_rate',
+            'Row 2 (SW-1 / SN0000000001): sku',
+            'Row 2 (SW-1 / SN0000000001): interface_mode',
+            'Row 2 (SW-1 / SN0000000001): lacp_rate',
         ]);
     }
 });
@@ -513,4 +514,90 @@ it('rejects partial vsx lag port override columns', function () {
         ['name', 'serial', 'device_function', 'vsx_isl_ports'],
         ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/53-1/1/54'],
     ]))->toThrow(ValidationException::class);
+});
+
+it('reports missing required columns in header validation', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'device_function'],
+            ['SW-1', 'ACCESS_SWITCH'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('CSV headers: missing required columns')
+            ->and($e->errors()['CSV headers: missing required columns'][0])->toContain('serial');
+    }
+});
+
+it('reports unrecognized column headers', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'acces_vlan'],
+            ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '10'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('CSV headers: unrecognized columns')
+            ->and($e->errors()['CSV headers: unrecognized columns'][0])->toContain('acces_vlan');
+    }
+});
+
+it('reports duplicate normalized column headers', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'name'],
+            ['SW-1', 'SN0000000001', 'ACCESS_SWITCH'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('CSV headers: duplicate columns')
+            ->and($e->errors()['CSV headers: duplicate columns'][0])->toContain('name');
+    }
+});
+
+it('allows interface rows with blank serial and device_function when an anchor row exists', function () {
+    $csvData = CSVHelper::fillInDeviceSerialAndDeviceFunction([
+        ['name', 'serial', 'device_function', 'interface'],
+        ['ACC-SWITCH-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/1'],
+        ['ACC-SWITCH-1', '', '', '1/1/2'],
+    ]);
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays)->toHaveCount(2)
+        ->and($deviceArrays[1])->toMatchArray([
+            'name' => 'ACC-SWITCH-1',
+            'serial' => 'SN0000000001',
+            'device_function' => 'ACCESS_SWITCH',
+            'interface' => '1/1/2',
+        ]);
+});
+
+it('reports inheritance hint when serial and device_function cannot be resolved', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['name', 'serial', 'device_function', 'interface'],
+            ['SW-1', '', '', '1/1/1'],
+        ]);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('Row 2 (SW-1 / 1/1/1): serial')
+            ->and($e->errors()['Row 2 (SW-1 / 1/1/1): serial'][0])->toContain('no other row for device "SW-1"')
+            ->and($e->errors())->toHaveKey('Row 2 (SW-1 / 1/1/1): device_function');
+    }
+});
+
+it('skips name-only organizational rows when processing a CSV file', function () {
+    $path = tempnam(sys_get_temp_dir(), 'csv_helper_');
+    file_put_contents($path, "name,serial,device_function,interface\nBuilding A Switches,,,\nSW-1,SN0000000001,ACCESS_SWITCH,1/1/1\n");
+
+    try {
+        $csvData = CSVHelper::processCSVFile($path);
+        $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+    } finally {
+        unlink($path);
+    }
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0]['name'])->toBe('SW-1');
 });

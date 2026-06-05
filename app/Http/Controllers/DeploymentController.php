@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
 use App\Helper\GreenLakeAPIHelper;
+use App\LicenseType;
 use App\Models\Deployment;
 use App\Models\DeviceInterface;
 use App\Models\Task;
@@ -91,6 +92,7 @@ class DeploymentController extends Controller
         $licensingOptions = [
             'enabled_services' => [],
             'available_subscriptions' => [],
+            'license_tags' => [],
             'central_licensing_error' => null,
         ];
         $currentClient = $request->user()->currentClient();
@@ -106,6 +108,7 @@ class DeploymentController extends Controller
             $licensingOptions = [
                 'enabled_services' => $licensingPayload['enabled_services'],
                 'available_subscriptions' => $licensingPayload['available_subscriptions'],
+                'license_tags' => $licensingPayload['license_tags'],
                 'central_licensing_error' => $licensingPayload['central_error'],
             ];
             $licensingSyncedAt = $licensingPayload['licensing_synced_at'];
@@ -117,6 +120,8 @@ class DeploymentController extends Controller
             'device_search' => $search,
             'enabled_services' => $licensingOptions['enabled_services'],
             'available_subscriptions' => $licensingOptions['available_subscriptions'],
+            'license_tags' => $licensingOptions['license_tags'],
+            'license_type_options' => LicenseType::values(),
             'central_licensing_error' => $licensingOptions['central_licensing_error'],
             'licensing_synced_at' => $licensingSyncedAt,
             'tasks' => array_map(fn ($task) => [

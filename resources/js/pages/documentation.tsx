@@ -221,27 +221,61 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
     {
         column: 'vsx_profile',
         type: 'string',
-        accepted: 'Name of the VSX profile. Both peers in a pair must share the same value.',
+        accepted: (
+            <>
+                Shared VSX profile name for a peer pair. Both switches in the pair must use the same
+                value. When launching the task, devices are grouped by this column and one VSX profile
+                is created per unique name.
+            </>
+        ),
     },
     {
         column: 'vsx_role',
         type: 'enum',
-        accepted: 'VSX_PRIMARY or VSX_SECONDARY. Each VSX profile requires exactly one of each.',
+        accepted: (
+            <>
+                <code>VSX_PRIMARY</code> or <code>VSX_SECONDARY</code>. Each VSX profile requires
+                exactly one primary and one secondary device.
+            </>
+        ),
     },
     {
         column: 'vsx_system_mac',
         type: 'string',
-        accepted: 'System MAC in the form 02:00:00:00:00:xx where xx are hex digits starting from 01. Same value on both peers.',
+        accepted: (
+            <>
+                System MAC shared by both peers in the form{' '}
+                <code>02:00:00:00:00:xx</code> where <code>xx</code> are hex digits starting from{' '}
+                <code>01</code>. Colons or dashes are accepted; leading zeros may be omitted (Excel
+                often strips them) and are normalized on import.
+            </>
+        ),
     },
     {
         column: 'vsx_isl_ports',
-        type: 'string',
-        accepted: 'Optional LAG 256 member ports. Supports ranges like 1/1/53-1/1/54. Must be set together with vsx_keepalive_ports when overriding defaults.',
+        type: 'string (range expression)',
+        accepted: (
+            <>
+                Optional LAG 256 (inter-switch-link) member ports. Uses the same range syntax as{' '}
+                <code>port_list</code> and must expand to exactly two interfaces. Examples:{' '}
+                <code>1/1/53-1/1/54</code>, <code>1/1/21&amp;1/1/22</code>. Must be set together with{' '}
+                <code>vsx_keepalive_ports</code> on both peers when overriding defaults; both peers
+                must use the same values.
+            </>
+        ),
     },
     {
         column: 'vsx_keepalive_ports',
-        type: 'string',
-        accepted: 'Optional LAG 255 member ports. Supports ranges like 1/1/47-1/1/48. Must be set together with vsx_isl_ports when overriding defaults.',
+        type: 'string (range expression)',
+        accepted: (
+            <>
+                Optional LAG 255 (keepalive) member ports. Uses the same range syntax as{' '}
+                <code>port_list</code> and must expand to exactly two interfaces. Examples:{' '}
+                <code>1/1/47-1/1/48</code>, <code>1/1/23&amp;1/1/24</code>. Must be set together with{' '}
+                <code>vsx_isl_ports</code> on both peers when overriding defaults; both peers must use
+                the same values.
+            </>
+        ),
     },
     {
         column: 'trunk_vlan_all',
@@ -510,19 +544,42 @@ export default function documentation() {
                     <DocCard title="Create VSX Profile" defaultOpen>
                         <div className="space-y-4">
                             <p>
-                                Creates a VSX profile for a pair of switches. Both peers must share the same{' '}
-                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_profile</code> and{' '}
-                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_system_mac</code>, with one{' '}
+                                Device-based task that creates a VSX profile for a pair of switches.
+                                Upload one CSV row per switch (no interface columns). Both peers must
+                                share the same{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_profile</code>,{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_system_mac</code>, and{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">site</code>, with one{' '}
                                 <code className="rounded bg-muted px-1 py-0.5 text-sm">VSX_PRIMARY</code> and one{' '}
-                                <code className="rounded bg-muted px-1 py-0.5 text-sm">VSX_SECONDARY</code>. The{' '}
-                                <code className="rounded bg-muted px-1 py-0.5 text-sm">group</code> column is required
-                                so the task can ensure the WHSE-VSX-Keep-Alive VRF at device group scope before creating
-                                LAG 256 (inter-switch-link) and LAG 255 (keepalive) interfaces. When{' '}
-                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_isl_ports</code> and{' '}
-                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_keepalive_ports</code> are not
-                                set, LAG member ports are chosen from the device name: CORE switches use 1/1/53-1/1/54 (LAG
-                                256) and 1/1/47-1/1/48 (LAG 255); SVR switches use 1/1/21-1/1/22 (LAG 256) and
-                                1/1/23-1/1/24 (LAG 255).
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">VSX_SECONDARY</code>.
+                                Devices with different <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_profile</code>{' '}
+                                values are processed as separate pairs when the task runs.
+                            </p>
+                            <p>
+                                For each peer, the task ensures the WHSE-VSX-Keep-Alive VRF at device
+                                group scope, validates or creates LAG 256 (inter-switch-link) and LAG 255
+                                (keepalive), sets member port descriptions, then posts the VSX profile at
+                                site scope. Keepalive addresses are{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">1.1.1.1/30</code> on the
+                                primary and <code className="rounded bg-muted px-1 py-0.5 text-sm">1.1.1.2/30</code>{' '}
+                                on the secondary.
+                            </p>
+                            <p className="font-medium text-sm">Default LAG member ports (when overrides are not set)</p>
+                            <ul className="list-inside list-disc text-sm">
+                                <li>
+                                    Device name contains <code>CORE</code>: LAG 256{' '}
+                                    <code>1/1/53-1/1/54</code>, LAG 255 <code>1/1/47-1/1/48</code>
+                                </li>
+                                <li>
+                                    Device name contains <code>SVR</code>: LAG 256{' '}
+                                    <code>1/1/21-1/1/22</code>, LAG 255 <code>1/1/23-1/1/24</code>
+                                </li>
+                            </ul>
+                            <p className="text-muted-foreground text-sm">
+                                If the device name contains neither <code>CORE</code> nor <code>SVR</code>,
+                                set <code>vsx_isl_ports</code> and <code>vsx_keepalive_ports</code> on both
+                                peers instead. Existing LAG 256/255 configurations are validated; missing
+                                LAGs are created when Central returns 404.
                             </p>
                             <ColumnPair
                                 required={[
@@ -530,6 +587,7 @@ export default function documentation() {
                                     'serial',
                                     'device_function',
                                     'group',
+                                    'site',
                                     'vsx_profile',
                                     'vsx_role',
                                     'vsx_system_mac',

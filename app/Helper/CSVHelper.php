@@ -9,6 +9,44 @@ use Illuminate\Validation\ValidationException;
 
 class CSVHelper
 {
+    private const REQUIRED_COLUMNS = ['name', 'serial', 'device_function'];
+
+    private const KNOWN_COLUMNS = [
+        'name',
+        'serial',
+        'device_function',
+        'description',
+        'interface',
+        'port_list',
+        'ip_address',
+        'vrf_forwarding',
+        'sku',
+        'site',
+        'group',
+        'port_profile',
+        'interface_mode',
+        'access_vlan',
+        'native_vlan',
+        'trunk_vlan_all',
+        'trunk_vlan_ranges',
+        'admin_edge_port',
+        'admin_edge_port_trunk',
+        'bpdu_guard',
+        'loop_guard',
+        'shutdown_on_split',
+        'lacp_mode',
+        'lacp_rate',
+        'trunk_type',
+        'vsx_profile',
+        'vsx_role',
+        'vsx_system_mac',
+        'vsx_isl_ports',
+        'vsx_keepalive_ports',
+        'lacp_port_id',
+    ];
+
+    private const MAX_ROW_ERRORS = 50;
+
     private const INTERFACE_MODES = ['ACCESS', 'TRUNK'];
 
     private const TRUNK_TYPES = ['LACP', 'TRUNK', 'DT_TRUNK', 'MULTI_CHASSIS', 'MULTI_CHASSIS_STATIC'];
@@ -153,18 +191,24 @@ class CSVHelper
 
     public static function createDeviceArrays($CSVData)
     {
-        if (empty($CSVData) || count($CSVData) == 1) {
+        if (empty($CSVData) || ! is_array($CSVData[0] ?? null)) {
             return [];
         }
-        $headers = array_map(function ($header) {
-            $normalized = strtolower(str_replace('-', '_', trim((string) $header)));
 
-            return match ($normalized) {
-                'interface_description' => 'description',
-                'lag_id' => 'lacp_port_id',
-                default => $normalized,
-            };
-        }, $CSVData[0]);
+        $headerErrors = self::validateCsvHeaders($CSVData[0]);
+
+        if ($headerErrors !== []) {
+            throw ValidationException::withMessages($headerErrors);
+        }
+
+        if (count($CSVData) === 1) {
+            return [];
+        }
+
+        $headers = array_map(
+            fn ($header) => self::normalizeCsvHeader((string) $header),
+            $CSVData[0]
+        );
 
         $validationMessages = [];
         $deviceArrays = [];
@@ -176,20 +220,136 @@ class CSVHelper
                 $mappedRow[$header] = $value;
             }
             $csvRowNumber = $i + 2;
+            self::validateRequiredRowFields($mappedRow, $csvRowNumber, $validationMessages);
+            if (count($validationMessages) >= self::MAX_ROW_ERRORS) {
+                break;
+            }
             $normalized = self::normalizeDeviceRow($mappedRow, $csvRowNumber, $validationMessages);
             $deviceArrays[] = $normalized;
+            if (count($validationMessages) >= self::MAX_ROW_ERRORS) {
+                break;
+            }
         }
 
         if ($validationMessages !== []) {
-            $bag = [];
-            foreach ($validationMessages as $message) {
-                $key = "Row {$message['row']}: {$message['column']}";
-                $bag[$key] = [$message['text']];
-            }
-            throw ValidationException::withMessages($bag);
+            throw ValidationException::withMessages(
+                self::buildValidationErrorBag([], $validationMessages)
+            );
         }
 
         return $deviceArrays;
+    }
+
+    public static function normalizeCsvHeader(string $raw): string
+    {
+        $normalized = strtolower(str_replace('-', '_', trim($raw)));
+
+        return match ($normalized) {
+            'interface_description' => 'description',
+            'lag_id' => 'lacp_port_id',
+            default => $normalized,
+        };
+    }
+
+    /**
+     * @param  list<string|int|float|null>  $rawHeaders
+     * @return array<string, list<string>>
+     */
+    public static function validateCsvHeaders(array $rawHeaders): array
+    {
+        $errors = [];
+        $normalizedPresent = [];
+        $unrecognized = [];
+        $duplicateNormalized = [];
+
+        foreach ($rawHeaders as $rawHeader) {
+            $display = trim((string) $rawHeader);
+            if ($display === '') {
+                $unrecognized[] = '(blank)';
+
+                continue;
+            }
+
+            $normalized = self::normalizeCsvHeader($display);
+            if (! in_array($normalized, self::KNOWN_COLUMNS, true)) {
+                $unrecognized[] = $display;
+
+                continue;
+            }
+
+            if (isset($normalizedPresent[$normalized])) {
+                $duplicateNormalized[$normalized] = $normalized;
+            }
+            $normalizedPresent[$normalized] = true;
+        }
+
+        $missing = array_values(array_filter(
+            self::REQUIRED_COLUMNS,
+            fn (string $column) => ! isset($normalizedPresent[$column])
+        ));
+
+        if ($missing !== []) {
+            $errors['CSV headers: missing required columns'] = [
+                'Missing required column(s): '.implode(', ', $missing).'.',
+            ];
+        }
+
+        if ($unrecognized !== []) {
+            $errors['CSV headers: unrecognized columns'] = [
+                'Unrecognized column(s): '.implode(', ', array_unique($unrecognized))
+                .'. Allowed columns: '.implode(', ', self::KNOWN_COLUMNS).'.',
+            ];
+        }
+
+        if ($duplicateNormalized !== []) {
+            $errors['CSV headers: duplicate columns'] = [
+                'Duplicate column(s): '.implode(', ', array_keys($duplicateNormalized)).'.',
+            ];
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  list<array{row: int, column: string, text: string}>  $validationMessages
+     */
+    private static function validateRequiredRowFields(array $row, int $csvRowNumber, array &$validationMessages): void
+    {
+        $name = trim((string) ($row['name'] ?? ''));
+        if ($name === '') {
+            self::addValidationMessage(
+                $validationMessages,
+                $csvRowNumber,
+                'name',
+                $row,
+                'name is required on every data row.'
+            );
+
+            return;
+        }
+
+        $serial = trim((string) ($row['serial'] ?? ''));
+        if ($serial === '') {
+            self::addValidationMessage(
+                $validationMessages,
+                $csvRowNumber,
+                'serial',
+                $row,
+                "serial is required on this row because no other row for device \"{$name}\" provides name, serial, and device_function together."
+            );
+        }
+
+        $deviceFunction = trim((string) ($row['device_function'] ?? ''));
+        if ($deviceFunction === '') {
+            self::addValidationMessage(
+                $validationMessages,
+                $csvRowNumber,
+                'device_function',
+                $row,
+                "device_function is required on this row because no other row for device \"{$name}\" provides name, serial, and device_function together."
+            );
+        }
     }
 
     /**
@@ -203,25 +363,23 @@ class CSVHelper
             $raw = $row['device_function'];
             $trimmed = is_string($raw) || is_numeric($raw) ? trim((string) $raw) : '';
             if ($raw !== null && ! is_string($raw) && ! is_numeric($raw) && $raw !== '') {
-                $validationMessages[] = [
-                    'row' => $csvRowNumber,
-                    'column' => 'device_function',
-                    'text' => 'device_function must be a string matching a defined device function.',
-                ];
-            } elseif ($trimmed === '') {
-                $validationMessages[] = [
-                    'row' => $csvRowNumber,
-                    'column' => 'device_function',
-                    'text' => 'device_function is required and cannot be empty.',
-                ];
-            } else {
+                self::addValidationMessage(
+                    $validationMessages,
+                    $csvRowNumber,
+                    'device_function',
+                    $row,
+                    'device_function must be a string matching a defined device function.'
+                );
+            } elseif ($trimmed !== '') {
                 $resolved = self::matchUnitEnumName($trimmed, DeviceFunction::class);
                 if ($resolved === null) {
-                    $validationMessages[] = [
-                        'row' => $csvRowNumber,
-                        'column' => 'device_function',
-                        'text' => "device_function \"{$trimmed}\" is not a valid device function.",
-                    ];
+                    self::addValidationMessage(
+                        $validationMessages,
+                        $csvRowNumber,
+                        'device_function',
+                        $row,
+                        "device_function \"{$trimmed}\" is not a valid device function."
+                    );
                 } else {
                     $row['device_function'] = $resolved;
                 }
@@ -236,11 +394,13 @@ class CSVHelper
                 $trimmed = trim((string) $raw);
                 $resolved = self::matchUnitEnumName($trimmed, SwitchSKU::class);
                 if ($resolved === null) {
-                    $validationMessages[] = [
-                        'row' => $csvRowNumber,
-                        'column' => 'sku',
-                        'text' => "sku \"{$trimmed}\" is not a valid SKU.",
-                    ];
+                    self::addValidationMessage(
+                        $validationMessages,
+                        $csvRowNumber,
+                        'sku',
+                        $row,
+                        "sku \"{$trimmed}\" is not a valid SKU."
+                    );
                 } else {
                     $row['sku'] = $resolved;
                 }
@@ -255,11 +415,13 @@ class CSVHelper
                 $trimmed = trim((string) $raw);
                 $resolved = self::matchUnitEnumName($trimmed, VsxRole::class);
                 if ($resolved === null) {
-                    $validationMessages[] = [
-                        'row' => $csvRowNumber,
-                        'column' => 'vsx_role',
-                        'text' => "vsx_role \"{$trimmed}\" is not valid. Allowed values: VSX_PRIMARY, VSX_SECONDARY.",
-                    ];
+                    self::addValidationMessage(
+                        $validationMessages,
+                        $csvRowNumber,
+                        'vsx_role',
+                        $row,
+                        "vsx_role \"{$trimmed}\" is not valid. Allowed values: VSX_PRIMARY, VSX_SECONDARY."
+                    );
                 } else {
                     $row['vsx_role'] = $resolved;
                 }
@@ -274,11 +436,13 @@ class CSVHelper
                 $trimmed = trim((string) $raw);
                 $normalizedMac = self::normalizeVsxSystemMac($trimmed);
                 if ($normalizedMac === null) {
-                    $validationMessages[] = [
-                        'row' => $csvRowNumber,
-                        'column' => 'vsx_system_mac',
-                        'text' => "vsx_system_mac \"{$trimmed}\" must match 02:00:00:00:00:xx where xx are hex digits starting from 01.",
-                    ];
+                    self::addValidationMessage(
+                        $validationMessages,
+                        $csvRowNumber,
+                        'vsx_system_mac',
+                        $row,
+                        "vsx_system_mac \"{$trimmed}\" must match 02:00:00:00:00:xx where xx are hex digits starting from 01."
+                    );
                 } else {
                     $row['vsx_system_mac'] = $normalizedMac;
                 }
@@ -303,11 +467,13 @@ class CSVHelper
         $hasIslPorts = filled($row['vsx_isl_ports'] ?? '');
         $hasKeepalivePorts = filled($row['vsx_keepalive_ports'] ?? '');
         if ($hasIslPorts xor $hasKeepalivePorts) {
-            $validationMessages[] = [
-                'row' => $csvRowNumber,
-                'column' => 'vsx_isl_ports',
-                'text' => 'vsx_isl_ports and vsx_keepalive_ports must both be set when overriding VSX LAG member ports.',
-            ];
+            self::addValidationMessage(
+                $validationMessages,
+                $csvRowNumber,
+                'vsx_isl_ports',
+                $row,
+                'vsx_isl_ports and vsx_keepalive_ports must both be set when overriding VSX LAG member ports.'
+            );
         } elseif ($hasIslPorts && $hasKeepalivePorts) {
             foreach ([
                 'vsx_isl_ports' => 'vsx_isl_ports',
@@ -315,11 +481,13 @@ class CSVHelper
             ] as $column => $label) {
                 $expanded = InterfaceHelper::expandInterfaceRange((string) $row[$column]);
                 if (count($expanded) !== 2) {
-                    $validationMessages[] = [
-                        'row' => $csvRowNumber,
-                        'column' => $column,
-                        'text' => "{$label} \"{$row[$column]}\" must expand to exactly 2 interfaces.",
-                    ];
+                    self::addValidationMessage(
+                        $validationMessages,
+                        $csvRowNumber,
+                        $column,
+                        $row,
+                        "{$label} \"{$row[$column]}\" must expand to exactly 2 interfaces."
+                    );
                 }
             }
         }
@@ -335,11 +503,13 @@ class CSVHelper
             $trimmed = trim((string) $raw);
             $resolved = self::matchStringUnion($trimmed, $allowed);
             if ($resolved === null) {
-                $validationMessages[] = [
-                    'row' => $csvRowNumber,
-                    'column' => $column,
-                    'text' => "{$column} \"{$trimmed}\" is not valid. Allowed values: ".implode(', ', $allowed).'.',
-                ];
+                self::addValidationMessage(
+                    $validationMessages,
+                    $csvRowNumber,
+                    $column,
+                    $row,
+                    "{$column} \"{$trimmed}\" is not valid. Allowed values: ".implode(', ', $allowed).'.'
+                );
             } else {
                 $row[$column] = $resolved;
             }
@@ -358,11 +528,13 @@ class CSVHelper
                 }
             } catch (\InvalidArgumentException) {
                 $display = is_scalar($row[$column]) ? (string) $row[$column] : json_encode($row[$column]);
-                $validationMessages[] = [
-                    'row' => $csvRowNumber,
-                    'column' => $column,
-                    'text' => "{$column} \"{$display}\" is not a valid boolean (use true/false, 1/0, yes/no).",
-                ];
+                self::addValidationMessage(
+                    $validationMessages,
+                    $csvRowNumber,
+                    $column,
+                    $row,
+                    "{$column} \"{$display}\" is not a valid boolean (use true/false, 1/0, yes/no)."
+                );
             }
         }
 
@@ -383,15 +555,114 @@ class CSVHelper
                 if (! self::isCsvCellPopulated($row[$column] ?? null)) {
                     continue;
                 }
-                $validationMessages[] = [
-                    'row' => $csvRowNumber,
-                    'column' => 'ip_address',
-                    'text' => "ip_address cannot be set together with {$column} on an ethernet interface.",
-                ];
+                self::addValidationMessage(
+                    $validationMessages,
+                    $csvRowNumber,
+                    'ip_address',
+                    $row,
+                    "ip_address cannot be set together with {$column} on an ethernet interface."
+                );
             }
         }
 
         return $row;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  list<array{row: int, column: string, text: string}>  $validationMessages
+     */
+    private static function addValidationMessage(
+        array &$validationMessages,
+        int $csvRowNumber,
+        string $column,
+        array $row,
+        string $text
+    ): void {
+        $validationMessages[] = [
+            'row' => $csvRowNumber,
+            'column' => $column,
+            'text' => self::appendRowContextToMessage($text, $row),
+            'context' => [
+                'name' => $row['name'] ?? null,
+                'serial' => $row['serial'] ?? null,
+                'interface' => $row['interface'] ?? null,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private static function appendRowContextToMessage(string $text, array $row): string
+    {
+        $suffix = self::formatRowContextSuffix($row);
+
+        return $suffix !== '' ? "{$text} {$suffix}" : $text;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private static function formatRowContextLabel(array $row): string
+    {
+        $parts = [];
+        if (self::isCsvCellPopulated($row['name'] ?? null)) {
+            $parts[] = trim((string) $row['name']);
+        }
+        if (self::isCsvCellPopulated($row['serial'] ?? null)) {
+            $parts[] = trim((string) $row['serial']);
+        }
+        if (self::isCsvCellPopulated($row['interface'] ?? null)) {
+            $parts[] = trim((string) $row['interface']);
+        }
+
+        return $parts !== [] ? ' ('.implode(' / ', $parts).')' : '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private static function formatRowContextSuffix(array $row): string
+    {
+        $parts = [];
+        if (self::isCsvCellPopulated($row['name'] ?? null)) {
+            $parts[] = 'device '.trim((string) $row['name']);
+        }
+        if (self::isCsvCellPopulated($row['serial'] ?? null)) {
+            $parts[] = 'serial '.trim((string) $row['serial']);
+        }
+        if (self::isCsvCellPopulated($row['interface'] ?? null)) {
+            $parts[] = 'interface '.trim((string) $row['interface']);
+        }
+
+        return $parts !== [] ? '('.implode(', ', $parts).').' : '';
+    }
+
+    private static function formatRowErrorKey(int $csvRowNumber, array $row, string $column): string
+    {
+        return 'Row '.$csvRowNumber.self::formatRowContextLabel($row).': '.$column;
+    }
+
+    /**
+     * @param  array<string, list<string>>  $headerErrors
+     * @param  list<array{row: int, column: string, text: string, context?: array<string, mixed>}>  $validationMessages
+     * @return array<string, list<string>>
+     */
+    private static function buildValidationErrorBag(array $headerErrors, array $validationMessages): array
+    {
+        $bag = $headerErrors;
+
+        foreach ($validationMessages as $message) {
+            $key = self::formatRowErrorKey(
+                $message['row'],
+                $message['context'] ?? [],
+                $message['column']
+            );
+            $bag[$key] = [$message['text']];
+        }
+
+        return $bag;
     }
 
     /**

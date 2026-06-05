@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helper\CentralAPIHelper;
 use App\Helper\GreenLakeAPIHelper;
 use App\InterfaceKind;
+use App\LicenseType;
 use App\JobQueueShard;
 use App\Jobs\AddVlansToDeviceGroup;
 use App\Jobs\AssignDeviceFunctionJob;
@@ -36,7 +37,7 @@ use App\Services\DeviceCentralVerifier;
 use App\Services\EthernetInterfaceCentralVerifier;
 use App\Services\LagInterfaceCentralVerifier;
 use App\Services\LicensingInventoryService;
-use App\Services\LicensingSubscriptionResolver;
+use App\Services\LicensingPoolResolver;
 use App\Services\RelaunchFailedCriticalConfigService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
@@ -80,6 +81,7 @@ class TaskController extends Controller
         ],
         'CREATE_VSX_PROFILE' => [
             'group',
+            'site',
             'vsx_profile',
             'vsx_role',
             'vsx_system_mac',
@@ -760,19 +762,20 @@ class TaskController extends Controller
         Request $request,
         Deployment $deployment,
         LicensingInventoryService $licensingInventoryService,
-        LicensingSubscriptionResolver $licensingSubscriptionResolver,
     ) {
         $validated = $request->validate([
             'task_type' => ['required', Rule::in(array_map(fn ($task) => $task->name, TaskType::cases()))],
             'devices' => ['nullable', 'array'],
             'devices.*.id' => ['sometimes', 'integer'],
-            'devices.*.subscription_key' => ['sometimes', 'string', 'max:255'],
             'devices.*.service_name' => ['sometimes', 'string', 'max:255'],
             'deployment_time' => ['required', 'integer'],
             'vlan_site_prefix' => ['nullable', 'string', 'max:64'],
             'override_device_scope' => ['nullable', Rule::in(['vsf_only', 'all'])],
             'licensing_mode' => ['nullable', Rule::in(['uniform', 'per_device'])],
-            'subscription_key' => ['nullable', 'string', 'max:255'],
+            'license_tag' => ['nullable', 'string', 'max:255'],
+            'license_type' => ['nullable', 'string', 'max:255'],
+            'devices.*.license_tag' => ['sometimes', 'string', 'max:255'],
+            'devices.*.license_type' => ['sometimes', 'string', 'max:255'],
             'service_name' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -1013,7 +1016,7 @@ class TaskController extends Controller
                 $validated,
                 $shardEntropy,
                 $licensingInventoryService,
-                $licensingSubscriptionResolver,
+                app(LicensingPoolResolver::class),
             );
         } else {
             $task = $deployment->tasks()->create([
@@ -1044,7 +1047,7 @@ class TaskController extends Controller
         array $validated,
         string $shardEntropy,
         LicensingInventoryService $licensingInventoryService,
-        LicensingSubscriptionResolver $licensingSubscriptionResolver,
+        LicensingPoolResolver $licensingPoolResolver,
     ): Task {
         $isAssign = $validated['task_type'] === 'ASSIGN_SUBSCRIPTION';
         $licensingMode = $validated['licensing_mode'] ?? 'uniform';
@@ -1077,40 +1080,84 @@ class TaskController extends Controller
             throw ValidationException::withMessages(['devices' => $licensingOptions['central_error']]);
         }
 
-        $subscriptionsByKey = $licensingOptions['subscriptions_by_key'];
+        $availableSubscriptions = $licensingOptions['available_subscriptions'];
         $cachedPayload = $licensingInventoryService->buildFromCache($deployment->client, []);
         $inventoryBySerial = collect($cachedPayload['devices'])->keyBy('serial');
 
         $attachData = [];
-        $taskGreenlakeSubscriptionId = null;
-        $taskSubscriptionKey = null;
+        $taskLicenseTag = null;
+        $taskLicenseType = null;
 
         if ($licensingMode === 'per_device') {
-            foreach ($deviceRows as $row) {
-                $deviceId = (int) ($row['id'] ?? 0);
-                if (! $selectedDevices->has($deviceId)) {
-                    continue;
+            if ($isAssign) {
+                $poolGroups = [];
+                foreach ($deviceRows as $row) {
+                    $deviceId = (int) ($row['id'] ?? 0);
+                    if (! $selectedDevices->has($deviceId)) {
+                        continue;
+                    }
+
+                    $licenseTag = trim((string) ($row['license_tag'] ?? ''));
+                    $licenseTypeValue = trim((string) ($row['license_type'] ?? ''));
+                    if ($licenseTag === '' || $licenseTypeValue === '') {
+                        throw ValidationException::withMessages(['devices' => 'Each device must have a license tag and license type selected.']);
+                    }
+
+                    $licenseType = LicenseType::tryFromValue($licenseTypeValue);
+                    if ($licenseType === null) {
+                        throw ValidationException::withMessages(['devices' => "Invalid license type \"{$licenseTypeValue}\" for one or more devices."]);
+                    }
+
+                    $groupKey = $licenseTag.'|'.$licenseType->value;
+                    $poolGroups[$groupKey] ??= [
+                        'license_tag' => $licenseTag,
+                        'license_type' => $licenseType,
+                        'device_ids' => [],
+                    ];
+                    $poolGroups[$groupKey]['device_ids'][] = $deviceId;
                 }
 
-                $serial = (string) $selectedDevices->get($deviceId)->serial;
-                $inventoryRow = $inventoryBySerial->get($serial);
+                foreach ($poolGroups as $group) {
+                    $capacityError = $licensingPoolResolver->validatePoolCapacity(
+                        $group['license_tag'],
+                        $group['license_type'],
+                        count($group['device_ids']),
+                        $availableSubscriptions,
+                    );
+                    if ($capacityError !== null) {
+                        throw ValidationException::withMessages(['devices' => $capacityError['error']]);
+                    }
+                }
 
-                if ($isAssign) {
-                    $subscriptionKey = trim((string) ($row['subscription_key'] ?? ''));
-                    if ($subscriptionKey === '') {
-                        throw ValidationException::withMessages(['devices' => 'Each device must have a license selected.']);
+                foreach ($poolGroups as $group) {
+                    $allocations = $licensingPoolResolver->allocateDevices(
+                        $group['device_ids'],
+                        $group['license_tag'],
+                        $group['license_type'],
+                        $availableSubscriptions,
+                    );
+                    if (count($allocations) !== count($group['device_ids'])) {
+                        throw ValidationException::withMessages(['devices' => 'Could not allocate enough licenses from one or more tag/type pools. Renew licensing and try again.']);
                     }
 
-                    $greenlakeSubscriptionId = $this->resolveGreenlakeSubscriptionId($subscriptionsByKey, $subscriptionKey);
-                    if ($greenlakeSubscriptionId === null) {
-                        throw ValidationException::withMessages(['devices' => 'Selected subscription is not linked in GreenLake. Renew licensing and try again.']);
+                    foreach ($group['device_ids'] as $deviceId) {
+                        $attachData[$deviceId] = [
+                            'status' => 'PENDING',
+                            'licensing_service_name' => $allocations[$deviceId],
+                            'license_tag' => $group['license_tag'],
+                            'license_type' => $group['license_type']->value,
+                        ];
+                    }
+                }
+            } else {
+                foreach ($deviceRows as $row) {
+                    $deviceId = (int) ($row['id'] ?? 0);
+                    if (! $selectedDevices->has($deviceId)) {
+                        continue;
                     }
 
-                    $attachData[$deviceId] = [
-                        'status' => 'PENDING',
-                        'licensing_service_name' => $greenlakeSubscriptionId,
-                    ];
-                } else {
+                    $serial = (string) $selectedDevices->get($deviceId)->serial;
+                    $inventoryRow = $inventoryBySerial->get($serial);
                     $subscriptionKey = is_array($inventoryRow)
                         ? trim((string) ($inventoryRow['subscription_key'] ?? ''))
                         : '';
@@ -1123,32 +1170,54 @@ class TaskController extends Controller
             }
         } else {
             if ($isAssign) {
-                $subscriptionKey = trim((string) ($validated['subscription_key'] ?? ''));
-                if ($subscriptionKey === '') {
-                    throw ValidationException::withMessages(['subscription_key' => 'Select a license to assign.']);
+                $licenseTag = trim((string) ($validated['license_tag'] ?? ''));
+                $licenseTypeValue = trim((string) ($validated['license_type'] ?? ''));
+                if ($licenseTag === '') {
+                    throw ValidationException::withMessages(['license_tag' => 'Select a license tag.']);
+                }
+                if ($licenseTypeValue === '') {
+                    throw ValidationException::withMessages(['license_type' => 'Select a license type.']);
                 }
 
-                $capacityError = $licensingSubscriptionResolver->validateCapacity(
-                    $subscriptionKey,
+                $licenseType = LicenseType::tryFromValue($licenseTypeValue);
+                if ($licenseType === null) {
+                    throw ValidationException::withMessages(['license_type' => 'Selected license type is not valid.']);
+                }
+
+                $capacityError = $licensingPoolResolver->validatePoolCapacity(
+                    $licenseTag,
+                    $licenseType,
                     $deviceIds->count(),
-                    $subscriptionsByKey,
+                    $availableSubscriptions,
                 );
                 if ($capacityError !== null) {
-                    throw ValidationException::withMessages(['subscription_key' => $capacityError['error']]);
+                    throw ValidationException::withMessages(['license_tag' => $capacityError['error']]);
                 }
 
-                $taskGreenlakeSubscriptionId = $this->resolveGreenlakeSubscriptionId($subscriptionsByKey, $subscriptionKey);
-                if ($taskGreenlakeSubscriptionId === null) {
-                    throw ValidationException::withMessages(['subscription_key' => 'Selected subscription is not linked in GreenLake. Renew licensing and try again.']);
+                $allocations = $licensingPoolResolver->allocateDevices(
+                    $deviceIds->all(),
+                    $licenseTag,
+                    $licenseType,
+                    $availableSubscriptions,
+                );
+                if (count($allocations) !== $deviceIds->count()) {
+                    throw ValidationException::withMessages(['license_tag' => 'Could not allocate enough licenses from the selected tag/type pool. Renew licensing and try again.']);
                 }
 
-                $taskSubscriptionKey = $subscriptionKey;
-            }
+                $taskLicenseTag = $licenseTag;
+                $taskLicenseType = $licenseType->value;
 
-            foreach ($deviceIds as $deviceId) {
-                $attachData[$deviceId] = ['status' => 'PENDING'];
-                if ($isAssign && $taskGreenlakeSubscriptionId !== null) {
-                    $attachData[$deviceId]['licensing_service_name'] = $taskGreenlakeSubscriptionId;
+                foreach ($deviceIds as $deviceId) {
+                    $attachData[$deviceId] = [
+                        'status' => 'PENDING',
+                        'licensing_service_name' => $allocations[$deviceId],
+                        'license_tag' => $licenseTag,
+                        'license_type' => $licenseType->value,
+                    ];
+                }
+            } else {
+                foreach ($deviceIds as $deviceId) {
+                    $attachData[$deviceId] = ['status' => 'PENDING'];
                 }
             }
         }
@@ -1163,8 +1232,8 @@ class TaskController extends Controller
             'deployment_time' => $validated['deployment_time'],
             'status' => 'IN_PROGRESS',
             'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
-            'licensing_service_name' => $taskGreenlakeSubscriptionId,
-            'licensing_subscription_key' => $taskSubscriptionKey,
+            'license_tag' => $taskLicenseTag,
+            'license_type' => $taskLicenseType,
         ]);
 
         $task->devices()->attach($attachData);

@@ -508,3 +508,73 @@ it('uploads devices with vsx profile columns', function () {
         'vsx_system_mac' => '02:00:00:00:00:01',
     ]);
 });
+
+it('rejects a csv missing the serial header with a specific error', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $user->clients()->first()->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($user->clients()->first())->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,device_function'.PHP_EOL.
+        'SW-1,ACCESS_SWITCH'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertSessionHasErrors('CSV headers: missing required columns');
+});
+
+it('rejects a csv with an unrecognized column header', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $user->clients()->first()->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($user->clients()->first())->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,acces_vlan'.PHP_EOL.
+        'SW-1,SN0000000001,ACCESS_SWITCH,10'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertSessionHasErrors('CSV headers: unrecognized columns');
+});
+
+it('uploads devices when child interface rows omit serial and device_function', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $user->clients()->first()->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($user->clients()->first())->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface'.PHP_EOL.
+        'ACC-SWITCH-1,SN0000000001,ACCESS_SWITCH,1/1/1'.PHP_EOL.
+        'ACC-SWITCH-1,,,1/1/2'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', ['serial' => 'SN0000000001', 'name' => 'ACC-SWITCH-1']);
+});
+
+it('uploads devices when a name-only organizational row is present', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $user->clients()->first()->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($user->clients()->first())->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface'.PHP_EOL.
+        'Building A Switches,,,'.PHP_EOL.
+        'SW-1,SN0000000002,ACCESS_SWITCH,1/1/1'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', ['serial' => 'SN0000000002', 'name' => 'SW-1']);
+});

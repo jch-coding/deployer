@@ -8,11 +8,16 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import TaskDurationDialog from '@/components/ui/TaskDurationDialog';
-import LicenseSelect, {
+import {
     type AvailableSubscription,
     filterSubscriptionsByDeviceCategory,
 } from '@/components/licensing/LicenseSelect';
 import RenewLicensingButton from '@/components/licensing/RenewLicensingButton';
+import {
+    type LicenseTypeOption,
+    filterLicenseTypesByDeviceCategory,
+} from '@/lib/license-types';
+import { collectLicenseTags, poolAvailableSeats } from '@/lib/licensing-pool';
 import {
     Tooltip,
     TooltipContent,
@@ -36,6 +41,11 @@ type DeploymentType = {
     name: string,
 }
 
+type PerDeviceLicenseSelection = {
+    license_tag: string;
+    license_type: LicenseTypeOption | '';
+};
+
 type TaskCardProps = {
     task: string;
     task_friendly_name: string;
@@ -47,7 +57,12 @@ type TaskCardProps = {
     available_subscriptions?: AvailableSubscription[];
     enabled_services?: string[];
     licensing_synced_at?: string | null;
+    license_tags?: string[];
+    license_type_options?: LicenseTypeOption[];
 };
+
+const selectClassName =
+    'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
 export default function TaskCard({
     task,
@@ -60,6 +75,8 @@ export default function TaskCard({
     available_subscriptions = [],
     enabled_services = [],
     licensing_synced_at = null,
+    license_tags: licenseTagsProp = [],
+    license_type_options = [],
 }: TaskCardProps) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
@@ -86,10 +103,12 @@ export default function TaskCard({
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
     const [vlanSitePrefix, setVlanSitePrefix] = useState('')
-    const [bulkSubscriptionKey, setBulkSubscriptionKey] = useState(
-        available_subscriptions[0]?.subscription_key ?? '',
-    );
+    const [bulkLicenseTag, setBulkLicenseTag] = useState('');
+    const [bulkLicenseType, setBulkLicenseType] = useState<LicenseTypeOption | ''>('');
     const [bulkUnassignService, setBulkUnassignService] = useState(enabled_services[0] ?? '');
+    const [perDeviceLicenseSelections, setPerDeviceLicenseSelections] = useState<
+        Record<number, PerDeviceLicenseSelection>
+    >({});
     const [perDeviceSubscriptionKeys, setPerDeviceSubscriptionKeys] = useState<Record<number, string>>({});
 
     const isAssignSubscription = task === 'ASSIGN_SUBSCRIPTION';
@@ -101,14 +120,50 @@ export default function TaskCard({
         [available_subscriptions, switchesOnly, apsOnly],
     );
 
+    const availableLicenseTags = useMemo(() => {
+        const fromSubscriptions = collectLicenseTags(filteredSubscriptions);
+        const merged = new Set([...licenseTagsProp, ...fromSubscriptions]);
+
+        return [...merged].sort((a, b) => a.localeCompare(b));
+    }, [filteredSubscriptions, licenseTagsProp]);
+
+    const filteredLicenseTypes = useMemo(
+        () => filterLicenseTypesByDeviceCategory(license_type_options, switchesOnly, apsOnly),
+        [license_type_options, switchesOnly, apsOnly],
+    );
+
+    const bulkPoolSeats = useMemo(() => {
+        if (!bulkLicenseTag || !bulkLicenseType) {
+            return 0;
+        }
+
+        return poolAvailableSeats(filteredSubscriptions, bulkLicenseTag, bulkLicenseType);
+    }, [filteredSubscriptions, bulkLicenseTag, bulkLicenseType]);
+
     useEffect(() => {
         if (
-            filteredSubscriptions.length > 0 &&
-            !filteredSubscriptions.some((s) => s.subscription_key === bulkSubscriptionKey)
+            availableLicenseTags.length > 0 &&
+            !availableLicenseTags.includes(bulkLicenseTag)
         ) {
-            setBulkSubscriptionKey(filteredSubscriptions[0].subscription_key);
+            setBulkLicenseTag(availableLicenseTags[0]);
         }
-    }, [filteredSubscriptions, bulkSubscriptionKey]);
+    }, [availableLicenseTags, bulkLicenseTag]);
+
+    useEffect(() => {
+        if (
+            filteredLicenseTypes.length > 0 &&
+            bulkLicenseType !== '' &&
+            !filteredLicenseTypes.includes(bulkLicenseType)
+        ) {
+            setBulkLicenseType(filteredLicenseTypes[0]);
+        }
+    }, [filteredLicenseTypes, bulkLicenseType]);
+
+    useEffect(() => {
+        if (bulkLicenseType === '' && filteredLicenseTypes.length > 0) {
+            setBulkLicenseType(filteredLicenseTypes[0]);
+        }
+    }, [filteredLicenseTypes, bulkLicenseType]);
 
     const vlanPrefixTrimmed = vlanSitePrefix.trim()
     const isAddVlansWithPrefix =
@@ -156,29 +211,57 @@ export default function TaskCard({
         }
 
         if (taskStr === 'ASSIGN_SUBSCRIPTION') {
-            if (licensingMode === 'uniform' && !bulkSubscriptionKey) {
-                toast.error('Select a license to assign.');
-
-                return;
-            }
-            const bulkSub = filteredSubscriptions.find((s) => s.subscription_key === bulkSubscriptionKey);
-            if (
-                licensingMode === 'uniform' &&
-                bulkSub &&
-                devices_for_task.length > bulkSub.available
-            ) {
-                toast.error(`Only ${bulkSub.available} seat(s) available on this license.`);
-
-                return;
-            }
-            if (licensingMode === 'per_device') {
-                const missing = devices_for_task.some(
-                    (d) => !(perDeviceSubscriptionKeys[d.id] ?? '').trim(),
-                );
-                if (missing) {
-                    toast.error('Select a license for each device in the modal.');
+            if (licensingMode === 'uniform') {
+                if (!bulkLicenseTag) {
+                    toast.error('Select a license tag.');
 
                     return;
+                }
+                if (!bulkLicenseType) {
+                    toast.error('Select a license type.');
+
+                    return;
+                }
+                if (devices_for_task.length > bulkPoolSeats) {
+                    toast.error(
+                        `Only ${bulkPoolSeats} ${bulkLicenseType} seat(s) available for tag "${bulkLicenseTag}".`,
+                    );
+
+                    return;
+                }
+            }
+            if (licensingMode === 'per_device') {
+                const missing = devices_for_task.some((device) => {
+                    const selection = perDeviceLicenseSelections[device.id];
+
+                    return !selection?.license_tag || !selection?.license_type;
+                });
+                if (missing) {
+                    toast.error('Select a license tag and type for each device in the modal.');
+
+                    return;
+                }
+
+                const poolCounts = new Map<string, number>();
+                for (const device of devices_for_task) {
+                    const selection = perDeviceLicenseSelections[device.id];
+                    if (!selection?.license_tag || !selection?.license_type) {
+                        continue;
+                    }
+                    const key = `${selection.license_tag}|${selection.license_type}`;
+                    poolCounts.set(key, (poolCounts.get(key) ?? 0) + 1);
+                }
+
+                for (const [key, count] of poolCounts.entries()) {
+                    const [tag, licenseType] = key.split('|') as [string, LicenseTypeOption];
+                    const available = poolAvailableSeats(filteredSubscriptions, tag, licenseType);
+                    if (count > available) {
+                        toast.error(
+                            `Only ${available} ${licenseType} seat(s) available for tag "${tag}".`,
+                        );
+
+                        return;
+                    }
                 }
             }
         }
@@ -206,9 +289,12 @@ export default function TaskCard({
 
         const devicePayload = devices_for_task.map((device) => {
             if (taskStr === 'ASSIGN_SUBSCRIPTION' && licensingMode === 'per_device') {
+                const selection = perDeviceLicenseSelections[device.id];
+
                 return {
                     id: device.id,
-                    subscription_key: perDeviceSubscriptionKeys[device.id],
+                    license_tag: selection?.license_tag ?? '',
+                    license_type: selection?.license_type ?? '',
                 };
             }
             if (taskStr === 'UNASSIGN_SUBSCRIPTION' && licensingMode === 'per_device') {
@@ -227,9 +313,13 @@ export default function TaskCard({
             deployment_time: deploymentTimeTotalMinutes,
             wait_time: waitTimeMinutes,
             licensing_mode: isLicensingTask ? licensingMode : undefined,
-            subscription_key:
+            license_tag:
                 taskStr === 'ASSIGN_SUBSCRIPTION' && licensingMode === 'uniform'
-                    ? bulkSubscriptionKey
+                    ? bulkLicenseTag
+                    : undefined,
+            license_type:
+                taskStr === 'ASSIGN_SUBSCRIPTION' && licensingMode === 'uniform'
+                    ? bulkLicenseType
                     : undefined,
             service_name:
                 taskStr === 'UNASSIGN_SUBSCRIPTION' && licensingMode === 'uniform'
@@ -284,18 +374,59 @@ export default function TaskCard({
                                 size="sm"
                             />
                         </div>
-                        <label htmlFor={`bulk-license-${task}`} className="text-sm font-medium">
-                            License for selected devices
+                        <label htmlFor={`bulk-license-tag-${task}`} className="text-sm font-medium">
+                            License tag
                         </label>
-                        <LicenseSelect
-                            id={`bulk-license-${task}`}
-                            value={bulkSubscriptionKey}
-                            subscriptions={filteredSubscriptions}
-                            onChange={setBulkSubscriptionKey}
-                        />
+                        <select
+                            id={`bulk-license-tag-${task}`}
+                            value={bulkLicenseTag}
+                            onChange={(e) => setBulkLicenseTag(e.target.value)}
+                            className={selectClassName}
+                            data-test="license-tag-select"
+                        >
+                            <option value="">
+                                {availableLicenseTags.length === 0
+                                    ? 'No license tags available'
+                                    : 'Select a tag'}
+                            </option>
+                            {availableLicenseTags.map((tag) => (
+                                <option key={tag} value={tag}>
+                                    {tag}
+                                </option>
+                            ))}
+                        </select>
+                        <label htmlFor={`bulk-license-type-${task}`} className="text-sm font-medium">
+                            License type
+                        </label>
+                        <select
+                            id={`bulk-license-type-${task}`}
+                            value={bulkLicenseType}
+                            onChange={(e) =>
+                                setBulkLicenseType(e.target.value as LicenseTypeOption)
+                            }
+                            className={selectClassName}
+                            data-test="license-type-select"
+                        >
+                            <option value="">
+                                {filteredLicenseTypes.length === 0
+                                    ? 'No license types available'
+                                    : 'Select a type'}
+                            </option>
+                            {filteredLicenseTypes.map((licenseType) => (
+                                <option key={licenseType} value={licenseType}>
+                                    {licenseType}
+                                </option>
+                            ))}
+                        </select>
+                        {bulkLicenseTag && bulkLicenseType ? (
+                            <p className="text-muted-foreground text-xs">
+                                {bulkPoolSeats} seat{bulkPoolSeats === 1 ? '' : 's'} available in
+                                this tag/type pool.
+                            </p>
+                        ) : null}
                         <p className="text-muted-foreground text-xs">
                             Applies to all devices when deploying. Use per-device modal for mixed
-                            licenses. Central assigns a service tier from this pool.
+                            tag/type combinations.
                         </p>
                     </div>
                 ) : null}
@@ -308,7 +439,7 @@ export default function TaskCard({
                             id={`bulk-unassign-${task}`}
                             value={bulkUnassignService}
                             onChange={(e) => setBulkUnassignService(e.target.value)}
-                            className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+                            className={selectClassName}
                         >
                             {enabled_services.map((service) => (
                                 <option key={service} value={service}>
@@ -468,17 +599,62 @@ export default function TaskCard({
                                                 </label>
                                             </div>
                                             {isAssignSubscription ? (
-                                                <LicenseSelect
-                                                    value={perDeviceSubscriptionKeys[device.id] ?? ''}
-                                                    subscriptions={filteredSubscriptions}
-                                                    onChange={(key) =>
-                                                        setPerDeviceSubscriptionKeys((prev) => ({
-                                                            ...prev,
-                                                            [device.id]: key,
-                                                        }))
-                                                    }
-                                                    placeholder="License for this device"
-                                                />
+                                                <>
+                                                    <select
+                                                        value={
+                                                            perDeviceLicenseSelections[device.id]
+                                                                ?.license_tag ?? ''
+                                                        }
+                                                        onChange={(e) =>
+                                                            setPerDeviceLicenseSelections((prev) => ({
+                                                                ...prev,
+                                                                [device.id]: {
+                                                                    license_tag: e.target.value,
+                                                                    license_type:
+                                                                        prev[device.id]?.license_type ??
+                                                                        bulkLicenseType,
+                                                                },
+                                                            }))
+                                                        }
+                                                        className={selectClassName}
+                                                    >
+                                                        <option value="">Select tag</option>
+                                                        {availableLicenseTags.map((tag) => (
+                                                            <option key={tag} value={tag}>
+                                                                {tag}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <select
+                                                        value={
+                                                            perDeviceLicenseSelections[device.id]
+                                                                ?.license_type ?? ''
+                                                        }
+                                                        onChange={(e) =>
+                                                            setPerDeviceLicenseSelections((prev) => ({
+                                                                ...prev,
+                                                                [device.id]: {
+                                                                    license_tag:
+                                                                        prev[device.id]?.license_tag ??
+                                                                        bulkLicenseTag,
+                                                                    license_type: e.target
+                                                                        .value as LicenseTypeOption,
+                                                                },
+                                                            }))
+                                                        }
+                                                        className={selectClassName}
+                                                    >
+                                                        <option value="">Select type</option>
+                                                        {filteredLicenseTypes.map((licenseType) => (
+                                                            <option
+                                                                key={licenseType}
+                                                                value={licenseType}
+                                                            >
+                                                                {licenseType}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </>
                                             ) : (
                                                 <select
                                                     value={perDeviceSubscriptionKeys[device.id] ?? ''}

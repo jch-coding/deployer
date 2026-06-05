@@ -110,12 +110,9 @@ class DeviceController extends Controller
         }
 
         $headers = array_map(
-            fn ($header) => strtolower(str_replace('-', '_', trim((string) $header))),
+            fn ($header) => CSVHelper::normalizeCsvHeader((string) $header),
             $csvData[0]
         );
-        if (! in_array('name', $headers) || ! in_array('serial', $headers) || ! in_array('device_function', $headers)) {
-            return back()->withErrors('CSV file does not contain required headers. Must include name, serial and device_function');
-        }
 
         $unique_devices = $this->consolidateDataForDevices($devices);
 

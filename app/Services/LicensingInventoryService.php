@@ -79,6 +79,7 @@ class LicensingInventoryService
                     'enabled_services' => [],
                     'available_subscriptions' => [],
                     'subscriptions_by_key' => [],
+                    'license_tags' => [],
                     'central_error' => $e->getMessage(),
                     'licensing_synced_at' => null,
                 ];
@@ -95,6 +96,7 @@ class LicensingInventoryService
                 'enabled_services' => [],
                 'available_subscriptions' => [],
                 'subscriptions_by_key' => [],
+                'license_tags' => [],
                 'central_error' => $client->licensing_sync_error ?? 'Licensing has not been synced yet. Use Renew licensing to fetch from Central.',
                 'licensing_synced_at' => null,
             ];
@@ -115,6 +117,7 @@ class LicensingInventoryService
             'enabled_services' => $client->licensing_enabled_services ?? [],
             'available_subscriptions' => $this->buildAvailableSubscriptions($subscriptionsArray, $inventoryForAvailable),
             'subscriptions_by_key' => $subscriptionsByKey,
+            'license_tags' => $this->collectLicenseTags($subscriptionsArray),
             'central_error' => $client->licensing_sync_error,
             'licensing_synced_at' => $client->licensing_synced_at?->toIso8601String(),
         ];
@@ -279,7 +282,32 @@ class LicensingInventoryService
         return [
             'license_types' => array_values(array_keys($licenseTypes)),
             'subscription_skus' => array_values(array_keys($subscriptionSkus)),
+            'license_tags' => $this->collectLicenseTags($subscriptions),
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $subscriptions
+     * @return array<int, string>
+     */
+    private function collectLicenseTags(array $subscriptions): array
+    {
+        $tags = [];
+
+        foreach ($subscriptions as $subscription) {
+            if (! is_array($subscription)) {
+                continue;
+            }
+
+            foreach (GreenLakeAPIHelper::normalizeTagKeys($subscription['tags'] ?? []) as $tag) {
+                $tags[$tag] = true;
+            }
+        }
+
+        $tagList = array_keys($tags);
+        sort($tagList);
+
+        return $tagList;
     }
 
     /**
@@ -481,6 +509,7 @@ class LicensingInventoryService
             'filter_options' => [
                 'license_types' => [],
                 'subscription_skus' => [],
+                'license_tags' => [],
             ],
             'central_error' => $error,
             'licensing_synced_at' => $licensingSyncedAt,
