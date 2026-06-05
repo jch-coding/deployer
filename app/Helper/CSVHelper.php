@@ -4,6 +4,7 @@ namespace App\Helper;
 
 use App\DeviceFunction;
 use App\SwitchSKU;
+use App\VsxRole;
 use Illuminate\Validation\ValidationException;
 
 class CSVHelper
@@ -68,6 +69,7 @@ class CSVHelper
                     $headers = array_values($row);
                     $nameCol = array_search('name', $headers, true);
                     $data[] = $row;
+
                     continue;
                 }
 
@@ -155,7 +157,7 @@ class CSVHelper
             return [];
         }
         $headers = array_map(function ($header) {
-            $normalized = str_replace('-', '_', trim((string) $header));
+            $normalized = strtolower(str_replace('-', '_', trim((string) $header)));
 
             return match ($normalized) {
                 'interface_description' => 'description',
@@ -245,6 +247,44 @@ class CSVHelper
             }
         }
 
+        if (array_key_exists('vsx_role', $row)) {
+            $raw = $row['vsx_role'];
+            if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+                $row['vsx_role'] = is_string($raw) ? $raw : ($raw ?? '');
+            } else {
+                $trimmed = trim((string) $raw);
+                $resolved = self::matchUnitEnumName($trimmed, VsxRole::class);
+                if ($resolved === null) {
+                    $validationMessages[] = [
+                        'row' => $csvRowNumber,
+                        'column' => 'vsx_role',
+                        'text' => "vsx_role \"{$trimmed}\" is not valid. Allowed values: VSX_PRIMARY, VSX_SECONDARY.",
+                    ];
+                } else {
+                    $row['vsx_role'] = $resolved;
+                }
+            }
+        }
+
+        if (array_key_exists('vsx_system_mac', $row)) {
+            $raw = $row['vsx_system_mac'];
+            if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+                $row['vsx_system_mac'] = is_string($raw) ? $raw : ($raw ?? '');
+            } else {
+                $trimmed = trim((string) $raw);
+                $normalizedMac = self::normalizeVsxSystemMac($trimmed);
+                if ($normalizedMac === null) {
+                    $validationMessages[] = [
+                        'row' => $csvRowNumber,
+                        'column' => 'vsx_system_mac',
+                        'text' => "vsx_system_mac \"{$trimmed}\" must match 02:00:00:00:00:xx where xx are hex digits starting from 01.",
+                    ];
+                } else {
+                    $row['vsx_system_mac'] = $normalizedMac;
+                }
+            }
+        }
+
         foreach (['interface_mode' => self::INTERFACE_MODES, 'trunk_type' => self::TRUNK_TYPES, 'lacp_mode' => self::LACP_MODES, 'lacp_rate' => self::LACP_RATES] as $column => $allowed) {
             if (! array_key_exists($column, $row)) {
                 continue;
@@ -313,6 +353,40 @@ class CSVHelper
         }
 
         return $row;
+    }
+
+    /**
+     * Normalize VSX system MAC to 02:00:00:00:00:xx (accepts dashes, missing leading zeros).
+     */
+    private static function normalizeVsxSystemMac(string $value): ?string
+    {
+        $value = strtolower(str_replace('-', ':', trim($value)));
+        $parts = explode(':', $value);
+        if (count($parts) !== 6) {
+            return null;
+        }
+
+        $normalizedParts = [];
+        foreach ($parts as $part) {
+            if (! preg_match('/^[0-9a-f]{1,2}$/', $part)) {
+                return null;
+            }
+            $normalizedParts[] = str_pad($part, 2, '0', STR_PAD_LEFT);
+        }
+
+        if ($normalizedParts[0] !== '02'
+            || $normalizedParts[1] !== '00'
+            || $normalizedParts[2] !== '00'
+            || $normalizedParts[3] !== '00'
+            || $normalizedParts[4] !== '00') {
+            return null;
+        }
+
+        if (hexdec($normalizedParts[5]) < 0x01) {
+            return null;
+        }
+
+        return implode(':', $normalizedParts);
     }
 
     private static function isCsvCellPopulated(mixed $value): bool

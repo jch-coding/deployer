@@ -480,3 +480,31 @@ it('rejects a csv with an invalid device_function value', function () {
     $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
         ->assertSessionHasErrors();
 });
+
+it('uploads devices with vsx profile columns', function () {
+    Storage::fake('devices');
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,group,site,vsx_profile,vsx_role,vsx_system_mac'.PHP_EOL.
+        'Primary-SW,SN0000000001,ACCESS_SWITCH,WHSE-TEST,Site-A,vsx-pair-1,VSX_PRIMARY,2:0:0:0:0:1'.PHP_EOL.
+        'Secondary-SW,SN0000000002,ACCESS_SWITCH,WHSE-TEST,Site-A,vsx-pair-1,VSX_SECONDARY,2:0:0:0:0:1'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', [
+        'serial' => 'SN0000000001',
+        'vsx_profile' => 'vsx-pair-1',
+        'vsx_role' => 'VSX_PRIMARY',
+        'vsx_system_mac' => '02:00:00:00:00:01',
+    ]);
+});

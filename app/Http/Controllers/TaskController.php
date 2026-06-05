@@ -16,6 +16,7 @@ use App\Jobs\ConfigureLagInterfaceJob;
 use App\Jobs\ConfigureVlanInterfaceJob;
 use App\Jobs\CreateNewCentralCXGroup;
 use App\Jobs\CreateVSFProfileJob;
+use App\Jobs\CreateVsxProfileJob;
 use App\Jobs\MoveDevicesToGroupJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Jobs\RemoveLocalOverrideDNSJob;
@@ -76,6 +77,12 @@ class TaskController extends Controller
         ],
         'CREATE_VSF_PROFILE' => [
             'sku',
+        ],
+        'CREATE_VSX_PROFILE' => [
+            'group',
+            'vsx_profile',
+            'vsx_role',
+            'vsx_system_mac',
         ],
         'MOVE_DEVICE_TO_GROUP' => [
             'group',
@@ -1678,6 +1685,14 @@ class TaskController extends Controller
             case 'CREATE_VSF_PROFILE':
                 $devices_with_vsf_profile = $task->devices->filter(fn ($device) => $device->sku && $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $devices_with_vsf_profile->map(fn ($device) => new CreateVSFProfileJob($device, $task, $centralAPIHelper))->toArray();
+                break;
+            case 'CREATE_VSX_PROFILE':
+                $pending_vsx = $task->devices->filter(fn ($device) => $device->vsx_profile && $device->pivot->status !== 'COMPLETED');
+                $jobs[] = $pending_vsx
+                    ->groupBy('vsx_profile')
+                    ->map(fn ($devices, $name) => new CreateVsxProfileJob($name, $devices, $task, $centralAPIHelper))
+                    ->values()
+                    ->toArray();
                 break;
             case 'REMOVE_LOCAL_OVERRIDE_DNS_PROFILE':
                 $devices_for_local_override = $this->devicesForLocalOverrideRemoval($task);

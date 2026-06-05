@@ -219,6 +219,21 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
         accepted: 'Switch SKU (used for VSF profile creation). Example: JL660A.',
     },
     {
+        column: 'vsx_profile',
+        type: 'string',
+        accepted: 'Name of the VSX profile. Both peers in a pair must share the same value.',
+    },
+    {
+        column: 'vsx_role',
+        type: 'enum',
+        accepted: 'VSX_PRIMARY or VSX_SECONDARY. Each VSX profile requires exactly one of each.',
+    },
+    {
+        column: 'vsx_system_mac',
+        type: 'string',
+        accepted: 'System MAC in the form 02:00:00:00:00:xx where xx are hex digits starting from 01. Same value on both peers.',
+    },
+    {
         column: 'trunk_vlan_all',
         type: 'boolean',
         accepted: (
@@ -477,6 +492,33 @@ export default function documentation() {
                             </p>
                             <ColumnPair
                                 required={['name', 'serial', 'device_function', 'sku']}
+                                optional={[]}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard title="Create VSX Profile" defaultOpen>
+                        <div className="space-y-4">
+                            <p>
+                                Creates a VSX profile for a pair of switches. Both peers must share the same{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_profile</code> and{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_system_mac</code>, with one{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">VSX_PRIMARY</code> and one{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">VSX_SECONDARY</code>. The{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">group</code> column is required
+                                so the task can ensure the WHSE-VSX-Keep-Alive VRF at device group scope before creating
+                                LAG 256 (inter-switch-link) and LAG 255 (keepalive) interfaces.
+                            </p>
+                            <ColumnPair
+                                required={[
+                                    'name',
+                                    'serial',
+                                    'device_function',
+                                    'group',
+                                    'vsx_profile',
+                                    'vsx_role',
+                                    'vsx_system_mac',
+                                ]}
                                 optional={[]}
                             />
                         </div>

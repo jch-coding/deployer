@@ -109,7 +109,10 @@ class DeviceController extends Controller
             return back()->withErrors('No devices found in CSV file');
         }
 
-        $headers = $csvData[0];
+        $headers = array_map(
+            fn ($header) => strtolower(str_replace('-', '_', trim((string) $header))),
+            $csvData[0]
+        );
         if (! in_array('name', $headers) || ! in_array('serial', $headers) || ! in_array('device_function', $headers)) {
             return back()->withErrors('CSV file does not contain required headers. Must include name, serial and device_function');
         }
@@ -126,11 +129,14 @@ class DeviceController extends Controller
                 'deployment_id' => $deployment->id,
                 'group' => $arr['group'] ?? null,
                 'sku' => $arr['sku'] == '' ? null : $arr['sku'],
+                'vsx_profile' => ($arr['vsx_profile'] ?? '') === '' ? null : $arr['vsx_profile'],
+                'vsx_role' => ($arr['vsx_role'] ?? '') === '' ? null : $arr['vsx_role'],
+                'vsx_system_mac' => ($arr['vsx_system_mac'] ?? '') === '' ? null : $arr['vsx_system_mac'],
             ],
             $unique_devices
         );
 
-        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku']);
+        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku', 'vsx_profile', 'vsx_role', 'vsx_system_mac']);
 
         $errors = [];
         $unsaved_devices = [];
@@ -211,6 +217,9 @@ class DeviceController extends Controller
                 'device_function' => '',
                 'group' => '',
                 'sku' => '',
+                'vsx_profile' => '',
+                'vsx_role' => '',
+                'vsx_system_mac' => '',
             ];
             foreach ($device as $device_info) {
                 foreach (array_keys($empty) as $key) {

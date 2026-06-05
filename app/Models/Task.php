@@ -111,6 +111,7 @@ class Task extends Model
             'ASSOCIATE_DEVICE_TO_SITE',
             'ASSOCIATE_SITE_AND_NAME',
             'CREATE_VSF_PROFILE',
+            'CREATE_VSX_PROFILE',
             'UPDATE_SYSTEM_INFO',
             'MOVE_DEVICE_TO_GROUP',
             'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES',
@@ -152,6 +153,8 @@ class Task extends Model
                 return 'Configure SVI';
             case 'CREATE_VSF_PROFILE':
                 return 'Create VSF Profile';
+            case 'CREATE_VSX_PROFILE':
+                return 'Create VSX Profile';
             case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
                 return 'Remove VSF profile local overrides';
             case 'REMOVE_LOCAL_OVERRIDE_VLANS':
@@ -212,6 +215,8 @@ class Task extends Model
                 return 'Preprovision devices to a group';
             case 'CREATE_VSF_PROFILE':
                 return 'Create autostack VSF Profile';
+            case 'CREATE_VSX_PROFILE':
+                return 'Create VSX profile for a switch pair with LAG 256/255 prerequisites';
             case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
                 return 'Remove VLANs, DNS, NTP, static route, and local management profile overrides introduced by the VSF onboarding';
             case 'REMOVE_LOCAL_OVERRIDE_VLANS':
@@ -258,6 +263,8 @@ class Task extends Model
                 return ['name', 'serial', 'device_function', 'interface', 'ip_address'];
             case 'CREATE_VSF_PROFILE':
                 return ['name', 'serial', 'device_function', 'interface', 'sku'];
+            case 'CREATE_VSX_PROFILE':
+                return ['name', 'serial', 'device_function', 'group', 'vsx_profile', 'vsx_role', 'vsx_system_mac'];
             case 'REMOVE_VSF_PROFILE_LOCAL_OVERRIDES':
                 return ['name', 'serial', 'device_function'];
             case 'ASSOCIATE_DEVICE_TO_SITE':

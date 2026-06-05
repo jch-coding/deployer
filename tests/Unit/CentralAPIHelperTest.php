@@ -1014,3 +1014,199 @@ test('ensureVrfForRoutedInterface checks vrf against latest non-empty scope resp
     expect($result)->toBe(['ok' => true]);
     Http::assertNotSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/vrfs/'));
 });
+
+test('buildVsxKeepaliveLagPayload uses role-specific keepalive address', function () {
+    $ports = ['1/1/47', '1/1/48'];
+
+    $primary = CentralAPIHelper::buildVsxKeepaliveLagPayload($ports, App\VsxRole::VSX_PRIMARY);
+    $secondary = CentralAPIHelper::buildVsxKeepaliveLagPayload($ports, App\VsxRole::VSX_SECONDARY);
+
+    expect($primary['ipv4']['address'])->toBe('1.1.1.1/30')
+        ->and($secondary['ipv4']['address'])->toBe('1.1.1.2/30')
+        ->and($primary['port-list'])->toBe($ports);
+});
+
+test('buildVsxIslLagPayload builds trunk inter-switch-link lag', function () {
+    $payload = CentralAPIHelper::buildVsxIslLagPayload(['1/1/45', '1/1/46']);
+
+    expect($payload)->toMatchArray([
+        'name' => '256',
+        'switchport' => [
+            'interface-mode' => 'TRUNK',
+            'native-vlan' => 1,
+            'trunk-vlan-all' => true,
+        ],
+        'trunk-type' => 'LACP',
+        'lacp' => ['mode' => 'ACTIVE'],
+        'port-list' => ['1/1/45', '1/1/46'],
+        'enable' => true,
+    ]);
+});
+
+test('buildVsxLagMemberPortDescription formats peer link and keepalive labels', function () {
+    expect(CentralAPIHelper::buildVsxLagMemberPortDescription('Peer-A', '1/1/45', '[VSX-Peer-Link]'))
+        ->toBe('Peer-A - 1/1/45 [VSX-Peer-Link]')
+        ->and(CentralAPIHelper::buildVsxLagMemberPortDescription('Peer-B', '1/1/47', '[VSX Keep-Alive]'))
+        ->toBe('Peer-B - 1/1/47 [VSX Keep-Alive]');
+});
+
+test('getVsxEthernetPortSelections returns isl and keepalive port slices', function () {
+    $names = ['1/1/1', '1/1/2', '1/1/3', '1/1/4', '1/1/5', '1/1/6'];
+
+    [$islPorts, $keepalivePorts] = CentralAPIHelper::getVsxEthernetPortSelections($names);
+
+    expect($islPorts)->toBe(['1/1/3', '1/1/4'])
+        ->and($keepalivePorts)->toBe(['1/1/5', '1/1/6']);
+});
+
+test('getVsxEthernetPortSelections requires at least four interfaces', function () {
+    $result = CentralAPIHelper::getVsxEthernetPortSelections(['1/1/1', '1/1/2', '1/1/3']);
+
+    expect($result)->toBe(['error' => 'Device requires at least 4 ethernet interfaces for VSX LAG configuration.']);
+});
+
+test('vsxPortchannelMatchesExpected compares port-list order independently', function () {
+    $expected = CentralAPIHelper::buildVsxIslLagPayload(['1/1/45', '1/1/46']);
+    $actual = CentralAPIHelper::buildVsxIslLagPayload(['1/1/46', '1/1/45']);
+
+    expect(CentralAPIHelper::vsxPortchannelMatchesExpected($expected, $actual))->toBe([]);
+});
+
+test('vsxPortchannelMatchesExpected reports mismatched keepalive ip', function () {
+    $expected = CentralAPIHelper::buildVsxKeepaliveLagPayload(['1/1/47', '1/1/48'], App\VsxRole::VSX_PRIMARY);
+    $actual = $expected;
+    $actual['ipv4']['address'] = '1.1.1.9/30';
+
+    $diffs = CentralAPIHelper::vsxPortchannelMatchesExpected($expected, $actual);
+
+    expect($diffs)->not->toBeEmpty()
+        ->and($diffs[0]['path'])->toBe('ipv4.address');
+});
+
+test('buildVsxProfilePayload builds paired keepalive ip mapping', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $site = Site::factory()->for($helper->client)->create(['scope_id' => 'site-scope-1']);
+
+    $primary = Device::factory()->for($helper->client)->for($site)->create([
+        'name' => 'Primary-SW',
+        'serial' => 'PRIMARY123',
+        'vsx_profile' => 'vsx-pair-1',
+        'vsx_role' => 'VSX_PRIMARY',
+        'vsx_system_mac' => '02:00:00:00:00:01',
+    ]);
+    $secondary = Device::factory()->for($helper->client)->for($site)->create([
+        'name' => 'Secondary-SW',
+        'serial' => 'SECONDARY123',
+        'vsx_profile' => 'vsx-pair-1',
+        'vsx_role' => 'VSX_SECONDARY',
+        'vsx_system_mac' => '02:00:00:00:00:01',
+    ]);
+
+    $payload = CentralAPIHelper::buildVsxProfilePayload($primary, $secondary);
+
+    expect($payload['name'])->toBe('vsx-pair-1')
+        ->and($payload['peer1']['keepalive-device']['source-ip'])->toBe('1.1.1.1')
+        ->and($payload['peer1']['keepalive-device']['peer-ip'])->toBe('1.1.1.2')
+        ->and($payload['peer2']['keepalive-device']['source-ip'])->toBe('1.1.1.2')
+        ->and($payload['peer2']['keepalive-device']['peer-ip'])->toBe('1.1.1.1');
+});
+
+test('ensureVsxKeepAliveVrf skips post when vrf exists at group scope', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return Http::response(['vrf' => [['name' => CentralAPIHelper::VSX_KEEPALIVE_VRF]]], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'group' => 'MyGroup',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $result = $helper->ensureVsxKeepAliveVrf($device);
+
+    expect($result)->toBe(['ok' => true]);
+    Http::assertNotSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/vrfs/'));
+});
+
+test('ensureVsxKeepAliveVrf posts vrf at group scope when missing', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
+        }
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return Http::response(['vrf' => []], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($request->url(), '/vrfs/'.CentralAPIHelper::VSX_KEEPALIVE_VRF)) {
+            expect($query['scope-id'] ?? null)->toBe('group-scope-1')
+                ->and($query['device-function'] ?? null)->toBe('ACCESS_SWITCH');
+
+            return Http::response(['name' => CentralAPIHelper::VSX_KEEPALIVE_VRF], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'group' => 'MyGroup',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $result = $helper->ensureVsxKeepAliveVrf($device);
+
+    expect($result)->toBe(['ok' => true]);
+});
+
+test('ensureVsxKeepAliveVrf returns error when vrf post fails', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return Http::response(['vrf' => []], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($request->url(), '/vrfs/')) {
+            return Http::response(['message' => 'VRF create failed'], 400);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'name' => 'Switch-A',
+        'group' => 'MyGroup',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $result = $helper->ensureVsxKeepAliveVrf($device);
+
+    expect($result)->toHaveKey('error')
+        ->and($result['error'])->toContain('WHSE-VSX-Keep-Alive VRF creation failed');
+});
+
+test('ensureVsxKeepAliveVrf returns error when device has no group', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'name' => 'Switch-A',
+        'group' => null,
+    ]);
+
+    $result = $helper->ensureVsxKeepAliveVrf($device);
+
+    expect($result['error'])->toContain('has no group for VRF lookup');
+});

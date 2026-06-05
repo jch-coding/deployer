@@ -471,3 +471,27 @@ it('normalizes hyphenated headers before mapping interface_description and lag_i
         'lacp_port_id' => '3',
     ]);
 });
+
+it('normalizes vsx_system_mac with missing leading zeros and dashes', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'vsx_system_mac'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '2:0:0:0:0:1'],
+        ['SW-2', 'SN0000000002', 'ACCESS_SWITCH', '02-00-00-00-00-02'],
+    ]);
+
+    expect($deviceArrays[0]['vsx_system_mac'])->toBe('02:00:00:00:00:01')
+        ->and($deviceArrays[1]['vsx_system_mac'])->toBe('02:00:00:00:00:02');
+});
+
+it('accepts mixed-case vsx column headers and role values', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ['Name', 'Serial', 'Device_Function', 'VSX_Profile', 'VSX_Role', 'VSX_System_Mac'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'pair-1', 'vsx_primary', '02:00:00:00:00:01'],
+    ]);
+
+    expect($deviceArrays[0])->toMatchArray([
+        'vsx_profile' => 'pair-1',
+        'vsx_role' => 'VSX_PRIMARY',
+        'vsx_system_mac' => '02:00:00:00:00:01',
+    ]);
+});

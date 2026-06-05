@@ -263,6 +263,7 @@ export default function Show() {
         'MOVE_DEVICE_TO_GROUP',
         'ASSOCIATE_SITE_AND_NAME',
         'CREATE_VSF_PROFILE',
+        'CREATE_VSX_PROFILE',
         'ADD_VLANS_TO_DEVICE_GROUP',
     ]);
 
@@ -506,10 +507,16 @@ export default function Show() {
                                     className="block cursor-pointer rounded-lg border border-gray-300 bg-gray-50 p-2 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:placeholder-gray-400"
                                     disabled={submitting}
                                 />
-                                {errors && (
-                                    <p className="text-xs text-red-500">
-                                        {errors.devices}
-                                    </p>
+                                {errors && Object.keys(errors).length > 0 && (
+                                    <div className="space-y-1 text-xs text-red-500">
+                                        {Object.entries(errors).map(([key, message]) => (
+                                            <p key={key}>
+                                                {Array.isArray(message)
+                                                    ? `${key}: ${message.join(' ')}`
+                                                    : `${key}: ${message}`}
+                                            </p>
+                                        ))}
+                                    </div>
                                 )}
                                 <DialogFooter className="mt-4 flex-row-reverse sm:justify-start">
                                     <Button

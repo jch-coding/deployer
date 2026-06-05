@@ -6,12 +6,16 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Site;
+use App\VsxRole;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class CentralAPIHelper
 {
+    public const VSX_KEEPALIVE_VRF = 'WHSE-VSX-Keep-Alive';
+
     public array $scopeManagement = [
         'hierarchy' => [
             'scope_hierarchy' => 'network-config/v1/hierarchy',
@@ -552,20 +556,21 @@ class CentralAPIHelper
      *                              The keepalive interface/portchannel as well as the inter-switch-link portchannel can be configured as part of the vsx profile if they have not been configured yet.
      *                              If the keepalive interface/portchannel and/or the inter-switch-link portchannel has been configured, the objects can be omitted in the vsx profile.
      */
-    public function post_vsx_profile(array $vsx_profile = [], string $site_scope_id = '')
+    public function post_vsx_profile(array $vsx_profile = [], string $site_scope_id = '', ?string $device_function = null)
     {
         if (empty($site_scope_id)) {
             return ['error' => 'site scope id is required.'];
         }
         $queryParameters = [
-            'view-type' => 'LOCAL',
             'scope-id' => $site_scope_id,
             'object-type' => 'LOCAL',
+            'device-function' => $device_function ?? 'SERVICE_PERSONA',
         ];
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
                 ->post($this->client->base_url.$this->high_availability['vsx'].$vsx_profile['name'], $vsx_profile);
 
             return $response;
@@ -2114,6 +2119,555 @@ class CentralAPIHelper
             ->post($this->classicApiUrl($this->classic_configuration['move_devices_to_group']), ['group' => $group, 'serials' => $device_serials]);
 
         return $response;
+    }
+
+    /**
+     * @return array{ok: true}|array{error: string}
+     */
+    public function ensureVsxKeepAliveVrf(Device $device): array
+    {
+        if (! filled($device->group)) {
+            return ['error' => 'Device '.$device->name.' has no group for VRF lookup.'];
+        }
+
+        $groupScopeId = $this->resolveGroupScopeId($device);
+        if ($groupScopeId === null) {
+            return ['error' => 'Could not resolve group scope ID for device '.$device->name.'.'];
+        }
+
+        $queryParams = static::localVrfQueryParameters($device, $groupScopeId);
+        $response = $this->get_vrfs($queryParams);
+
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return ['error' => (string) $response['error']];
+        }
+
+        if (! $response instanceof Response || ! $response->ok()) {
+            $message = $response instanceof Response
+                ? (string) ($response->json('message') ?? $response->body())
+                : 'Failed to fetch VRFs from Central.';
+
+            return ['error' => $message !== '' ? $message : 'Failed to fetch VRFs from Central.'];
+        }
+
+        $vrfs = $response->json('vrf', []);
+        if (! is_array($vrfs)) {
+            $vrfs = [];
+        }
+
+        if (static::vrfNameExists($vrfs, self::VSX_KEEPALIVE_VRF)) {
+            return ['ok' => true];
+        }
+
+        $postResponse = $this->post_vrf(['name' => self::VSX_KEEPALIVE_VRF], $queryParams);
+
+        if (is_array($postResponse) && array_key_exists('error', $postResponse)) {
+            return ['error' => (string) $postResponse['error']];
+        }
+
+        if (! $postResponse instanceof Response || ! $postResponse->ok()) {
+            $message = $postResponse instanceof Response
+                ? (string) ($postResponse->json('message') ?? $postResponse->body())
+                : 'Failed to create VRF in Central.';
+
+            return ['error' => self::VSX_KEEPALIVE_VRF.' VRF creation failed at group level for '.$device->name.': '.($message !== '' ? $message : 'unknown error')];
+        }
+
+        return ['ok' => true];
+    }
+
+    /**
+     * @return array<int, string>|array{error: string}
+     */
+    public function getSortedEthernetInterfaceNames(Device $device): array
+    {
+        $response = $this->get_ethernet_interfaces($device);
+
+        if ($response instanceof Response && ! $response->ok()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return ['error' => $message !== '' ? $message : 'Failed to fetch ethernet interfaces from Central.'];
+        }
+
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return ['error' => (string) $response['error']];
+        }
+
+        $items = $response instanceof Response ? $response->json('interface', []) : [];
+        if (! is_array($items)) {
+            $items = [];
+        }
+
+        $names = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $name = (string) ($item['name'] ?? '');
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        sort($names, SORT_NATURAL);
+
+        return $names;
+    }
+
+    /**
+     * @param  array<int, string>  $sortedNames
+     * @return array{0: array<int, string>, 1: array<int, string>}|array{error: string}
+     */
+    public static function getVsxEthernetPortSelections(array $sortedNames): array
+    {
+        if (count($sortedNames) < 4) {
+            return ['error' => 'Device requires at least 4 ethernet interfaces for VSX LAG configuration.'];
+        }
+
+        $islPorts = array_slice($sortedNames, -4, 2);
+        $keepalivePorts = array_slice($sortedNames, -2, 2);
+
+        return [$islPorts, $keepalivePorts];
+    }
+
+    public static function buildVsxKeepaliveLagPayload(array $portList, VsxRole $role): array
+    {
+        $address = $role === VsxRole::VSX_PRIMARY ? '1.1.1.1/30' : '1.1.1.2/30';
+
+        return [
+            'name' => '255',
+            'routing' => true,
+            'ipv4' => [
+                'address' => $address,
+                'vrf-forwarding' => self::VSX_KEEPALIVE_VRF,
+            ],
+            'trunk-type' => 'LACP',
+            'lacp' => ['mode' => 'ACTIVE'],
+            'port-list' => $portList,
+            'enable' => true,
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $portList
+     * @return array<string, mixed>
+     */
+    public static function buildVsxIslLagPayload(array $portList): array
+    {
+        return [
+            'name' => '256',
+            'switchport' => [
+                'interface-mode' => 'TRUNK',
+                'native-vlan' => 1,
+                'trunk-vlan-all' => true,
+            ],
+            'trunk-type' => 'LACP',
+            'lacp' => ['mode' => 'ACTIVE'],
+            'port-list' => $portList,
+            'enable' => true,
+        ];
+    }
+
+    public static function buildVsxLagMemberPortDescription(string $peerDeviceName, string $interfaceName, string $labelSuffix): string
+    {
+        return $peerDeviceName.' - '.$interfaceName.' '.$labelSuffix;
+    }
+
+    /**
+     * @return array<int, array{path: string, expected: mixed, actual: mixed}>
+     */
+    public static function vsxPortchannelMatchesExpected(array $expected, array $actual): array
+    {
+        $diffs = [];
+        static::compareVsxPortchannelNodes($expected, $actual, '', $diffs);
+
+        return $diffs;
+    }
+
+    /**
+     * @param  list<array{path: string, expected: mixed, actual: mixed}>  $diffs
+     */
+    protected static function compareVsxPortchannelNodes(array $expected, array $actual, string $prefix, array &$diffs): void
+    {
+        foreach ($expected as $key => $expectedValue) {
+            $path = $prefix === '' ? (string) $key : $prefix.'.'.$key;
+            $actualValue = $actual[$key] ?? null;
+
+            if (is_array($expectedValue) && static::isVsxAssociativeArray($expectedValue)) {
+                $actualNested = is_array($actualValue) ? $actualValue : [];
+                static::compareVsxPortchannelNodes($expectedValue, $actualNested, $path, $diffs);
+
+                continue;
+            }
+
+            if (! static::vsxPortchannelValuesMatch($expectedValue, $actualValue)) {
+                $diffs[] = [
+                    'path' => $path,
+                    'expected' => $expectedValue,
+                    'actual' => $actualValue,
+                ];
+            }
+        }
+    }
+
+    protected static function isVsxAssociativeArray(array $value): bool
+    {
+        if ($value === []) {
+            return false;
+        }
+
+        return array_keys($value) !== range(0, count($value) - 1);
+    }
+
+    protected static function vsxPortchannelValuesMatch(mixed $expected, mixed $actual): bool
+    {
+        $normalizedExpected = static::normalizeVsxCompareValue($expected);
+        $normalizedActual = static::normalizeVsxCompareValue($actual);
+
+        if (is_array($normalizedExpected) && is_array($normalizedActual)) {
+            if (static::isVsxListArray($normalizedExpected) && static::isVsxListArray($normalizedActual)) {
+                $a = $normalizedExpected;
+                $b = $normalizedActual;
+                sort($a);
+                sort($b);
+
+                return $a === $b;
+            }
+        }
+
+        return $normalizedExpected === $normalizedActual;
+    }
+
+    protected static function isVsxListArray(array $value): bool
+    {
+        return array_keys($value) === range(0, count($value) - 1);
+    }
+
+    protected static function normalizeVsxCompareValue(mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return is_float($value + 0) && floor($value + 0) != ($value + 0)
+                ? (float) $value
+                : (int) $value;
+        }
+
+        if (is_string($value)) {
+            $lower = strtolower($value);
+            if ($lower === 'true') {
+                return true;
+            }
+            if ($lower === 'false') {
+                return false;
+            }
+
+            return $value;
+        }
+
+        if (is_array($value)) {
+            if (static::isVsxListArray($value)) {
+                return array_map(fn ($item) => static::normalizeVsxCompareValue($item), $value);
+            }
+
+            $normalized = [];
+            foreach ($value as $key => $item) {
+                $normalized[$key] = static::normalizeVsxCompareValue($item);
+            }
+
+            return $normalized;
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  array<int, array{path: string, expected: mixed, actual: mixed}>  $diffs
+     */
+    public static function formatVsxPortchannelDiffSummary(array $diffs): string
+    {
+        if ($diffs === []) {
+            return '';
+        }
+
+        return collect($diffs)
+            ->map(fn (array $diff) => $diff['path'].': expected '.json_encode($diff['expected']).', got '.json_encode($diff['actual']))
+            ->implode('; ');
+    }
+
+    public static function deviceVsxRole(Device $device): ?VsxRole
+    {
+        $role = $device->vsx_role;
+        if ($role === null || $role === '') {
+            return null;
+        }
+
+        foreach (VsxRole::cases() as $case) {
+            if ($case->name === $role) {
+                return $case;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function buildVsxPeerPayload(Device $device, Device $peerDevice): array
+    {
+        $role = static::deviceVsxRole($device);
+        $isPrimary = $role === VsxRole::VSX_PRIMARY;
+        $keepaliveAddress = $isPrimary ? '1.1.1.1/30' : '1.1.1.2/30';
+        $sourceIp = $isPrimary ? '1.1.1.1' : '1.1.1.2';
+        $peerIp = $isPrimary ? '1.1.1.2' : '1.1.1.1';
+
+        return [
+            'role' => (string) $device->vsx_role,
+            'device-serial' => $device->serial,
+            'inter-switch-link' => [
+                'portchannel-interface' => '256',
+            ],
+            'port-channel-interface' => [[
+                'ipv4-address' => $keepaliveAddress,
+                'existing-portchannel-ip' => true,
+                'portchannel-ifname' => '255',
+                'vrf-forwarding' => self::VSX_KEEPALIVE_VRF,
+                'routing' => true,
+                'trunk-type' => 'LACP',
+                'lacp-mode' => 'ACTIVE',
+            ]],
+            'vrf' => [[
+                'vrf-name' => self::VSX_KEEPALIVE_VRF,
+                'existing-vrf' => true,
+            ]],
+            'keepalive-device' => [
+                'source-ip' => $sourceIp,
+                'peer-ip' => $peerIp,
+                'portchannel-ifname' => '255',
+                'keepalive-type' => 'KA_PORTCHANNEL',
+                'vrf' => self::VSX_KEEPALIVE_VRF,
+                'keepalive-version' => 'IPV4',
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function buildVsxProfilePayload(Device $primary, Device $secondary): array
+    {
+        return [
+            'auto-role' => false,
+            'name' => (string) $primary->vsx_profile,
+            'sync-features' => [
+                'system-mac' => (string) $primary->vsx_system_mac,
+            ],
+            'peer1' => static::buildVsxPeerPayload($primary, $secondary),
+            'peer2' => static::buildVsxPeerPayload($secondary, $primary),
+        ];
+    }
+
+    /**
+     * @return array{ok: true}|array{error: string}
+     */
+    public function ensureVsxIslLag(Device $device, Device $peerDevice, array $portList): array
+    {
+        $payload = static::buildVsxIslLagPayload($portList);
+
+        return $this->ensureVsxPortchannelLag(
+            $device,
+            $peerDevice,
+            '256',
+            $payload,
+            $portList,
+            'LAG 256 inter-switch-link',
+            '[VSX-Peer-Link]'
+        );
+    }
+
+    /**
+     * @return array{ok: true}|array{error: string}
+     */
+    public function ensureVsxKeepaliveLag(Device $device, Device $peerDevice, VsxRole $role, array $portList): array
+    {
+        $payload = static::buildVsxKeepaliveLagPayload($portList, $role);
+
+        return $this->ensureVsxPortchannelLag(
+            $device,
+            $peerDevice,
+            '255',
+            $payload,
+            $portList,
+            'LAG 255 keepalive',
+            '[VSX Keep-Alive]'
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $memberPortNames
+     * @return array{ok: true}|array{error: string}
+     */
+    public function ensureVsxPortchannelLag(
+        Device $device,
+        Device $peerDevice,
+        string $lagName,
+        array $expectedPayload,
+        array $memberPortNames,
+        string $failureLabel,
+        string $portDescriptionSuffix
+    ): array {
+        $getResponse = $this->get_interface_portchannel($device, $lagName);
+
+        if (is_array($getResponse) && array_key_exists('error', $getResponse)) {
+            return ['error' => (string) $getResponse['error']];
+        }
+
+        if ($getResponse instanceof Response && $getResponse->ok()) {
+            $actual = $getResponse->json();
+            if (! is_array($actual)) {
+                $actual = [];
+            }
+            $diffs = static::vsxPortchannelMatchesExpected($expectedPayload, $actual);
+            if ($diffs !== []) {
+                return ['error' => $failureLabel.' on '.$device->name.' does not match expected configuration: '.static::formatVsxPortchannelDiffSummary($diffs)];
+            }
+        } elseif ($getResponse instanceof Response && $getResponse->status() === 404) {
+            $postResponse = $this->post_raw_interface_portchannel($device, $lagName, $expectedPayload);
+            if (! $this->isSuccessfulCentralResponse($postResponse)) {
+                $patchResponse = $this->patch_raw_interface_portchannel($device, $lagName, $expectedPayload);
+                if (! $this->isSuccessfulCentralResponse($patchResponse)) {
+                    return ['error' => $failureLabel.' creation failed on '.$device->name.': '.$this->centralResponseErrorMessage($patchResponse)];
+                }
+            }
+        } else {
+            return ['error' => $failureLabel.' lookup failed on '.$device->name.': '.$this->centralResponseErrorMessage($getResponse)];
+        }
+
+        return $this->ensureVsxLagMemberPortDescriptions($device, $peerDevice, $memberPortNames, $portDescriptionSuffix, $failureLabel);
+    }
+
+    /**
+     * @param  array<int, string>  $portNames
+     * @return array{ok: true}|array{error: string}
+     */
+    public function ensureVsxLagMemberPortDescriptions(
+        Device $device,
+        Device $peerDevice,
+        array $portNames,
+        string $labelSuffix,
+        string $failureLabel
+    ): array {
+        foreach ($portNames as $portName) {
+            $expectedDescription = static::buildVsxLagMemberPortDescription($peerDevice->name, $portName, $labelSuffix);
+            $getResponse = $this->get_ethernet_interface_by_name($device, $portName);
+
+            if (is_array($getResponse) && array_key_exists('error', $getResponse)) {
+                return ['error' => (string) $getResponse['error']];
+            }
+
+            if (! $getResponse instanceof Response || ! $getResponse->ok()) {
+                return ['error' => $failureLabel.' member port description failed on '.$device->name.' '.$portName.': '.$this->centralResponseErrorMessage($getResponse)];
+            }
+
+            $actualDescription = (string) ($getResponse->json('description') ?? '');
+            if ($actualDescription === $expectedDescription) {
+                continue;
+            }
+
+            $patchResponse = $this->patch_ethernet_interface_by_name($device, $portName, [
+                'name' => $portName,
+                'description' => $expectedDescription,
+            ]);
+
+            if (! $this->isSuccessfulCentralResponse($patchResponse)) {
+                return ['error' => $failureLabel.' member port description failed on '.$device->name.' '.$portName.': '.$this->centralResponseErrorMessage($patchResponse)];
+            }
+        }
+
+        return ['ok' => true];
+    }
+
+    public function get_interface_portchannel(Device $device, string $interfaceName): Response|array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
+            ->get($this->client->base_url.$this->interfaces['interface_portchannel'].$interfaceName);
+    }
+
+    public function post_raw_interface_portchannel(Device $device, string $interfaceName, array $payload): Response|array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
+            ->post($this->client->base_url.$this->interfaces['interface_portchannel'].$interfaceName, $payload);
+    }
+
+    public function patch_raw_interface_portchannel(Device $device, string $interfaceName, array $payload): Response|array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
+            ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].$interfaceName, $payload);
+    }
+
+    public function get_ethernet_interface_by_name(Device $device, string $interfaceName): Response|array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
+            ->get($this->client->base_url.$this->interfaces['interface_ethernet'].$interfaceName);
+    }
+
+    public function patch_ethernet_interface_by_name(Device $device, string $interfaceName, array $patchBody): Response|array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
+            ->withBody(json_encode($patchBody))
+            ->patch($this->client->base_url.$this->interfaces['interface_ethernet'].$interfaceName);
+    }
+
+    protected function isSuccessfulCentralResponse(mixed $response): bool
+    {
+        return $response instanceof Response && $response->ok();
+    }
+
+    protected function centralResponseErrorMessage(mixed $response): string
+    {
+        if ($response instanceof Response) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return $message !== '' ? $message : 'Central API request failed.';
+        }
+
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return (string) $response['error'];
+        }
+
+        return 'Central API request failed.';
     }
 
     public function preprovision_devices_to_group(string $group, array $device_serials)
