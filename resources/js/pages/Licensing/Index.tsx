@@ -14,6 +14,12 @@ import { index as clientsIndex } from '@/routes/clients';
 import LicenseSelect, {
     type AvailableSubscription,
 } from '@/components/licensing/LicenseSelect';
+import {
+    emptyLicensingTableFilters,
+    filterLicensingDevices,
+    hasActiveLicensingTableFilters,
+    type LicensingTableFilters,
+} from '@/lib/licensing-table-filters';
 import { subscriptionTagKeys } from '@/lib/subscription-tags';
 import RenewLicensingButton from '@/components/licensing/RenewLicensingButton';
 import { assign, index as licensingIndex, remove, unassign } from '@/routes/licensing';
@@ -40,7 +46,7 @@ type LicensingDeviceRow = {
     deployer_device_id: number | null;
 };
 
-type LicensingFilters = {
+type LicensingServerFilters = {
     start_date_from: string;
     start_date_to: string;
     end_date_from: string;
@@ -48,14 +54,9 @@ type LicensingFilters = {
     license_type: string;
     subscription_sku: string;
     service: string;
-    serial_number: string;
-    device_name: string;
-    subscription_key: string;
-    subscription_tags: string;
-    model: string;
 };
 
-const emptyFilters: LicensingFilters = {
+const emptyServerFilters: LicensingServerFilters = {
     start_date_from: '',
     start_date_to: '',
     end_date_from: '',
@@ -63,11 +64,6 @@ const emptyFilters: LicensingFilters = {
     license_type: '',
     subscription_sku: '',
     service: '',
-    serial_number: '',
-    device_name: '',
-    subscription_key: '',
-    subscription_tags: '',
-    model: '',
 };
 
 type LicensingIndexProps = {
@@ -85,7 +81,7 @@ type LicensingIndexProps = {
         license_types: string[];
         subscription_skus: string[];
     };
-    filters: LicensingFilters;
+    filters: LicensingServerFilters;
     has_active_filters: boolean;
     central_error: string | null;
     licensing_synced_at: string | null;
@@ -102,16 +98,19 @@ function formatEpochDate(value: number | null): string {
     return new Date(value).toLocaleDateString();
 }
 
-function filtersMatchQuery(current: LicensingFilters, next: LicensingFilters): boolean {
-    return (Object.keys(current) as (keyof LicensingFilters)[]).every(
+function serverFiltersMatchQuery(
+    current: LicensingServerFilters,
+    next: LicensingServerFilters,
+): boolean {
+    return (Object.keys(current) as (keyof LicensingServerFilters)[]).every(
         (key) => (current[key] ?? '').trim() === (next[key] ?? '').trim(),
     );
 }
 
-function buildQueryFromFilters(filters: LicensingFilters): Record<string, string> {
+function buildQueryFromServerFilters(filters: LicensingServerFilters): Record<string, string> {
     const query: Record<string, string> = {};
 
-    (Object.keys(filters) as (keyof LicensingFilters)[]).forEach((key) => {
+    (Object.keys(filters) as (keyof LicensingServerFilters)[]).forEach((key) => {
         const value = (filters[key] ?? '').trim();
         if (value !== '') {
             query[key] = value;
@@ -142,7 +141,8 @@ export default function Index() {
         flash,
     } = usePage<LicensingIndexProps>().props;
 
-    const [localFilters, setLocalFilters] = useState<LicensingFilters>(filters);
+    const [localFilters, setLocalFilters] = useState<LicensingServerFilters>(filters);
+    const [tableFilters, setTableFilters] = useState<LicensingTableFilters>(emptyLicensingTableFilters);
     const [isSearching, setIsSearching] = useState(false);
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
@@ -162,9 +162,14 @@ export default function Index() {
         setIsSearching(false);
     }, [filters]);
 
+    const filteredDevices = useMemo(
+        () => filterLicensingDevices(devices, tableFilters),
+        [devices, tableFilters],
+    );
+
     useEffect(() => {
         setPageIndex(0);
-    }, [devices, pageSize]);
+    }, [filteredDevices, pageSize]);
 
     const selectedSerials = useMemo(
         () =>
@@ -219,23 +224,27 @@ export default function Index() {
     const paginatedDevices = useMemo(() => {
         const start = pageIndex * pageSize;
 
-        return devices.slice(start, start + pageSize);
-    }, [devices, pageIndex, pageSize]);
+        return filteredDevices.slice(start, start + pageSize);
+    }, [filteredDevices, pageIndex, pageSize]);
 
-    const totalPages = Math.max(1, Math.ceil(devices.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(filteredDevices.length / pageSize));
 
-    const updateFilter = useCallback((patch: Partial<LicensingFilters>) => {
+    const updateServerFilter = useCallback((patch: Partial<LicensingServerFilters>) => {
         setLocalFilters((prev) => ({ ...prev, ...patch }));
     }, []);
 
+    const updateTableFilter = useCallback((patch: Partial<LicensingTableFilters>) => {
+        setTableFilters((prev) => ({ ...prev, ...patch }));
+    }, []);
+
     const submitSearch = useCallback(() => {
-        if (isSearching || filtersMatchQuery(filters, localFilters)) {
+        if (isSearching || serverFiltersMatchQuery(filters, localFilters)) {
             return;
         }
 
         setIsSearching(true);
         router.get(
-            licensingIndex.url({ query: buildQueryFromFilters(localFilters) }),
+            licensingIndex.url({ query: buildQueryFromServerFilters(localFilters) }),
             {},
             {
                 preserveState: true,
@@ -347,8 +356,8 @@ export default function Index() {
         );
     }, [selectedSerials]);
 
-    const clearFilters = useCallback(() => {
-        setLocalFilters(emptyFilters);
+    const clearServerFilters = useCallback(() => {
+        setLocalFilters(emptyServerFilters);
         setIsSearching(true);
         router.get(
             licensingIndex.url(),
@@ -535,30 +544,30 @@ export default function Index() {
                     <Input
                         type="date"
                         value={localFilters.start_date_from}
-                        onChange={(e) => updateFilter({ start_date_from: e.target.value })}
+                        onChange={(e) => updateServerFilter({ start_date_from: e.target.value })}
                         aria-label="Start date from"
                     />
                     <Input
                         type="date"
                         value={localFilters.start_date_to}
-                        onChange={(e) => updateFilter({ start_date_to: e.target.value })}
+                        onChange={(e) => updateServerFilter({ start_date_to: e.target.value })}
                         aria-label="Start date to"
                     />
                     <Input
                         type="date"
                         value={localFilters.end_date_from}
-                        onChange={(e) => updateFilter({ end_date_from: e.target.value })}
+                        onChange={(e) => updateServerFilter({ end_date_from: e.target.value })}
                         aria-label="End date from"
                     />
                     <Input
                         type="date"
                         value={localFilters.end_date_to}
-                        onChange={(e) => updateFilter({ end_date_to: e.target.value })}
+                        onChange={(e) => updateServerFilter({ end_date_to: e.target.value })}
                         aria-label="End date to"
                     />
                     <select
                         value={localFilters.license_type}
-                        onChange={(e) => updateFilter({ license_type: e.target.value })}
+                        onChange={(e) => updateServerFilter({ license_type: e.target.value })}
                         className={selectClassName}
                     >
                         <option value="">All license types</option>
@@ -570,7 +579,7 @@ export default function Index() {
                     </select>
                     <select
                         value={localFilters.subscription_sku}
-                        onChange={(e) => updateFilter({ subscription_sku: e.target.value })}
+                        onChange={(e) => updateServerFilter({ subscription_sku: e.target.value })}
                         className={selectClassName}
                     >
                         <option value="">All subscription SKUs</option>
@@ -582,7 +591,7 @@ export default function Index() {
                     </select>
                     <select
                         value={localFilters.service}
-                        onChange={(e) => updateFilter({ service: e.target.value })}
+                        onChange={(e) => updateServerFilter({ service: e.target.value })}
                         className={selectClassName}
                     >
                         <option value="">All assigned services</option>
@@ -598,56 +607,11 @@ export default function Index() {
                             {isSearching ? 'Applying…' : 'Apply filters'}
                         </Button>
                         {has_active_filters && (
-                            <Button variant="outline" onClick={clearFilters} disabled={isSearching}>
+                            <Button variant="outline" onClick={clearServerFilters} disabled={isSearching}>
                                 Clear filters
                             </Button>
                         )}
                     </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <div className="relative">
-                        <Search
-                            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                            aria-hidden
-                        />
-                        <Input
-                            type="search"
-                            value={localFilters.serial_number}
-                            onChange={(e) => updateFilter({ serial_number: e.target.value })}
-                            placeholder="Serial number"
-                            className="pl-9"
-                            data-test="licensing-filter-serial-number"
-                        />
-                    </div>
-                    <Input
-                        type="search"
-                        value={localFilters.device_name}
-                        onChange={(e) => updateFilter({ device_name: e.target.value })}
-                        placeholder="Device name"
-                        data-test="licensing-filter-device-name"
-                    />
-                    <Input
-                        type="search"
-                        value={localFilters.subscription_key}
-                        onChange={(e) => updateFilter({ subscription_key: e.target.value })}
-                        placeholder="Subscription key"
-                        data-test="licensing-filter-subscription-key"
-                    />
-                    <Input
-                        type="search"
-                        value={localFilters.subscription_tags}
-                        onChange={(e) => updateFilter({ subscription_tags: e.target.value })}
-                        placeholder="Subscription tags (comma-separated)"
-                        data-test="licensing-filter-subscription-tags"
-                    />
-                    <Input
-                        type="search"
-                        value={localFilters.model}
-                        onChange={(e) => updateFilter({ model: e.target.value })}
-                        placeholder="Model"
-                        data-test="licensing-filter-model"
-                    />
                 </div>
 
                 <div className="flex flex-wrap items-end gap-3 rounded-lg border p-4">
@@ -698,6 +662,62 @@ export default function Index() {
                     </Button>
                 </div>
 
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    <div className="relative">
+                        <Search
+                            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden
+                        />
+                        <Input
+                            type="search"
+                            value={tableFilters.serial_number}
+                            onChange={(e) => updateTableFilter({ serial_number: e.target.value })}
+                            placeholder="Serial number"
+                            className="pl-9"
+                            data-test="licensing-filter-serial-number"
+                        />
+                    </div>
+                    <Input
+                        type="search"
+                        value={tableFilters.device_name}
+                        onChange={(e) => updateTableFilter({ device_name: e.target.value })}
+                        placeholder="Device name"
+                        data-test="licensing-filter-device-name"
+                    />
+                    <Input
+                        type="search"
+                        value={tableFilters.subscription_key}
+                        onChange={(e) => updateTableFilter({ subscription_key: e.target.value })}
+                        placeholder="Subscription key"
+                        data-test="licensing-filter-subscription-key"
+                    />
+                    <Input
+                        type="search"
+                        value={tableFilters.subscription_tags}
+                        onChange={(e) => updateTableFilter({ subscription_tags: e.target.value })}
+                        placeholder="Subscription tags (comma-separated)"
+                        data-test="licensing-filter-subscription-tags"
+                    />
+                    <Input
+                        type="search"
+                        value={tableFilters.model}
+                        onChange={(e) => updateTableFilter({ model: e.target.value })}
+                        placeholder="Model"
+                        data-test="licensing-filter-model"
+                    />
+                </div>
+                {hasActiveLicensingTableFilters(tableFilters) && (
+                    <div className="flex justify-end">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setTableFilters(emptyLicensingTableFilters)}
+                        >
+                            Clear table filters
+                        </Button>
+                    </div>
+                )}
+
                 <DataTable
                     columns={columns}
                     data={paginatedDevices}
@@ -710,8 +730,11 @@ export default function Index() {
 
                 <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
                     <span className="text-muted-foreground">
-                        Showing {devices.length === 0 ? 0 : pageIndex * pageSize + 1}–
-                        {Math.min((pageIndex + 1) * pageSize, devices.length)} of {devices.length}
+                        Showing {filteredDevices.length === 0 ? 0 : pageIndex * pageSize + 1}–
+                        {Math.min((pageIndex + 1) * pageSize, filteredDevices.length)} of{' '}
+                        {filteredDevices.length}
+                        {filteredDevices.length !== devices.length &&
+                            ` (${devices.length} total)`}
                     </span>
                     <div className="flex items-center gap-2">
                         <select

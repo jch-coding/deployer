@@ -33,11 +33,6 @@ class LicensingController extends Controller
             'license_type' => ['nullable', 'string', 'max:255'],
             'subscription_sku' => ['nullable', 'string', 'max:255'],
             'service' => ['nullable', 'string', 'max:255'],
-            'serial_number' => ['nullable', 'string', 'max:255'],
-            'device_name' => ['nullable', 'string', 'max:255'],
-            'subscription_key' => ['nullable', 'string', 'max:255'],
-            'subscription_tags' => ['nullable', 'string', 'max:255'],
-            'model' => ['nullable', 'string', 'max:255'],
         ]);
 
         $filters = [
@@ -48,11 +43,6 @@ class LicensingController extends Controller
             'license_type' => trim((string) ($validated['license_type'] ?? '')),
             'subscription_sku' => trim((string) ($validated['subscription_sku'] ?? '')),
             'service' => trim((string) ($validated['service'] ?? '')),
-            'serial_number' => trim((string) ($validated['serial_number'] ?? '')),
-            'device_name' => trim((string) ($validated['device_name'] ?? '')),
-            'subscription_key' => trim((string) ($validated['subscription_key'] ?? '')),
-            'subscription_tags' => trim((string) ($validated['subscription_tags'] ?? '')),
-            'model' => trim((string) ($validated['model'] ?? '')),
         ];
 
         $centralHelper = new CentralAPIHelper($currentClient);

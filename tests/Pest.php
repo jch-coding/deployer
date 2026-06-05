@@ -52,13 +52,23 @@ use Illuminate\Support\Facades\Http;
  * @param  array<int, array<string, mixed>>  $greenLakeDevices  Raw GreenLake device items (serialNumber, id, etc.)
  * @param  array<int, array<string, mixed>>  $greenLakeSubscriptions  Raw GreenLake subscription items (key, id, tierDescription, etc.)
  * @param  array<int, array<string, mixed>>  $centralSubscriptions  Central classic subscription rows
+ * @param  array<int, array<string, mixed>>  $centralInventoryDevices  Classic device inventory rows (serial, name, …)
+ * @param  array<int, array<string, mixed>>  $newCentralDevices  New Central network-monitoring device rows (serialNumber, deviceName, …)
  */
 function fakeLicensingApis(
     array $greenLakeDevices = [],
     array $greenLakeSubscriptions = [],
     array $centralSubscriptions = [],
+    array $centralInventoryDevices = [],
+    array $newCentralDevices = [],
 ): void {
-    Http::fake(function (Request $request) use ($greenLakeDevices, $greenLakeSubscriptions, $centralSubscriptions) {
+    Http::fake(function (Request $request) use (
+        $greenLakeDevices,
+        $greenLakeSubscriptions,
+        $centralSubscriptions,
+        $centralInventoryDevices,
+        $newCentralDevices,
+    ) {
         if (str_contains($request->url(), GreenLakeAPIHelper::BASE_URL)) {
             if (str_contains($request->url(), '/subscriptions/v1/subscriptions') && $request->method() === 'GET') {
                 parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
@@ -106,6 +116,24 @@ function fakeLicensingApis(
             ], 200);
         }
 
+        if (str_contains($request->url(), '/platform/device_inventory/v1/devices')
+            && $request->method() === 'GET') {
+            return Http::response([
+                'devices' => $centralInventoryDevices,
+                'total' => count($centralInventoryDevices),
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'network-monitoring/v1/devices')
+            && $request->method() === 'GET') {
+            return Http::response([
+                'items' => $newCentralDevices,
+                'count' => count($newCentralDevices),
+                'total' => count($newCentralDevices),
+                'next' => null,
+            ], 200);
+        }
+
         return Http::response([], 404);
     });
 }
@@ -113,8 +141,16 @@ function fakeLicensingApis(
 /**
  * @deprecated Use fakeLicensingApis() with GreenLake-shaped device/subscription payloads.
  */
-function fakeLicensingCentralApis(array $devices = [], array $subscriptions = []): void
-{
+/**
+ * @param  array<int, array<string, mixed>>  $centralInventoryDevices
+ * @param  array<int, array<string, mixed>>  $newCentralDevices
+ */
+function fakeLicensingCentralApis(
+    array $devices = [],
+    array $subscriptions = [],
+    array $centralInventoryDevices = [],
+    array $newCentralDevices = [],
+): void {
     $greenLakeDevices = array_map(function (array $device): array {
         $subscriptionKey = (string) ($device['subscription_key'] ?? '');
         $payload = [
@@ -149,12 +185,28 @@ function fakeLicensingCentralApis(array $devices = [], array $subscriptions = []
         ];
     }, $subscriptions);
 
-    fakeLicensingApis($greenLakeDevices, $greenLakeSubscriptions, $subscriptions);
+    fakeLicensingApis(
+        $greenLakeDevices,
+        $greenLakeSubscriptions,
+        $subscriptions,
+        $centralInventoryDevices,
+        $newCentralDevices,
+    );
 }
 
 function seedLicensingCache(Client $client, array $devices = [], array $subscriptions = []): void
 {
-    fakeLicensingCentralApis($devices, $subscriptions);
+    $centralInventoryDevices = array_values(array_filter(array_map(function (array $device): ?array {
+        $serial = (string) ($device['serial'] ?? '');
+        $name = trim((string) ($device['name'] ?? ''));
+        if ($serial === '' || $name === '') {
+            return null;
+        }
+
+        return ['serial' => $serial, 'name' => $name];
+    }, $devices)));
+
+    fakeLicensingCentralApis($devices, $subscriptions, $centralInventoryDevices);
     $client = $client->fresh()->load('user');
     $client->update([
         'bearer_token' => 'test-greenlake-token',

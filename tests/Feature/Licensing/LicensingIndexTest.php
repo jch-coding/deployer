@@ -37,6 +37,65 @@ test('licensing index redirects when no current client is set', function () {
         ->assertRedirect(route('clients.index'));
 });
 
+test('licensing index uses central device name when present otherwise serial', function () {
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-LIC-NAME',
+            'model' => 'AP-515',
+            'name' => 'GreenLake Label',
+            'device_type' => 'IAP',
+            'services' => ['advanced_ap'],
+            'subscription_key' => 'KEY-NAME',
+            'licensed' => true,
+        ]],
+        subscriptions: [[
+            'subscription_key' => 'KEY-NAME',
+            'sku' => 'Q9Y65AAE',
+            'license_type' => 'Advanced AP',
+            'status' => 'OK',
+            'available' => 5,
+        ]],
+        centralInventoryDevices: [[
+            'serial' => 'SN-LIC-NAME',
+            'name' => 'Lobby AP',
+        ]],
+    );
+
+    $this->get(route('licensing.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('devices', 1)
+            ->where('devices.0.serial', 'SN-LIC-NAME')
+            ->where('devices.0.name', 'Lobby AP'));
+
+    expect(LicensingInventoryDevice::where('serial', 'SN-LIC-NAME')->value('name'))->toBe('Lobby AP');
+});
+
+test('licensing index falls back to serial when central has no device name', function () {
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-NO-NAME',
+            'model' => 'AP-515',
+            'name' => 'GreenLake Only',
+            'device_type' => 'IAP',
+            'services' => ['advanced_ap'],
+            'subscription_key' => 'KEY-NO-NAME',
+        ]],
+        subscriptions: [[
+            'subscription_key' => 'KEY-NO-NAME',
+            'sku' => 'Q9Y65AAE',
+            'license_type' => 'Advanced AP',
+            'status' => 'OK',
+            'available' => 5,
+        ]],
+    );
+
+    $this->get(route('licensing.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('devices.0.name', 'SN-NO-NAME'));
+});
+
 test('licensing index renders device inventory enriched with subscription metadata', function () {
     fakeLicensingCentralApis(
         devices: [[
@@ -306,7 +365,7 @@ test('licensing index lists pools with open seats when GreenLake available quant
             ->where('available_subscriptions.0.available', 9));
 });
 
-test('licensing index filters by serial number device name subscription key tags and model', function () {
+test('licensing index returns all cached devices regardless of table filter query params', function () {
     seedLicensingCache(
         $this->client,
         devices: [
@@ -356,14 +415,8 @@ test('licensing index filters by serial number device name subscription key tags
     ]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->has('devices', 1)
-            ->where('devices.0.serial', 'SN-FILTER-A')
-            ->where('filters.serial_number', 'filter-a')
-            ->where('filters.device_name', 'lobby')
-            ->where('filters.subscription_key', 'key-tag-a')
-            ->where('filters.subscription_tags', 'pool-a,pool-b')
-            ->where('filters.model', 'ap-515')
-            ->where('has_active_filters', true));
+            ->has('devices', 2)
+            ->where('has_active_filters', false));
 });
 
 test('licensing queue route is removed', function () {

@@ -1941,6 +1941,46 @@ class CentralAPIHelper
     }
 
     /**
+     * @return array<string, string> serial => non-empty display name from Central
+     */
+    public function indexCentralDeviceNamesBySerial(): array
+    {
+        $namesBySerial = [];
+
+        $classicDevices = $this->classic_collect_device_inventory();
+        if (! isset($classicDevices['error'])) {
+            foreach ($classicDevices as $device) {
+                if (! is_array($device)) {
+                    continue;
+                }
+
+                $serial = trim((string) ($device['serial'] ?? ''));
+                $name = trim((string) ($device['name'] ?? ''));
+                if ($serial !== '' && $name !== '') {
+                    $namesBySerial[$serial] = $name;
+                }
+            }
+        }
+
+        $newCentralDevices = $this->get_all_devices();
+        if (! isset($newCentralDevices['error'])) {
+            foreach ($newCentralDevices as $device) {
+                if (! is_array($device)) {
+                    continue;
+                }
+
+                $serial = trim((string) ($device['serialNumber'] ?? ''));
+                $name = trim((string) ($device['deviceName'] ?? ''));
+                if ($serial !== '' && $name !== '') {
+                    $namesBySerial[$serial] = $name;
+                }
+            }
+        }
+
+        return $namesBySerial;
+    }
+
+    /**
      * @param  string  $service_name  can be retrieved using the classic_get_enabled_services() method. For devices, most likely advanced_ap, advanced_switch_6100, advanced_switch_8300_foundation_ap, etc. will be used.
      * @return \Illuminate\Http\Client\Response|array{error: string}
      */

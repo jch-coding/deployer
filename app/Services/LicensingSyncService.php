@@ -75,7 +75,9 @@ class LicensingSyncService
             );
         }
 
-        $this->persist($client, $enabledResult['services'], $mergedSubscriptions, $inventoryDevices);
+        $centralNamesBySerial = $centralHelper->indexCentralDeviceNamesBySerial();
+
+        $this->persist($client, $enabledResult['services'], $mergedSubscriptions, $inventoryDevices, $centralNamesBySerial);
     }
 
     /**
@@ -149,9 +151,15 @@ class LicensingSyncService
      * @param  array<int, string>  $enabledServices
      * @param  array<int, array<string, mixed>>  $subscriptions
      * @param  array<int, array<string, mixed>>  $inventoryDevices
+     * @param  array<string, string>  $centralNamesBySerial
      */
-    private function persist(Client $client, array $enabledServices, array $subscriptions, array $inventoryDevices): void
-    {
+    private function persist(
+        Client $client,
+        array $enabledServices,
+        array $subscriptions,
+        array $inventoryDevices,
+        array $centralNamesBySerial = [],
+    ): void {
         $subscriptionsByKey = $this->indexSubscriptions($subscriptions);
         $deployerDevicesBySerial = Device::query()
             ->where('client_id', $client->id)
@@ -166,6 +174,7 @@ class LicensingSyncService
             $inventoryDevices,
             $subscriptionsByKey,
             $deployerDevicesBySerial,
+            $centralNamesBySerial,
             $syncedAt,
         ): void {
             $client->clientSubscriptions()->delete();
@@ -224,7 +233,7 @@ class LicensingSyncService
                     'model' => (string) ($item['model'] ?? ''),
                     'mac' => (string) ($item['mac'] ?? $item['macaddr'] ?? ''),
                     'device_type' => (string) ($item['device_type'] ?? ''),
-                    'name' => (string) ($item['name'] ?? $serial),
+                    'name' => $this->resolveDeviceDisplayName($serial, $centralNamesBySerial),
                     'licensed' => (bool) ($item['licensed'] ?? ($services !== [] || $subscriptionKey !== '')),
                     'assigned_services' => $services,
                     'subscription_key' => $subscriptionKey,
@@ -365,5 +374,15 @@ class LicensingSyncService
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, string>  $centralNamesBySerial
+     */
+    private function resolveDeviceDisplayName(string $serial, array $centralNamesBySerial): string
+    {
+        $name = trim((string) ($centralNamesBySerial[$serial] ?? ''));
+
+        return $name !== '' ? $name : $serial;
     }
 }

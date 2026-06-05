@@ -290,31 +290,6 @@ class LicensingInventoryService
     private function applyFilters(array $devices, array $filters): array
     {
         return array_values(array_filter($devices, function (array $device) use ($filters): bool {
-            if (! $this->matchesTextFilter((string) ($device['serial'] ?? ''), $filters['serial_number'] ?? '')) {
-                return false;
-            }
-
-            if (! $this->matchesTextFilter((string) ($device['name'] ?? ''), $filters['device_name'] ?? '')) {
-                return false;
-            }
-
-            if (! $this->matchesTextFilter((string) ($device['subscription_key'] ?? ''), $filters['subscription_key'] ?? '')) {
-                return false;
-            }
-
-            if (! $this->matchesTextFilter((string) ($device['model'] ?? ''), $filters['model'] ?? '')) {
-                return false;
-            }
-
-            $tagKeys = $device['tags'] ?? [];
-            if (! is_array($tagKeys)) {
-                $tagKeys = GreenLakeAPIHelper::normalizeTagKeys($tagKeys);
-            }
-
-            if (! $this->matchesTagFilter($tagKeys, $filters['subscription_tags'] ?? '')) {
-                return false;
-            }
-
             if (($filters['license_type'] ?? '') !== '' && ($device['license_type'] ?? '') !== $filters['license_type']) {
                 return false;
             }
@@ -337,55 +312,6 @@ class LicensingInventoryService
 
             return true;
         }));
-    }
-
-    private function matchesTextFilter(string $haystack, string $needle): bool
-    {
-        $needle = trim($needle);
-        if ($needle === '') {
-            return true;
-        }
-
-        return str_contains(mb_strtolower($haystack), mb_strtolower($needle));
-    }
-
-    /**
-     * @param  array<int, string>  $tagKeys
-     */
-    private function matchesTagFilter(array $tagKeys, string $rawTags): bool
-    {
-        $rawTags = trim($rawTags);
-        if ($rawTags === '') {
-            return true;
-        }
-
-        $tokens = array_values(array_filter(
-            array_map(fn ($token) => trim($token), explode(',', $rawTags)),
-            fn ($token) => $token !== '',
-        ));
-
-        if ($tokens === []) {
-            return true;
-        }
-
-        foreach ($tokens as $token) {
-            $tokenLower = mb_strtolower($token);
-            $matched = false;
-
-            foreach ($tagKeys as $tagKey) {
-                if (str_contains(mb_strtolower((string) $tagKey), $tokenLower)) {
-                    $matched = true;
-
-                    break;
-                }
-            }
-
-            if (! $matched) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private function dateInRange(?int $epochMs, string $from, string $to): bool
