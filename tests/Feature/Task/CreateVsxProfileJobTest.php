@@ -100,7 +100,8 @@ it('creates vsx profile and marks both devices completed on success', function (
     $job->handle();
 
     expect($task->devices()->find($primary->id)->pivot->status)->toBe('COMPLETED')
-        ->and($task->devices()->find($secondary->id)->pivot->status)->toBe('COMPLETED');
+        ->and($task->devices()->find($secondary->id)->pivot->status)->toBe('COMPLETED')
+        ->and($task->fresh()->status)->toBe('COMPLETED');
 });
 
 it('aborts when vrf creation fails', function () {

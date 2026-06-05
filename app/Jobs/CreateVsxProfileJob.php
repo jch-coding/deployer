@@ -139,7 +139,12 @@ class CreateVsxProfileJob extends BaseTaskJob
             $this->task->processTaskStatusLog($successMessage);
 
             foreach ($this->devices as $device) {
-                $this->task->devices()->find($device)->pivot->update(['status' => 'COMPLETED']);
+                $this->task->devices()->find($device->id)?->pivot?->update(['status' => 'COMPLETED']);
+            }
+
+            $this->task->load('devices');
+            if ($this->task->allTrackedItemsCompleted()) {
+                $this->task->update(['status' => 'COMPLETED']);
             }
         }, 'Create VSX profile');
     }
