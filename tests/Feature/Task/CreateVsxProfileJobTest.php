@@ -30,7 +30,7 @@ function makeVsxDevicePair(Task $task, Client $client, array $primaryOverrides =
         'site_id' => $site->id,
         'scope_id' => 'primary-scope',
         'group' => 'WHSE-TEST-ACCESS',
-        'name' => 'Primary-SW',
+        'name' => 'Primary-SVR-SW',
         'serial' => 'PRIMARY123',
         'device_function' => DeviceFunction::ACCESS_SWITCH,
         'vsx_profile' => 'vsx-pair-1',
@@ -44,7 +44,7 @@ function makeVsxDevicePair(Task $task, Client $client, array $primaryOverrides =
         'site_id' => $site->id,
         'scope_id' => 'secondary-scope',
         'group' => 'WHSE-TEST-ACCESS',
-        'name' => 'Secondary-SW',
+        'name' => 'Secondary-SVR-SW',
         'serial' => 'SECONDARY123',
         'device_function' => DeviceFunction::ACCESS_SWITCH,
         'vsx_profile' => 'vsx-pair-1',
@@ -60,8 +60,6 @@ function makeVsxDevicePair(Task $task, Client $client, array $primaryOverrides =
 
 function mockSuccessfulVsxPrerequisites(CentralAPIHelper $centralApi): void
 {
-    $centralApi->shouldReceive('getSortedEthernetInterfaceNames')
-        ->andReturn(['1/1/1', '1/1/2', '1/1/3', '1/1/4', '1/1/5', '1/1/6']);
     $centralApi->shouldReceive('ensureVsxKeepAliveVrf')->andReturn(['ok' => true]);
     $centralApi->shouldReceive('ensureVsxIslLag')->andReturn(['ok' => true]);
     $centralApi->shouldReceive('ensureVsxKeepaliveLag')->andReturn(['ok' => true]);
@@ -79,7 +77,15 @@ it('creates vsx profile and marks both devices completed on success', function (
     $successResponse->shouldReceive('ok')->andReturn(true);
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
-    mockSuccessfulVsxPrerequisites($centralApi);
+    $centralApi->shouldReceive('ensureVsxKeepAliveVrf')->twice()->andReturn(['ok' => true]);
+    $centralApi->shouldReceive('ensureVsxIslLag')
+        ->twice()
+        ->with(Mockery::type(Device::class), Mockery::type(Device::class), ['1/1/21', '1/1/22'])
+        ->andReturn(['ok' => true]);
+    $centralApi->shouldReceive('ensureVsxKeepaliveLag')
+        ->twice()
+        ->with(Mockery::type(Device::class), Mockery::type(Device::class), Mockery::type(App\VsxRole::class), ['1/1/23', '1/1/24'])
+        ->andReturn(['ok' => true]);
     $centralApi->shouldReceive('post_vsx_profile')
         ->once()
         ->with(Mockery::type('array'), 'site-scope-id')
@@ -106,10 +112,8 @@ it('aborts when vrf creation fails', function () {
     [$primary, $secondary] = makeVsxDevicePair($task, $this->client);
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
-    $centralApi->shouldReceive('getSortedEthernetInterfaceNames')
-        ->andReturn(['1/1/1', '1/1/2', '1/1/3', '1/1/4', '1/1/5', '1/1/6']);
     $centralApi->shouldReceive('ensureVsxKeepAliveVrf')
-        ->andReturn(['error' => 'WHSE-VSX-Keep-Alive VRF creation failed at group level for Primary-SW']);
+        ->andReturn(['error' => 'WHSE-VSX-Keep-Alive VRF creation failed at group level for Primary-SVR-SW']);
     $centralApi->shouldNotReceive('post_vsx_profile');
 
     $job = new CreateVsxProfileJob(
@@ -178,11 +182,9 @@ it('aborts when lag ensure fails', function () {
     [$primary, $secondary] = makeVsxDevicePair($task, $this->client);
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
-    $centralApi->shouldReceive('getSortedEthernetInterfaceNames')
-        ->andReturn(['1/1/1', '1/1/2', '1/1/3', '1/1/4', '1/1/5', '1/1/6']);
     $centralApi->shouldReceive('ensureVsxKeepAliveVrf')->andReturn(['ok' => true]);
     $centralApi->shouldReceive('ensureVsxIslLag')
-        ->andReturn(['error' => 'LAG 256 inter-switch-link on Primary-SW does not match expected configuration']);
+        ->andReturn(['error' => 'LAG 256 inter-switch-link on Primary-SVR-SW does not match expected configuration']);
     $centralApi->shouldNotReceive('post_vsx_profile');
 
     $job = new CreateVsxProfileJob(
@@ -196,17 +198,19 @@ it('aborts when lag ensure fails', function () {
     expect($task->fresh()->status)->toBe('FAILED');
 });
 
-it('fails validation when fewer than four ethernet interfaces are available', function () {
+it('fails validation when device name does not indicate vsx lag ports', function () {
     $task = Task::factory()->for($this->deployment)->create([
         'task_type' => 'CREATE_VSX_PROFILE',
         'status' => 'IN_PROGRESS',
     ]);
 
-    [$primary, $secondary] = makeVsxDevicePair($task, $this->client);
+    [$primary, $secondary] = makeVsxDevicePair($task, $this->client, [
+        'name' => 'Primary-SW',
+    ], [
+        'name' => 'Secondary-SW',
+    ]);
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
-    $centralApi->shouldReceive('getSortedEthernetInterfaceNames')
-        ->andReturn(['1/1/1', '1/1/2', '1/1/3']);
     $centralApi->shouldNotReceive('post_vsx_profile');
 
     $job = new CreateVsxProfileJob(

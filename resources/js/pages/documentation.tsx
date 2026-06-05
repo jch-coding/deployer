@@ -234,6 +234,16 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
         accepted: 'System MAC in the form 02:00:00:00:00:xx where xx are hex digits starting from 01. Same value on both peers.',
     },
     {
+        column: 'vsx_isl_ports',
+        type: 'string',
+        accepted: 'Optional LAG 256 member ports. Supports ranges like 1/1/53-1/1/54. Must be set together with vsx_keepalive_ports when overriding defaults.',
+    },
+    {
+        column: 'vsx_keepalive_ports',
+        type: 'string',
+        accepted: 'Optional LAG 255 member ports. Supports ranges like 1/1/47-1/1/48. Must be set together with vsx_isl_ports when overriding defaults.',
+    },
+    {
         column: 'trunk_vlan_all',
         type: 'boolean',
         accepted: (
@@ -507,7 +517,12 @@ export default function documentation() {
                                 <code className="rounded bg-muted px-1 py-0.5 text-sm">VSX_SECONDARY</code>. The{' '}
                                 <code className="rounded bg-muted px-1 py-0.5 text-sm">group</code> column is required
                                 so the task can ensure the WHSE-VSX-Keep-Alive VRF at device group scope before creating
-                                LAG 256 (inter-switch-link) and LAG 255 (keepalive) interfaces.
+                                LAG 256 (inter-switch-link) and LAG 255 (keepalive) interfaces. When{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_isl_ports</code> and{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">vsx_keepalive_ports</code> are not
+                                set, LAG member ports are chosen from the device name: CORE switches use 1/1/53-1/1/54 (LAG
+                                256) and 1/1/47-1/1/48 (LAG 255); SVR switches use 1/1/21-1/1/22 (LAG 256) and
+                                1/1/23-1/1/24 (LAG 255).
                             </p>
                             <ColumnPair
                                 required={[
@@ -519,7 +534,7 @@ export default function documentation() {
                                     'vsx_role',
                                     'vsx_system_mac',
                                 ]}
-                                optional={[]}
+                                optional={['vsx_isl_ports', 'vsx_keepalive_ports']}
                             />
                         </div>
                     </DocCard>

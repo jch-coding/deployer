@@ -2215,19 +2215,42 @@ class CentralAPIHelper
     }
 
     /**
-     * @param  array<int, string>  $sortedNames
      * @return array{0: array<int, string>, 1: array<int, string>}|array{error: string}
      */
-    public static function getVsxEthernetPortSelections(array $sortedNames): array
+    public static function getVsxPortSelections(Device $device): array
     {
-        if (count($sortedNames) < 4) {
-            return ['error' => 'Device requires at least 4 ethernet interfaces for VSX LAG configuration.'];
+        $hasIslOverride = filled($device->vsx_isl_ports);
+        $hasKeepaliveOverride = filled($device->vsx_keepalive_ports);
+
+        if ($hasIslOverride xor $hasKeepaliveOverride) {
+            return ['error' => 'Both vsx_isl_ports and vsx_keepalive_ports must be set when overriding VSX LAG member ports on '.$device->name.'.'];
         }
 
-        $islPorts = array_slice($sortedNames, -4, 2);
-        $keepalivePorts = array_slice($sortedNames, -2, 2);
+        if ($hasIslOverride && $hasKeepaliveOverride) {
+            $islPorts = InterfaceHelper::expandInterfaceRange((string) $device->vsx_isl_ports);
+            $keepalivePorts = InterfaceHelper::expandInterfaceRange((string) $device->vsx_keepalive_ports);
 
-        return [$islPorts, $keepalivePorts];
+            if (count($islPorts) !== 2) {
+                return ['error' => 'vsx_isl_ports on '.$device->name.' must expand to exactly 2 interfaces.'];
+            }
+
+            if (count($keepalivePorts) !== 2) {
+                return ['error' => 'vsx_keepalive_ports on '.$device->name.' must expand to exactly 2 interfaces.'];
+            }
+
+            return [$islPorts, $keepalivePorts];
+        }
+
+        $name = strtoupper((string) $device->name);
+        if (str_contains($name, 'CORE')) {
+            return [['1/1/53', '1/1/54'], ['1/1/47', '1/1/48']];
+        }
+
+        if (str_contains($name, 'SVR')) {
+            return [['1/1/21', '1/1/22'], ['1/1/23', '1/1/24']];
+        }
+
+        return ['error' => 'Cannot determine VSX LAG ports for '.$device->name.': device name must contain CORE or SVR, or set vsx_isl_ports and vsx_keepalive_ports.'];
     }
 
     public static function buildVsxKeepaliveLagPayload(array $portList, VsxRole $role): array

@@ -22,6 +22,10 @@ it('normalizes each side of hyphen ranges and ampersand-separated chunks', funct
         ->and(InterfaceHelper::normalizeInterfaceString('01/01/01&02/02/02'))->toBe('1/1/1&2/2/2');
 });
 
-it('normalizes interface ranges before expansion in DeviceController', function () {
+it('normalizes interface ranges before expansion in InterfaceHelper', function () {
+    expect(InterfaceHelper::expandInterfaceRange('01/01/01-01/01/02'))->toBe(['1/1/1', '1/1/2']);
+});
+
+it('delegates interface range expansion from DeviceController', function () {
     expect(DeviceController::expandInterfaceRange('01/01/01-01/01/02'))->toBe(['1/1/1', '1/1/2']);
 });

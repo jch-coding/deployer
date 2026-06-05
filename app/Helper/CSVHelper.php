@@ -285,6 +285,45 @@ class CSVHelper
             }
         }
 
+        foreach (['vsx_isl_ports', 'vsx_keepalive_ports'] as $column) {
+            if (! array_key_exists($column, $row)) {
+                continue;
+            }
+
+            $raw = $row[$column];
+            if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+                $row[$column] = is_string($raw) ? $raw : ($raw ?? '');
+
+                continue;
+            }
+
+            $row[$column] = InterfaceHelper::normalizeInterfaceString(trim((string) $raw));
+        }
+
+        $hasIslPorts = filled($row['vsx_isl_ports'] ?? '');
+        $hasKeepalivePorts = filled($row['vsx_keepalive_ports'] ?? '');
+        if ($hasIslPorts xor $hasKeepalivePorts) {
+            $validationMessages[] = [
+                'row' => $csvRowNumber,
+                'column' => 'vsx_isl_ports',
+                'text' => 'vsx_isl_ports and vsx_keepalive_ports must both be set when overriding VSX LAG member ports.',
+            ];
+        } elseif ($hasIslPorts && $hasKeepalivePorts) {
+            foreach ([
+                'vsx_isl_ports' => 'vsx_isl_ports',
+                'vsx_keepalive_ports' => 'vsx_keepalive_ports',
+            ] as $column => $label) {
+                $expanded = InterfaceHelper::expandInterfaceRange((string) $row[$column]);
+                if (count($expanded) !== 2) {
+                    $validationMessages[] = [
+                        'row' => $csvRowNumber,
+                        'column' => $column,
+                        'text' => "{$label} \"{$row[$column]}\" must expand to exactly 2 interfaces.",
+                    ];
+                }
+            }
+        }
+
         foreach (['interface_mode' => self::INTERFACE_MODES, 'trunk_type' => self::TRUNK_TYPES, 'lacp_mode' => self::LACP_MODES, 'lacp_rate' => self::LACP_RATES] as $column => $allowed) {
             if (! array_key_exists($column, $row)) {
                 continue;

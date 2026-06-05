@@ -38,6 +38,29 @@ final class InterfaceHelper
         return implode('&', $normalizedChunks);
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function expandInterfaceRange(string $range): array
+    {
+        $range = self::normalizeInterfaceString($range);
+        $interfacePairs = array_map(fn ($pair) => explode('-', $pair), explode('&', $range));
+        $expandedRanges = [];
+        foreach ($interfacePairs as $pair) {
+            if (count($pair) === 2) {
+                $interfaceParts = explode('/', $pair[0]);
+                $prefix = $interfaceParts[0].'/'.$interfaceParts[1].'/';
+                $start = (int) $interfaceParts[2];
+                $end = (int) explode('/', $pair[1])[2];
+                $expandedRanges = array_merge($expandedRanges, array_map(fn ($i) => $prefix.$i, range($start, $end)));
+            } else {
+                $expandedRanges[] = $pair[0];
+            }
+        }
+
+        return $expandedRanges;
+    }
+
     private static function normalizePathToken(string $token): string
     {
         $token = trim($token);

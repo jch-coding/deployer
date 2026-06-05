@@ -495,3 +495,22 @@ it('accepts mixed-case vsx column headers and role values', function () {
         'vsx_system_mac' => '02:00:00:00:00:01',
     ]);
 });
+
+it('normalizes and validates vsx lag port override columns', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'vsx_isl_ports', 'vsx_keepalive_ports'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/53-1/1/54', '1/1/47&1/1/48'],
+    ]);
+
+    expect($deviceArrays[0])->toMatchArray([
+        'vsx_isl_ports' => '1/1/53-1/1/54',
+        'vsx_keepalive_ports' => '1/1/47&1/1/48',
+    ]);
+});
+
+it('rejects partial vsx lag port override columns', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'vsx_isl_ports'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '1/1/53-1/1/54'],
+    ]))->toThrow(ValidationException::class);
+});

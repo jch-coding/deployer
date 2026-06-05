@@ -132,11 +132,13 @@ class DeviceController extends Controller
                 'vsx_profile' => ($arr['vsx_profile'] ?? '') === '' ? null : $arr['vsx_profile'],
                 'vsx_role' => ($arr['vsx_role'] ?? '') === '' ? null : $arr['vsx_role'],
                 'vsx_system_mac' => ($arr['vsx_system_mac'] ?? '') === '' ? null : $arr['vsx_system_mac'],
+                'vsx_isl_ports' => ($arr['vsx_isl_ports'] ?? '') === '' ? null : $arr['vsx_isl_ports'],
+                'vsx_keepalive_ports' => ($arr['vsx_keepalive_ports'] ?? '') === '' ? null : $arr['vsx_keepalive_ports'],
             ],
             $unique_devices
         );
 
-        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku', 'vsx_profile', 'vsx_role', 'vsx_system_mac']);
+        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku', 'vsx_profile', 'vsx_role', 'vsx_system_mac', 'vsx_isl_ports', 'vsx_keepalive_ports']);
 
         $errors = [];
         $unsaved_devices = [];
@@ -220,6 +222,8 @@ class DeviceController extends Controller
                 'vsx_profile' => '',
                 'vsx_role' => '',
                 'vsx_system_mac' => '',
+                'vsx_isl_ports' => '',
+                'vsx_keepalive_ports' => '',
             ];
             foreach ($device as $device_info) {
                 foreach (array_keys($empty) as $key) {
@@ -236,22 +240,7 @@ class DeviceController extends Controller
 
     public static function expandInterfaceRange(string $range)
     {
-        $range = InterfaceHelper::normalizeInterfaceString($range);
-        $interface_pairs = array_map(fn ($pair) => explode('-', $pair), explode('&', $range));
-        $expanded_ranges = [];
-        foreach ($interface_pairs as $pair) {
-            if (count($pair) == 2) {
-                $interface_parts = explode('/', $pair[0]);
-                $prefix = $interface_parts[0].'/'.$interface_parts[1].'/';
-                $start = (int) $interface_parts[2];
-                $end = (int) explode('/', $pair[1])[2];
-                $expanded_ranges = array_merge($expanded_ranges, array_map(fn ($i) => $prefix.$i, range($start, $end)));
-            } else {
-                $expanded_ranges[] = $pair[0];
-            }
-        }
-
-        return $expanded_ranges;
+        return InterfaceHelper::expandInterfaceRange($range);
     }
 
     public static function expandInterfaceRangeConfig(array $interface_config)

@@ -78,14 +78,7 @@ class CreateVsxProfileJob extends BaseTaskJob
                     return;
                 }
 
-                $sortedNames = $this->centralAPIHelper->getSortedEthernetInterfaceNames($device);
-                if (array_key_exists('error', $sortedNames)) {
-                    $this->abortPair((string) $sortedNames['error'], true);
-
-                    return;
-                }
-
-                $portSelections = CentralAPIHelper::getVsxEthernetPortSelections($sortedNames);
+                $portSelections = CentralAPIHelper::getVsxPortSelections($device);
                 if (array_key_exists('error', $portSelections)) {
                     $this->abortPair((string) $portSelections['error'], true);
 
@@ -182,6 +175,22 @@ class CreateVsxProfileJob extends BaseTaskJob
         $systemMacs = $this->devices->pluck('vsx_system_mac')->unique();
         if ($systemMacs->count() !== 1) {
             return 'Devices in VSX profile '.$this->vsxProfileName.' have mismatched vsx_system_mac values.';
+        }
+
+        $islPortOverrides = $this->devices->pluck('vsx_isl_ports')->map(fn ($value) => filled($value) ? (string) $value : null);
+        if ($islPortOverrides->unique()->count() > 1) {
+            return 'Devices in VSX profile '.$this->vsxProfileName.' have mismatched vsx_isl_ports values.';
+        }
+
+        $keepalivePortOverrides = $this->devices->pluck('vsx_keepalive_ports')->map(fn ($value) => filled($value) ? (string) $value : null);
+        if ($keepalivePortOverrides->unique()->count() > 1) {
+            return 'Devices in VSX profile '.$this->vsxProfileName.' have mismatched vsx_keepalive_ports values.';
+        }
+
+        $hasIslOverride = $islPortOverrides->contains(fn (?string $value) => $value !== null);
+        $hasKeepaliveOverride = $keepalivePortOverrides->contains(fn (?string $value) => $value !== null);
+        if ($hasIslOverride xor $hasKeepaliveOverride) {
+            return 'Devices in VSX profile '.$this->vsxProfileName.' must both specify vsx_isl_ports and vsx_keepalive_ports when overriding LAG member ports.';
         }
 
         foreach ($this->devices as $device) {

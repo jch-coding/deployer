@@ -1052,19 +1052,52 @@ test('buildVsxLagMemberPortDescription formats peer link and keepalive labels', 
         ->toBe('Peer-B - 1/1/47 [VSX Keep-Alive]');
 });
 
-test('getVsxEthernetPortSelections returns isl and keepalive port slices', function () {
-    $names = ['1/1/1', '1/1/2', '1/1/3', '1/1/4', '1/1/5', '1/1/6'];
+test('getVsxPortSelections returns core switch default ports', function () {
+    $device = Device::factory()->create(['name' => 'NY1-MDF-CORE-SW1']);
 
-    [$islPorts, $keepalivePorts] = CentralAPIHelper::getVsxEthernetPortSelections($names);
+    [$islPorts, $keepalivePorts] = CentralAPIHelper::getVsxPortSelections($device);
 
-    expect($islPorts)->toBe(['1/1/3', '1/1/4'])
-        ->and($keepalivePorts)->toBe(['1/1/5', '1/1/6']);
+    expect($islPorts)->toBe(['1/1/53', '1/1/54'])
+        ->and($keepalivePorts)->toBe(['1/1/47', '1/1/48']);
 });
 
-test('getVsxEthernetPortSelections requires at least four interfaces', function () {
-    $result = CentralAPIHelper::getVsxEthernetPortSelections(['1/1/1', '1/1/2', '1/1/3']);
+test('getVsxPortSelections returns svr switch default ports', function () {
+    $device = Device::factory()->create(['name' => 'NY1-MDF-SVR-SW1']);
 
-    expect($result)->toBe(['error' => 'Device requires at least 4 ethernet interfaces for VSX LAG configuration.']);
+    [$islPorts, $keepalivePorts] = CentralAPIHelper::getVsxPortSelections($device);
+
+    expect($islPorts)->toBe(['1/1/21', '1/1/22'])
+        ->and($keepalivePorts)->toBe(['1/1/23', '1/1/24']);
+});
+
+test('getVsxPortSelections uses explicit port overrides when set', function () {
+    $device = Device::factory()->create([
+        'name' => 'Primary-SW',
+        'vsx_isl_ports' => '1/1/53-1/1/54',
+        'vsx_keepalive_ports' => '1/1/47&1/1/48',
+    ]);
+
+    [$islPorts, $keepalivePorts] = CentralAPIHelper::getVsxPortSelections($device);
+
+    expect($islPorts)->toBe(['1/1/53', '1/1/54'])
+        ->and($keepalivePorts)->toBe(['1/1/47', '1/1/48']);
+});
+
+test('getVsxPortSelections requires both override columns when one is set', function () {
+    $device = Device::factory()->create([
+        'name' => 'Primary-SW',
+        'vsx_isl_ports' => '1/1/53-1/1/54',
+    ]);
+
+    $result = CentralAPIHelper::getVsxPortSelections($device);
+
+    expect($result)->toHaveKey('error');
+});
+
+test('getVsxPortSelections errors when name is ambiguous and overrides missing', function () {
+    $result = CentralAPIHelper::getVsxPortSelections(Device::factory()->create(['name' => 'Primary-SW']));
+
+    expect($result)->toBe(['error' => 'Cannot determine VSX LAG ports for Primary-SW: device name must contain CORE or SVR, or set vsx_isl_ports and vsx_keepalive_ports.']);
 });
 
 test('vsxPortchannelMatchesExpected compares port-list order independently', function () {

@@ -83,6 +83,8 @@ class TaskController extends Controller
             'vsx_profile',
             'vsx_role',
             'vsx_system_mac',
+            'vsx_isl_ports',
+            'vsx_keepalive_ports',
         ],
         'MOVE_DEVICE_TO_GROUP' => [
             'group',
