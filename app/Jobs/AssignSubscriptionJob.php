@@ -15,7 +15,7 @@ class AssignSubscriptionJob extends BaseTaskJob
         public Task $task,
         public GreenLakeAPIHelper $greenLakeAPIHelper,
     ) {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
+        $this->initTaskTiming($task, defaultWaitMinutes: 1);
     }
 
     public function handle(): void

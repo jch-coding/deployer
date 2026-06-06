@@ -21,7 +21,7 @@ class CreateVsxProfileJob extends BaseTaskJob
         public Task $task,
         public CentralAPIHelper $centralAPIHelper
     ) {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 3);
+        $this->initTaskTiming($task, defaultWaitMinutes: 3);
     }
 
     public function handle(): void

@@ -17,7 +17,7 @@ class MoveDevicesToGroupJob extends BaseTaskJob
      */
     public function __construct(public array $devices, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
+        $this->initTaskTiming($task, defaultWaitMinutes: 1);
     }
 
     /**

@@ -483,15 +483,9 @@ export default function Show() {
                                             ? available_subscriptions
                                             : undefined
                                     }
-                                    enabled_services={
-                                        task.task_type === 'UNASSIGN_SUBSCRIPTION'
-                                            ? enabled_services
-                                            : task.task_type === 'ASSIGN_SUBSCRIPTION'
-                                              ? enabled_services
-                                              : undefined
-                                    }
                                     licensing_synced_at={
-                                        task.task_type === 'ASSIGN_SUBSCRIPTION'
+                                        task.task_type === 'ASSIGN_SUBSCRIPTION' ||
+                                        task.task_type === 'UNASSIGN_SUBSCRIPTION'
                                             ? licensing_synced_at
                                             : undefined
                                     }

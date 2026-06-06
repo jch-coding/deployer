@@ -1081,6 +1081,7 @@ class TaskController extends Controller
         }
 
         $availableSubscriptions = $licensingOptions['available_subscriptions'];
+        $subscriptionsByKey = $licensingOptions['subscriptions_by_key'];
         $cachedPayload = $licensingInventoryService->buildFromCache($deployment->client, []);
         $inventoryBySerial = collect($cachedPayload['devices'])->keyBy('serial');
 
@@ -1088,7 +1089,33 @@ class TaskController extends Controller
         $taskLicenseTag = null;
         $taskLicenseType = null;
 
-        if ($licensingMode === 'per_device') {
+        if (! $isAssign) {
+            foreach ($deviceIds as $deviceId) {
+                $serial = (string) $selectedDevices->get($deviceId)->serial;
+                $inventoryRow = $inventoryBySerial->get($serial);
+                if (! is_array($inventoryRow)) {
+                    throw ValidationException::withMessages(['devices' => "Device {$serial} has no subscription to remove."]);
+                }
+
+                $resolved = $licensingPoolResolver->resolveAssignedSubscriptionForUnassign(
+                    $inventoryRow,
+                    $subscriptionsByKey,
+                );
+                if (isset($resolved['error'])) {
+                    $message = $resolved['error'] === 'no_greenlake_device'
+                        ? "Device {$serial} is not linked in GreenLake. Renew licensing and try again."
+                        : "Device {$serial} has no subscription to remove.";
+                    throw ValidationException::withMessages(['devices' => $message]);
+                }
+
+                $attachData[$deviceId] = [
+                    'status' => 'PENDING',
+                    'licensing_service_name' => $resolved['greenlake_subscription_id'],
+                    'license_tag' => $resolved['license_tag'],
+                    'license_type' => $resolved['license_type'],
+                ];
+            }
+        } elseif ($licensingMode === 'per_device') {
             if ($isAssign) {
                 $poolGroups = [];
                 foreach ($deviceRows as $row) {
@@ -1149,24 +1176,6 @@ class TaskController extends Controller
                         ];
                     }
                 }
-            } else {
-                foreach ($deviceRows as $row) {
-                    $deviceId = (int) ($row['id'] ?? 0);
-                    if (! $selectedDevices->has($deviceId)) {
-                        continue;
-                    }
-
-                    $serial = (string) $selectedDevices->get($deviceId)->serial;
-                    $inventoryRow = $inventoryBySerial->get($serial);
-                    $subscriptionKey = is_array($inventoryRow)
-                        ? trim((string) ($inventoryRow['subscription_key'] ?? ''))
-                        : '';
-                    if ($subscriptionKey === '') {
-                        throw ValidationException::withMessages(['devices' => "Device {$serial} has no subscription to remove."]);
-                    }
-
-                    $attachData[$deviceId] = ['status' => 'PENDING'];
-                }
             }
         } else {
             if ($isAssign) {
@@ -1214,10 +1223,6 @@ class TaskController extends Controller
                         'license_tag' => $licenseTag,
                         'license_type' => $licenseType->value,
                     ];
-                }
-            } else {
-                foreach ($deviceIds as $deviceId) {
-                    $attachData[$deviceId] = ['status' => 'PENDING'];
                 }
             }
         }
@@ -1904,17 +1909,22 @@ class TaskController extends Controller
                         $jobs[] = $subscriptionJobs;
                     }
                 } else {
+                    $devices_by_subscription = $in_progress->groupBy(function ($device): string {
+                        return trim((string) ($device->pivot->licensing_service_name ?? ''));
+                    })->filter(fn ($group, string $subscriptionId) => $subscriptionId !== '');
                     $subscriptionJobs = [];
-                    foreach ($in_progress->chunk(25) as $deviceChunk) {
-                        $subscriptionJobs[] = new UnassignSubscriptionJob(
-                            $deviceChunk->map(fn ($device) => [
-                                'id' => $device->id,
-                                'serial' => $device->serial,
-                                'greenlake_device_id' => (string) ($inventoryBySerial->get($device->serial)['greenlake_device_id'] ?? ''),
-                            ])->all(),
-                            $task,
-                            $greenLakeAPIHelper,
-                        );
+                    foreach ($devices_by_subscription as $subscriptionDevices) {
+                        foreach ($subscriptionDevices->chunk(25) as $deviceChunk) {
+                            $subscriptionJobs[] = new UnassignSubscriptionJob(
+                                $deviceChunk->map(fn ($device) => [
+                                    'id' => $device->id,
+                                    'serial' => $device->serial,
+                                    'greenlake_device_id' => (string) ($inventoryBySerial->get($device->serial)['greenlake_device_id'] ?? ''),
+                                ])->all(),
+                                $task,
+                                $greenLakeAPIHelper,
+                            );
+                        }
                     }
                     if ($subscriptionJobs !== []) {
                         $jobs[] = $subscriptionJobs;

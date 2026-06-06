@@ -136,4 +136,43 @@ class LicensingPoolResolver
 
         return $allocations;
     }
+
+    /**
+     * Resolve a device's currently assigned subscription for unassign.
+     *
+     * @param  array<string, mixed>  $inventoryRow
+     * @param  array<string, array<string, mixed>>  $subscriptionsByKey
+     * @return array{greenlake_subscription_id: string, license_type: string, license_tag: string}|array{error: 'no_subscription'|'no_greenlake_device'}
+     */
+    public function resolveAssignedSubscriptionForUnassign(array $inventoryRow, array $subscriptionsByKey): array
+    {
+        $subscriptionKey = trim((string) ($inventoryRow['subscription_key'] ?? ''));
+        if ($subscriptionKey === '') {
+            return ['error' => 'no_subscription'];
+        }
+
+        $greenlakeDeviceId = trim((string) ($inventoryRow['greenlake_device_id'] ?? ''));
+        if ($greenlakeDeviceId === '') {
+            return ['error' => 'no_greenlake_device'];
+        }
+
+        $subscription = $subscriptionsByKey[$subscriptionKey] ?? null;
+        if (! is_array($subscription)) {
+            return ['error' => 'no_subscription'];
+        }
+
+        $greenlakeSubscriptionId = trim((string) ($subscription['greenlake_subscription_id'] ?? ''));
+        if ($greenlakeSubscriptionId === '') {
+            return ['error' => 'no_subscription'];
+        }
+
+        $licenseType = (string) ($inventoryRow['license_type'] ?? $subscription['license_type'] ?? '');
+        $tags = GreenLakeAPIHelper::normalizeTagKeys($subscription['tags'] ?? $inventoryRow['tags'] ?? []);
+
+        return [
+            'greenlake_subscription_id' => $greenlakeSubscriptionId,
+            'license_type' => $licenseType,
+            'license_tag' => $tags[0] ?? '',
+        ];
+    }
 }

@@ -15,7 +15,7 @@ class CreateNewCentralCXGroup extends BaseTaskJob
      */
     public function __construct(public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper, public bool $switch_group = true, public bool $ap_group = false)
     {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
+        $this->initTaskTiming($task, defaultWaitMinutes: 1);
     }
 
     /**

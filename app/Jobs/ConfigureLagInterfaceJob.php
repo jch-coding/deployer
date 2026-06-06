@@ -15,7 +15,7 @@ class ConfigureLagInterfaceJob extends BaseTaskJob
      */
     public function __construct(public DeviceInterface $device_interface, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 3);
+        $this->initTaskTiming($task, defaultWaitMinutes: 3);
     }
 
     /**

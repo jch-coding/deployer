@@ -12,7 +12,7 @@ class AddVlansToDeviceGroup extends BaseTaskJob
      */
     public function __construct(public string $device_group, public array $vlans, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
+        $this->initTaskTiming($task, defaultWaitMinutes: 1);
     }
 
     protected function markAllAttachedDevicesCompleted(): void

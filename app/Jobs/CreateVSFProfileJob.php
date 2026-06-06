@@ -16,7 +16,7 @@ class CreateVSFProfileJob extends BaseTaskJob
      */
     public function __construct(public Device $device, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 3);
+        $this->initTaskTiming($task, defaultWaitMinutes: 3);
     }
 
     /**

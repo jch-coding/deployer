@@ -21,7 +21,7 @@ class CreateLocalOverrideForPortProfile extends BaseTaskJob
      */
     public function __construct(public array $portProfileInfo, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 1);
+        $this->initTaskTiming($task, defaultWaitMinutes: 1);
     }
 
     /**

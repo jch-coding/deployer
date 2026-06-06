@@ -14,7 +14,7 @@ class RemoveLocalOverrideNTPJob extends BaseTaskJob
      */
     public function __construct(public Task $task, public Device $device, public CentralAPIHelper $centralAPIHelper)
     {
-        $this->initTaskTiming($task, defaultDeploymentMinutes: 3, defaultWaitMinutes: 3);
+        $this->initTaskTiming($task, defaultWaitMinutes: 3);
     }
 
     /**

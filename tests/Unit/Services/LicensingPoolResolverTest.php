@@ -89,3 +89,53 @@ test('LicensingPoolResolver allocateDevices fills highest-available subscription
         12 => 'gl-high',
     ]);
 });
+
+test('LicensingPoolResolver resolveAssignedSubscriptionForUnassign returns subscription metadata', function () {
+    $resolver = new LicensingPoolResolver;
+    $subscriptionsByKey = [
+        'KEY-POOL' => [
+            'subscription_key' => 'KEY-POOL',
+            'greenlake_subscription_id' => 'gl-sub-KEY-POOL',
+            'license_type' => 'Advanced AP',
+            'tags' => ['pool-a', 'pool-b'],
+        ],
+    ];
+
+    $result = $resolver->resolveAssignedSubscriptionForUnassign([
+        'subscription_key' => 'KEY-POOL',
+        'greenlake_device_id' => 'gl-device-1',
+        'license_type' => 'Advanced AP',
+    ], $subscriptionsByKey);
+
+    expect($result)->toBe([
+        'greenlake_subscription_id' => 'gl-sub-KEY-POOL',
+        'license_type' => 'Advanced AP',
+        'license_tag' => 'pool-a',
+    ]);
+});
+
+test('LicensingPoolResolver resolveAssignedSubscriptionForUnassign rejects missing subscription', function () {
+    $resolver = new LicensingPoolResolver;
+
+    expect($resolver->resolveAssignedSubscriptionForUnassign([
+        'subscription_key' => '',
+        'greenlake_device_id' => 'gl-device-1',
+    ], []))->toBe(['error' => 'no_subscription']);
+});
+
+test('LicensingPoolResolver resolveAssignedSubscriptionForUnassign rejects missing GreenLake device id', function () {
+    $resolver = new LicensingPoolResolver;
+    $subscriptionsByKey = [
+        'KEY-POOL' => [
+            'subscription_key' => 'KEY-POOL',
+            'greenlake_subscription_id' => 'gl-sub-KEY-POOL',
+            'license_type' => 'Advanced AP',
+            'tags' => ['pool-a'],
+        ],
+    ];
+
+    expect($resolver->resolveAssignedSubscriptionForUnassign([
+        'subscription_key' => 'KEY-POOL',
+        'greenlake_device_id' => '',
+    ], $subscriptionsByKey))->toBe(['error' => 'no_greenlake_device']);
+});
