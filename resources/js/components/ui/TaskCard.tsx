@@ -55,7 +55,6 @@ type TaskCardProps = {
     deployment: DeploymentType;
     requiresClassicCentral?: boolean;
     available_subscriptions?: AvailableSubscription[];
-    enabled_services?: string[];
     licensing_synced_at?: string | null;
     license_tags?: string[];
     license_type_options?: LicenseTypeOption[];
@@ -73,7 +72,6 @@ export default function TaskCard({
     deployment,
     requiresClassicCentral = false,
     available_subscriptions = [],
-    enabled_services = [],
     licensing_synced_at = null,
     license_tags: licenseTagsProp = [],
     license_type_options = [],
@@ -100,16 +98,14 @@ export default function TaskCard({
         });
     }, [devices, switchesOnly, apsOnly, deviceSearch]);
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
-    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
+    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
     const [vlanSitePrefix, setVlanSitePrefix] = useState('')
     const [bulkLicenseTag, setBulkLicenseTag] = useState('');
     const [bulkLicenseType, setBulkLicenseType] = useState<LicenseTypeOption | ''>('');
-    const [bulkUnassignService, setBulkUnassignService] = useState(enabled_services[0] ?? '');
     const [perDeviceLicenseSelections, setPerDeviceLicenseSelections] = useState<
         Record<number, PerDeviceLicenseSelection>
     >({});
-    const [perDeviceSubscriptionKeys, setPerDeviceSubscriptionKeys] = useState<Record<number, string>>({});
 
     const isAssignSubscription = task === 'ASSIGN_SUBSCRIPTION';
     const isUnassignSubscription = task === 'UNASSIGN_SUBSCRIPTION';
@@ -266,24 +262,6 @@ export default function TaskCard({
             }
         }
 
-        if (taskStr === 'UNASSIGN_SUBSCRIPTION') {
-            if (licensingMode === 'uniform' && !bulkUnassignService) {
-                toast.error('Select a service to unassign.');
-
-                return;
-            }
-            if (licensingMode === 'per_device') {
-                const missing = devices_for_task.some(
-                    (d) => !(perDeviceSubscriptionKeys[d.id] ?? '').trim(),
-                );
-                if (missing) {
-                    toast.error('Select a service to remove for each device in the modal.');
-
-                    return;
-                }
-            }
-        }
-
         setTaskDevices(devices_for_task);
         const deploymentTimeTotalMinutes = deploymentTimeHours * 60 + deploymentTimeMinutes;
 
@@ -297,13 +275,6 @@ export default function TaskCard({
                     license_type: selection?.license_type ?? '',
                 };
             }
-            if (taskStr === 'UNASSIGN_SUBSCRIPTION' && licensingMode === 'per_device') {
-                return {
-                    id: device.id,
-                    service_name: perDeviceSubscriptionKeys[device.id],
-                };
-            }
-
             return { id: device.id };
         });
 
@@ -320,10 +291,6 @@ export default function TaskCard({
             license_type:
                 taskStr === 'ASSIGN_SUBSCRIPTION' && licensingMode === 'uniform'
                     ? bulkLicenseType
-                    : undefined,
-            service_name:
-                taskStr === 'UNASSIGN_SUBSCRIPTION' && licensingMode === 'uniform'
-                    ? bulkUnassignService
                     : undefined,
             ...(taskStr === 'ADD_VLANS_TO_DEVICE_GROUP'
                 ? { vlan_site_prefix: vlanPrefixTrimmed }
@@ -431,22 +398,11 @@ export default function TaskCard({
                     </div>
                 ) : null}
                 {isUnassignSubscription ? (
-                    <div className="mt-3 space-y-1">
-                        <label htmlFor={`bulk-unassign-${task}`} className="text-sm font-medium">
-                            Service to remove
-                        </label>
-                        <select
-                            id={`bulk-unassign-${task}`}
-                            value={bulkUnassignService}
-                            onChange={(e) => setBulkUnassignService(e.target.value)}
-                            className={selectClassName}
-                        >
-                            {enabled_services.map((service) => (
-                                <option key={service} value={service}>
-                                    {service}
-                                </option>
-                            ))}
-                        </select>
+                    <div className="mt-3 flex justify-end">
+                        <RenewLicensingButton
+                            licensingSyncedAt={licensing_synced_at}
+                            size="sm"
+                        />
                     </div>
                 ) : null}
             </CardHeader>
@@ -567,8 +523,9 @@ export default function TaskCard({
                         <DialogContent className="max-w-lg">
                             <DialogTitle>Per-device licenses</DialogTitle>
                             <DialogDescription>
-                                Assign a different license or service to each device, then deploy
-                                selected.
+                                {isAssignSubscription
+                                    ? 'Assign a different license to each device, then deploy selected.'
+                                    : 'Select devices to unassign, then deploy selected.'}
                             </DialogDescription>
                             <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4">
                                 {filteredDevices.length > 0 ? (
@@ -655,25 +612,7 @@ export default function TaskCard({
                                                         ))}
                                                     </select>
                                                 </>
-                                            ) : (
-                                                <select
-                                                    value={perDeviceSubscriptionKeys[device.id] ?? ''}
-                                                    onChange={(e) =>
-                                                        setPerDeviceSubscriptionKeys((prev) => ({
-                                                            ...prev,
-                                                            [device.id]: e.target.value,
-                                                        }))
-                                                    }
-                                                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
-                                                >
-                                                    <option value="">Select service</option>
-                                                    {enabled_services.map((service) => (
-                                                        <option key={service} value={service}>
-                                                            {service}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            )}
+                                            ) : null}
                                         </div>
                                     ))
                                 ) : (

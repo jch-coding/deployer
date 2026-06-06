@@ -38,7 +38,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
     const [apsOnly, setAPsOnly] = useState(false)
     const [deviceSearch, setDeviceSearch] = useState('')
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
-    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(0)
+    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
     const [overrideDeviceScope, setOverrideDeviceScope] = useState<'vsf_only' | 'all'>('vsf_only')
     const filteredDevices = useMemo(() => {

@@ -18,7 +18,7 @@ abstract class BaseTaskJob implements ShouldQueue
 
     public int $tries = 1;
 
-    protected int $deployment_time = 3;
+    protected int $deployment_time = Task::DEFAULT_DEPLOYMENT_MINUTES;
 
     protected int $wait_time = 1;
 
@@ -27,7 +27,7 @@ abstract class BaseTaskJob implements ShouldQueue
         return $value !== null && $value > 0 ? $value : $default;
     }
 
-    protected function initTaskTiming(Task $task, int $defaultDeploymentMinutes = 3, int $defaultWaitMinutes = 1): void
+    protected function initTaskTiming(Task $task, int $defaultDeploymentMinutes = Task::DEFAULT_DEPLOYMENT_MINUTES, int $defaultWaitMinutes = 1): void
     {
         $this->deployment_time = $this->resolvePositiveInt($task->deployment_time, $defaultDeploymentMinutes);
         $this->wait_time = $this->resolvePositiveInt($task->wait_time, $defaultWaitMinutes);

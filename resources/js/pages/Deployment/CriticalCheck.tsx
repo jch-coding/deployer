@@ -1074,7 +1074,7 @@ export default function CriticalCheck() {
     );
     const [runError, setRunError] = useState<string | null>(null);
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0);
-    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(3);
+    const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10);
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(1);
     const [relaunchPending, setRelaunchPending] = useState(false);
 

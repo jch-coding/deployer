@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 
 class Task extends Model
 {
+    public const DEFAULT_DEPLOYMENT_MINUTES = 10;
+
     /** @use HasFactory<\Database\Factories\TaskFactory> */
     use HasFactory;
 
@@ -243,7 +245,7 @@ class Task extends Model
             case 'ASSIGN_SUBSCRIPTION':
                 return 'Assign licenses from a tag and license type pool to selected devices.';
             case 'UNASSIGN_SUBSCRIPTION':
-                return 'Remove a license service from selected devices.';
+                return 'Remove assigned licenses from selected devices.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Adds VLAN definitions to one Central device group.';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -361,14 +363,14 @@ class Task extends Model
         return false;
     }
 
-    public function effectiveDeploymentMinutes(int $defaultMinutes = 3): int
+    public function effectiveDeploymentMinutes(int $defaultMinutes = self::DEFAULT_DEPLOYMENT_MINUTES): int
     {
         return $this->deployment_time !== null && $this->deployment_time > 0
             ? $this->deployment_time
             : $defaultMinutes;
     }
 
-    public function expiresAt(int $defaultMinutes = 3): ?CarbonInterface
+    public function expiresAt(int $defaultMinutes = self::DEFAULT_DEPLOYMENT_MINUTES): ?CarbonInterface
     {
         if ($this->created_at === null) {
             return null;
