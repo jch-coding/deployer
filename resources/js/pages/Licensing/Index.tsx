@@ -1,12 +1,17 @@
 import { router, usePage } from '@inertiajs/react';
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table';
-import { KeyRound, Search } from 'lucide-react';
+import { ChevronDown, KeyRound, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import {
@@ -509,7 +514,6 @@ export default function Index() {
                 cell: ({ row }) => formatEpochDate(row.original.end_date),
             },
             { accessorKey: 'subscription_sku', header: 'Subscription SKU' },
-            { accessorKey: 'device_sku', header: 'Device SKU' },
             { accessorKey: 'subscription_status', header: 'Status' },
         ],
         [],
@@ -588,111 +592,238 @@ export default function Index() {
                     </Card>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <div>
-                        <label
-                            className="mb-1 block text-sm font-medium"
-                            htmlFor="licensing-start-date-from"
-                        >
-                            Start date from
-                        </label>
-                        <Input
-                            id="licensing-start-date-from"
-                            type="date"
-                            value={localFilters.start_date_from}
-                            onChange={(e) => updateServerFilter({ start_date_from: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <label
-                            className="mb-1 block text-sm font-medium"
-                            htmlFor="licensing-start-date-to"
-                        >
-                            Start date to
-                        </label>
-                        <Input
-                            id="licensing-start-date-to"
-                            type="date"
-                            value={localFilters.start_date_to}
-                            onChange={(e) => updateServerFilter({ start_date_to: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <label
-                            className="mb-1 block text-sm font-medium"
-                            htmlFor="licensing-end-date-from"
-                        >
-                            End date from
-                        </label>
-                        <Input
-                            id="licensing-end-date-from"
-                            type="date"
-                            value={localFilters.end_date_from}
-                            onChange={(e) => updateServerFilter({ end_date_from: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <label
-                            className="mb-1 block text-sm font-medium"
-                            htmlFor="licensing-end-date-to"
-                        >
-                            End date to
-                        </label>
-                        <Input
-                            id="licensing-end-date-to"
-                            type="date"
-                            value={localFilters.end_date_to}
-                            onChange={(e) => updateServerFilter({ end_date_to: e.target.value })}
-                        />
-                    </div>
-                    <select
-                        value={localFilters.license_type}
-                        onChange={(e) => updateServerFilter({ license_type: e.target.value })}
-                        className={selectClassName}
-                    >
-                        <option value="">All license types</option>
-                        {filter_options.license_types.map((type) => (
-                            <option key={type} value={type}>
-                                {type}
-                            </option>
-                        ))}
-                    </select>
-                    <select
-                        value={localFilters.subscription_sku}
-                        onChange={(e) => updateServerFilter({ subscription_sku: e.target.value })}
-                        className={selectClassName}
-                    >
-                        <option value="">All subscription SKUs</option>
-                        {filter_options.subscription_skus.map((sku) => (
-                            <option key={sku} value={sku}>
-                                {sku}
-                            </option>
-                        ))}
-                    </select>
-                    <select
-                        value={localFilters.service}
-                        onChange={(e) => updateServerFilter({ service: e.target.value })}
-                        className={selectClassName}
-                    >
-                        <option value="">All assigned services</option>
-                        {enabled_services.map((service) => (
-                            <option key={service} value={service}>
-                                {service}
-                            </option>
-                        ))}
-                    </select>
-                    <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-1">
-                        <Button onClick={submitSearch} disabled={isSearching}>
-                            <Search className="mr-2 size-4" />
-                            {isSearching ? 'Applying…' : 'Apply filters'}
-                        </Button>
-                        {has_active_filters && (
-                            <Button variant="outline" onClick={clearServerFilters} disabled={isSearching}>
-                                Clear filters
+                <Collapsible
+                    defaultOpen={false}
+                    className="rounded-lg border [&[data-state=open]_.licensing-filter-chevron]:rotate-180"
+                >
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                        <CollapsibleTrigger asChild>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-auto min-w-0 flex-1 justify-between px-2 font-medium"
+                                aria-label="Expand or collapse filters"
+                            >
+                                <span className="flex items-center gap-2">
+                                    Filters
+                                    {(has_active_filters ||
+                                        hasActiveLicensingTableFilters(tableFilters)) && (
+                                        <Badge variant="secondary" className="font-normal">
+                                            Active
+                                        </Badge>
+                                    )}
+                                </span>
+                                <ChevronDown
+                                    className="licensing-filter-chevron size-4 shrink-0 transition-transform"
+                                    aria-hidden
+                                />
                             </Button>
-                        )}
+                        </CollapsibleTrigger>
                     </div>
-                </div>
+                    <CollapsibleContent>
+                        <div className="flex flex-col gap-4 border-t px-4 py-4">
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                <div>
+                                    <label
+                                        className="mb-1 block text-sm font-medium"
+                                        htmlFor="licensing-start-date-from"
+                                    >
+                                        Start date from
+                                    </label>
+                                    <Input
+                                        id="licensing-start-date-from"
+                                        type="date"
+                                        value={localFilters.start_date_from}
+                                        onChange={(e) =>
+                                            updateServerFilter({ start_date_from: e.target.value })
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <label
+                                        className="mb-1 block text-sm font-medium"
+                                        htmlFor="licensing-start-date-to"
+                                    >
+                                        Start date to
+                                    </label>
+                                    <Input
+                                        id="licensing-start-date-to"
+                                        type="date"
+                                        value={localFilters.start_date_to}
+                                        onChange={(e) =>
+                                            updateServerFilter({ start_date_to: e.target.value })
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <label
+                                        className="mb-1 block text-sm font-medium"
+                                        htmlFor="licensing-end-date-from"
+                                    >
+                                        End date from
+                                    </label>
+                                    <Input
+                                        id="licensing-end-date-from"
+                                        type="date"
+                                        value={localFilters.end_date_from}
+                                        onChange={(e) =>
+                                            updateServerFilter({ end_date_from: e.target.value })
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <label
+                                        className="mb-1 block text-sm font-medium"
+                                        htmlFor="licensing-end-date-to"
+                                    >
+                                        End date to
+                                    </label>
+                                    <Input
+                                        id="licensing-end-date-to"
+                                        type="date"
+                                        value={localFilters.end_date_to}
+                                        onChange={(e) =>
+                                            updateServerFilter({ end_date_to: e.target.value })
+                                        }
+                                    />
+                                </div>
+                                <select
+                                    value={localFilters.license_type}
+                                    onChange={(e) =>
+                                        updateServerFilter({ license_type: e.target.value })
+                                    }
+                                    className={selectClassName}
+                                >
+                                    <option value="">All license types</option>
+                                    {filter_options.license_types.map((type) => (
+                                        <option key={type} value={type}>
+                                            {type}
+                                        </option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={localFilters.subscription_sku}
+                                    onChange={(e) =>
+                                        updateServerFilter({ subscription_sku: e.target.value })
+                                    }
+                                    className={selectClassName}
+                                >
+                                    <option value="">All subscription SKUs</option>
+                                    {filter_options.subscription_skus.map((sku) => (
+                                        <option key={sku} value={sku}>
+                                            {sku}
+                                        </option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={localFilters.service}
+                                    onChange={(e) => updateServerFilter({ service: e.target.value })}
+                                    className={selectClassName}
+                                >
+                                    <option value="">All assigned services</option>
+                                    {enabled_services.map((service) => (
+                                        <option key={service} value={service}>
+                                            {service}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-1">
+                                    <Button onClick={submitSearch} disabled={isSearching}>
+                                        <Search className="mr-2 size-4" />
+                                        {isSearching ? 'Applying…' : 'Apply filters'}
+                                    </Button>
+                                    {has_active_filters && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={clearServerFilters}
+                                            disabled={isSearching}
+                                        >
+                                            Clear filters
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                <div className="relative">
+                                    <Search
+                                        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                                        aria-hidden
+                                    />
+                                    <Input
+                                        type="search"
+                                        value={tableFilters.serial_number}
+                                        onChange={(e) =>
+                                            updateTableFilter({ serial_number: e.target.value })
+                                        }
+                                        placeholder="Serial number"
+                                        className="pl-9"
+                                        data-test="licensing-filter-serial-number"
+                                    />
+                                </div>
+                                <Input
+                                    type="search"
+                                    value={tableFilters.device_name}
+                                    onChange={(e) =>
+                                        updateTableFilter({ device_name: e.target.value })
+                                    }
+                                    placeholder="Device name"
+                                    data-test="licensing-filter-device-name"
+                                />
+                                <Input
+                                    type="search"
+                                    value={tableFilters.subscription_key}
+                                    onChange={(e) =>
+                                        updateTableFilter({ subscription_key: e.target.value })
+                                    }
+                                    placeholder="Subscription key"
+                                    data-test="licensing-filter-subscription-key"
+                                />
+                                <Input
+                                    type="search"
+                                    value={tableFilters.subscription_tags}
+                                    onChange={(e) =>
+                                        updateTableFilter({ subscription_tags: e.target.value })
+                                    }
+                                    placeholder="Subscription tags (comma-separated)"
+                                    data-test="licensing-filter-subscription-tags"
+                                />
+                                <Input
+                                    type="search"
+                                    value={tableFilters.model}
+                                    onChange={(e) => updateTableFilter({ model: e.target.value })}
+                                    placeholder="Model"
+                                    data-test="licensing-filter-model"
+                                />
+                                <select
+                                    value={tableFilters.licensed}
+                                    onChange={(e) =>
+                                        updateTableFilter({
+                                            licensed: e.target.value as LicensingTableFilters['licensed'],
+                                        })
+                                    }
+                                    className={selectClassName}
+                                    data-test="licensing-filter-licensed"
+                                >
+                                    <option value="">All licensed states</option>
+                                    <option value="yes">Licensed: Yes</option>
+                                    <option value="no">Licensed: No</option>
+                                </select>
+                            </div>
+                            {hasActiveLicensingTableFilters(tableFilters) && (
+                                <div className="flex justify-end">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setTableFilters(emptyLicensingTableFilters)}
+                                    >
+                                        Clear table filters
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    </CollapsibleContent>
+                </Collapsible>
 
                 <div className="rounded-lg border p-4">
                     <div className="flex flex-wrap items-end gap-3">
@@ -743,76 +874,6 @@ export default function Index() {
                         GreenLake assigns the selected subscription key directly to each device.
                     </p>
                 </div>
-
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <div className="relative">
-                        <Search
-                            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                            aria-hidden
-                        />
-                        <Input
-                            type="search"
-                            value={tableFilters.serial_number}
-                            onChange={(e) => updateTableFilter({ serial_number: e.target.value })}
-                            placeholder="Serial number"
-                            className="pl-9"
-                            data-test="licensing-filter-serial-number"
-                        />
-                    </div>
-                    <Input
-                        type="search"
-                        value={tableFilters.device_name}
-                        onChange={(e) => updateTableFilter({ device_name: e.target.value })}
-                        placeholder="Device name"
-                        data-test="licensing-filter-device-name"
-                    />
-                    <Input
-                        type="search"
-                        value={tableFilters.subscription_key}
-                        onChange={(e) => updateTableFilter({ subscription_key: e.target.value })}
-                        placeholder="Subscription key"
-                        data-test="licensing-filter-subscription-key"
-                    />
-                    <Input
-                        type="search"
-                        value={tableFilters.subscription_tags}
-                        onChange={(e) => updateTableFilter({ subscription_tags: e.target.value })}
-                        placeholder="Subscription tags (comma-separated)"
-                        data-test="licensing-filter-subscription-tags"
-                    />
-                    <Input
-                        type="search"
-                        value={tableFilters.model}
-                        onChange={(e) => updateTableFilter({ model: e.target.value })}
-                        placeholder="Model"
-                        data-test="licensing-filter-model"
-                    />
-                    <select
-                        value={tableFilters.licensed}
-                        onChange={(e) =>
-                            updateTableFilter({
-                                licensed: e.target.value as LicensingTableFilters['licensed'],
-                            })
-                        }
-                        className={selectClassName}
-                        data-test="licensing-filter-licensed"
-                    >
-                        <option value="">All licensed states</option>
-                        <option value="yes">Licensed: Yes</option>
-                        <option value="no">Licensed: No</option>
-                    </select>
-                </div>
-                {hasActiveLicensingTableFilters(tableFilters) && (
-                    <div className="flex justify-end">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setTableFilters(emptyLicensingTableFilters)}
-                        >
-                            Clear table filters
-                        </Button>
-                    </div>
-                )}
 
                 <DataTable
                     columns={columns}
