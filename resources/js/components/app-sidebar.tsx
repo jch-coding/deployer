@@ -62,7 +62,7 @@ const footerNavItems: NavItem[] = [
         icon: ScrollText,
     },
     {
-        title: 'CSV column details.',
+        title: 'CSV columns',
         href: documentation(),
         icon: BookOpen,
     },

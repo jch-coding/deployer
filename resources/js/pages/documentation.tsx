@@ -337,7 +337,7 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
 export default function documentation() {
     return (
         <Layout>
-            <Head title="CSV column details" />
+            <Head title="CSV columns" />
             <div className="mx-auto max-w-7xl px-4">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                     <div className="md:col-span-2 lg:col-span-3">
@@ -731,6 +731,128 @@ export default function documentation() {
                                         )
                                     </>,
                                 ]}
+                                optional={[]}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard
+                        title="Add VLANs to device groups"
+                        badge={
+                            <Badge variant="outline" className="w-fit shrink-0 font-normal">
+                                Classic Central API
+                            </Badge>
+                        }
+                        defaultOpen
+                    >
+                        <div className="space-y-4">
+                            <p>
+                                Device-based task that adds VLAN templates to Central device groups. Each
+                                unique <code className="rounded bg-muted px-1 py-0.5 text-sm">group</code>{' '}
+                                value in your CSV spawns one sub-task per group. If a group does not exist
+                                in Central yet, a prerequisite create-group step is queued automatically.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                Alternatively, enter a site prefix on the task card (for example{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">WHSE42</code>) to
+                                target WHSE-{'{prefix}'}-ACCESS, CORE, MGMT, DMZ, and SERVER groups without
+                                selecting individual devices.
+                            </p>
+                            <ColumnPair
+                                required={['group']}
+                                optional={['name', 'serial', 'device_function']}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard title="Relaunch failed critical configurations" defaultOpen>
+                        <div className="space-y-4">
+                            <p>
+                                Composite task{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">
+                                    RELAUNCH_FAILED_CRITICAL_CONFIG
+                                </code>{' '}
+                                that retries failed LAG, Ethernet, and VLAN interface work and removes local
+                                overrides for static route, DNS, and local management profiles. It runs
+                                against devices and interface rows already loaded on the deployment—no
+                                separate CSV upload.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                Ensure your deployment CSV includes the columns required by{' '}
+                                <strong>Configure Portchannel/LAG interface</strong>,{' '}
+                                <strong>Configure Ethernet Interfaces</strong>, and{' '}
+                                <strong>Configure SVI</strong> for the interfaces you expect this task to
+                                retry.
+                            </p>
+                            <ColumnPair
+                                required={[
+                                    'name',
+                                    'serial',
+                                    'device_function',
+                                    'interface',
+                                ]}
+                                optional={[
+                                    'port_list',
+                                    'ip_address',
+                                    'port_profile',
+                                    'description',
+                                    'interface_mode',
+                                    'access_vlan',
+                                    'native_vlan',
+                                    'trunk_vlan_all',
+                                    'trunk_vlan_ranges',
+                                    'lacp_mode',
+                                    'lacp_rate',
+                                    'trunk_type',
+                                ]}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard
+                        title="Assign Subscription"
+                        badge={
+                            <Badge variant="outline" className="w-fit shrink-0 font-normal">
+                                Classic Central API
+                            </Badge>
+                        }
+                        defaultOpen
+                    >
+                        <div className="space-y-4">
+                            <p>
+                                Device-based licensing task. CSV rows identify which devices to license;
+                                subscription tag, license type, and pool selection are chosen on the task
+                                card (uniform pool or per-device license modal)—not in the CSV.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                Requires a current licensing inventory sync and available pool seats for
+                                the selected tag and license type.
+                            </p>
+                            <ColumnPair
+                                required={['name', 'serial', 'device_function']}
+                                optional={[]}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard
+                        title="Unassign Subscription"
+                        badge={
+                            <Badge variant="outline" className="w-fit shrink-0 font-normal">
+                                Classic Central API
+                            </Badge>
+                        }
+                        defaultOpen
+                    >
+                        <div className="space-y-4">
+                            <p>
+                                Device-based licensing task that removes GreenLake subscription assignments
+                                from selected devices. CSV rows identify devices by name, serial, and
+                                function; the task uses each device&apos;s current subscription from the
+                                licensing inventory.
+                            </p>
+                            <ColumnPair
+                                required={['name', 'serial', 'device_function']}
                                 optional={[]}
                             />
                         </div>

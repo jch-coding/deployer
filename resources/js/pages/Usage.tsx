@@ -300,7 +300,7 @@ export default function Usage() {
                             <li>
                                 Use <strong>Sample CSV</strong> on the deployment page or see{' '}
                                 <Link href={documentation().url} prefetch className={linkClass}>
-                                    CSV column details
+                                    CSV columns
                                 </Link>{' '}
                                 for required and optional headers per task type.
                             </li>
@@ -528,7 +528,7 @@ export default function Usage() {
                         <h2 className={h2}>Available tasks</h2>
                         <p className={cn(body, 'mt-4')}>
                             The following tasks are the ones you would use in a production workflow. Each
-                            expects your CSV to include the columns listed under CSV column details for
+                            expects your CSV to include the columns listed under CSV columns for
                             that task.
                         </p>
                         <div
