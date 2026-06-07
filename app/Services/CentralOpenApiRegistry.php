@@ -105,6 +105,7 @@ class CentralOpenApiRegistry
     public function clearCache(): void
     {
         Cache::forget(self::CACHE_KEY);
+        Cache::forget($this->cacheKey());
         $this->operationsById = null;
         $this->operationsList = null;
     }
@@ -115,10 +116,38 @@ class CentralOpenApiRegistry
             return;
         }
 
-        $payload = Cache::remember(self::CACHE_KEY, now()->addDay(), fn (): array => $this->buildFromSpecs());
+        $payload = Cache::remember($this->cacheKey(), now()->addDay(), fn (): array => $this->buildFromSpecs());
 
         $this->operationsById = $payload['by_id'];
         $this->operationsList = $payload['list'];
+    }
+
+    private function cacheKey(): string
+    {
+        return self::CACHE_KEY.':'.$this->specFingerprint();
+    }
+
+    private function specFingerprint(): string
+    {
+        $directory = resource_path(self::SPEC_DIRECTORY);
+
+        if (! File::isDirectory($directory)) {
+            return 'empty';
+        }
+
+        $parts = [];
+
+        foreach (File::files($directory) as $file) {
+            if ($file->getExtension() !== 'json') {
+                continue;
+            }
+
+            $parts[] = $file->getFilename().':'.$file->getMTime();
+        }
+
+        sort($parts);
+
+        return substr(sha1(implode('|', $parts)), 0, 12);
     }
 
     /**
@@ -224,7 +253,7 @@ class CentralOpenApiRegistry
      */
     private function tagDescriptions(): array
     {
-        $payload = Cache::get(self::CACHE_KEY);
+        $payload = Cache::get($this->cacheKey());
 
         if (is_array($payload) && isset($payload['tag_descriptions']) && is_array($payload['tag_descriptions'])) {
             return $payload['tag_descriptions'];
