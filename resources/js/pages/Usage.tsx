@@ -4,8 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import AppLayout from '@/layouts/app-layout';
 import { documentation, usage } from '@/routes';
+import { index as centralApiIndex } from '@/routes/central-api';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as deploymentsIndex } from '@/routes/deployments';
+import { index as licensingIndex } from '@/routes/licensing';
+import { index as sitesIndex } from '@/routes/sites';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 const tocSections = [
@@ -13,6 +16,9 @@ const tocSections = [
     { id: 'add-a-client', label: 'Add a client' },
     { id: 'create-a-deployment', label: 'Create a deployment' },
     { id: 'add-devices', label: 'Add devices' },
+    { id: 'sites-page', label: 'Sites page' },
+    { id: 'licensing-page', label: 'Licensing page' },
+    { id: 'central-api-page', label: 'Central API page' },
     { id: 'how-deployment-tasks-work', label: 'How tasks work' },
     { id: 'task-expiry-and-failed-status', label: 'Task expiry and failed status' },
     { id: 'stopping-tasks-and-clearing-queue', label: 'Stopping tasks and queue behavior' },
@@ -52,9 +58,21 @@ const deploymentTasks = [
         requiresClassicCentral: false,
     },
     {
+        title: 'Create VSX Profile',
+        description:
+            'Create a VSX profile for a switch pair, including LAG 256/255 prerequisites and VSX role settings from your CSV.',
+        requiresClassicCentral: false,
+    },
+    {
         title: 'Remove VSF profile local overrides',
         description:
             'Clears VLAN, DNS, NTP, static route, and local management profile overrides introduced during VSF onboarding. Choose VSF devices only or all selected devices.',
+        requiresClassicCentral: false,
+    },
+    {
+        title: 'Relaunch failed critical configurations',
+        description:
+            'Retries failed LAG, Ethernet, and VLAN interfaces and removes local overrides for static route, DNS, and local management profiles after a critical configuration check.',
         requiresClassicCentral: false,
     },
     {
@@ -81,6 +99,25 @@ const deploymentTasks = [
         title: 'Assign Device Function to Devices',
         description: 'Assign the persona or device function in Central to match your CSV.',
         requiresClassicCentral: false,
+    },
+    {
+        title: 'Add VLANs to device groups',
+        description:
+            'Add VLAN templates to Central device groups by group name from your CSV, or enter a site prefix to target WHSE-{prefix}-ACCESS, CORE, MGMT, DMZ, and SERVER groups.',
+        requiresClassicCentral: true,
+    },
+    {
+        title: 'Assign Subscription',
+        description:
+            'Assign GreenLake subscription licenses to selected devices using a uniform tag and license type pool, or per-device license selections.',
+        requiresClassicCentral: true,
+        requiresLicensing: true,
+    },
+    {
+        title: 'Unassign Subscription',
+        description: 'Remove assigned GreenLake subscription licenses from selected devices.',
+        requiresClassicCentral: true,
+        requiresLicensing: true,
     },
 ] as const;
 
@@ -178,6 +215,13 @@ export default function Usage() {
                             that order: add a client, pick it as current, create a deployment, upload
                             devices, then run tasks from the deployment page.
                         </p>
+                        <p className={cn(body, 'mt-4')}>
+                            Beyond deployments, the sidebar also provides <strong>Sites</strong> (search
+                            Central inventory by site and device attributes), <strong>Licensing</strong>{' '}
+                            (GreenLake subscription inventory and assign/unassign actions), and{' '}
+                            <strong>Central API</strong> (an interactive explorer for New Central
+                            Configuration API endpoints).
+                        </p>
                     </section>
 
                     <section id="add-a-client" className="border-b border-border py-10">
@@ -259,6 +303,107 @@ export default function Usage() {
                                     CSV column details
                                 </Link>{' '}
                                 for required and optional headers per task type.
+                            </li>
+                        </ol>
+                    </section>
+
+                    <section id="sites-page" className="border-b border-border py-10">
+                        <h2 className={h2}>Sites page</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            The{' '}
+                            <Link href={sitesIndex().url} prefetch className={linkClass}>
+                                Sites
+                            </Link>{' '}
+                            page queries Aruba Central for devices scoped to the current client. Use it to
+                            inspect what is live in Central by site, serial, model, status, and related
+                            attributes—without running a deployment task.
+                        </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Set the client you want to inspect as current, then open{' '}
+                                <strong>Sites</strong> from the sidebar.
+                            </li>
+                            <li>
+                                Choose at least one filter (site ID or name, serial, device name, device
+                                type, status, model, firmware version, or deployment name) and click{' '}
+                                <strong>Search</strong>. The page does not load results until you apply a
+                                filter.
+                            </li>
+                            <li>
+                                Review the results table for device name, serial, function, model, IPv4,
+                                online status, linked deployment name, and Central site name.
+                            </li>
+                        </ol>
+                    </section>
+
+                    <section id="licensing-page" className="border-b border-border py-10">
+                        <h2 className={h2}>Licensing page</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            The{' '}
+                            <Link href={licensingIndex().url} prefetch className={linkClass}>
+                                Licensing
+                            </Link>{' '}
+                            page shows GreenLake subscription inventory for the current client. It combines
+                            Central and GreenLake data so you can see which devices are licensed, which
+                            subscription keys and tags apply, and how many pool seats remain.
+                        </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Open <strong>Licensing</strong> from the sidebar. Summary cards at the top
+                                show total devices, licensed and unlicensed counts, available pool seats, and
+                                subscription key totals.
+                            </li>
+                            <li>
+                                Expand the collapsible <strong>Filters</strong> section to narrow the device
+                                list. Server-side filters (date ranges, license type, subscription SKU, and
+                                assigned service) reload inventory from the backend; table filters (serial,
+                                name, subscription key, tags, model, and licensed state) filter the loaded
+                                rows in the browser.
+                            </li>
+                            <li>
+                                Use <strong>Renew licensing</strong> to refresh the cached inventory when
+                                Central or GreenLake has changed since the last sync.
+                            </li>
+                            <li>
+                                Select devices in the table, choose an available license from the dropdown,
+                                then use <strong>Assign now</strong>, <strong>Unassign now</strong>, or{' '}
+                                <strong>Remove from workspace</strong> as needed. Assign and unassign are
+                                also available as deployment tasks when you prefer to license devices as part
+                                of a rollout workflow.
+                            </li>
+                        </ol>
+                    </section>
+
+                    <section id="central-api-page" className="border-b border-border py-10">
+                        <h2 className={h2}>Central API page</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            The{' '}
+                            <Link href={centralApiIndex().url} prefetch className={linkClass}>
+                                Central API
+                            </Link>{' '}
+                            page is an explorer for the New Central Configuration API. It uses the current
+                            client&apos;s OAuth credentials to call documented endpoints and inspect raw
+                            responses—useful for troubleshooting or validating configuration outside of a
+                            deployment task.
+                        </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Open <strong>Central API</strong> from the sidebar. The header shows which
+                                client is active and the Central base URL in use.
+                            </li>
+                            <li>
+                                Browse or search operations in the left panel (grouped by API tag). Select an
+                                endpoint to view its method, path, summary, and parameter list.
+                            </li>
+                            <li>
+                                Optionally pick a saved device and click <strong>Apply device context</strong>{' '}
+                                to pre-fill common query parameters such as serial, scope ID, and device
+                                function.
+                            </li>
+                            <li>
+                                Fill in parameters, run the request, and review status, timing, headers, and
+                                response body in the results panel. Use the <strong>Developer Hub</strong>{' '}
+                                link for official Aruba API reference material.
                             </li>
                         </ol>
                     </section>
@@ -392,15 +537,19 @@ export default function Usage() {
                         >
                             <p className="font-medium text-foreground">Classic Central credentials</p>
                             <p className="mt-2">
-                                These tasks call Aruba Central&apos;s <strong>classic</strong> REST APIs and
-                                will not succeed unless the current client has{' '}
-                                <strong>Classic API</strong> credentials saved (classic client ID and secret,
-                                username and password, and the classic base URL derived from your Central
-                                region). That applies to: <strong>Associate Devices to Site</strong>,{' '}
-                                <strong>Associate Devices to Site and Name</strong>,{' '}
-                                <strong>Preprovision Devices to Group</strong>, and{' '}
-                                <strong>Move Devices to Device Group</strong>. Enter those fields when you add
-                                or edit a client, under the optional Classic API section.
+                                Tasks marked <strong>Classic Central API</strong> call Aruba Central&apos;s{' '}
+                                <strong>classic</strong> REST APIs and will not succeed unless the current
+                                client has Classic API credentials saved (classic client ID and secret,
+                                username and password, refresh token, and the classic base URL derived from your
+                                Central region). That applies to site and group tasks,{' '}
+                                <strong>Add VLANs to device groups</strong>, and the licensing assign/unassign
+                                tasks. Enter those fields when you add or edit a client.
+                            </p>
+                            <p className="mt-2">
+                                Tasks marked <strong>GreenLake licensing</strong> also require valid GreenLake
+                                API credentials on the client and a recent licensing inventory sync (use{' '}
+                                <strong>Renew licensing</strong> on the Licensing page or deployment licensing
+                                controls).
                             </p>
                         </div>
                         <ul className={cn(body, 'mt-6 list-disc space-y-3 pl-5')}>
@@ -412,6 +561,14 @@ export default function Usage() {
                                             {' '}
                                             <Badge variant="outline" className="ml-0.5 align-middle text-xs font-normal">
                                                 Classic Central API
+                                            </Badge>
+                                        </>
+                                    ) : null}
+                                    {'requiresLicensing' in task && task.requiresLicensing ? (
+                                        <>
+                                            {' '}
+                                            <Badge variant="outline" className="ml-0.5 align-middle text-xs font-normal">
+                                                GreenLake licensing
                                             </Badge>
                                         </>
                                     ) : null}
