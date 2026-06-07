@@ -408,6 +408,8 @@ class DeviceController extends Controller
                 $kindValue = $kind instanceof InterfaceKind ? $kind->value : (string) $kind;
 
                 $isRoutedEthernet = InterfaceHelper::isRoutedEthernetRow($device_interface);
+                $isRoutedLag = InterfaceHelper::isRoutedLagRow($device_interface);
+                $isRouted = $isRoutedEthernet || $isRoutedLag;
 
                 $device_interface_config = [
                     'device_id' => $device->id,
@@ -415,16 +417,16 @@ class DeviceController extends Controller
                     'interface_kind' => $kindValue,
                     'description' => $device_interface['description'] ?? null,
                     'ip_address' => $device_interface['ip_address'] ?? null,
-                    'sw_profile' => $isRoutedEthernet ? null : ($device_interface['port_profile'] ?? null),
-                    'shutdown_on_split' => $isRoutedEthernet ? false : BooleanHelper::toBoolean($device_interface['shutdown_on_split'] ?? false),
-                    'switch_port_id' => $isRoutedEthernet ? null : DeviceInterfaceUpdateResolver::resolveSwitchPortId($device_interface),
-                    'stp_profile_id' => $isRoutedEthernet ? null : DeviceInterfaceUpdateResolver::resolveStpProfileId($device_interface),
+                    'sw_profile' => $isRouted ? null : ($device_interface['port_profile'] ?? null),
+                    'shutdown_on_split' => $isRouted ? false : BooleanHelper::toBoolean($device_interface['shutdown_on_split'] ?? false),
+                    'switch_port_id' => $isRouted ? null : DeviceInterfaceUpdateResolver::resolveSwitchPortId($device_interface),
+                    'stp_profile_id' => $isRouted ? null : DeviceInterfaceUpdateResolver::resolveStpProfileId($device_interface),
                     'lacp_profile_id' => $isRoutedEthernet ? null : DeviceInterfaceUpdateResolver::resolveLacpProfileId($device_interface),
                 ];
 
                 $upsertColumns = ['sw_profile', 'shutdown_on_split', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address', 'interface_kind'];
 
-                if ($isRoutedEthernet) {
+                if ($isRouted) {
                     $device_interface_config['routing'] = true;
                     $upsertColumns[] = 'routing';
 

@@ -95,4 +95,37 @@ final class InterfaceHelper
 
         return str_contains($iface, '/');
     }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public static function isLagRow(array $row): bool
+    {
+        $iface = isset($row['interface']) ? (string) $row['interface'] : '';
+        if ($iface === '' || str_contains($iface, '/')) {
+            return false;
+        }
+
+        $lacpPortId = $row['lacp_port_id'] ?? null;
+        if ($lacpPortId !== null && trim((string) $lacpPortId) !== '') {
+            return true;
+        }
+
+        $portList = $row['port_list'] ?? null;
+
+        return $portList !== null && trim((string) $portList) !== '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public static function isRoutedLagRow(array $row): bool
+    {
+        $ipAddress = $row['ip_address'] ?? null;
+        if ($ipAddress === null || trim((string) $ipAddress) === '') {
+            return false;
+        }
+
+        return self::isLagRow($row);
+    }
 }

@@ -428,6 +428,35 @@ it('persists routed ethernet interfaces with routing and optional vrf_forwarding
         ->and($interface->sw_profile)->toBeNull();
 });
 
+it('persists routed LAG interfaces with routing and optional vrf_forwarding', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,description,port_list,ip_address,vrf_forwarding,trunk_type,lacp_mode'.PHP_EOL.
+        'SW-2,SN_LAG_ROUTE01,ACCESS_SWITCH,11,Routed LAG,1/1/1-1/1/2,10.255.0.1/30,my-vrf,LACP,ACTIVE'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device = Device::query()->where('serial', 'SN_LAG_ROUTE01')->firstOrFail();
+    $interface = DeviceInterface::query()->where('device_id', $device->id)->where('interface', '11')->firstOrFail();
+
+    expect($interface->ip_address)->toBe('10.255.0.1/30')
+        ->and($interface->routing)->toBeTrue()
+        ->and($interface->vrf_forwarding)->toBe('my-vrf')
+        ->and($interface->interface_kind->value)->toBe('LAG')
+        ->and($interface->switch_port_id)->toBeNull()
+        ->and($interface->stp_profile_id)->toBeNull()
+        ->and($interface->sw_profile)->toBeNull()
+        ->and($interface->lacp_profile_id)->not->toBeNull();
+});
+
 it('rejects csv rows that mix ip_address with switchport columns on ethernet interfaces', function () {
     $user = User::factory()->has(Client::factory())->create();
     $client = $user->clients()->first();

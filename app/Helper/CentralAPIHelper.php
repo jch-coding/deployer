@@ -2,6 +2,7 @@
 
 namespace App\Helper;
 
+use App\InterfaceKind;
 use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -698,6 +699,12 @@ class CentralAPIHelper
 
     public static function build_portchannel_from_device_interface(DeviceInterface $deviceInterface, bool $forCreatingLAG = false)
     {
+        if (static::is_routed_lag_interface($deviceInterface)) {
+            return $forCreatingLAG
+                ? static::build_routed_lag_portchannel_post_body($deviceInterface)
+                : static::build_routed_lag_portchannel_patch_body($deviceInterface);
+        }
+
         if ($deviceInterface->sw_profile !== null && ! $forCreatingLAG) {
             return [
                 'name' => $deviceInterface->interface,
@@ -801,6 +808,81 @@ class CentralAPIHelper
             'ip_address' => $deviceInterface->ip_address,
             'interface' => $deviceInterface->interface,
         ]);
+    }
+
+    public static function is_routed_lag_interface(DeviceInterface $deviceInterface): bool
+    {
+        $ipAddress = $deviceInterface->ip_address;
+        if ($ipAddress === null || trim((string) $ipAddress) === '') {
+            return false;
+        }
+
+        if ($deviceInterface->interface_kind === InterfaceKind::LAG) {
+            return true;
+        }
+
+        return $deviceInterface->lacp_profile_id !== null;
+    }
+
+    public static function build_routed_lag_portchannel_post_body(DeviceInterface $deviceInterface): array
+    {
+        $body = [
+            'name' => $deviceInterface->interface,
+            'ipv4' => [
+                'address' => $deviceInterface->ip_address,
+            ],
+        ];
+
+        if ($deviceInterface->description !== null) {
+            $body['description'] = $deviceInterface->description;
+        }
+
+        $vrfForwarding = static::routedLagVrfForwarding($deviceInterface->vrf_forwarding);
+        if ($vrfForwarding !== null) {
+            $body['vrf-forwarding'] = $vrfForwarding;
+        }
+
+        if ($deviceInterface->lacp_profile !== null) {
+            $trunkType = $deviceInterface->lacp_profile->trunk_type;
+            $body['trunk-type'] = $trunkType;
+            $body['port-list'] = $deviceInterface->lacp_profile->port_list;
+            $body['enable'] = $deviceInterface->enable;
+
+            if (in_array($trunkType, ['LACP', 'MULTI_CHASSIS'], true)) {
+                $body['lacp'] = [
+                    'mode' => $deviceInterface->lacp_profile->mode,
+                    'rate' => $deviceInterface->lacp_profile->rate,
+                ];
+            }
+        }
+
+        return $body;
+    }
+
+    public static function build_routed_lag_portchannel_patch_body(DeviceInterface $deviceInterface): array
+    {
+        $body = [
+            'routing' => true,
+            'ipv4' => [
+                'address' => $deviceInterface->ip_address,
+            ],
+        ];
+
+        $vrfForwarding = static::routedLagVrfForwarding($deviceInterface->vrf_forwarding);
+        if ($vrfForwarding !== null) {
+            $body['vrf-forwarding'] = $vrfForwarding;
+        }
+
+        return $body;
+    }
+
+    protected static function routedLagVrfForwarding(?string $vrfForwarding): ?string
+    {
+        if ($vrfForwarding === null || trim($vrfForwarding) === '' || trim($vrfForwarding) === 'default') {
+            return null;
+        }
+
+        return trim($vrfForwarding);
     }
 
     public static function build_routed_ethernet_interface_patch_body(DeviceInterface $deviceInterface): array
@@ -1366,7 +1448,7 @@ class CentralAPIHelper
      */
     public function ensureVrfForRoutedInterface(DeviceInterface $deviceInterface): array
     {
-        if (! static::is_routed_ethernet_interface($deviceInterface)) {
+        if (! static::is_routed_ethernet_interface($deviceInterface) && ! static::is_routed_lag_interface($deviceInterface)) {
             return ['ok' => true];
         }
 

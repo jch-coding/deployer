@@ -166,6 +166,13 @@ class LagInterfaceCentralVerifier
      */
     public function buildExpectedPayload(DeviceInterface $deviceInterface): array
     {
+        if (CentralAPIHelper::is_routed_lag_interface($deviceInterface)) {
+            return array_merge(
+                CentralAPIHelper::build_routed_lag_portchannel_post_body($deviceInterface),
+                CentralAPIHelper::build_routed_lag_portchannel_patch_body($deviceInterface),
+            );
+        }
+
         $expected = CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface, true);
         if ($deviceInterface->sw_profile) {
             $expected = array_merge(

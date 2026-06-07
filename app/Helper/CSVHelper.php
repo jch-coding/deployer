@@ -83,6 +83,20 @@ class CSVHelper
         'lacp_port_id',
     ];
 
+    private const ROUTED_LAG_L2_CONFLICT_COLUMNS = [
+        'port_profile',
+        'interface_mode',
+        'access_vlan',
+        'native_vlan',
+        'trunk_vlan_all',
+        'trunk_vlan_ranges',
+        'admin_edge_port',
+        'admin_edge_port_trunk',
+        'bpdu_guard',
+        'loop_guard',
+        'shutdown_on_split',
+    ];
+
     public static function processCSVFile($handle)
     {
         if (($file = fopen($handle, 'r')) !== false) {
@@ -561,6 +575,21 @@ class CSVHelper
                     'ip_address',
                     $row,
                     "ip_address cannot be set together with {$column} on an ethernet interface."
+                );
+            }
+        }
+
+        if (InterfaceHelper::isRoutedLagRow($row)) {
+            foreach (self::ROUTED_LAG_L2_CONFLICT_COLUMNS as $column) {
+                if (! self::isCsvCellPopulated($row[$column] ?? null)) {
+                    continue;
+                }
+                self::addValidationMessage(
+                    $validationMessages,
+                    $csvRowNumber,
+                    'ip_address',
+                    $row,
+                    "ip_address cannot be set together with {$column} on a LAG interface."
                 );
             }
         }

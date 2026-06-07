@@ -248,6 +248,36 @@ it('rejects ethernet rows that set ip_address together with switchport columns',
         ->toThrow(Illuminate\Validation\ValidationException::class);
 });
 
+it('maps routed LAG optional columns when ip_address and port_list are present', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'interface', 'description', 'port_list', 'ip_address', 'vrf_forwarding', 'trunk_type', 'lacp_mode'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '11', 'Routed LAG', '1/1/1-1/1/2', '10.255.0.1/30', 'my-vrf', 'LACP', 'ACTIVE'],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0])->toMatchArray([
+            'interface' => '11',
+            'description' => 'Routed LAG',
+            'port_list' => '1/1/1-1/1/2',
+            'ip_address' => '10.255.0.1/30',
+            'vrf_forwarding' => 'my-vrf',
+            'trunk_type' => 'LACP',
+            'lacp_mode' => 'ACTIVE',
+        ]);
+});
+
+it('rejects LAG rows that set ip_address together with switchport columns', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function', 'interface', 'port_list', 'ip_address', 'interface_mode', 'native_vlan'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', '11', '1/1/1-1/1/2', '10.255.0.1/30', 'TRUNK', '20'],
+    ];
+
+    expect(fn () => CSVHelper::createDeviceArrays($csvData))
+        ->toThrow(Illuminate\Validation\ValidationException::class);
+});
+
 it('keeps missing optional columns absent from mapped rows', function () {
     $csvData = [
         ['name', 'serial', 'device_function'],

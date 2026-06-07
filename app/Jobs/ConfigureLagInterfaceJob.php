@@ -43,6 +43,26 @@ class ConfigureLagInterfaceJob extends BaseTaskJob
                 $device->scope_id = $scopeid_response[0]['scopeId'];
                 $device->save();
             }
+            $isRoutedLag = CentralAPIHelper::is_routed_lag_interface($this->device_interface);
+
+            if ($isRoutedLag) {
+                $this->device_interface->loadMissing('device.site');
+                $vrfResult = $this->centralAPIHelper->ensureVrfForRoutedInterface($this->device_interface);
+                if (isset($vrfResult['error'])) {
+                    $message = 'Failed to ensure VRF '.$this->device_interface->vrf_forwarding.' for LAG '.$this->device_interface->interface.': '.$vrfResult['error'];
+                    Log::error($message);
+                    $this->task->processTaskStatusLog($message, true);
+                    $this->release($this->wait_time * 60);
+
+                    return;
+                }
+                if ($vrfResult['created'] ?? false) {
+                    $message = 'Created VRF '.$this->device_interface->vrf_forwarding.' before configuring LAG '.$this->device_interface->interface;
+                    Log::info($message);
+                    $this->task->processTaskStatusLog($message);
+                }
+            }
+
             $message = '\nCreating LAG for '.$this->device_interface->device->name;
             Log::info($message);
             $this->task->processTaskStatusLog($message);
@@ -54,7 +74,19 @@ class ConfigureLagInterfaceJob extends BaseTaskJob
 
                 return;
             }
-            if ($this->device_interface->sw_profile) {
+            if ($isRoutedLag) {
+                $message = '\nApplying routed configuration to LAG '.$this->device_interface->interface.' for '.$this->device_interface->device->name;
+                Log::info($message);
+                $this->task->processTaskStatusLog($message);
+                $patch_response = $this->centralAPIHelper->patch_interface_portchannel($this->device_interface);
+                if (! $patch_response->ok()) {
+                    $message = 'Failed to apply routed configuration to LAG '.$this->device_interface->interface.': '.$patch_response->json('message');
+                    $this->task->processTaskStatusLog($message, true);
+                    $this->release($this->wait_time * 60);
+
+                    return;
+                }
+            } elseif ($this->device_interface->sw_profile) {
                 $message = '\nFound switchport configuration for LAG. Applying switchport configuration to LAG for '.$this->device_interface->device->name;
                 Log::info($message);
                 $this->task->processTaskStatusLog($message);

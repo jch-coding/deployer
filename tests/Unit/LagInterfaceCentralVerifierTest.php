@@ -70,3 +70,32 @@ test('buildExpectedPayload merges sw-profile patch body', function () {
     expect($expected)->toHaveKey('sw-profile', 'my-profile')
         ->and($expected)->toHaveKey('lacp');
 });
+
+test('buildExpectedPayload for routed LAG includes routing and ipv4 without switchport', function () {
+    $lacpProfile = LacpProfile::factory()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'port_list' => '1/1/1-1/1/2',
+        'trunk_type' => 'LACP',
+    ]);
+    $deviceInterface = DeviceInterface::factory()->create([
+        'interface' => '11',
+        'lacp_profile_id' => $lacpProfile->id,
+        'interface_kind' => InterfaceKind::LAG,
+        'description' => 'Routed LAG',
+        'ip_address' => '10.255.0.1/30',
+        'vrf_forwarding' => 'my-vrf',
+        'routing' => true,
+    ]);
+
+    $verifier = new LagInterfaceCentralVerifier;
+    $expected = $verifier->buildExpectedPayload($deviceInterface);
+
+    expect($expected)->toHaveKey('routing', true)
+        ->toHaveKey('ipv4', ['address' => '10.255.0.1/30'])
+        ->toHaveKey('vrf-forwarding', 'my-vrf')
+        ->toHaveKey('port-list')
+        ->toHaveKey('lacp')
+        ->not->toHaveKey('switchport')
+        ->not->toHaveKey('sw-profile');
+});

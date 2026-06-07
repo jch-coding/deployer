@@ -177,6 +177,72 @@ test('build_portchannel_from_device_interface includes lacp for MULTI_CHASSIS tr
         ]);
 });
 
+test('build_portchannel_from_device_interface post body for routed LAG omits switchport and includes lacp', function () {
+    $lacp_profile = LacpProfile::factory()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'port_list' => '1/1/1-1/1/2',
+        'trunk_type' => 'LACP',
+    ]);
+    $switch_port = SwitchPort::factory()->create([
+        'interface_mode' => 'TRUNK',
+        'access_vlan' => null,
+        'native_vlan' => 10,
+        'trunk_vlan_all' => 'true',
+        'trunk_vlan_ranges' => null,
+    ]);
+    $deviceInterface = DeviceInterface::factory()->create([
+        'interface' => '11',
+        'switch_port_id' => $switch_port->id,
+        'lacp_profile_id' => $lacp_profile->id,
+        'interface_kind' => InterfaceKind::LAG,
+        'description' => 'Routed LAG uplink',
+        'ip_address' => '10.255.0.1/30',
+        'vrf_forwarding' => 'my-vrf',
+        'routing' => true,
+    ]);
+
+    $actual = CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface, true);
+
+    expect($actual)->toEqual([
+        'name' => '11',
+        'description' => 'Routed LAG uplink',
+        'ipv4' => ['address' => '10.255.0.1/30'],
+        'vrf-forwarding' => 'my-vrf',
+        'trunk-type' => 'LACP',
+        'port-list' => ['1/1/1', '1/1/2'],
+        'enable' => true,
+        'lacp' => ['mode' => 'ACTIVE', 'rate' => 'SLOW'],
+    ])->not->toHaveKey('switchport')
+        ->not->toHaveKey('stp')
+        ->not->toHaveKey('vsx')
+        ->not->toHaveKey('routing');
+});
+
+test('build_portchannel_from_device_interface patch body for routed LAG sets routing true', function () {
+    $lacp_profile = LacpProfile::factory()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'port_list' => '1/1/1-1/1/2',
+        'trunk_type' => 'LACP',
+    ]);
+    $deviceInterface = DeviceInterface::factory()->create([
+        'interface' => '11',
+        'lacp_profile_id' => $lacp_profile->id,
+        'interface_kind' => InterfaceKind::LAG,
+        'ip_address' => '10.255.0.1/30',
+        'vrf_forwarding' => 'default',
+        'routing' => true,
+    ]);
+
+    $actual = CentralAPIHelper::build_portchannel_from_device_interface($deviceInterface);
+
+    expect($actual)->toEqual([
+        'routing' => true,
+        'ipv4' => ['address' => '10.255.0.1/30'],
+    ])->not->toHaveKey('vrf-forwarding');
+});
+
 test('build_portchannel_from_device_interface omits lacp for non-lacp trunk types', function () {
     $nonLacpTrunkTypes = ['TRUNK', 'DT_TRUNK', 'MULTI_CHASSIS_STATIC'];
 
