@@ -85,9 +85,9 @@ export default function Index() {
                                         </Button>
                                         <Button
                                             type="button"
-                                            variant="ghost"
+                                            variant="outline"
                                             size="sm"
-                                            className="h-auto px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                            className="gap-1.5 border-destructive text-destructive hover:border-destructive hover:bg-destructive hover:text-white"
                                             data-test="delete"
                                             onClick={() =>
                                                 router.delete(destroy(deployment.id))

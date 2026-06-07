@@ -36,22 +36,8 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
     return (
         <Card key={client.client_id} className={isCurrentClient ? "border-2 border-orange-400 shadow-slate-400" : ""}>
             <CardHeader>
-                <CardTitle className="mx-auto flex items-center gap-2">
-                    <span>{client.name}</span>
-                    <Button
-                        size="sm"
-                        className="rounded-full"
-                        onClick={() =>
-                            router.put(current(client.id), {}, {
-                                onSuccess: () => {
-                                    router.flushAll();
-                                },
-                            })
-                        }
-                        disabled={isCurrentClient}
-                    >
-                        Set Current
-                    </Button>
+                <CardTitle className="mx-auto text-center text-xl font-bold">
+                    {client.name}
                 </CardTitle>
                 <CardContent className="mx-auto mt-3 flex w-full flex-col items-stretch gap-3">
                     <div className="flex flex-row flex-nowrap items-center justify-center gap-2">
@@ -118,7 +104,21 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                             </p>
                         )}
                     </div>
-                    <div className="flex flex-wrap justify-center gap-2">
+                    <div className="flex w-full justify-between gap-2">
+                        <Button
+                            size="sm"
+                            className="rounded-full"
+                            onClick={() =>
+                                router.put(current(client.id), {}, {
+                                    onSuccess: () => {
+                                        router.flushAll();
+                                    },
+                                })
+                            }
+                            disabled={isCurrentClient}
+                        >
+                            Set Current
+                        </Button>
                         <EditClientModal client={client} errors={errors} base_urls={base_urls} />
                         <DeleteModal client={client} />
                     </div>

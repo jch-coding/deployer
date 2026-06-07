@@ -36,6 +36,10 @@ type DeviceType = {
     serial?: string | number;
 };
 
+function deviceFilterLabel(device: DeviceType): string {
+    return device.serial ? `${device.name} (${device.serial})` : device.name;
+}
+
 type DeploymentType = {
     id: number,
     name: string,
@@ -488,7 +492,9 @@ export default function TaskCard({
                                                     handleCheckboxChange(device.id, checked === true)
                                                 }
                                             />
-                                            <label htmlFor={`task-card-device-${device.id}`}>{device.name}</label>
+                                            <label htmlFor={`task-card-device-${device.id}`}>
+                                                {deviceFilterLabel(device)}
+                                            </label>
                                         </div>
                                     ))
                                 ) : (
@@ -552,7 +558,7 @@ export default function TaskCard({
                                                     htmlFor={`per-device-${device.id}`}
                                                     className="text-sm font-medium"
                                                 >
-                                                    {device.name}
+                                                    {deviceFilterLabel(device)}
                                                 </label>
                                             </div>
                                             {isAssignSubscription ? (

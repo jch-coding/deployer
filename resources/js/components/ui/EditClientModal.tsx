@@ -13,7 +13,7 @@ export default function CreateClientModal( { client, errors, base_urls }: { clie
                 <Button
                     variant="outline"
                 >
-                    Edit Client
+                    Edit
                 </Button>
             </DialogTrigger>
             <DialogContent>
