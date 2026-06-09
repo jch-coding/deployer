@@ -58,6 +58,7 @@ class CentralOpenApiRegistry
      *     description: string|null,
      *     tags: list<string>,
      *     parameters: list<array<string, mixed>>,
+     *     requires_body: bool,
      *     reference_url: string|null
      * }>
      */
@@ -81,6 +82,7 @@ class CentralOpenApiRegistry
      *     description: string|null,
      *     tags: list<string>,
      *     parameters: list<array<string, mixed>>,
+     *     requires_body: bool,
      *     reference_url: string|null
      * }
      */
@@ -226,6 +228,7 @@ class CentralOpenApiRegistry
                             fn ($tag): bool => is_string($tag) && $tag !== '',
                         )),
                         'parameters' => $parameters,
+                        'requires_body' => $this->operationRequiresBody($method, $operation),
                         'reference_url' => $this->referenceUrlForOperation($operationId),
                         'spec_file' => $file->getFilename(),
                     ];
@@ -267,5 +270,17 @@ class CentralOpenApiRegistry
     private function referenceUrlForOperation(string $operationId): ?string
     {
         return 'https://developer.arubanetworks.com/new-central-config/reference/'.strtolower($operationId);
+    }
+
+    /**
+     * @param  array<string, mixed>  $operation
+     */
+    private function operationRequiresBody(string $method, array $operation): bool
+    {
+        if (! in_array($method, ['post', 'put', 'patch'], true)) {
+            return false;
+        }
+
+        return isset($operation['requestBody']) && is_array($operation['requestBody']);
     }
 }

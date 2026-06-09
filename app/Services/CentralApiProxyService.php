@@ -14,7 +14,7 @@ class CentralApiProxyService
         'network-monitoring/',
     ];
 
-    private const ALLOWED_METHODS_PHASE_ONE = ['GET'];
+    private const ALLOWED_METHODS = ['GET', 'POST', 'PATCH', 'DELETE'];
 
     public function __construct(private CentralOpenApiRegistry $registry) {}
 
@@ -43,7 +43,7 @@ class CentralApiProxyService
 
         $method = strtoupper($operation['method']);
 
-        if (! in_array($method, self::ALLOWED_METHODS_PHASE_ONE, true)) {
+        if (! in_array($method, self::ALLOWED_METHODS, true)) {
             return $this->errorResult("Method [{$method}] is not enabled in the API explorer.", $started);
         }
 
@@ -57,13 +57,19 @@ class CentralApiProxyService
             return $this->errorResult('Invalid path.', $started);
         }
 
-        [$resolvedPath, $query] = $this->resolvePathParameters($relativePath, $operation['parameters'], $query);
-
         $validationError = $this->validateRequiredParameters($operation['parameters'], $query);
 
         if ($validationError !== null) {
             return $this->errorResult($validationError, $started);
         }
+
+        $bodyError = $this->validateRequestBody($operation, $body);
+
+        if ($bodyError !== null) {
+            return $this->errorResult($bodyError, $started);
+        }
+
+        [$resolvedPath, $query] = $this->resolvePathParameters($relativePath, $operation['parameters'], $query);
 
         if (! $client->handleBearerTokenAuth(true)) {
             return $this->errorResult('Failed to obtain access token from Central. Check client credentials on the Clients page.', $started, 401);
@@ -81,10 +87,18 @@ class CentralApiProxyService
         try {
             $pending = Http::withToken($client->bearer_token)
                 ->timeout(60)
-                ->acceptJson();
+                ->acceptJson()
+                ->asJson();
+
+            if ($query !== []) {
+                $pending = $pending->withQueryParameters($query);
+            }
 
             $response = match ($method) {
-                'GET' => $pending->get($requestUrl, $query),
+                'GET' => $pending->get($requestUrl),
+                'POST' => $pending->post($requestUrl, $body ?? []),
+                'PATCH' => $pending->patch($requestUrl, $body ?? []),
+                'DELETE' => $pending->delete($requestUrl),
                 default => throw new InvalidArgumentException("Unsupported method [{$method}]."),
             };
         } catch (ConnectionException) {
@@ -151,10 +165,6 @@ class CentralApiProxyService
     private function validateRequiredParameters(array $parameters, array $query): ?string
     {
         foreach ($parameters as $parameter) {
-            if (($parameter['in'] ?? 'query') === 'path') {
-                continue;
-            }
-
             if (! ($parameter['required'] ?? false)) {
                 continue;
             }
@@ -170,6 +180,23 @@ class CentralApiProxyService
             if ($value === null || $value === '') {
                 return "Missing required parameter [{$name}].";
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $operation
+     * @param  array<string, mixed>|null  $body
+     */
+    private function validateRequestBody(array $operation, ?array $body): ?string
+    {
+        if (! ($operation['requires_body'] ?? false)) {
+            return null;
+        }
+
+        if ($body === null || $body === []) {
+            return 'Request body is required for this operation.';
         }
 
         return null;

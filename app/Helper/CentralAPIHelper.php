@@ -76,6 +76,7 @@ class CentralAPIHelper
 
     public array $classic_monitoring = [
         'sites' => 'central/v2/sites',
+        'switches' => 'monitoring/v1/switches',
     ];
 
     public array $classic_configuration = [
@@ -1876,6 +1877,28 @@ class CentralAPIHelper
         }
         $response = Http::withToken($this->client->classic_access_token)
             ->post($this->classicApiUrl($this->classic_monitoring['sites'].'/associate'), $device_to_site_body);
+
+        return $response;
+    }
+
+    public function classic_get_switch_details(Device $device)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+        $response = Http::withToken($this->client->classic_access_token)
+            ->get($this->classicApiUrl($this->classic_monitoring['switches'].'/'.$device->serial));
+
+        return $response;
+    }
+
+    public function classic_get_switches()
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+        $response = Http::withToken($this->client->classic_access_token)
+            ->get($this->classicApiUrl($this->classic_monitoring['switches']));
 
         return $response;
     }

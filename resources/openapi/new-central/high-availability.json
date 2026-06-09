@@ -29,17 +29,165 @@
                 "operationId": "readGatewayClusters",
                 "summary": "Read the configured Gateway Cluster Profiles",
                 "description": "List gateway cluster profiles used for gateway HA and WLAN client continuity.",
-                "tags": ["Gw Cluster"],
+                "tags": [
+                    "Gw Cluster"
+                ],
                 "parameters": [
-                    { "in": "query", "name": "view-type", "required": false, "description": "LIBRARY or LOCAL.", "schema": { "type": "string", "default": "LIBRARY" } },
-                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "scope-id", "required": false, "description": "Required when view-type is LOCAL.", "schema": { "type": "string" } },
-                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer" } },
-                    { "in": "query", "name": "offset", "required": false, "schema": { "type": "integer" } }
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
                 ]
+            },
+            "patch": {
+                "operationId": "updateGatewayClusters",
+                "summary": "Update gateway clusters configuration",
+                "tags": [
+                    "Gw Cluster"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List gateway cluster profiles used for gateway HA and WLAN client continuity.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/network-config/v1alpha1/stacks": {
@@ -47,17 +195,161 @@
                 "operationId": "readStacks",
                 "summary": "Read configured stacks",
                 "description": "Configure and manage switch stacks (VSF).",
-                "tags": ["Switch Stack"],
+                "tags": [
+                    "Switch Stack"
+                ],
                 "parameters": [
-                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string", "default": "LIBRARY" } },
-                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer" } },
-                    { "in": "query", "name": "offset", "required": false, "schema": { "type": "integer" } }
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
                 ]
+            },
+            "patch": {
+                "operationId": "updateStacks",
+                "summary": "Update stacks configuration",
+                "tags": [
+                    "Switch Stack"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "Configure and manage switch stacks (VSF).",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/network-config/v1alpha1/vsf-templates": {
@@ -65,17 +357,161 @@
                 "operationId": "readVsfTemplates",
                 "summary": "Read configured VSF templates",
                 "description": "List VSF stack templates.",
-                "tags": ["Vsf Template"],
+                "tags": [
+                    "Vsf Template"
+                ],
                 "parameters": [
-                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string", "default": "LIBRARY" } },
-                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer" } },
-                    { "in": "query", "name": "offset", "required": false, "schema": { "type": "integer" } }
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
                 ]
+            },
+            "patch": {
+                "operationId": "updateVsfTemplates",
+                "summary": "Update vsf templates configuration",
+                "tags": [
+                    "Vsf Template"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List VSF stack templates.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/network-config/v1alpha1/vsx-profiles": {
@@ -83,32 +519,442 @@
                 "operationId": "readVsxProfiles",
                 "summary": "Read vsx profiles",
                 "description": "List VSX profiles for switch high availability pairs.",
-                "tags": ["Vsx"],
+                "tags": [
+                    "Vsx"
+                ],
                 "parameters": [
-                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string", "default": "LIBRARY" } },
-                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer" } },
-                    { "in": "query", "name": "offset", "required": false, "schema": { "type": "integer" } }
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
                 ]
+            },
+            "patch": {
+                "operationId": "updateVsxProfiles",
+                "summary": "Update vsx profiles configuration",
+                "tags": [
+                    "Vsx"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List VSX profiles for switch high availability pairs.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/network-config/v1alpha1/gateway-clusters/{name}": {
             "get": {
                 "operationId": "readGatewayClusterByName",
                 "summary": "Read an existing gateway cluster profile configuration",
-                "tags": ["Gw Cluster"],
+                "tags": [
+                    "Gw Cluster"
+                ],
                 "parameters": [
-                    { "in": "path", "name": "name", "required": true, "schema": { "type": "string" } },
-                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } }
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createGatewayCluster",
+                "summary": "Create or replace gateway cluster",
+                "tags": [
+                    "Gw Cluster"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateGatewayCluster",
+                "summary": "Update gateway cluster",
+                "tags": [
+                    "Gw Cluster"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteGatewayCluster",
+                "summary": "Delete gateway cluster",
+                "tags": [
+                    "Gw Cluster"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
                 ]
             }
         },
@@ -116,15 +962,281 @@
             "get": {
                 "operationId": "readStackByName",
                 "summary": "Read existing stack configuration by name",
-                "tags": ["Switch Stack"],
+                "tags": [
+                    "Switch Stack"
+                ],
                 "parameters": [
-                    { "in": "path", "name": "name", "required": true, "schema": { "type": "string" } },
-                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } }
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createStack",
+                "summary": "Create or replace stack",
+                "tags": [
+                    "Switch Stack"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateStack",
+                "summary": "Update stack",
+                "tags": [
+                    "Switch Stack"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteStack",
+                "summary": "Delete stack",
+                "tags": [
+                    "Switch Stack"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
                 ]
             }
         },
@@ -132,15 +1244,281 @@
             "get": {
                 "operationId": "readVsfTemplateByName",
                 "summary": "Read existing VSF template configuration by name",
-                "tags": ["Vsf Template"],
+                "tags": [
+                    "Vsf Template"
+                ],
                 "parameters": [
-                    { "in": "path", "name": "name", "required": true, "schema": { "type": "string" } },
-                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } }
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createVsfTemplate",
+                "summary": "Create or replace vsf template",
+                "tags": [
+                    "Vsf Template"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateVsfTemplate",
+                "summary": "Update vsf template",
+                "tags": [
+                    "Vsf Template"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteVsfTemplate",
+                "summary": "Delete vsf template",
+                "tags": [
+                    "Vsf Template"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
                 ]
             }
         },
@@ -148,15 +1526,281 @@
             "get": {
                 "operationId": "readVsxByName",
                 "summary": "Read vsx profile by name",
-                "tags": ["Vsx"],
+                "tags": [
+                    "Vsx"
+                ],
                 "parameters": [
-                    { "in": "path", "name": "name", "required": true, "schema": { "type": "string" } },
-                    { "in": "query", "name": "view-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "object-type", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "scope-id", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "device-function", "required": false, "schema": { "type": "string" } },
-                    { "in": "query", "name": "effective", "required": false, "schema": { "type": "boolean" } },
-                    { "in": "query", "name": "detailed", "required": false, "schema": { "type": "boolean" } }
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createVsx",
+                "summary": "Create or replace vsx",
+                "tags": [
+                    "Vsx"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateVsx",
+                "summary": "Update vsx",
+                "tags": [
+                    "Vsx"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteVsx",
+                "summary": "Delete vsx",
+                "tags": [
+                    "Vsx"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
                 ]
             }
         }

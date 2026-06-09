@@ -52,14 +52,18 @@ function buildInitialParams(operation: CentralApiOperation | null): Record<strin
     const values: Record<string, string> = {};
 
     for (const parameter of operation.parameters) {
-        if (parameter.in === 'path') {
-            continue;
-        }
-
         values[parameter.name] = defaultParamValue(parameter);
     }
 
     return values;
+}
+
+function buildInitialBody(operation: CentralApiOperation | null): string {
+    if (!operation?.requires_body) {
+        return '';
+    }
+
+    return '{\n  \n}';
 }
 
 function statusBadgeVariant(status: number | null): 'default' | 'destructive' | 'secondary' {
@@ -104,6 +108,10 @@ export default function Explorer() {
     const [paramValues, setParamValues] = useState<Record<string, string>>(() =>
         buildInitialParams(allOperations[0] ?? null),
     );
+    const [requestBody, setRequestBody] = useState<string>(() =>
+        buildInitialBody(allOperations[0] ?? null),
+    );
+    const [bodyError, setBodyError] = useState<string | null>(null);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
     const [isExecuting, setIsExecuting] = useState(false);
     const [response, setResponse] = useState<CentralApiExecuteResponse | null>(null);
@@ -148,6 +156,8 @@ export default function Explorer() {
     const selectOperation = useCallback((operation: CentralApiOperation) => {
         setSelectedOperationId(operation.operation_id);
         setParamValues(buildInitialParams(operation));
+        setRequestBody(buildInitialBody(operation));
+        setBodyError(null);
         setResponse(null);
     }, []);
 
@@ -178,12 +188,44 @@ export default function Explorer() {
 
         setIsExecuting(true);
         setResponse(null);
+        setBodyError(null);
 
         const query: Record<string, string> = {};
 
         for (const [key, value] of Object.entries(paramValues)) {
             if (value.trim() !== '') {
                 query[key] = value.trim();
+            }
+        }
+
+        let parsedBody: Record<string, unknown> | undefined;
+
+        if (selectedOperation.requires_body) {
+            const trimmedBody = requestBody.trim();
+
+            if (trimmedBody === '') {
+                setBodyError('Request body is required for this operation.');
+                setIsExecuting(false);
+
+                return;
+            }
+
+            try {
+                const decoded = JSON.parse(trimmedBody) as unknown;
+
+                if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) {
+                    setBodyError('Request body must be a JSON object.');
+                    setIsExecuting(false);
+
+                    return;
+                }
+
+                parsedBody = decoded as Record<string, unknown>;
+            } catch {
+                setBodyError('Request body must be valid JSON.');
+                setIsExecuting(false);
+
+                return;
             }
         }
 
@@ -200,6 +242,7 @@ export default function Explorer() {
                 body: JSON.stringify({
                     operation_id: selectedOperation.operation_id,
                     query,
+                    body: parsedBody,
                 }),
             });
 
@@ -240,7 +283,7 @@ export default function Explorer() {
         } finally {
             setIsExecuting(false);
         }
-    }, [paramValues, selectedOperation]);
+    }, [paramValues, requestBody, selectedOperation]);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -403,6 +446,11 @@ export default function Explorer() {
                                                 <div key={parameter.name} className="space-y-1">
                                                     <Label htmlFor={`param-${parameter.name}`}>
                                                         {parameter.name}
+                                                        {parameter.in === 'path' && (
+                                                            <span className="text-muted-foreground ml-1 text-xs">
+                                                                (path)
+                                                            </span>
+                                                        )}
                                                         {parameter.required && (
                                                             <span className="text-destructive ml-1">*</span>
                                                         )}
@@ -426,9 +474,30 @@ export default function Explorer() {
                                             ))}
                                         </div>
                                     )}
+                                </div>
+
+                                {selectedOperation.requires_body && (
+                                    <div className="rounded-md border p-4">
+                                        <h3 className="mb-3 text-sm font-medium">Request body</h3>
+                                        <textarea
+                                            id="request-body"
+                                            className="border-input min-h-40 w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs shadow-xs"
+                                            value={requestBody}
+                                            onChange={(e) => {
+                                                setRequestBody(e.target.value);
+                                                setBodyError(null);
+                                            }}
+                                            spellCheck={false}
+                                        />
+                                        {bodyError && (
+                                            <p className="text-destructive mt-2 text-sm">{bodyError}</p>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="rounded-md border p-4">
                                     <Button
                                         type="button"
-                                        className="mt-4"
                                         onClick={() => void executeRequest()}
                                         disabled={isExecuting}
                                     >

@@ -17,6 +17,7 @@ export type CentralApiOperation = {
     description: string | null;
     tags: string[];
     parameters: CentralApiParameter[];
+    requires_body: boolean;
     reference_url: string | null;
 };
 

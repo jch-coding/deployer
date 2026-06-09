@@ -60,9 +60,43 @@ test('registry loads interfaces get endpoints', function () {
         ->and($apPortProfiles['path'])->toBe('/network-config/v1alpha1/ap-port-profiles')
         ->and($apPortProfiles['tags'])->toContain('Ap Port Profile')
         ->and($apPortProfiles['reference_url'])->toBe('https://developer.arubanetworks.com/new-central-config/reference/readapportprofiles')
-        ->and(collect($apPortProfiles['parameters'])->pluck('name'))->toContain('view-type', 'scope-id');
+        ->and(collect($apPortProfiles['parameters'])->pluck('name'))->toContain('view-type', 'scope-id')
+        ->and($apPortProfiles['requires_body'])->toBeFalse();
 
     $tags = collect($registry->tags())->pluck('name');
 
     expect($tags)->toContain('Ap Port Profile', 'Interface Ethernet', 'Sw Port Profile');
+});
+
+test('registry loads write endpoints for named resources', function () {
+    $registry = app(CentralOpenApiRegistry::class);
+
+    expect($registry->hasOperation('createPortchannel'))->toBeTrue()
+        ->and($registry->hasOperation('updatePortchannel'))->toBeTrue()
+        ->and($registry->hasOperation('deletePortchannel'))->toBeTrue()
+        ->and($registry->hasOperation('createStack'))->toBeTrue()
+        ->and($registry->hasOperation('updateVsx'))->toBeTrue()
+        ->and($registry->hasOperation('deleteVsx'))->toBeTrue();
+
+    $createPortchannel = $registry->operation('createPortchannel');
+
+    expect($createPortchannel['method'])->toBe('POST')
+        ->and($createPortchannel['path'])->toBe('/network-config/v1alpha1/portchannels/{name}')
+        ->and($createPortchannel['requires_body'])->toBeTrue()
+        ->and(collect($createPortchannel['parameters'])->pluck('name'))->toContain('name');
+
+    $deletePortchannel = $registry->operation('deletePortchannel');
+
+    expect($deletePortchannel['method'])->toBe('DELETE')
+        ->and($deletePortchannel['requires_body'])->toBeFalse();
+});
+
+test('registry loads singleton patch endpoints', function () {
+    $registry = app(CentralOpenApiRegistry::class);
+
+    $updateLacp = $registry->operation('updateLacp');
+
+    expect($updateLacp['method'])->toBe('PATCH')
+        ->and($updateLacp['path'])->toBe('/network-config/v1alpha1/lacp')
+        ->and($updateLacp['requires_body'])->toBeTrue();
 });
