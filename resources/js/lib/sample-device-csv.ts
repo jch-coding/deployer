@@ -29,6 +29,10 @@ const SAMPLE_DEVICE_HEADERS = [
     'vsx_system_mac',
     'vsx_isl_ports',
     'vsx_keepalive_ports',
+    'mirror_session_id',
+    'mirror_dst_ports',
+    'mirror_vlans',
+    'mirror_name',
 ] as const;
 
 type SampleDeviceRow = Partial<

@@ -307,6 +307,7 @@ export default function Show() {
         'ASSOCIATE_SITE_AND_NAME',
         'CREATE_VSF_PROFILE',
         'CREATE_VSX_PROFILE',
+        'CONFIGURE_MIRROR_SESSION',
         'ADD_VLANS_TO_DEVICE_GROUP',
         'ASSIGN_SUBSCRIPTION',
         'UNASSIGN_SUBSCRIPTION',

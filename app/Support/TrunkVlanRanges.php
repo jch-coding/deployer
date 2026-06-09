@@ -75,6 +75,40 @@ final class TrunkVlanRanges
     }
 
     /**
+     * Expand canonical or raw VLAN range input into sorted unique VLAN ids.
+     *
+     * @return list<int>
+     */
+    public static function expandToVlanIds(?string $input, ?string $messageKey = null): array
+    {
+        if ($input === null || trim($input) === '') {
+            return [];
+        }
+
+        $tokens = preg_split('/[,;&]+/', trim($input), -1, PREG_SPLIT_NO_EMPTY);
+        if ($tokens === false) {
+            throw ValidationException::withMessages([
+                self::key($messageKey) => 'Invalid trunk VLAN ranges format.',
+            ]);
+        }
+
+        $tokens = array_values(array_filter(array_map(static fn ($t) => trim((string) $t), $tokens), fn ($t) => $t !== ''));
+
+        $vlanIds = [];
+        foreach ($tokens as $token) {
+            self::expandToken($token, $vlanIds, $messageKey);
+        }
+
+        if ($vlanIds === []) {
+            return [];
+        }
+
+        sort($vlanIds);
+
+        return array_values(array_unique($vlanIds));
+    }
+
+    /**
      * @param  list<int>  $vlanIds
      */
     private static function collapseToCanonical(array $vlanIds): string

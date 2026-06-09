@@ -131,11 +131,15 @@ class DeviceController extends Controller
                 'vsx_system_mac' => ($arr['vsx_system_mac'] ?? '') === '' ? null : $arr['vsx_system_mac'],
                 'vsx_isl_ports' => ($arr['vsx_isl_ports'] ?? '') === '' ? null : $arr['vsx_isl_ports'],
                 'vsx_keepalive_ports' => ($arr['vsx_keepalive_ports'] ?? '') === '' ? null : $arr['vsx_keepalive_ports'],
+                'mirror_session_id' => ($arr['mirror_session_id'] ?? '') === '' ? null : (int) $arr['mirror_session_id'],
+                'mirror_dst_ports' => ($arr['mirror_dst_ports'] ?? '') === '' ? null : $arr['mirror_dst_ports'],
+                'mirror_vlans' => ($arr['mirror_vlans'] ?? '') === '' ? null : $arr['mirror_vlans'],
+                'mirror_name' => ($arr['mirror_name'] ?? '') === '' ? null : $arr['mirror_name'],
             ],
             $unique_devices
         );
 
-        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku', 'vsx_profile', 'vsx_role', 'vsx_system_mac', 'vsx_isl_ports', 'vsx_keepalive_ports']);
+        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku', 'vsx_profile', 'vsx_role', 'vsx_system_mac', 'vsx_isl_ports', 'vsx_keepalive_ports', 'mirror_session_id', 'mirror_dst_ports', 'mirror_vlans', 'mirror_name']);
 
         $errors = [];
         $unsaved_devices = [];
@@ -221,6 +225,10 @@ class DeviceController extends Controller
                 'vsx_system_mac' => '',
                 'vsx_isl_ports' => '',
                 'vsx_keepalive_ports' => '',
+                'mirror_session_id' => '',
+                'mirror_dst_ports' => '',
+                'mirror_vlans' => '',
+                'mirror_name' => '',
             ];
             foreach ($device as $device_info) {
                 foreach (array_keys($empty) as $key) {

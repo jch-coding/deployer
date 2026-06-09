@@ -1362,3 +1362,146 @@ test('ensureVsxKeepAliveVrf returns error when device has no group', function ()
 
     expect($result['error'])->toContain('has no group for VRF lookup');
 });
+
+test('deviceHasMirrorAttributes detects any populated mirror column', function () {
+    $device = Device::factory()->create([
+        'mirror_session_id' => null,
+        'mirror_dst_ports' => null,
+        'mirror_vlans' => null,
+        'mirror_name' => null,
+    ]);
+
+    expect(CentralAPIHelper::deviceHasMirrorAttributes($device))->toBeFalse();
+
+    $device->mirror_session_id = 1;
+
+    expect(CentralAPIHelper::deviceHasMirrorAttributes($device))->toBeTrue();
+});
+
+test('deploymentUsesMirrorFallbackMode is true when no selected device has mirror attributes', function () {
+    $devices = Device::factory()->count(2)->create([
+        'mirror_dst_ports' => null,
+    ]);
+
+    expect(CentralAPIHelper::deploymentUsesMirrorFallbackMode(collect($devices)))->toBeTrue();
+
+    $devices->first()->mirror_dst_ports = '1/1/43';
+
+    expect(CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices))->toBeFalse();
+});
+
+test('deviceMatchesMirrorSessionNamePattern matches core fzn-mdf-mgmt and mdf-mgmt names', function () {
+    expect(CentralAPIHelper::deviceMatchesMirrorSessionNamePattern(Device::factory()->create(['name' => 'NY1-MDF-CORE-SW1'])))->toBeTrue()
+        ->and(CentralAPIHelper::deviceMatchesMirrorSessionNamePattern(Device::factory()->create(['name' => 'FZN-MDF-MGMT-SW1'])))->toBeTrue()
+        ->and(CentralAPIHelper::deviceMatchesMirrorSessionNamePattern(Device::factory()->create(['name' => 'WHSE-MDF-MGMT-SW1'])))->toBeTrue()
+        ->and(CentralAPIHelper::deviceMatchesMirrorSessionNamePattern(Device::factory()->create(['name' => 'NY1-ACCESS-SW1'])))->toBeFalse();
+});
+
+test('resolveMirrorSettings uses name-pattern defaults in fallback mode', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'name' => 'NY1-MDF-CORE-SW1',
+        'scope_id' => 'scope-1',
+        'device_function' => App\DeviceFunction::CORE_SWITCH,
+    ]);
+
+    Http::fake([
+        '*' => Http::response(['l2-vlan' => [['vlan' => 10], ['vlan' => 20]]], 200),
+    ]);
+
+    $settings = $helper->resolveMirrorSettings($device, true);
+
+    expect($settings)->toMatchArray([
+        'name' => 'NY1-MDF-CORE-SW1-DARKTRACE-SPAN',
+        'session_id' => 1,
+        'dst_ports' => ['1/1/43'],
+        'vlan_ids' => [10, 20],
+    ]);
+});
+
+test('resolveMirrorSettings prefers fzn-mdf-mgmt ports over core and mdf-mgmt patterns', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'name' => 'FZN-MDF-MGMT-CORE-SW1',
+        'scope_id' => 'scope-1',
+        'device_function' => App\DeviceFunction::CORE_SWITCH,
+    ]);
+
+    Http::fake([
+        '*' => Http::response(['l2-vlan' => [['vlan' => 10]]], 200),
+    ]);
+
+    $settings = $helper->resolveMirrorSettings($device, true);
+
+    expect($settings['dst_ports'])->toBe(['1/1/21', '1/1/22']);
+});
+
+test('resolveMirrorSettings uses mdf-mgmt-only ports when fzn is absent', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'name' => 'WHSE-MDF-MGMT-SW1',
+        'scope_id' => 'scope-1',
+        'device_function' => App\DeviceFunction::ACCESS_SWITCH,
+    ]);
+
+    Http::fake([
+        '*' => Http::response(['l2-vlan' => [['vlan' => 10]]], 200),
+    ]);
+
+    $settings = $helper->resolveMirrorSettings($device, true);
+
+    expect($settings['dst_ports'])->toBe(['1/1/16', '2/1/9']);
+});
+
+test('resolveMirrorSettings uses database columns in explicit mode without name-pattern ports', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'name' => 'NY1-MDF-CORE-SW1',
+        'scope_id' => 'scope-1',
+        'device_function' => App\DeviceFunction::CORE_SWITCH,
+        'mirror_dst_ports' => '1/1/10&1/1/11',
+        'mirror_session_id' => 3,
+        'mirror_name' => 'custom-mirror',
+        'mirror_vlans' => '100&200-202',
+    ]);
+
+    $settings = $helper->resolveMirrorSettings($device, false);
+
+    expect($settings)->toMatchArray([
+        'name' => 'custom-mirror',
+        'session_id' => 3,
+        'dst_ports' => ['1/1/10', '1/1/11'],
+        'vlan_ids' => [100, 200, 201, 202],
+    ]);
+});
+
+test('buildMirrorPayload matches expected mirror session shape', function () {
+    $device = Device::factory()->create([
+        'name' => 'NY1-MDF-CORE-SW1',
+        'serial' => 'CORE123456',
+    ]);
+
+    $payload = CentralAPIHelper::buildMirrorPayload($device, 'NY1-MDF-CORE-SW1-DARKTRACE-SPAN', 1, ['1/1/43'], [10, 20]);
+
+    expect($payload)->toBe([
+        'name' => 'NY1-MDF-CORE-SW1-DARKTRACE-SPAN',
+        'session' => [
+            'enable' => true,
+            'session-id' => 1,
+            'session-destination' => [
+                'destination-type' => 'INTERFACES',
+                'destination-switch-serial' => 'CORE123456',
+                'eth-interfaces' => [
+                    ['eth-interface' => '1/1/43'],
+                ],
+            ],
+            'session-sources' => [
+                'source-switch-interface' => 'CORE123456',
+                'vlans' => [
+                    ['direction' => 'BOTH', 'vlan-id' => 10],
+                    ['direction' => 'BOTH', 'vlan-id' => 20],
+                ],
+            ],
+        ],
+    ]);
+});

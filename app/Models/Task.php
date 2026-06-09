@@ -19,6 +19,7 @@ class Task extends Model
 
     protected $casts = [
         'remediation_context' => 'array',
+        'mirror_fallback_mode' => 'boolean',
     ];
 
     public function users(): BelongsToMany
@@ -131,6 +132,7 @@ class Task extends Model
             'UNASSIGN_SUBSCRIPTION',
             'ADD_VLANS_FOR_DEVICE_GROUP',
             'CREATE_NEW_CENTRAL_CX_GROUP',
+            'CONFIGURE_MIRROR_SESSION',
         ];
 
         if (in_array($task_type, $interface_based, true)) {
@@ -158,6 +160,8 @@ class Task extends Model
                 return 'Configure Portchannel/LAG interface';
             case 'CONFIGURE_VLAN_INTERFACE':
                 return 'Configure SVI';
+            case 'CONFIGURE_MIRROR_SESSION':
+                return 'Configure Mirror Session';
             case 'CREATE_VSF_PROFILE':
                 return 'Create VSF Profile';
             case 'CREATE_VSX_PROFILE':
@@ -214,6 +218,8 @@ class Task extends Model
                 return 'Configure aggregate interfaces';
             case 'CONFIGURE_VLAN_INTERFACE':
                 return 'Configure L3 VLAN interfaces';
+            case 'CONFIGURE_MIRROR_SESSION':
+                return 'Create a local mirror session on selected switches for Darktrace SPAN. Uses name-pattern defaults when no mirror columns are set in the deployment; otherwise uses mirror_* CSV values.';
             case 'ASSOCIATE_DEVICE_TO_SITE':
                 return 'Associate devices to a site';
             case 'ASSOCIATE_SITE_AND_NAME':
@@ -268,6 +274,8 @@ class Task extends Model
                 return ['name', 'serial', 'device_function', 'interface'];
             case 'CONFIGURE_VLAN_INTERFACE':
                 return ['name', 'serial', 'device_function', 'interface', 'ip_address'];
+            case 'CONFIGURE_MIRROR_SESSION':
+                return ['name', 'serial', 'device_function'];
             case 'CREATE_VSF_PROFILE':
                 return ['name', 'serial', 'device_function', 'interface', 'sku'];
             case 'CREATE_VSX_PROFILE':

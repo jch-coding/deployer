@@ -3,6 +3,7 @@
 namespace App\Helper;
 
 use App\DeviceFunction;
+use App\Support\TrunkVlanRanges;
 use App\SwitchSKU;
 use App\VsxRole;
 use Illuminate\Validation\ValidationException;
@@ -42,6 +43,10 @@ class CSVHelper
         'vsx_system_mac',
         'vsx_isl_ports',
         'vsx_keepalive_ports',
+        'mirror_session_id',
+        'mirror_dst_ports',
+        'mirror_vlans',
+        'mirror_name',
         'lacp_port_id',
     ];
 
@@ -504,6 +509,64 @@ class CSVHelper
                     );
                 }
             }
+        }
+
+        if (array_key_exists('mirror_session_id', $row)) {
+            $raw = $row['mirror_session_id'];
+            if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+                $row['mirror_session_id'] = is_string($raw) ? $raw : ($raw ?? '');
+            } else {
+                $trimmed = trim((string) $raw);
+                if (! preg_match('/^[1-4]$/', $trimmed)) {
+                    self::addValidationMessage(
+                        $validationMessages,
+                        $csvRowNumber,
+                        'mirror_session_id',
+                        $row,
+                        "mirror_session_id \"{$trimmed}\" must be an integer between 1 and 4."
+                    );
+                } else {
+                    $row['mirror_session_id'] = $trimmed;
+                }
+            }
+        }
+
+        if (array_key_exists('mirror_dst_ports', $row)) {
+            $raw = $row['mirror_dst_ports'];
+            if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+                $row['mirror_dst_ports'] = is_string($raw) ? $raw : ($raw ?? '');
+            } else {
+                $row['mirror_dst_ports'] = InterfaceHelper::normalizeInterfaceString(trim((string) $raw));
+            }
+        }
+
+        if (array_key_exists('mirror_vlans', $row)) {
+            $raw = $row['mirror_vlans'];
+            if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+                $row['mirror_vlans'] = is_string($raw) ? $raw : ($raw ?? '');
+            } else {
+                try {
+                    $row['mirror_vlans'] = TrunkVlanRanges::normalizeForStorage(
+                        trim((string) $raw),
+                        'mirror_vlans'
+                    ) ?? '';
+                } catch (ValidationException $e) {
+                    foreach ($e->errors()['mirror_vlans'] ?? [] as $message) {
+                        self::addValidationMessage(
+                            $validationMessages,
+                            $csvRowNumber,
+                            'mirror_vlans',
+                            $row,
+                            (string) $message
+                        );
+                    }
+                }
+            }
+        }
+
+        if (array_key_exists('mirror_name', $row)) {
+            $raw = $row['mirror_name'];
+            $row['mirror_name'] = is_string($raw) ? trim($raw) : (is_numeric($raw) ? trim((string) $raw) : ($raw ?? ''));
         }
 
         foreach (['interface_mode' => self::INTERFACE_MODES, 'trunk_type' => self::TRUNK_TYPES, 'lacp_mode' => self::LACP_MODES, 'lacp_rate' => self::LACP_RATES] as $column => $allowed) {

@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Helper\CentralAPIHelper;
 use App\Helper\GreenLakeAPIHelper;
 use App\InterfaceKind;
-use App\LicenseType;
 use App\JobQueueShard;
 use App\Jobs\AddVlansToDeviceGroup;
 use App\Jobs\AssignDeviceFunctionJob;
@@ -14,6 +13,7 @@ use App\Jobs\AssociateDeviceToSiteJob;
 use App\Jobs\AssociateSiteAndNameJob;
 use App\Jobs\ConfigureEthernetInterface;
 use App\Jobs\ConfigureLagInterfaceJob;
+use App\Jobs\ConfigureMirrorSessionJob;
 use App\Jobs\ConfigureVlanInterfaceJob;
 use App\Jobs\CreateNewCentralCXGroup;
 use App\Jobs\CreateVSFProfileJob;
@@ -27,6 +27,7 @@ use App\Jobs\RemoveLocalOverrideStaticRouteJob;
 use App\Jobs\RemoveLocalOverrideVlansJob;
 use App\Jobs\UnassignSubscriptionJob;
 use App\Jobs\UpdateSystemInfo;
+use App\LicenseType;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -87,6 +88,12 @@ class TaskController extends Controller
             'vsx_system_mac',
             'vsx_isl_ports',
             'vsx_keepalive_ports',
+        ],
+        'CONFIGURE_MIRROR_SESSION' => [
+            'mirror_session_id',
+            'mirror_dst_ports',
+            'mirror_vlans',
+            'mirror_name',
         ],
         'MOVE_DEVICE_TO_GROUP' => [
             'group',
@@ -1018,6 +1025,56 @@ class TaskController extends Controller
                 $licensingInventoryService,
                 app(LicensingPoolResolver::class),
             );
+        } elseif ($validated['task_type'] === 'CONFIGURE_MIRROR_SESSION') {
+            $selectedDeviceIds = Collection::make($validated['devices'])
+                ->pluck('id')
+                ->filter(fn ($id) => $id !== null)
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $selectedDevices = Device::query()
+                ->where('deployment_id', $deployment->id)
+                ->whereIn('id', $selectedDeviceIds)
+                ->get();
+
+            $fallbackMode = CentralAPIHelper::deploymentUsesMirrorFallbackMode($selectedDevices);
+
+            if ($fallbackMode) {
+                $devicesToAttach = $selectedDevices->filter(
+                    fn (Device $device) => CentralAPIHelper::deviceMatchesMirrorSessionNamePattern($device)
+                );
+
+                if ($devicesToAttach->isEmpty()) {
+                    return back()->withErrors([
+                        'devices' => 'No selected devices match a mirror session name pattern (CORE, FZN-MDF-MGMT, or MDF-MGMT).',
+                    ]);
+                }
+            } else {
+                $devicesToAttach = $selectedDevices->filter(
+                    fn (Device $device) => CentralAPIHelper::deviceHasMirrorAttributes($device)
+                );
+
+                if ($devicesToAttach->isEmpty()) {
+                    return back()->withErrors([
+                        'devices' => 'No selected devices have mirror session columns set.',
+                    ]);
+                }
+            }
+
+            $task = $deployment->tasks()->create([
+                'task_type' => $validated['task_type'],
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+                'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+                'mirror_fallback_mode' => $fallbackMode,
+            ]);
+
+            $task->devices()->attach($devicesToAttach->pluck('id')->all());
+            $batchId = $this->dispatchJob($task);
+            if ($batchId !== null) {
+                $task->forceFill(['batch_id' => $batchId])->save();
+            }
         } else {
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
@@ -1731,6 +1788,16 @@ class TaskController extends Controller
             case 'UPDATE_SYSTEM_INFO':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $jobs[] = $in_progress->map(fn ($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper))->toArray();
+                break;
+            case 'CONFIGURE_MIRROR_SESSION':
+                $fallbackMode = $task->mirror_fallback_mode;
+                if ($fallbackMode === null) {
+                    $fallbackMode = CentralAPIHelper::deploymentUsesMirrorFallbackMode($task->devices);
+                }
+                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+                $jobs[] = $in_progress->map(
+                    fn ($device) => new ConfigureMirrorSessionJob($device, $task, $centralAPIHelper, (bool) $fallbackMode)
+                )->toArray();
                 break;
             case 'PREPROVISION_DEVICE_TO_GROUP':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');

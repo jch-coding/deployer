@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Site;
+use App\Support\TrunkVlanRanges;
 use App\VsxRole;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
@@ -55,7 +56,7 @@ class CentralAPIHelper
         'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles/',
         'interface_vlan' => 'network-config/v1alpha1/vlan-interfaces/',
         'interface_loopback' => 'network-config/v1alpha1/loopback-interfaces/',
-        'mirrors' => 'network-config/v1alpha1/mirrors/',
+        'mirrors' => 'network-config/v1alpha1/mirrors',
     ];
 
     public array $vlans_and_networks = [
@@ -78,7 +79,7 @@ class CentralAPIHelper
     public array $classic_monitoring = [
         'sites' => 'central/v2/sites',
         'switches' => 'monitoring/v1/switches',
-        'aps' => 'monitoring/v2/aps'
+        'aps' => 'monitoring/v2/aps',
     ];
 
     public array $classic_configuration = [
@@ -1654,34 +1655,34 @@ class CentralAPIHelper
                 ->withQueryParameters($queryParameters)
                 ->get($this->client->base_url.$this->interfaces['mirrors']);
 
-        return $response;
+            return $response;
         }
     }
 
     /**
-     * @param array $mirror [
-     *    'name' => string,
-     *    'description' => string,
-     *    'session' => [
-     *           'enable' => boolean,
-     *           'session-id' => number 1 - 4 inclusive,
-     *           'session-destination' => [
-     *               'destination-switch-serial' => string,
-     *               'destination-type' => CPU | INTERFACES | TUNNEL,
-     *               'eth-interfaces' => [
-     *                   'eth-interface' => string,
-     *             ]
-     *          ],
-     *          'session-sources' => [
-     *               'vlans' => [
-     *                    [
-     *                     'direction' => RX | TX | BOTH,
-     *                     'vlan-id' => number 1 - 4094 inclusive,
-     *             ]
-     *           ]
-     *         ]
-     *       ]
-     *    ]
+     * @param  array  $mirror  [
+     *                         'name' => string,
+     *                         'description' => string,
+     *                         'session' => [
+     *                         'enable' => boolean,
+     *                         'session-id' => number 1 - 4 inclusive,
+     *                         'session-destination' => [
+     *                         'destination-switch-serial' => string,
+     *                         'destination-type' => CPU | INTERFACES | TUNNEL,
+     *                         'eth-interfaces' => [
+     *                         'eth-interface' => string,
+     *                         ]
+     *                         ],
+     *                         'session-sources' => [
+     *                         'vlans' => [
+     *                         [
+     *                         'direction' => RX | TX | BOTH,
+     *                         'vlan-id' => number 1 - 4094 inclusive,
+     *                         ]
+     *                         ]
+     *                         ]
+     *                         ]
+     *                         ]
      */
     public function post_mirror(array $mirror, array $queryParameters = [])
     {
@@ -1692,7 +1693,20 @@ class CentralAPIHelper
                 ->withQueryParameters($queryParameters)
                 ->post($this->client->base_url.$this->interfaces['mirrors'].'/'.$mirror['name'], $mirror);
 
-        return $response;
+            return $response;
+        }
+    }
+
+    public function get_mirror(string $name, array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->interfaces['mirrors'].'/'.$name);
+
+            return $response;
         }
     }
 
@@ -1946,7 +1960,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @param $queryParameters array<string, mixed> group : string, status: string, limit: int, offset: int
+     * @param  $queryParameters  array<string, mixed> group : string, status: string, limit: int, offset: int
      */
     public function classic_get_aps($queryParameters = [])
     {
@@ -1957,8 +1971,9 @@ class CentralAPIHelper
             ->withQueryParameters($queryParameters)
             ->get($this->classicApiUrl($this->classic_monitoring['aps']));
     }
+
     /**
-     * @param $queryParameters array<string, mixed> group : string, status: string, limit: int, offset: int
+     * @param  $queryParameters  array<string, mixed> group : string, status: string, limit: int, offset: int
      */
     public function classic_get_switches($queryParameters = [])
     {
@@ -2905,5 +2920,206 @@ class CentralAPIHelper
             ->post($this->classicApiUrl($this->classic_configuration['preprovision_devices_to_group']), ['group_name' => $group, 'device_id' => $device_serials]);
 
         return $response;
+    }
+
+    public static function deviceHasMirrorAttributes(Device $device): bool
+    {
+        return filled($device->mirror_session_id)
+            || filled($device->mirror_dst_ports)
+            || filled($device->mirror_vlans)
+            || filled($device->mirror_name);
+    }
+
+    /**
+     * @param  Collection<int, Device>  $selectedDevices
+     */
+    public static function deploymentUsesMirrorFallbackMode(Collection $selectedDevices): bool
+    {
+        return ! $selectedDevices->contains(fn (Device $device) => self::deviceHasMirrorAttributes($device));
+    }
+
+    public static function deviceMatchesMirrorSessionNamePattern(Device $device): bool
+    {
+        $name = strtoupper((string) $device->name);
+
+        if (str_contains($name, 'FZN-MDF-MGMT')) {
+            return true;
+        }
+
+        if (str_contains($name, 'MDF-MGMT')) {
+            return true;
+        }
+
+        return str_contains($name, 'CORE');
+    }
+
+    public static function defaultMirrorName(Device $device): string
+    {
+        return $device->name.'-DARKTRACE-SPAN';
+    }
+
+    /**
+     * @return array{name: string, session_id: int, dst_ports: list<string>, vlan_ids: list<int>}|array{error: string}
+     */
+    public function resolveMirrorSettings(Device $device, bool $fallbackMode): array
+    {
+        if ($fallbackMode) {
+            if (! self::deviceMatchesMirrorSessionNamePattern($device)) {
+                return ['error' => 'Device '.$device->name.' does not match a mirror session name pattern.'];
+            }
+
+            $dstPorts = self::resolveMirrorDestinationPortsFromNamePattern($device);
+            if (array_key_exists('error', $dstPorts)) {
+                return $dstPorts;
+            }
+
+            $vlanResult = $this->fetchMirrorVlanIdsForDevice($device);
+            if (array_key_exists('error', $vlanResult)) {
+                return $vlanResult;
+            }
+
+            return [
+                'name' => self::defaultMirrorName($device),
+                'session_id' => 1,
+                'dst_ports' => $dstPorts,
+                'vlan_ids' => $vlanResult['vlan_ids'],
+            ];
+        }
+
+        if (! filled($device->mirror_dst_ports)) {
+            return ['error' => 'mirror_dst_ports is required for device '.$device->name.' in explicit mirror mode.'];
+        }
+
+        $dstPorts = InterfaceHelper::expandInterfaceRange((string) $device->mirror_dst_ports);
+        if ($dstPorts === []) {
+            return ['error' => 'mirror_dst_ports on '.$device->name.' must expand to at least one interface.'];
+        }
+
+        $sessionId = filled($device->mirror_session_id) ? (int) $device->mirror_session_id : 1;
+        $mirrorName = filled($device->mirror_name) ? (string) $device->mirror_name : self::defaultMirrorName($device);
+
+        if (filled($device->mirror_vlans)) {
+            $vlanIds = TrunkVlanRanges::expandToVlanIds((string) $device->mirror_vlans, 'mirror_vlans');
+            if ($vlanIds === []) {
+                return ['error' => 'mirror_vlans on '.$device->name.' must expand to at least one VLAN.'];
+            }
+        } else {
+            $vlanResult = $this->fetchMirrorVlanIdsForDevice($device);
+            if (array_key_exists('error', $vlanResult)) {
+                return $vlanResult;
+            }
+            $vlanIds = $vlanResult['vlan_ids'];
+        }
+
+        return [
+            'name' => $mirrorName,
+            'session_id' => $sessionId,
+            'dst_ports' => $dstPorts,
+            'vlan_ids' => $vlanIds,
+        ];
+    }
+
+    /**
+     * @return array{vlan_ids: list<int>}|array{error: string}
+     */
+    public function fetchMirrorVlanIdsForDevice(Device $device): array
+    {
+        if (! $device->scope_id) {
+            return ['error' => 'No scope id for device '.$device->name];
+        }
+
+        $queryParameters = [
+            'view-type' => 'LOCAL',
+            'object-type' => 'LOCAL',
+            'scope-id' => $device->scope_id,
+            'device-function' => static::deviceFunctionQueryValue($device),
+        ];
+
+        $response = $this->get_l2_vlans($queryParameters);
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return ['error' => (string) $response['error']];
+        }
+
+        if (! $response instanceof Response || ! $response->ok()) {
+            return ['error' => 'Failed to retrieve VLANs for device '.$device->name.': '.$this->centralResponseErrorMessage($response)];
+        }
+
+        $l2Vlans = $response->json()['l2-vlan'] ?? [];
+        if (! is_array($l2Vlans)) {
+            $l2Vlans = [];
+        }
+
+        $vlanIds = [];
+        foreach ($l2Vlans as $vlan) {
+            if (! is_array($vlan)) {
+                continue;
+            }
+            $vlanId = (int) ($vlan['vlan'] ?? 0);
+            if ($vlanId >= TrunkVlanRanges::MIN_VLAN && $vlanId <= TrunkVlanRanges::MAX_VLAN) {
+                $vlanIds[] = $vlanId;
+            }
+        }
+
+        $vlanIds = array_values(array_unique($vlanIds));
+        sort($vlanIds);
+
+        if ($vlanIds === []) {
+            return ['error' => 'No VLANs found for device '.$device->name];
+        }
+
+        return ['vlan_ids' => $vlanIds];
+    }
+
+    /**
+     * @param  list<string>  $dstPorts
+     * @param  list<int>  $vlanIds
+     * @return array<string, mixed>
+     */
+    public static function buildMirrorPayload(Device $device, string $name, int $sessionId, array $dstPorts, array $vlanIds): array
+    {
+        return [
+            'name' => $name,
+            'session' => [
+                'enable' => true,
+                'session-id' => $sessionId,
+                'session-destination' => [
+                    'destination-type' => 'INTERFACES',
+                    'destination-switch-serial' => $device->serial,
+                    'eth-interfaces' => array_map(
+                        fn (string $port): array => ['eth-interface' => $port],
+                        $dstPorts
+                    ),
+                ],
+                'session-sources' => [
+                    'source-switch-interface' => $device->serial,
+                    'vlans' => array_map(
+                        fn (int $vlanId): array => ['direction' => 'BOTH', 'vlan-id' => $vlanId],
+                        $vlanIds
+                    ),
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return list<string>|array{error: string}
+     */
+    private static function resolveMirrorDestinationPortsFromNamePattern(Device $device): array
+    {
+        $name = strtoupper((string) $device->name);
+
+        if (str_contains($name, 'FZN-MDF-MGMT')) {
+            return ['1/1/21', '1/1/22'];
+        }
+
+        if (str_contains($name, 'MDF-MGMT')) {
+            return ['1/1/16', '2/1/9'];
+        }
+
+        if (str_contains($name, 'CORE')) {
+            return ['1/1/43'];
+        }
+
+        return ['error' => 'Cannot determine mirror destination ports for '.$device->name.'.'];
     }
 }

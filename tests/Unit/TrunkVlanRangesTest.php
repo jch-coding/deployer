@@ -44,3 +44,9 @@ it('formats canonical string for display with comma spacing', function () {
         ->and(TrunkVlanRanges::toDisplayString(null))->toBe('')
         ->and(TrunkVlanRanges::toDisplayString(''))->toBe('');
 });
+
+it('expands canonical and raw vlan ranges to sorted unique ids', function () {
+    expect(TrunkVlanRanges::expandToVlanIds('100&200-202'))->toBe([100, 200, 201, 202])
+        ->and(TrunkVlanRanges::expandToVlanIds('10,11,12'))->toBe([10, 11, 12])
+        ->and(TrunkVlanRanges::expandToVlanIds(null))->toBe([]);
+});
