@@ -1496,7 +1496,7 @@ test('buildMirrorPayload matches expected mirror session shape', function () {
                 ],
             ],
             'session-sources' => [
-                'source-switch-interface' => 'CORE123456',
+                'source-switch-serial' => 'CORE123456',
                 'vlans' => [
                     ['direction' => 'BOTH', 'vlan-id' => 10],
                     ['direction' => 'BOTH', 'vlan-id' => 20],

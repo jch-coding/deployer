@@ -64,7 +64,7 @@ it('creates mirror session in fallback mode and marks device completed', functio
                     && $payload['session']['session-destination']['eth-interfaces'] === [
                         ['eth-interface' => '1/1/43'],
                     ]
-                    && $payload['session']['session-sources']['source-switch-interface'] === $device->serial
+                    && $payload['session']['session-sources']['source-switch-serial'] === $device->serial
                     && $payload['session']['session-sources']['vlans'] === [
                         ['direction' => 'BOTH', 'vlan-id' => 10],
                         ['direction' => 'BOTH', 'vlan-id' => 20],

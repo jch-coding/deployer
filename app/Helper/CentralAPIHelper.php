@@ -3091,7 +3091,7 @@ class CentralAPIHelper
                     ),
                 ],
                 'session-sources' => [
-                    'source-switch-interface' => $device->serial,
+                    'source-switch-serial' => $device->serial,
                     'vlans' => array_map(
                         fn (int $vlanId): array => ['direction' => 'BOTH', 'vlan-id' => $vlanId],
                         $vlanIds
