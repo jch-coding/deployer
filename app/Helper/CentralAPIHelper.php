@@ -55,6 +55,7 @@ class CentralAPIHelper
         'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles/',
         'interface_vlan' => 'network-config/v1alpha1/vlan-interfaces/',
         'interface_loopback' => 'network-config/v1alpha1/loopback-interfaces/',
+        'mirrors' => 'network-config/v1alpha1/mirrors/',
     ];
 
     public array $vlans_and_networks = [
@@ -77,6 +78,7 @@ class CentralAPIHelper
     public array $classic_monitoring = [
         'sites' => 'central/v2/sites',
         'switches' => 'monitoring/v1/switches',
+        'aps' => 'monitoring/v2/aps'
     ];
 
     public array $classic_configuration = [
@@ -1643,6 +1645,57 @@ class CentralAPIHelper
         return $allItems;
     }
 
+    public function get_mirrors($queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->interfaces['mirrors']);
+
+        return $response;
+        }
+    }
+
+    /**
+     * @param array $mirror [
+     *    'name' => string,
+     *    'description' => string,
+     *    'session' => [
+     *           'enable' => boolean,
+     *           'session-id' => number 1 - 4 inclusive,
+     *           'session-destination' => [
+     *               'destination-switch-serial' => string,
+     *               'destination-type' => CPU | INTERFACES | TUNNEL,
+     *               'eth-interfaces' => [
+     *                   'eth-interface' => string,
+     *             ]
+     *          ],
+     *          'session-sources' => [
+     *               'vlans' => [
+     *                    [
+     *                     'direction' => RX | TX | BOTH,
+     *                     'vlan-id' => number 1 - 4094 inclusive,
+     *             ]
+     *           ]
+     *         ]
+     *       ]
+     *    ]
+     */
+    public function post_mirror(array $mirror, array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->interfaces['mirrors'].'/'.$mirror['name'], $mirror);
+
+        return $response;
+        }
+    }
+
     public function get_sites(array $queryParameters = [])
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -1892,12 +1945,28 @@ class CentralAPIHelper
         return $response;
     }
 
-    public function classic_get_switches()
+    /**
+     * @param $queryParameters array<string, mixed> group : string, status: string, limit: int, offset: int
+     */
+    public function classic_get_aps($queryParameters = [])
     {
         if (! $this->client->handleClassicBearerToken()) {
             return ['error' => 'failed to get access token from central.'];
         }
         $response = Http::withToken($this->client->classic_access_token)
+            ->withQueryParameters($queryParameters)
+            ->get($this->classicApiUrl($this->classic_monitoring['aps']));
+    }
+    /**
+     * @param $queryParameters array<string, mixed> group : string, status: string, limit: int, offset: int
+     */
+    public function classic_get_switches($queryParameters = [])
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+        $response = Http::withToken($this->client->classic_access_token)
+            ->withQueryParameters($queryParameters)
             ->get($this->classicApiUrl($this->classic_monitoring['switches']));
 
         return $response;
