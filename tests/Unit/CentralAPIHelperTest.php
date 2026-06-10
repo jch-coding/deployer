@@ -1419,6 +1419,76 @@ test('resolveMirrorSettings uses name-pattern defaults in fallback mode', functi
     ]);
 });
 
+test('fetchMirrorVlanIdsForDevice merges device and group scope l2 vlan results', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'name' => 'NY1-MDF-CORE-SW1',
+        'scope_id' => 'device-scope-1',
+        'group' => 'MyGroup',
+        'device_function' => App\DeviceFunction::CORE_SWITCH,
+    ]);
+
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
+        }
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        if (! str_contains($request->url(), 'layer2-vlan')) {
+            return Http::response([], 404);
+        }
+
+        return match ($query['scope-id'] ?? null) {
+            'device-scope-1' => Http::response(['l2-vlan' => [['vlan' => 10], ['vlan' => 20]]], 200),
+            'group-scope-1' => Http::response(['l2-vlan' => [['vlan' => 20], ['vlan' => 30]]], 200),
+            default => Http::response(['l2-vlan' => []], 200),
+        };
+    });
+
+    $result = $helper->fetchMirrorVlanIdsForDevice($device);
+
+    expect($result)->toBe(['vlan_ids' => [10, 20, 30]]);
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return str_contains($request->url(), 'layer2-vlan')
+            && ($query['scope-id'] ?? null) === 'group-scope-1'
+            && ($query['device-function'] ?? null) === 'CORE_SWITCH'
+            && ($query['view-type'] ?? null) === 'LOCAL'
+            && ($query['object-type'] ?? null) === 'LOCAL';
+    });
+});
+
+test('fetchMirrorVlanIdsForDevice skips group l2 vlan call when group scope matches device scope', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $device = Device::factory()->for($helper->client)->create([
+        'name' => 'NY1-MDF-CORE-SW1',
+        'scope_id' => 'shared-scope-1',
+        'group' => 'MyGroup',
+        'device_function' => App\DeviceFunction::CORE_SWITCH,
+    ]);
+
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'shared-scope-1']]], 200);
+        }
+
+        if (str_contains($request->url(), 'layer2-vlan')) {
+            return Http::response(['l2-vlan' => [['vlan' => 10]]], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $result = $helper->fetchMirrorVlanIdsForDevice($device);
+
+    expect($result)->toBe(['vlan_ids' => [10]]);
+
+    Http::assertSentCount(2);
+});
+
 test('resolveMirrorSettings prefers fzn-mdf-mgmt ports over core and mdf-mgmt patterns', function () {
     $helper = makeCentralApiHelperForSwitches();
     $device = Device::factory()->for($helper->client)->create([

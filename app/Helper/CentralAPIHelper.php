@@ -3028,13 +3028,52 @@ class CentralAPIHelper
             return ['error' => 'No scope id for device '.$device->name];
         }
 
-        $queryParameters = [
-            'view-type' => 'LOCAL',
-            'object-type' => 'LOCAL',
-            'scope-id' => $device->scope_id,
-            'device-function' => static::deviceFunctionQueryValue($device),
-        ];
+        $mergedVlanIds = [];
 
+        $deviceResult = $this->fetchVlanIdsFromL2Vlans($device, static::localDeviceInterfaceQueryParameters($device));
+        if (array_key_exists('error', $deviceResult)) {
+            return $deviceResult;
+        }
+        $mergedVlanIds = array_merge($mergedVlanIds, $deviceResult['vlan_ids']);
+
+        if (filled($device->group)) {
+            $groupScopeId = $this->resolveGroupScopeId($device);
+            if ($groupScopeId === null) {
+                return ['error' => 'Could not resolve group scope ID for device '.$device->name.'.'];
+            }
+
+            if ($groupScopeId !== (string) $device->scope_id) {
+                $groupQueryParameters = [
+                    'view-type' => 'LOCAL',
+                    'object-type' => 'LOCAL',
+                    'scope-id' => $groupScopeId,
+                    'device-function' => static::deviceFunctionQueryValue($device),
+                ];
+
+                $groupResult = $this->fetchVlanIdsFromL2Vlans($device, $groupQueryParameters);
+                if (array_key_exists('error', $groupResult)) {
+                    return $groupResult;
+                }
+
+                $mergedVlanIds = array_merge($mergedVlanIds, $groupResult['vlan_ids']);
+            }
+        }
+
+        $mergedVlanIds = array_values(array_unique($mergedVlanIds));
+        sort($mergedVlanIds);
+
+        if ($mergedVlanIds === []) {
+            return ['error' => 'No VLANs found for device '.$device->name];
+        }
+
+        return ['vlan_ids' => $mergedVlanIds];
+    }
+
+    /**
+     * @return array{vlan_ids: list<int>}|array{error: string}
+     */
+    private function fetchVlanIdsFromL2Vlans(Device $device, array $queryParameters): array
+    {
         $response = $this->get_l2_vlans($queryParameters);
         if (is_array($response) && array_key_exists('error', $response)) {
             return ['error' => (string) $response['error']];
@@ -3060,14 +3099,7 @@ class CentralAPIHelper
             }
         }
 
-        $vlanIds = array_values(array_unique($vlanIds));
-        sort($vlanIds);
-
-        if ($vlanIds === []) {
-            return ['error' => 'No VLANs found for device '.$device->name];
-        }
-
-        return ['vlan_ids' => $vlanIds];
+        return ['vlan_ids' => array_values(array_unique($vlanIds))];
     }
 
     /**
