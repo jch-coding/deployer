@@ -1697,6 +1697,19 @@ class CentralAPIHelper
         }
     }
 
+    public function patch_mirror(array $mirror, array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->patch($this->client->base_url.$this->interfaces['mirrors'].'/'.$mirror['name'], $mirror);
+
+            return $response;
+        }
+    }
+
     public function get_mirror(string $name, array $queryParameters = [])
     {
         if (! $this->client->handleBearerTokenAuth()) {

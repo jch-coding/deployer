@@ -84,41 +84,66 @@ class ConfigureMirrorSessionJob extends BaseTaskJob
             $this->task->processTaskStatusLog($message);
 
             $response = $this->centralAPIHelper->post_mirror($payload, $queryParameters);
-            if (is_array($response) && array_key_exists('error', $response)) {
-                $detail = (string) $response['error'];
-                Log::error('post_mirror failed before HTTP: '.$detail);
-                $this->task->processTaskStatusLog('Failed to create mirror session for '.$this->device->name.': '.$detail, true);
-                $this->release($this->wait_time * 60);
+            if ($this->mirrorRequestSucceeded($response)) {
+                $this->markMirrorSessionCompleted($pivotForDevice, $settings, 'created');
 
                 return;
             }
 
-            if (! $response instanceof Response) {
-                $this->task->processTaskStatusLog('Invalid response from Central for '.$this->device->name, true);
-                $this->release($this->wait_time * 60);
+            $postFailureDetail = $this->mirrorRequestFailureDetail($response);
+            Log::error('post_mirror failed for '.$this->device->name.': '.$postFailureDetail);
+            $this->task->processTaskStatusLog(
+                'post_mirror failed for '.$this->device->name.': '.$postFailureDetail.'. Trying patch_mirror...',
+                true
+            );
+
+            $patchResponse = $this->centralAPIHelper->patch_mirror($payload, $queryParameters);
+            if ($this->mirrorRequestSucceeded($patchResponse)) {
+                $this->markMirrorSessionCompleted($pivotForDevice, $settings, 'updated');
 
                 return;
             }
 
-            if ($response->successful()) {
-                $pivotForDevice->update(['status' => 'COMPLETED']);
-                $successMessage = 'Mirror session '.$settings['name'].' created for '.$this->device->name;
-                Log::info($successMessage);
-                $this->task->processTaskStatusLog($successMessage);
-                $this->task->load('devices');
-                if ($this->task->allTrackedItemsCompleted()) {
-                    $this->task->update(['status' => 'COMPLETED']);
-                }
-
-                return;
-            }
-
-            $messageStr = $this->responseMessageString($response);
-            $message = 'Failed to create mirror session for '.$this->device->name.': '.$messageStr;
+            $patchFailureDetail = $this->mirrorRequestFailureDetail($patchResponse);
+            $message = 'Failed to update mirror session for '.$this->device->name.': '.$patchFailureDetail;
             Log::error($message);
             $this->task->processTaskStatusLog($message, true);
             $this->release($this->wait_time * 60);
         }, 'Configure mirror session');
+    }
+
+    private function mirrorRequestSucceeded(mixed $response): bool
+    {
+        return $response instanceof Response && $response->successful();
+    }
+
+    /**
+     * @param  'created'|'updated'  $action
+     */
+    private function markMirrorSessionCompleted(mixed $pivotForDevice, array $settings, string $action): void
+    {
+        $pivotForDevice->update(['status' => 'COMPLETED']);
+        $verb = $action === 'created' ? 'created' : 'updated';
+        $successMessage = 'Mirror session '.$settings['name'].' '.$verb.' for '.$this->device->name;
+        Log::info($successMessage);
+        $this->task->processTaskStatusLog($successMessage);
+        $this->task->load('devices');
+        if ($this->task->allTrackedItemsCompleted()) {
+            $this->task->update(['status' => 'COMPLETED']);
+        }
+    }
+
+    private function mirrorRequestFailureDetail(mixed $response): string
+    {
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return (string) $response['error'];
+        }
+
+        if (! $response instanceof Response) {
+            return 'Invalid response from Central';
+        }
+
+        return $this->responseMessageString($response);
     }
 
     private function responseMessageString(Response $response): string

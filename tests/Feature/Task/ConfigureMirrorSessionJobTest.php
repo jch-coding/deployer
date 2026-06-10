@@ -77,6 +77,7 @@ it('creates mirror session in fallback mode and marks device completed', functio
             ]
         )
         ->andReturn($successResponse);
+    $centralApi->shouldNotReceive('patch_mirror');
 
     $job = new ConfigureMirrorSessionJob($device, $task, $centralApi, true);
     $job->handle();
@@ -140,4 +141,40 @@ it('marks device failed when mirror settings cannot be resolved', function () {
     $job->handle();
 
     expect($task->devices()->find($device->id)->pivot->status)->toBe('FAILED');
+});
+
+it('patches mirror session when post_mirror fails and marks device completed', function () {
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'CONFIGURE_MIRROR_SESSION',
+        'status' => 'IN_PROGRESS',
+        'mirror_fallback_mode' => true,
+    ]);
+
+    $device = makeMirrorTaskDevice($task, $this->client);
+
+    $failedPostResponse = Mockery::mock(Response::class);
+    $failedPostResponse->shouldReceive('successful')->andReturn(false);
+    $failedPostResponse->shouldReceive('json')->with('message')->andReturn('Cannot create duplicate config');
+    $failedPostResponse->shouldReceive('body')->andReturn('Cannot create duplicate config');
+
+    $successPatchResponse = Mockery::mock(Response::class);
+    $successPatchResponse->shouldReceive('successful')->andReturn(true);
+
+    $centralApi = Mockery::mock(CentralAPIHelper::class);
+    $centralApi->shouldReceive('resolveMirrorSettings')
+        ->once()
+        ->andReturn([
+            'name' => 'NY1-MDF-CORE-SW1-DARKTRACE-SPAN',
+            'session_id' => 1,
+            'dst_ports' => ['1/1/43'],
+            'vlan_ids' => [10, 20],
+        ]);
+    $centralApi->shouldReceive('post_mirror')->once()->andReturn($failedPostResponse);
+    $centralApi->shouldReceive('patch_mirror')->once()->andReturn($successPatchResponse);
+
+    $job = new ConfigureMirrorSessionJob($device, $task, $centralApi, true);
+    $job->handle();
+
+    expect($task->devices()->find($device->id)->pivot->status)->toBe('COMPLETED')
+        ->and($task->fresh()->status)->toBe('COMPLETED');
 });
