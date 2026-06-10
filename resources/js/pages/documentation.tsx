@@ -332,6 +332,51 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
             </>
         ),
     },
+    {
+        column: 'mirror_session_id',
+        type: 'integer',
+        accepted: (
+            <>
+                Mirror session ID for <strong>Configure Mirror Session</strong> when using explicit mirror
+                settings. Must be <code>1</code>, <code>2</code>, <code>3</code>, or <code>4</code>. Defaults
+                to <code>1</code> when omitted in explicit mode.
+            </>
+        ),
+    },
+    {
+        column: 'mirror_dst_ports',
+        type: 'string (range expression)',
+        accepted: (
+            <>
+                SPAN destination interface(s) for <strong>Configure Mirror Session</strong>. Uses the same
+                range syntax as <code>port_list</code>. Examples: <code>1/1/43</code>,{' '}
+                <code>1/1/21&amp;1/1/22</code>. Required in explicit mirror mode; omitted in fallback mode
+                when the device name matches a supported pattern.
+            </>
+        ),
+    },
+    {
+        column: 'mirror_vlans',
+        type: 'string (range expression)',
+        accepted: (
+            <>
+                VLAN IDs to mirror in explicit mode. Uses the same range syntax as{' '}
+                <code>trunk_vlan_ranges</code>. Examples: <code>10-20</code>,{' '}
+                <code>100&amp;200-202</code>. When omitted, VLANs are fetched from Central at device scope
+                and, if <code>group</code> is set, at group scope (merged and deduplicated).
+            </>
+        ),
+    },
+    {
+        column: 'mirror_name',
+        type: 'string',
+        accepted: (
+            <>
+                Mirror session name in Central for explicit mode. When omitted, defaults to{' '}
+                <code>{'{device.name}'}-DARKTRACE-SPAN</code>.
+            </>
+        ),
+    },
 ];
 
 export default function documentation() {
@@ -593,6 +638,81 @@ export default function documentation() {
                                     'vsx_system_mac',
                                 ]}
                                 optional={['vsx_isl_ports', 'vsx_keepalive_ports']}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard title="Configure Mirror Session" defaultOpen>
+                        <div className="space-y-4">
+                            <p>
+                                Device-based task{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">
+                                    CONFIGURE_MIRROR_SESSION
+                                </code>{' '}
+                                that creates or updates a local mirror session on selected switches for
+                                Darktrace SPAN. Select devices on the deployment when starting the task; CSV
+                                rows identify devices only (no interface columns).
+                            </p>
+                            <p className="font-medium text-sm">Fallback mode (no mirror columns in CSV)</p>
+                            <p className="text-sm">
+                                Used when none of the selected devices have any{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">mirror_*</code> columns
+                                populated. Only devices whose names contain{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">CORE</code>,{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">FZN-MDF-MGMT</code>, or{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">MDF-MGMT</code> are
+                                attached to the task. Session ID is <code>1</code> and the mirror name is{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">
+                                    {'{device.name}'}-DARKTRACE-SPAN
+                                </code>
+                                .
+                            </p>
+                            <p className="font-medium text-sm">Default SPAN destination ports (fallback mode)</p>
+                            <ul className="list-inside list-disc text-sm">
+                                <li>
+                                    Name contains <code>FZN-MDF-MGMT</code>: <code>1/1/21</code>,{' '}
+                                    <code>1/1/22</code>
+                                </li>
+                                <li>
+                                    Name contains <code>MDF-MGMT</code> (and not matched above):{' '}
+                                    <code>1/1/16</code>, <code>2/1/9</code>
+                                </li>
+                                <li>
+                                    Name contains <code>CORE</code> (and not matched above):{' '}
+                                    <code>1/1/43</code>
+                                </li>
+                            </ul>
+                            <p className="font-medium text-sm">Mirror source VLANs</p>
+                            <p className="text-sm">
+                                VLANs are built from L2 VLANs returned by Central at the device&apos;s local
+                                scope. When <code>group</code> is set on the device, a second lookup runs at
+                                the group&apos;s scope ID and the results are merged (duplicates removed,
+                                sorted). Include <code>group</code> on mirror targets so group VLAN templates
+                                are included in the session.
+                            </p>
+                            <p className="font-medium text-sm">Explicit mode (mirror columns in CSV)</p>
+                            <p className="text-sm">
+                                Used when any selected device has a populated{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">mirror_*</code> column.
+                                Only devices with at least one mirror column set are attached.{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">mirror_dst_ports</code>{' '}
+                                is required per device; other mirror columns override defaults when provided.
+                                If <code>mirror_vlans</code> is omitted, VLANs are fetched from Central using
+                                the same device-plus-group merge as fallback mode.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                The task posts the mirror session to Central and retries with a patch if the
+                                post fails (for example when the session already exists).
+                            </p>
+                            <ColumnPair
+                                required={['name', 'serial', 'device_function']}
+                                optional={[
+                                    'group',
+                                    'mirror_dst_ports',
+                                    'mirror_session_id',
+                                    'mirror_vlans',
+                                    'mirror_name',
+                                ]}
                             />
                         </div>
                     </DocCard>

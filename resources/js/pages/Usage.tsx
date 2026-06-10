@@ -64,6 +64,12 @@ const deploymentTasks = [
         requiresClassicCentral: false,
     },
     {
+        title: 'Configure Mirror Session',
+        description:
+            'Create or update a local Darktrace SPAN mirror session on selected switches. Uses name-pattern defaults (CORE, FZN-MDF-MGMT, MDF-MGMT) when mirror columns are omitted; otherwise uses mirror_* CSV values. VLAN sources are merged from device and group scope in Central.',
+        requiresClassicCentral: false,
+    },
+    {
         title: 'Remove VSF profile local overrides',
         description:
             'Clears VLAN, DNS, NTP, static route, and local management profile overrides introduced during VSF onboarding. Choose VSF devices only or all selected devices.',
