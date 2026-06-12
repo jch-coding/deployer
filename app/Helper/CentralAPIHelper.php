@@ -46,21 +46,21 @@ class CentralAPIHelper
     ];
 
     public array $configManagement = [
-        'persona_assignment' => 'network-config/v1alpha1/persona-assignment/',
-        'persona_mapping' => 'network-config/v1alpha1/device-persona-mapping/',
+        'persona_assignment' => 'network-config/v1alpha1/persona-assignment',
+        'persona_mapping' => 'network-config/v1alpha1/device-persona-mapping',
     ];
 
     public array $interfaces = [
-        'interface_ethernet' => 'network-config/v1alpha1/ethernet-interfaces/',
-        'interface_portchannel' => 'network-config/v1alpha1/portchannels/',
-        'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles/',
-        'interface_vlan' => 'network-config/v1alpha1/vlan-interfaces/',
-        'interface_loopback' => 'network-config/v1alpha1/loopback-interfaces/',
+        'interface_ethernet' => 'network-config/v1alpha1/ethernet-interfaces',
+        'interface_portchannel' => 'network-config/v1alpha1/portchannels',
+        'switch_port_profile' => 'network-config/v1alpha1/sw-port-profiles',
+        'interface_vlan' => 'network-config/v1alpha1/vlan-interfaces',
+        'interface_loopback' => 'network-config/v1alpha1/loopback-interfaces',
         'mirrors' => 'network-config/v1alpha1/mirrors',
     ];
 
     public array $vlans_and_networks = [
-        'l2_vlans' => 'network-config/v1alpha1/layer2-vlan/',
+        'l2_vlans' => 'network-config/v1alpha1/layer2-vlan',
     ];
 
     public array $switchMonitoring = [
@@ -72,8 +72,8 @@ class CentralAPIHelper
     ];
 
     public array $high_availability = [
-        'switch_stack' => 'network-config/v1alpha1/stacks/',
-        'vsx' => 'network-config/v1alpha1/vsx-profiles/',
+        'switch_stack' => 'network-config/v1alpha1/stacks',
+        'vsx' => 'network-config/v1alpha1/vsx-profiles',
     ];
 
     public array $classic_monitoring = [
@@ -90,19 +90,19 @@ class CentralAPIHelper
     ];
 
     public array $classic_subscription = [
-        'subscriptions' => '/platform/licensing/v1/subscriptions',
-        'enabled_services' => '/platform/licensing/v1/services/enabled',
-        'unassign_subscription' => '/platform/licensing/v1/subscriptions/unassign',
-        'assign_subscription' => '/platform/licensing/v1/subscriptions/assign',
-        'subscription_status' => '/platform/licensing/v1/subscriptions/stats',
-        'device_inventory' => '/platform/device_inventory/v1/devices',
+        'subscriptions' => 'platform/licensing/v1/subscriptions',
+        'enabled_services' => 'platform/licensing/v1/services/enabled',
+        'unassign_subscription' => 'platform/licensing/v1/subscriptions/unassign',
+        'assign_subscription' => 'platform/licensing/v1/subscriptions/assign',
+        'subscription_status' => 'platform/licensing/v1/subscriptions/stats',
+        'device_inventory' => 'platform/device_inventory/v1/devices',
     ];
 
     public function __construct(public Client $client) {}
 
     private function classicApiUrl(string $path): string
     {
-        return rtrim($this->client->classicBaseUrlString(), '/').$path;
+        return rtrim($this->client->classicBaseUrlString(), '/').'/'.ltrim($path, '/');
     }
 
     /**
@@ -491,7 +491,7 @@ class CentralAPIHelper
                 ],
             ];
             $response = Http::withToken($this->client->bearer_token)
-                ->post($this->client->base_url.$this->configManagement['persona_assignment'].$device_function, $body);
+                ->post($this->client->base_url.$this->configManagement['persona_assignment'].'/'.$device_function, $body);
 
             return $response;
         }
@@ -576,7 +576,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
-                ->post($this->client->base_url.$this->high_availability['vsx'].$vsx_profile['name'], $vsx_profile);
+                ->post($this->client->base_url.$this->high_availability['vsx'].'/'.$vsx_profile['name'], $vsx_profile);
 
             return $response;
         }
@@ -614,7 +614,7 @@ class CentralAPIHelper
                 'object-type' => 'LOCAL',
                 'scope-id' => $device->site->scope_id,
                 'device-function' => $device->device_function,
-            ])->post($this->client->base_url.$this->high_availability['switch_stack'].$stack_name, $vsf_profile);
+            ])->post($this->client->base_url.$this->high_availability['switch_stack'].'/'.$stack_name, $vsf_profile);
 
         return $response;
     }
@@ -941,7 +941,7 @@ class CentralAPIHelper
                     'scope-id' => $deviceInterface->device->scope_id,
                     'device-function' => $deviceInterface->device->device_function,
                 ])->withBody(json_encode($interface_rest_body))
-                ->patch($this->client->base_url.$this->interfaces['interface_ethernet'].$deviceInterface->interface);
+                ->patch($this->client->base_url.$this->interfaces['interface_ethernet'].'/'.$deviceInterface->interface);
 
             return $response;
         }
@@ -958,7 +958,7 @@ class CentralAPIHelper
                     'object-type' => 'LOCAL',
                     'scope-id' => $deviceInterface->device->scope_id,
                     'device-function' => $deviceInterface->device->device_function,
-                ])->get($this->client->base_url.$this->interfaces['interface_ethernet'].$deviceInterface->interface);
+                ])->get($this->client->base_url.$this->interfaces['interface_ethernet'].'/'.$deviceInterface->interface);
 
             return $response;
         }
@@ -990,7 +990,7 @@ class CentralAPIHelper
                     'object-type' => 'LOCAL',
                     'scope-id' => $deviceInterface->device->scope_id,
                     'device-function' => $deviceInterface->device->device_function,
-                ])->post($this->client->base_url.$this->interfaces['interface_portchannel'].$deviceInterface->interface, $switch_port);
+                ])->post($this->client->base_url.$this->interfaces['interface_portchannel'].'/'.$deviceInterface->interface, $switch_port);
 
             return $response;
         }
@@ -1081,7 +1081,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
-                ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].$deviceInterface->interface, $switch_port);
+                ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].'/'.$deviceInterface->interface, $switch_port);
 
             return $response;
         }
@@ -1094,7 +1094,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
-                ->delete($this->client->base_url.$this->interfaces['interface_portchannel'].$portchannel_name);
+                ->delete($this->client->base_url.$this->interfaces['interface_portchannel'].'/'.$portchannel_name);
 
             return $response;
         }
@@ -1134,7 +1134,7 @@ class CentralAPIHelper
                     'scope-id' => $deviceInterface->device->scope_id,
                     'device-function' => $deviceInterface->device->device_function,
                 ])
-                ->post($this->client->base_url.$this->interfaces['interface_vlan'].$vlan_id, $interface_vlan_body);
+                ->post($this->client->base_url.$this->interfaces['interface_vlan'].'/'.$vlan_id, $interface_vlan_body);
 
             return $response;
         }
@@ -1161,7 +1161,7 @@ class CentralAPIHelper
                     'scope-id' => $deviceInterface->device->scope_id,
                     'device-function' => $deviceInterface->device->device_function,
                 ])
-                ->patch($this->client->base_url.$this->interfaces['interface_vlan'].$vlan_id, $interface_vlan_body);
+                ->patch($this->client->base_url.$this->interfaces['interface_vlan'].'/'.$vlan_id, $interface_vlan_body);
 
             return $response;
         }
@@ -1193,7 +1193,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($query_params)
-                ->post($this->client->base_url.$this->vlans_and_networks['l2_vlans'].$l2_vlan['vlan'], $l2_vlan);
+                ->post($this->client->base_url.$this->vlans_and_networks['l2_vlans'].'/'.$l2_vlan['vlan'], $l2_vlan);
 
             return $response;
         }
@@ -1210,7 +1210,7 @@ class CentralAPIHelper
                     'scope-id' => $device->scope_id,
                     'device-function' => $device->device_function,
                 ])
-                ->delete($this->client->base_url.$this->vlans_and_networks['l2_vlans'].$l2_vlan);
+                ->delete($this->client->base_url.$this->vlans_and_networks['l2_vlans'].'/'.$l2_vlan);
 
             return $response;
         }
@@ -1517,7 +1517,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters
-                )->get($this->client->base_url.$this->interfaces['switch_port_profile'].$profile_name);
+                )->get($this->client->base_url.$this->interfaces['switch_port_profile'].'/'.$profile_name);
 
             return $response;
         }
@@ -1530,7 +1530,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
-                ->post($this->client->base_url.$this->interfaces['switch_port_profile'].$sw_port_profile['profile-name'], $sw_port_profile);
+                ->post($this->client->base_url.$this->interfaces['switch_port_profile'].'/'.$sw_port_profile['profile-name'], $sw_port_profile);
 
             return $response;
         }
@@ -1543,7 +1543,7 @@ class CentralAPIHelper
         } else {
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
-                ->patch($this->client->base_url.$this->interfaces['switch_port_profile'].$sw_port_profile['profile-name'], $sw_port_profile);
+                ->patch($this->client->base_url.$this->interfaces['switch_port_profile'].'/'.$sw_port_profile['profile-name'], $sw_port_profile);
 
             return $response;
         }
@@ -1983,6 +1983,8 @@ class CentralAPIHelper
         $response = Http::withToken($this->client->classic_access_token)
             ->withQueryParameters($queryParameters)
             ->get($this->classicApiUrl($this->classic_monitoring['aps']));
+
+        return $response;
     }
 
     /**
@@ -2856,7 +2858,7 @@ class CentralAPIHelper
 
         return Http::withToken($this->client->bearer_token)
             ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
-            ->get($this->client->base_url.$this->interfaces['interface_portchannel'].$interfaceName);
+            ->get($this->client->base_url.$this->interfaces['interface_portchannel'].'/'.$interfaceName);
     }
 
     public function post_raw_interface_portchannel(Device $device, string $interfaceName, array $payload): Response|array
@@ -2867,7 +2869,7 @@ class CentralAPIHelper
 
         return Http::withToken($this->client->bearer_token)
             ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
-            ->post($this->client->base_url.$this->interfaces['interface_portchannel'].$interfaceName, $payload);
+            ->post($this->client->base_url.$this->interfaces['interface_portchannel'].'/'.$interfaceName, $payload);
     }
 
     public function patch_raw_interface_portchannel(Device $device, string $interfaceName, array $payload): Response|array
@@ -2878,7 +2880,7 @@ class CentralAPIHelper
 
         return Http::withToken($this->client->bearer_token)
             ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
-            ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].$interfaceName, $payload);
+            ->patch($this->client->base_url.$this->interfaces['interface_portchannel'].'/'.$interfaceName, $payload);
     }
 
     public function get_ethernet_interface_by_name(Device $device, string $interfaceName): Response|array
@@ -2889,7 +2891,7 @@ class CentralAPIHelper
 
         return Http::withToken($this->client->bearer_token)
             ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
-            ->get($this->client->base_url.$this->interfaces['interface_ethernet'].$interfaceName);
+            ->get($this->client->base_url.$this->interfaces['interface_ethernet'].'/'.$interfaceName);
     }
 
     public function patch_ethernet_interface_by_name(Device $device, string $interfaceName, array $patchBody): Response|array
@@ -2901,7 +2903,7 @@ class CentralAPIHelper
         return Http::withToken($this->client->bearer_token)
             ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
             ->withBody(json_encode($patchBody))
-            ->patch($this->client->base_url.$this->interfaces['interface_ethernet'].$interfaceName);
+            ->patch($this->client->base_url.$this->interfaces['interface_ethernet'].'/'.$interfaceName);
     }
 
     protected function isSuccessfulCentralResponse(mixed $response): bool
