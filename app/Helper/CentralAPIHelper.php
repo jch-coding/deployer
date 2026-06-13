@@ -2038,9 +2038,9 @@ class CentralAPIHelper
         array $queryParameters = [],
     ): array {
         $allItems = [];
-        $limit = (int) ($queryParameters['limit'] ?? 1000);
+        $limit = (int) ($queryParameters['limit'] ?? 999);
         if ($limit <= 0) {
-            $limit = 1000;
+            $limit = 999;
         }
         $offset = (int) ($queryParameters['offset'] ?? 0);
         $baseParams = $queryParameters;
