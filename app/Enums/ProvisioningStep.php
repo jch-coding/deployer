@@ -2,7 +2,9 @@
 
 namespace App\Enums;
 
+use App\Helper\CentralAPIHelper;
 use App\Models\Device;
+use App\Services\Provisioning\ProvisioningStepContext;
 
 enum ProvisioningStep: string
 {
@@ -72,18 +74,41 @@ enum ProvisioningStep: string
         return $cases;
     }
 
-    public function shouldSkipForDevice(Device $device): bool
+    public function shouldSkipForDevice(Device $device, ?ProvisioningStepContext $context = null): bool
     {
+        if (self::isApDevice($device) && $this->order() > self::NameDevice->order()) {
+            return true;
+        }
+
+        $vsxFallbackMode = $context?->vsxFallbackMode ?? false;
+        $mirrorFallbackMode = $context?->mirrorFallbackMode ?? false;
+
         return match ($this) {
             self::WaitForVsfStackScope => ! $device->sku,
-            self::CreateStackProfile => ! $device->sku && ! $device->vsx_profile,
-            self::ConfigureMirrorSessions => ! self::deviceHasMirrorConfig($device),
+            self::CreateStackProfile => ! $device->sku
+                && ! filled($device->vsx_profile)
+                && ! ($vsxFallbackMode && CentralAPIHelper::deviceMatchesVsxNamePattern($device)),
+            self::ConfigureMirrorSessions => ! self::deviceNeedsMirrorSession($device, $mirrorFallbackMode),
             self::ConfigureVlanInterfaces => $device->interfaces()->where('interface_kind', 'VLAN')->doesntExist(),
             self::ConfigureLagInterfaces => $device->interfaces()->where('interface_kind', 'LAG')->doesntExist(),
             self::ConfigureEthernetInterfaces => $device->interfaces()->where('interface_kind', 'ETHERNET')->doesntExist(),
             self::ClearLocalOverrides => $device->sku === null,
             default => false,
         };
+    }
+
+    public static function isApDevice(Device $device): bool
+    {
+        return str_contains(strtoupper((string) $device->device_function), 'AP');
+    }
+
+    public static function deviceNeedsMirrorSession(Device $device, bool $fallbackMode = false): bool
+    {
+        if (self::deviceHasMirrorConfig($device)) {
+            return true;
+        }
+
+        return $fallbackMode && CentralAPIHelper::deviceMatchesMirrorSessionNamePattern($device);
     }
 
     public static function deviceHasMirrorConfig(Device $device): bool

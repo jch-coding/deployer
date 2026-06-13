@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Enums\ProvisioningStep;
+use App\Helper\CentralAPIHelper;
 use App\JobQueueShard;
 use App\LicenseType;
 use App\Models\Deployment;
@@ -52,8 +53,12 @@ class ProvisioningWorkflowService
         $deploymentTime = max(1, (int) ($options['deployment_time'] ?? 10));
         $waitTime = max(1, (int) ($options['wait_time'] ?? 1));
         $jobQueue = JobQueueShard::fromUserEntropy((int) $user->id, (string) Str::uuid());
+        $stepContext = new ProvisioningStepContext(
+            CentralAPIHelper::deploymentUsesVsxFallbackMode($devices),
+            CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices),
+        );
 
-        return DB::transaction(function () use ($deployment, $user, $devices, $licensingConfig, $deploymentTime, $waitTime, $jobQueue): ProvisioningWorkflow {
+        return DB::transaction(function () use ($deployment, $user, $devices, $licensingConfig, $deploymentTime, $waitTime, $jobQueue, $stepContext): ProvisioningWorkflow {
             $workflow = ProvisioningWorkflow::query()->create([
                 'deployment_id' => $deployment->id,
                 'user_id' => $user->id,
@@ -75,7 +80,7 @@ class ProvisioningWorkflowService
                 ]);
 
                 foreach (ProvisioningStep::ordered() as $step) {
-                    $status = $step->shouldSkipForDevice($device) ? 'skipped' : 'pending';
+                    $status = $step->shouldSkipForDevice($device, $stepContext) ? 'skipped' : 'pending';
                     ProvisioningWorkflowDeviceStep::query()->create([
                         'provisioning_workflow_device_id' => $workflowDevice->id,
                         'step_key' => $step->value,
@@ -86,7 +91,7 @@ class ProvisioningWorkflowService
                     ]);
                 }
 
-                $firstStep = $this->firstRunnableStep($device);
+                $firstStep = $this->firstRunnableStep($device, $stepContext);
                 if ($firstStep !== null) {
                     $firstStepRow = $workflowDevice->steps()->where('step_key', $firstStep->value)->first();
                     $firstStepRow?->markInProgress($firstStep->label().'...');
@@ -133,11 +138,12 @@ class ProvisioningWorkflowService
         }
 
         $fromOrder = $fromStep->order();
+        $stepContext = ProvisioningStepContext::forWorkflow($workflow);
 
         foreach ($workflowDevice->steps as $stepRow) {
             $stepEnum = ProvisioningStep::from($stepRow->step_key);
             if ($stepEnum->order() >= $fromOrder) {
-                if ($stepEnum->shouldSkipForDevice($workflowDevice->device)) {
+                if ($stepEnum->shouldSkipForDevice($workflowDevice->device, $stepContext)) {
                     $stepRow->markSkipped('Not applicable for this device.');
                 } else {
                     $stepRow->resetToPending();
@@ -321,10 +327,10 @@ class ProvisioningWorkflowService
         ];
     }
 
-    private function firstRunnableStep(Device $device): ?ProvisioningStep
+    private function firstRunnableStep(Device $device, ProvisioningStepContext $context): ?ProvisioningStep
     {
         foreach (ProvisioningStep::ordered() as $step) {
-            if (! $step->shouldSkipForDevice($device)) {
+            if (! $step->shouldSkipForDevice($device, $context)) {
                 return $step;
             }
         }

@@ -18,6 +18,7 @@ use App\Actions\Provisioning\VerifyAndAssignLicensingAction;
 use App\Actions\Provisioning\WaitForVsfStackScopeAction;
 use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
+use App\Models\Device;
 use App\Models\ProvisioningWorkflowDevice;
 
 class ProvisioningStepRunner
@@ -46,11 +47,12 @@ class ProvisioningStepRunner
         ProvisioningStep $step,
         CentralAPIHelper $centralAPIHelper,
     ): ProvisioningStepResult {
-        $workflowDevice->loadMissing('device.site', 'device.interfaces', 'workflow.deployment.client', 'steps');
+        $workflowDevice->loadMissing('device.site', 'device.interfaces', 'workflow.deployment.client', 'workflow.workflowDevices.device', 'steps');
         $device = $workflowDevice->device;
         $client = $workflowDevice->workflow->deployment->client;
+        $context = ProvisioningStepContext::forWorkflow($workflowDevice->workflow);
 
-        if ($step->shouldSkipForDevice($device)) {
+        if ($step->shouldSkipForDevice($device, $context)) {
             return ProvisioningStepResult::skipped($step->label().' not applicable for this device.');
         }
 
@@ -73,7 +75,11 @@ class ProvisioningStepRunner
             ),
             ProvisioningStep::ConfigureLagInterfaces => $this->configureDeviceLagInterfacesAction->execute($device, $centralAPIHelper),
             ProvisioningStep::ConfigureEthernetInterfaces => $this->configureDeviceEthernetInterfacesAction->execute($device, $centralAPIHelper),
-            ProvisioningStep::ConfigureMirrorSessions => $this->configureMirrorSessionAction->execute($device, $centralAPIHelper),
+            ProvisioningStep::ConfigureMirrorSessions => $this->configureMirrorSessionAction->execute(
+                $device,
+                $centralAPIHelper,
+                $context->mirrorFallbackMode,
+            ),
             ProvisioningStep::ClearLocalOverrides => $this->clearLocalOverridesAction->execute($device, $centralAPIHelper),
         };
     }
@@ -109,8 +115,10 @@ class ProvisioningStepRunner
             return $this->createVsfProfileAction->execute($device, $centralAPIHelper);
         }
 
-        if ($device->vsx_profile) {
-            return $this->vsxCoordinator->attemptVsxProfileCreation($workflowDevice, $centralAPIHelper);
+        $context = ProvisioningStepContext::forWorkflow($workflowDevice->workflow);
+
+        if (filled($device->vsx_profile) || ($context->vsxFallbackMode && CentralAPIHelper::deviceMatchesVsxNamePattern($device))) {
+            return $this->vsxCoordinator->attemptVsxProfileCreation($workflowDevice, $centralAPIHelper, $context);
         }
 
         return ProvisioningStepResult::skipped('No stack profile required.');

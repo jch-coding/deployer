@@ -5,7 +5,6 @@ namespace App\Services\Provisioning;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\ProvisioningWorkflow;
-use Illuminate\Http\Client\Response;
 
 class ClassicDeviceOnlineService
 {
@@ -14,12 +13,12 @@ class ClassicDeviceOnlineService
      */
     public function fetchSwitchStatuses(CentralAPIHelper $centralAPIHelper): array
     {
-        $response = $centralAPIHelper->classic_get_switches(['limit' => 1000]);
-        if (is_array($response) || ! $response instanceof Response || ! $response->ok()) {
+        $result = $centralAPIHelper->classic_collect_all_switches();
+        if (array_key_exists('error', $result)) {
             return [];
         }
 
-        $switches = $response->json('switches') ?? [];
+        $switches = $result['switches'] ?? [];
 
         return $this->indexBySerial($switches);
     }
@@ -29,12 +28,12 @@ class ClassicDeviceOnlineService
      */
     public function fetchApStatuses(CentralAPIHelper $centralAPIHelper): array
     {
-        $response = $centralAPIHelper->classic_get_aps(['limit' => 1000]);
-        if (is_array($response) || ! $response instanceof Response || ! $response->ok()) {
+        $result = $centralAPIHelper->classic_collect_all_aps();
+        if (array_key_exists('error', $result)) {
             return [];
         }
 
-        $aps = $response->json('aps') ?? [];
+        $aps = $result['aps'] ?? [];
 
         return $this->indexBySerial($aps);
     }

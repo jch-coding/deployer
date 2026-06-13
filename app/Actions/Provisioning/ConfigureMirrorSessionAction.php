@@ -12,7 +12,7 @@ class ConfigureMirrorSessionAction
 {
     public function execute(Device $device, CentralAPIHelper $centralAPIHelper, bool $fallbackMode = false): ProvisioningStepResult
     {
-        if (! ProvisioningStep::deviceHasMirrorConfig($device)) {
+        if (! ProvisioningStep::deviceNeedsMirrorSession($device, $fallbackMode)) {
             return ProvisioningStepResult::skipped('No mirror session configured.');
         }
 

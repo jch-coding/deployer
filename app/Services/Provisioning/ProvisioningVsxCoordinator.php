@@ -17,15 +17,17 @@ class ProvisioningVsxCoordinator
     public function attemptVsxProfileCreation(
         ProvisioningWorkflowDevice $workflowDevice,
         CentralAPIHelper $centralAPIHelper,
+        ?ProvisioningStepContext $context = null,
     ): ProvisioningStepResult {
+        $context ??= ProvisioningStepContext::forWorkflow($workflowDevice->workflow);
         $device = $workflowDevice->device;
-        $profileName = (string) $device->vsx_profile;
+        $profileName = CentralAPIHelper::resolveVsxProfileName($device, $context->vsxFallbackMode);
 
-        if ($profileName === '') {
+        if ($profileName === null || $profileName === '') {
             return ProvisioningStepResult::skipped('No VSX profile configured.');
         }
 
-        $peers = $this->findReadyPeers($workflowDevice, $profileName);
+        $peers = $this->findReadyPeers($workflowDevice, $profileName, $context->vsxFallbackMode);
         if ($peers === null) {
             $workflowDevice->update([
                 'vsx_wait_state' => 'waiting_for_peer',
@@ -35,7 +37,15 @@ class ProvisioningVsxCoordinator
             return ProvisioningStepResult::waitingPeer('Waiting for VSX peer device.');
         }
 
-        $result = $this->createVsxProfilePairAction->execute($profileName, $peers, $centralAPIHelper);
+        $preparedPeers = $peers->map(function (Device $peer) use ($context): Device {
+            if ($context->vsxFallbackMode && ! filled($peer->vsx_profile)) {
+                CentralAPIHelper::applyVsxFallbackAttributes($peer);
+            }
+
+            return $peer;
+        });
+
+        $result = $this->createVsxProfilePairAction->execute($profileName, $preparedPeers, $centralAPIHelper);
         if ($result->isCompleted()) {
             foreach ($peers as $peerDevice) {
                 ProvisioningWorkflowDevice::query()
@@ -51,16 +61,23 @@ class ProvisioningVsxCoordinator
     /**
      * @return Collection<int, Device>|null
      */
-    private function findReadyPeers(ProvisioningWorkflowDevice $workflowDevice, string $profileName): ?Collection
-    {
+    private function findReadyPeers(
+        ProvisioningWorkflowDevice $workflowDevice,
+        string $profileName,
+        bool $fallbackMode,
+    ): ?Collection {
         $workflowDevice->loadMissing('device');
-        $device = $workflowDevice->device;
 
         $peerWorkflowDevices = ProvisioningWorkflowDevice::query()
             ->where('provisioning_workflow_id', $workflowDevice->provisioning_workflow_id)
-            ->whereHas('device', fn ($query) => $query->where('vsx_profile', $profileName))
             ->with('device')
-            ->get();
+            ->get()
+            ->filter(function (ProvisioningWorkflowDevice $row) use ($profileName, $fallbackMode): bool {
+                $resolvedProfile = CentralAPIHelper::resolveVsxProfileName($row->device, $fallbackMode);
+
+                return $resolvedProfile === $profileName;
+            })
+            ->values();
 
         if ($peerWorkflowDevices->count() !== 2) {
             return null;

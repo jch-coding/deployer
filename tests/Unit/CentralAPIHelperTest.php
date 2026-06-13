@@ -1390,6 +1390,61 @@ test('deploymentUsesMirrorFallbackMode is true when no selected device has mirro
     expect(CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices))->toBeFalse();
 });
 
+test('deploymentUsesVsxFallbackMode is true when no selected device has vsx attributes', function () {
+    $devices = Device::factory()->count(2)->create([
+        'vsx_profile' => null,
+        'vsx_role' => null,
+        'vsx_system_mac' => null,
+    ]);
+
+    expect(CentralAPIHelper::deploymentUsesVsxFallbackMode(collect($devices)))->toBeTrue();
+
+    $devices->first()->vsx_profile = 'pair-1';
+
+    expect(CentralAPIHelper::deploymentUsesVsxFallbackMode($devices))->toBeFalse();
+});
+
+test('applyVsxFallbackAttributes infers core and svr profile metadata from device names', function () {
+    $corePrimary = Device::factory()->make(['name' => 'NY1-MDF-CORE-SW1']);
+    $coreSecondary = Device::factory()->make(['name' => 'NY1-MDF-CORE-SW2']);
+    $svrPrimary = Device::factory()->make(['name' => 'NY1-MDF-SVR-SW1']);
+
+    expect(CentralAPIHelper::applyVsxFallbackAttributes($corePrimary))->toBeTrue()
+        ->and($corePrimary->vsx_profile)->toBe('NY1-MDF-CORE-VSX-PROFILE')
+        ->and($corePrimary->vsx_role)->toBe('VSX_PRIMARY')
+        ->and($corePrimary->vsx_system_mac)->toBe('02:00:00:00:00:01')
+        ->and(CentralAPIHelper::applyVsxFallbackAttributes($coreSecondary))->toBeTrue()
+        ->and($coreSecondary->vsx_role)->toBe('VSX_SECONDARY')
+        ->and($coreSecondary->vsx_system_mac)->toBe('02:00:00:00:00:01')
+        ->and(CentralAPIHelper::applyVsxFallbackAttributes($svrPrimary))->toBeTrue()
+        ->and($svrPrimary->vsx_profile)->toBe('NY1-MDF-SVR-VSX-PROFILE')
+        ->and($svrPrimary->vsx_role)->toBe('VSX_PRIMARY')
+        ->and($svrPrimary->vsx_system_mac)->toBe('02:00:00:00:00:02');
+});
+
+test('inferVsxRoleFromName maps sw1 and sw2 suffixes to primary and secondary roles', function () {
+    expect(CentralAPIHelper::inferVsxRoleFromName(Device::factory()->make(['name' => 'WHSE-MDF-CORE-SW1'])))
+        ->toBe(App\VsxRole::VSX_PRIMARY)
+        ->and(CentralAPIHelper::inferVsxRoleFromName(Device::factory()->make(['name' => 'WHSE-MDF-CORE-SW2'])))
+        ->toBe(App\VsxRole::VSX_SECONDARY);
+});
+
+test('classic_collect_all_switches paginates until all pages are loaded', function () {
+    Http::fake([
+        '*' => Http::sequence()
+            ->push(['switches' => [['serial' => 'SN1', 'status' => 'Up']], 'total' => 2], 200)
+            ->push(['switches' => [['serial' => 'SN2', 'status' => 'Down']], 'total' => 2], 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->classic_collect_all_switches(['limit' => 1]);
+
+    expect($result)->toHaveKey('switches')
+        ->and($result['switches'])->toHaveCount(2)
+        ->and($result['switches'][0]['serial'])->toBe('SN1')
+        ->and($result['switches'][1]['serial'])->toBe('SN2');
+});
+
 test('deviceMatchesMirrorSessionNamePattern matches core fzn-mdf-mgmt and mdf-mgmt names', function () {
     expect(CentralAPIHelper::deviceMatchesMirrorSessionNamePattern(Device::factory()->create(['name' => 'NY1-MDF-CORE-SW1'])))->toBeTrue()
         ->and(CentralAPIHelper::deviceMatchesMirrorSessionNamePattern(Device::factory()->create(['name' => 'FZN-MDF-MGMT-SW1'])))->toBeTrue()

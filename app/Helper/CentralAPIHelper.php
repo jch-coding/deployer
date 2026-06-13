@@ -1988,6 +1988,19 @@ class CentralAPIHelper
     }
 
     /**
+     * @param  array<string, mixed>  $queryParameters
+     * @return array{aps: array<int, array<string, mixed>>}|array{error: string}
+     */
+    public function classic_collect_all_aps(array $queryParameters = []): array
+    {
+        return $this->classicCollectPaginatedMonitoringResource(
+            'aps',
+            fn (array $params) => $this->classic_get_aps($params),
+            $queryParameters,
+        );
+    }
+
+    /**
      * @param  $queryParameters  array<string, mixed> group : string, status: string, limit: int, offset: int
      */
     public function classic_get_switches($queryParameters = [])
@@ -2000,6 +2013,73 @@ class CentralAPIHelper
             ->get($this->classicApiUrl($this->classic_monitoring['switches']));
 
         return $response;
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @return array{switches: array<int, array<string, mixed>>}|array{error: string}
+     */
+    public function classic_collect_all_switches(array $queryParameters = []): array
+    {
+        return $this->classicCollectPaginatedMonitoringResource(
+            'switches',
+            fn (array $params) => $this->classic_get_switches($params),
+            $queryParameters,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @return array<string, array<int, array<string, mixed>>>|array{error: string}
+     */
+    private function classicCollectPaginatedMonitoringResource(
+        string $jsonKey,
+        callable $fetchPage,
+        array $queryParameters = [],
+    ): array {
+        $allItems = [];
+        $limit = (int) ($queryParameters['limit'] ?? 1000);
+        if ($limit <= 0) {
+            $limit = 1000;
+        }
+        $offset = (int) ($queryParameters['offset'] ?? 0);
+        $baseParams = $queryParameters;
+        unset($baseParams['limit'], $baseParams['offset']);
+
+        while (true) {
+            $response = $fetchPage(array_merge($baseParams, ['limit' => $limit, 'offset' => $offset]));
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch '.$jsonKey.' from Central.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get '.$jsonKey.' from central.'];
+            }
+
+            $pageItems = $response->json($jsonKey, []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            $allItems = array_merge($allItems, $pageItems);
+
+            $total = $response->json('total');
+            if (is_numeric($total) && count($allItems) >= (int) $total) {
+                break;
+            }
+
+            if (count($pageItems) < $limit) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        return [$jsonKey => $allItems];
     }
 
     public function classic_get_groups()
@@ -2416,6 +2496,117 @@ class CentralAPIHelper
         sort($names, SORT_NATURAL);
 
         return $names;
+    }
+
+    public static function deviceHasVsxAttributes(Device $device): bool
+    {
+        return filled($device->vsx_profile)
+            || filled($device->vsx_role)
+            || filled($device->vsx_system_mac)
+            || filled($device->vsx_isl_ports)
+            || filled($device->vsx_keepalive_ports);
+    }
+
+    /**
+     * @param  Collection<int, Device>  $selectedDevices
+     */
+    public static function deploymentUsesVsxFallbackMode(Collection $selectedDevices): bool
+    {
+        return ! $selectedDevices->contains(fn (Device $device) => self::deviceHasVsxAttributes($device));
+    }
+
+    public static function deviceMatchesVsxNamePattern(Device $device): bool
+    {
+        $name = strtoupper((string) $device->name);
+
+        return str_contains($name, 'CORE-SW1')
+            || str_contains($name, 'CORE-SW2')
+            || str_contains($name, 'SVR-SW1')
+            || str_contains($name, 'SVR-SW2');
+    }
+
+    public static function inferVsxRoleFromName(Device $device): ?VsxRole
+    {
+        $name = strtoupper((string) $device->name);
+
+        if (str_contains($name, 'CORE-SW1') || str_contains($name, 'SVR-SW1')) {
+            return VsxRole::VSX_PRIMARY;
+        }
+
+        if (str_contains($name, 'CORE-SW2') || str_contains($name, 'SVR-SW2')) {
+            return VsxRole::VSX_SECONDARY;
+        }
+
+        return null;
+    }
+
+    public static function inferVsxProfileNameFromDevice(Device $device): ?string
+    {
+        $name = (string) $device->name;
+        $prefix = explode('-', $name, 2)[0] ?? '';
+        if ($prefix === '') {
+            return null;
+        }
+
+        $upper = strtoupper($name);
+        if (str_contains($upper, 'CORE-SW1') || str_contains($upper, 'CORE-SW2')) {
+            return $prefix.'-MDF-CORE-VSX-PROFILE';
+        }
+
+        if (str_contains($upper, 'SVR-SW1') || str_contains($upper, 'SVR-SW2')) {
+            return $prefix.'-MDF-SVR-VSX-PROFILE';
+        }
+
+        return null;
+    }
+
+    public static function inferVsxSystemMacFromDevice(Device $device): ?string
+    {
+        $name = strtoupper((string) $device->name);
+
+        if (str_contains($name, 'CORE-SW1') || str_contains($name, 'CORE-SW2')) {
+            return '02:00:00:00:00:01';
+        }
+
+        if (str_contains($name, 'SVR-SW1') || str_contains($name, 'SVR-SW2')) {
+            return '02:00:00:00:00:02';
+        }
+
+        return null;
+    }
+
+    public static function applyVsxFallbackAttributes(Device $device): bool
+    {
+        if (! self::deviceMatchesVsxNamePattern($device)) {
+            return false;
+        }
+
+        $profile = self::inferVsxProfileNameFromDevice($device);
+        $role = self::inferVsxRoleFromName($device);
+        $mac = self::inferVsxSystemMacFromDevice($device);
+
+        if ($profile === null || $role === null || $mac === null) {
+            return false;
+        }
+
+        $device->vsx_profile = $profile;
+        $device->vsx_role = $role->name;
+        $device->vsx_system_mac = $mac;
+
+        return true;
+    }
+
+    public static function resolveVsxProfileName(Device $device, bool $fallbackMode): ?string
+    {
+        if (filled($device->vsx_profile)) {
+            return (string) $device->vsx_profile;
+        }
+
+        if ($fallbackMode) {
+            return self::inferVsxProfileNameFromDevice($device);
+        }
+
+        return null;
     }
 
     /**

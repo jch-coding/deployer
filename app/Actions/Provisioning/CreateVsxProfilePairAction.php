@@ -120,6 +120,12 @@ class CreateVsxProfilePairAction
             return 'VSX profile peers must belong to the same site.';
         }
 
+        foreach ($devices as $device) {
+            if (! filled($device->group)) {
+                return 'Device '.$device->name.' has no group set (required for VRF ensure).';
+            }
+        }
+
         return null;
     }
 

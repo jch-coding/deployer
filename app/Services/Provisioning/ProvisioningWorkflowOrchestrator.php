@@ -177,6 +177,7 @@ class ProvisioningWorkflowOrchestrator
     {
         $device = $workflowDevice->device;
         $foundCurrent = false;
+        $context = ProvisioningStepContext::forWorkflow($workflowDevice->workflow);
 
         foreach (ProvisioningStep::ordered() as $step) {
             if (! $foundCurrent) {
@@ -187,7 +188,7 @@ class ProvisioningWorkflowOrchestrator
                 continue;
             }
 
-            if ($step->shouldSkipForDevice($device)) {
+            if ($step->shouldSkipForDevice($device, $context)) {
                 $stepRow = $workflowDevice->steps->firstWhere('step_key', $step->value);
                 if ($stepRow instanceof ProvisioningWorkflowDeviceStep && $stepRow->status === 'pending') {
                     $stepRow->markSkipped('Not applicable for this device.');
