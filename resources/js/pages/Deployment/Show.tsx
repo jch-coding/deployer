@@ -1,6 +1,6 @@
 import { Form, router, useForm, usePage } from '@inertiajs/react';
 import type { RowSelectionState } from '@tanstack/react-table';
-import { Download, Search } from 'lucide-react';
+import { Crown, Download, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { toast } from 'sonner';
@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import {
-    deploymentShowColumns,
+    createDeploymentShowColumns,
     type DeviceDef,
 } from '@/components/ui/devices-columns';
 import { Input } from '@/components/ui/input';
@@ -114,6 +114,11 @@ function groupCsvUploadErrors(
     return { headerErrors, rowErrors, otherErrors };
 }
 
+type CentralScopeOption = {
+    scopeName: string;
+    scopeId: string;
+};
+
 type DeploymentPageProps = {
     devices: Paginator<DeviceDef>;
     device_search?: string;
@@ -129,6 +134,10 @@ type DeploymentPageProps = {
     licensing_synced_at: string | null;
     cx_firmware_versions: string[];
     central_firmware_error: string | null;
+    central_sites: CentralScopeOption[];
+    central_sites_error: string | null;
+    central_device_groups: CentralScopeOption[];
+    central_device_groups_error: string | null;
 } & SharedData;
 export default function Show() {
     const {
@@ -176,7 +185,27 @@ export default function Show() {
         licensing_synced_at = null,
         cx_firmware_versions = [],
         central_firmware_error = null,
+        central_sites = [],
+        central_sites_error = null,
+        central_device_groups = [],
+        central_device_groups_error = null,
     } = usePage<DeploymentPageProps>().props;
+
+    const deviceTableColumns = useMemo(
+        () =>
+            createDeploymentShowColumns({
+                centralSites: central_sites,
+                centralDeviceGroups: central_device_groups,
+                centralSitesError: central_sites_error,
+                centralDeviceGroupsError: central_device_groups_error,
+            }),
+        [
+            central_sites,
+            central_device_groups,
+            central_sites_error,
+            central_device_groups_error,
+        ],
+    );
 
     const classicCentralTaskTypes = new Set([
         'ASSOCIATE_DEVICE_TO_SITE',
@@ -347,7 +376,11 @@ export default function Show() {
                 </Tooltip>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button asChild variant="default">
+                        <Button
+                            asChild
+                            variant="default"
+                            className="hover:bg-pink-500 hover:text-white"
+                        >
                             <a
                                 href={
                                     selectedIds.length > 0
@@ -356,7 +389,8 @@ export default function Show() {
                                 }
                                 data-test="run-provisioning-workflow"
                             >
-                                Run provisioning workflow
+                                <Crown className="size-4" aria-hidden />
+                                I'm a Diva
                             </a>
                         </Button>
                     </TooltipTrigger>
@@ -460,7 +494,7 @@ export default function Show() {
                             ) : null}
                             <DataTable<DeviceDef, unknown>
                                 data={devicesFromServer}
-                                columns={deploymentShowColumns}
+                                columns={deviceTableColumns}
                                 getRowId={(row) => String(row.id)}
                                 enableRowSelection
                                 rowSelection={rowSelection}

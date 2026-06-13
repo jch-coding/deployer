@@ -1,7 +1,7 @@
 import { Link, router } from '@inertiajs/react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Eye, MoreHorizontal, Pencil, RefreshCw, TrashIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -12,6 +12,13 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     Tooltip,
     TooltipContent,
@@ -24,20 +31,34 @@ import {
     show as showDevice,
 } from '@/routes/devices';
 
+type CentralScopeOption = {
+    scopeName: string;
+    scopeId: string;
+};
+
 export type DeviceDef = {
     id: number;
     name: string;
     serial: string | number;
     device_function: string;
-    interfaces: {
+    site?: string | null;
+    group?: string | null;
+    interfaces?: {
         id: number;
         interface: string;
         ip_address?: string;
         sw_profile?: string;
         description?: string;
         lacp_profile_id?: number;
-    }[]
-}
+    }[];
+};
+
+type DeploymentShowColumnOptions = {
+    centralSites: CentralScopeOption[];
+    centralDeviceGroups: CentralScopeOption[];
+    centralSitesError: string | null;
+    centralDeviceGroupsError: string | null;
+};
 
 function EditableDeviceNameCell({ id, name }: { id: number; name: string }) {
     const [editing, setEditing] = useState(false);
@@ -122,6 +143,90 @@ function EditableDeviceSerialCell({
                 </Button>
             </span>
         </p>
+    );
+}
+
+function DeviceMetadataSelectCell({
+    deviceId,
+    field,
+    value,
+    options,
+    centralError,
+}: {
+    deviceId: number;
+    field: 'site' | 'group';
+    value: string | null;
+    options: CentralScopeOption[];
+    centralError: string | null;
+}) {
+    const [saving, setSaving] = useState(false);
+    const mergedOptions = useMemo(() => {
+        const trimmed = value?.trim();
+        if (!trimmed || options.some((option) => option.scopeName === trimmed)) {
+            return options;
+        }
+
+        return [...options, { scopeName: trimmed, scopeId: '' }];
+    }, [options, value]);
+
+    const editable = centralError === null && !saving;
+    const selectValue = value?.trim() || '__none__';
+
+    const handleChange = (next: string) => {
+        const newValue = next === '__none__' ? null : next;
+        const currentValue = value?.trim() || null;
+        if (currentValue === newValue) {
+            return;
+        }
+
+        setSaving(true);
+        router.patch(
+            `/devices/${deviceId}`,
+            { [field]: newValue },
+            {
+                preserveScroll: true,
+                only: ['devices'],
+                onFinish: () => setSaving(false),
+            },
+        );
+    };
+
+    if (centralError) {
+        return (
+            <span
+                className="text-muted-foreground text-xs"
+                title={centralError}
+            >
+                {value?.trim() || '—'}
+            </span>
+        );
+    }
+
+    return (
+        <Select
+            value={selectValue}
+            disabled={!editable}
+            onValueChange={handleChange}
+        >
+            <SelectTrigger
+                className="h-8 min-w-[8rem] text-sm"
+                aria-label={field}
+                data-test={`device-${field}-select-${deviceId}`}
+            >
+                <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="__none__">None</SelectItem>
+                {mergedOptions.map((option) => (
+                    <SelectItem
+                        key={option.scopeName}
+                        value={option.scopeName}
+                    >
+                        {option.scopeName}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
     );
 }
 
@@ -210,7 +315,7 @@ export const deploymentShowSelectColumn: ColumnDef<DeviceDef> = {
     enableHiding: false,
 };
 
-const deploymentShowColumnsBase: ColumnDef<DeviceDef>[] = [
+const sharedDeviceColumns: ColumnDef<DeviceDef>[] = [
     {
         accessorKey: 'name',
         header: 'Name',
@@ -235,52 +340,99 @@ const deploymentShowColumnsBase: ColumnDef<DeviceDef>[] = [
         accessorKey: 'device_function',
         header: 'Device Function',
     },
-    {
-        id: "actions",
-        header: 'Interfaces',
-        cell: ({ row }) => (
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        className="h-8 w-8 p-0"
-                        data-test="actions-open"
-                    >
-                        <span className="sr-only">Open menu</span>
-                        <MoreHorizontal className="h-5 w-5" />
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="overflow-y-scroll max-h-24">
-                    <DropdownMenuLabel>Interfaces</DropdownMenuLabel>
-                    {
-                        row.original.interfaces.map((device_interface) => (
-                            <DropdownMenuItem key={device_interface.id}>
-                                {! device_interface.interface.includes('/') && ! device_interface.lacp_profile_id ? 'VLAN' : '' } {device_interface.lacp_profile_id ? 'LAG' : '' } {device_interface.interface} {device_interface.ip_address ? ` - IP: ${device_interface.ip_address}`: '' } {device_interface.sw_profile ? `(${device_interface.sw_profile})` : ''} {device_interface.description ? ` - desc: ${device_interface.description}` : ''}
-                            </DropdownMenuItem>
-                        ))
-                    }
-                </DropdownMenuContent>
-            </DropdownMenu>
-        )
-    },
-    {
-        id: 'delete',
-        cell: ({ row }) => (
-            <DeviceScopeAndDeleteActions id={row.original.id} />
-        ),
-    },
 ];
+
+const deviceActionsColumn: ColumnDef<DeviceDef> = {
+    id: 'delete',
+    cell: ({ row }) => <DeviceScopeAndDeleteActions id={row.original.id} />,
+};
+
+const interfacesColumn: ColumnDef<DeviceDef> = {
+    id: 'actions',
+    header: 'Interfaces',
+    cell: ({ row }) => (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                    data-test="actions-open"
+                >
+                    <span className="sr-only">Open menu</span>
+                    <MoreHorizontal className="h-5 w-5" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+                align="end"
+                className="max-h-24 overflow-y-scroll"
+            >
+                <DropdownMenuLabel>Interfaces</DropdownMenuLabel>
+                {(row.original.interfaces ?? []).map((device_interface) => (
+                    <DropdownMenuItem key={device_interface.id}>
+                        {!device_interface.interface.includes('/') &&
+                        !device_interface.lacp_profile_id
+                            ? 'VLAN'
+                            : ''}{' '}
+                        {device_interface.lacp_profile_id ? 'LAG' : ''}{' '}
+                        {device_interface.interface}{' '}
+                        {device_interface.ip_address
+                            ? ` - IP: ${device_interface.ip_address}`
+                            : ''}{' '}
+                        {device_interface.sw_profile
+                            ? `(${device_interface.sw_profile})`
+                            : ''}{' '}
+                        {device_interface.description
+                            ? ` - desc: ${device_interface.description}`
+                            : ''}
+                    </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    ),
+};
+
+export function createDeploymentShowColumns(
+    options: DeploymentShowColumnOptions,
+): ColumnDef<DeviceDef>[] {
+    return [
+        deploymentShowSelectColumn,
+        ...sharedDeviceColumns,
+        {
+            accessorKey: 'site',
+            header: 'Site',
+            cell: ({ row }) => (
+                <DeviceMetadataSelectCell
+                    deviceId={row.original.id}
+                    field="site"
+                    value={row.original.site ?? null}
+                    options={options.centralSites}
+                    centralError={options.centralSitesError}
+                />
+            ),
+        },
+        {
+            accessorKey: 'group',
+            header: 'Group',
+            cell: ({ row }) => (
+                <DeviceMetadataSelectCell
+                    deviceId={row.original.id}
+                    field="group"
+                    value={row.original.group ?? null}
+                    options={options.centralDeviceGroups}
+                    centralError={options.centralDeviceGroupsError}
+                />
+            ),
+        },
+        deviceActionsColumn,
+    ];
+}
 
 export const columns: ColumnDef<DeviceDef>[] = [
     {
         accessorKey: 'id',
         header: 'ID',
     },
-    ...deploymentShowColumnsBase,
-];
-
-/** Device table columns without the numeric ID (e.g. deployment show page). */
-export const deploymentShowColumns: ColumnDef<DeviceDef>[] = [
-    deploymentShowSelectColumn,
-    ...deploymentShowColumnsBase,
+    ...sharedDeviceColumns,
+    interfacesColumn,
+    deviceActionsColumn,
 ];
