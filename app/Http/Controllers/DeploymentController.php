@@ -97,6 +97,8 @@ class DeploymentController extends Controller
         ];
         $currentClient = $request->user()->currentClient();
         $licensingSyncedAt = null;
+        $cxFirmwareVersions = [];
+        $centralFirmwareError = null;
         if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
             $centralHelper = new CentralAPIHelper($currentClient);
             $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
@@ -112,6 +114,10 @@ class DeploymentController extends Controller
                 'central_licensing_error' => $licensingPayload['central_error'],
             ];
             $licensingSyncedAt = $licensingPayload['licensing_synced_at'];
+
+            $firmwarePayload = $centralHelper->resolveCxFirmwareVersionOptions();
+            $cxFirmwareVersions = $firmwarePayload['versions'];
+            $centralFirmwareError = $firmwarePayload['error'];
         }
 
         return Inertia::render('Deployment/Show', [
@@ -124,6 +130,8 @@ class DeploymentController extends Controller
             'license_type_options' => LicenseType::values(),
             'central_licensing_error' => $licensingOptions['central_licensing_error'],
             'licensing_synced_at' => $licensingSyncedAt,
+            'cx_firmware_versions' => $cxFirmwareVersions,
+            'central_firmware_error' => $centralFirmwareError,
             'tasks' => array_map(fn ($task) => [
                 'task_type' => $task->name,
                 'friendly_name' => Task::getTaskFriendlyName($task->name),

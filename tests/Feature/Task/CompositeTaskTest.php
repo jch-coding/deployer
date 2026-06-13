@@ -358,6 +358,7 @@ test('creating ADD_VLANS_TO_DEVICE_GROUP with site prefix stores five sub-tasks 
         'deployment_time' => 1,
         'devices' => [],
         'vlan_site_prefix' => 'SAC',
+        'firmware_compliance_version' => 'FL.10.15.1010',
     ]);
 
     $response->assertSessionHasNoErrors();
@@ -371,8 +372,74 @@ test('creating ADD_VLANS_TO_DEVICE_GROUP with site prefix stores five sub-tasks 
         'WHSE-SAC-SERVER',
     ]);
     expect($tasks->every(fn (Task $t) => $t->devices()->count() === 0))->toBeTrue();
+    expect($tasks->every(fn (Task $t) => $t->firmware_compliance_version === 'FL.10.15.1010'))->toBeTrue();
 
-    Bus::assertBatchCount(5);
+    Bus::assertDispatchedTimes(ChainedBatch::class, 5);
+});
+
+test('creating ADD_VLANS_TO_DEVICE_GROUP with site prefix requires firmware compliance version', function () {
+    Bus::fake();
+    configureClientForClassicCentral($this->client);
+    fakeClassicCentralGroupListPages([
+        'WHSE-SAC-ACCESS',
+        'WHSE-SAC-CORE',
+        'WHSE-SAC-MGMT',
+        'WHSE-SAC-DMZ',
+        'WHSE-SAC-SERVER',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'deployment_time' => 1,
+        'devices' => [],
+        'vlan_site_prefix' => 'SAC',
+    ]);
+
+    $response->assertSessionHasErrors(['firmware_compliance_version']);
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+});
+
+test('creating ADD_VLANS_TO_DEVICE_GROUP with site prefix chains compliance before VLANs when groups already exist', function () {
+    Bus::fake();
+    configureClientForClassicCentral($this->client);
+    fakeClassicCentralGroupListPages([
+        'WHSE-SAC-ACCESS',
+        'WHSE-SAC-CORE',
+        'WHSE-SAC-MGMT',
+        'WHSE-SAC-DMZ',
+        'WHSE-SAC-SERVER',
+    ]);
+
+    $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'deployment_time' => 1,
+        'devices' => [],
+        'vlan_site_prefix' => 'SAC',
+        'firmware_compliance_version' => 'FL.10.15.1010',
+    ])->assertSessionHasNoErrors();
+
+    Bus::assertDispatchedTimes(ChainedBatch::class, 5);
+});
+
+test('creating ADD_VLANS_TO_DEVICE_GROUP with site prefix chains create compliance and VLANs when groups are missing', function () {
+    Bus::fake();
+    configureClientForClassicCentral($this->client);
+    fakeClassicCentralGroupListPages(['SomeOtherGroup']);
+
+    $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_VLANS_TO_DEVICE_GROUP',
+        'deployment_time' => 1,
+        'devices' => [],
+        'vlan_site_prefix' => 'SAC',
+        'firmware_compliance_version' => 'FL.10.15.1010',
+    ])->assertSessionHasNoErrors();
+
+    $tasks = $this->deployment->refresh()->tasks()->orderBy('composite_order')->get();
+    expect($tasks)->toHaveCount(10);
+    expect($tasks->where('task_type', 'CREATE_NEW_CENTRAL_CX_GROUP'))->toHaveCount(5);
+    expect($tasks->where('task_type', 'ADD_VLANS_FOR_DEVICE_GROUP'))->toHaveCount(5);
+
+    Bus::assertDispatchedTimes(ChainedBatch::class, 5);
 });
 
 test('creating ADD_VLANS_TO_DEVICE_GROUP adds prerequisite create task when group is missing in Central', function () {

@@ -109,7 +109,7 @@ const deploymentTasks = [
     {
         title: 'Add VLANs to device groups',
         description:
-            'Add VLAN templates to Central device groups by group name from your CSV, or enter a site prefix to target WHSE-{prefix}-ACCESS, CORE, MGMT, DMZ, and SERVER groups.',
+            'Add VLAN templates to Central device groups by group name from your CSV, or enter a site prefix to target WHSE-{prefix}-ACCESS, CORE, MGMT, DMZ, and SERVER groups. Site-prefix deploys also require selecting a CX firmware compliance version applied to all five WHSE groups.',
         requiresClassicCentral: true,
     },
     {

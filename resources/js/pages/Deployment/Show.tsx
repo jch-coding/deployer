@@ -127,6 +127,8 @@ type DeploymentPageProps = {
     license_type_options: string[];
     central_licensing_error: string | null;
     licensing_synced_at: string | null;
+    cx_firmware_versions: string[];
+    central_firmware_error: string | null;
 } & SharedData;
 export default function Show() {
     const {
@@ -172,6 +174,8 @@ export default function Show() {
         license_type_options = [],
         central_licensing_error,
         licensing_synced_at = null,
+        cx_firmware_versions = [],
+        central_firmware_error = null,
     } = usePage<DeploymentPageProps>().props;
 
     const classicCentralTaskTypes = new Set([
@@ -520,6 +524,16 @@ export default function Show() {
                                     license_type_options={
                                         task.task_type === 'ASSIGN_SUBSCRIPTION'
                                             ? (license_type_options as LicenseTypeOption[])
+                                            : undefined
+                                    }
+                                    cx_firmware_versions={
+                                        task.task_type === 'ADD_VLANS_TO_DEVICE_GROUP'
+                                            ? cx_firmware_versions
+                                            : undefined
+                                    }
+                                    central_firmware_error={
+                                        task.task_type === 'ADD_VLANS_TO_DEVICE_GROUP'
+                                            ? central_firmware_error
                                             : undefined
                                     }
                                 />

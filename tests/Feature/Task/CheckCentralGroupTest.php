@@ -42,7 +42,8 @@ test('check central group flashes success when all device groups exist in Centra
         'task_type' => 'PREPROVISION_DEVICE_TO_GROUP',
     ])
         ->assertRedirect()
-        ->assertSessionHas('success', 'All group names exist in Central.');
+        ->assertSessionHas('success', 'All group names exist in Central.')
+        ->assertSessionHas('missing_central_groups', []);
 });
 
 test('check central group flashes error listing groups missing in Central', function () {
@@ -61,7 +62,8 @@ test('check central group flashes error listing groups missing in Central', func
         'task_type' => 'MOVE_DEVICE_TO_GROUP',
     ])
         ->assertRedirect()
-        ->assertSessionHas('error', 'These groups were not found in Central: NotInCentral.');
+        ->assertSessionHas('error', 'These groups were not found in Central: NotInCentral.')
+        ->assertSessionHas('missing_central_groups', ['NotInCentral']);
 });
 
 test('check central group flashes error when Central groups request fails', function () {

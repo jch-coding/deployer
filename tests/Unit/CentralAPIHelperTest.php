@@ -1,6 +1,7 @@
 <?php
 
 use App\BaseURL;
+use App\ClassicBaseUrl;
 use App\Helper\CentralAPIHelper;
 use App\InterfaceKind;
 use App\Models\Client;
@@ -1629,4 +1630,93 @@ test('buildMirrorPayload matches expected mirror session shape', function () {
             ],
         ],
     ]);
+});
+
+test('classic_get_firmware_versions forwards query parameters to Central', function () {
+    $client = Client::factory()->create([
+        'classic_base_url' => ClassicBaseUrl::US1->value,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+    ]);
+
+    Http::fake([
+        '*firmware/v1/versions*' => Http::response([
+            ['firmware_version' => 'FL.10.15.1010', 'release_status' => 'GA'],
+        ], 200),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $response = $helper->classic_get_firmware_versions(['device_type' => 'CX']);
+
+    expect($response->ok())->toBeTrue();
+    Http::assertSent(function (Request $request): bool {
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return str_contains($request->url(), 'firmware/v1/versions')
+            && ($query['device_type'] ?? null) === 'CX';
+    });
+});
+
+test('classic_post_firmware_compliance posts the provided body', function () {
+    $client = Client::factory()->create([
+        'classic_base_url' => ClassicBaseUrl::US1->value,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+    ]);
+
+    Http::fake([
+        '*firmware/v1/upgrade/compliance_version*' => Http::response(['status' => 'success'], 200),
+    ]);
+
+    $body = [
+        'device_type' => 'CX',
+        'group' => 'WHSE-SAC-CORE',
+        'firmware_compliance_version' => 'FL.10.15.1010',
+    ];
+
+    $helper = new CentralAPIHelper($client);
+    $response = $helper->classic_post_firmware_compliance($body);
+
+    expect($response->ok())->toBeTrue();
+    Http::assertSent(function (Request $request) use ($body): bool {
+        return str_contains($request->url(), 'firmware/v1/upgrade/compliance_version')
+            && $request->data() === $body;
+    });
+});
+
+test('resolveCxFirmwareVersionOptions extracts unique sorted firmware_version values', function () {
+    $client = Client::factory()->create([
+        'classic_base_url' => ClassicBaseUrl::US1->value,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+    ]);
+
+    Http::fake([
+        '*firmware/v1/versions*' => Http::response([
+            ['firmware_version' => 'FL.10.14.1000', 'release_status' => 'GA'],
+            ['firmware_version' => 'FL.10.15.1010', 'release_status' => 'GA'],
+            ['firmware_version' => 'FL.10.14.1000', 'release_status' => 'GA'],
+        ], 200),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $result = $helper->resolveCxFirmwareVersionOptions();
+
+    expect($result['error'])->toBeNull()
+        ->and($result['versions'])->toBe(['FL.10.14.1000', 'FL.10.15.1010']);
 });

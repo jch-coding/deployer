@@ -2420,9 +2420,40 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         }
         $response = Http::withToken($this->client->classic_access_token)
+            ->withQueryParameters($queryParameters)
             ->get($this->classicApiUrl($this->classic_firmware['firmware_versions']));
 
         return $response;
+    }
+
+    /**
+     * @return array{versions: array<int, string>, error: string|null}
+     */
+    public function resolveCxFirmwareVersionOptions(): array
+    {
+        $response = $this->classic_get_firmware_versions(['device_type' => 'CX']);
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return ['versions' => [], 'error' => (string) $response['error']];
+        }
+
+        if (! $response->ok()) {
+            return ['versions' => [], 'error' => 'Could not load CX firmware versions from Central.'];
+        }
+
+        $payload = $response->json();
+        $items = is_array($payload) && array_is_list($payload)
+            ? $payload
+            : (is_array($payload['firmware'] ?? null) ? $payload['firmware'] : []);
+
+        $versions = collect($items)
+            ->map(fn ($item) => is_array($item) ? trim((string) ($item['firmware_version'] ?? '')) : '')
+            ->filter(fn (string $version) => $version !== '')
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        return ['versions' => $versions, 'error' => null];
     }
 
     /**
@@ -2434,7 +2465,22 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         }
         $response = Http::withToken($this->client->classic_access_token)
-            ->post($this->classicApiUrl($this->classic_firmware['firmware_compliance']), ['firmware_version' => $firmware_version]);
+            ->post($this->classicApiUrl($this->classic_firmware['firmware_compliance']), $body);
+
+        return $response;
+    }
+
+    /**
+     * @param array<string, mixed> $queryParameters [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string ]
+     * @return array [ 'firmware_compliance_version' => string]
+     */
+    public function classic_get_firmware_compliance($queryParameters = [])
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+        $response = Http::withToken($this->client->classic_access_token)
+            ->get($this->classicApiUrl($this->classic_firmware['firmware_compliance']), $queryParameters);
 
         return $response;
     }
