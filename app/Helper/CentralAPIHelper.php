@@ -98,6 +98,11 @@ class CentralAPIHelper
         'device_inventory' => 'platform/device_inventory/v1/devices',
     ];
 
+    public array $classic_firmware = [
+        'firmware_versions' => 'firmware/v1/versions',
+        'firmware_compliance' => 'firmware/v1/upgrade/compliance_version'
+    ];
+
     public function __construct(public Client $client) {}
 
     private function classicApiUrl(string $path): string
@@ -2401,6 +2406,35 @@ class CentralAPIHelper
         }
         $response = Http::withToken($this->client->classic_access_token)
             ->post($this->classicApiUrl($this->classic_configuration['move_devices_to_group']), ['group' => $group, 'serials' => $device_serials]);
+
+        return $response;
+    }
+
+    /**
+     * @param array<string, mixed> $queryParameters [ 'limit' => int, 'offset' => int, 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'serial' => string ]
+     * @return [ [ 'create_date' => datetime, 'firmware_version' => string, 'release_status' => string ], ...]
+     */
+    public function classic_get_firmware_versions($queryParameters = [])
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+        $response = Http::withToken($this->client->classic_access_token)
+            ->get($this->classicApiUrl($this->classic_firmware['firmware_versions']));
+
+        return $response;
+    }
+
+    /**
+     * @param array<string, mixed> $body [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string, 'firmware_compliance_version' => string, 'reboot' => boolean, 'allow_unsupported_version' => boolean (optional)]
+     */
+    public function classic_post_firmware_compliance(array $body)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+        $response = Http::withToken($this->client->classic_access_token)
+            ->post($this->classicApiUrl($this->classic_firmware['firmware_compliance']), ['firmware_version' => $firmware_version]);
 
         return $response;
     }
