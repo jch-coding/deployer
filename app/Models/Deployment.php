@@ -11,24 +11,30 @@ class Deployment extends Model
 {
     use HasFactory;
 
-    public function devices() : HasMany
+    public function devices(): HasMany
     {
         return $this->hasMany(Device::class);
     }
 
-    public function client() : BelongsTo
+    public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
     }
 
-    public function tasks() : HasMany
+    public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
+    }
+
+    public function provisioningWorkflows(): HasMany
+    {
+        return $this->hasMany(ProvisioningWorkflow::class);
     }
 
     public function getTasks()
     {
         $devices = $this->devices;
-        return $devices->flatMap(fn($device) => $device->tasks->map(fn($task) => $task))->unique('id');
+
+        return $devices->flatMap(fn ($device) => $device->tasks->map(fn ($task) => $task))->unique('id');
     }
 }

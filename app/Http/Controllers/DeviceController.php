@@ -135,11 +135,13 @@ class DeviceController extends Controller
                 'mirror_dst_ports' => ($arr['mirror_dst_ports'] ?? '') === '' ? null : $arr['mirror_dst_ports'],
                 'mirror_vlans' => ($arr['mirror_vlans'] ?? '') === '' ? null : $arr['mirror_vlans'],
                 'mirror_name' => ($arr['mirror_name'] ?? '') === '' ? null : $arr['mirror_name'],
+                'license_tag' => ($arr['license_tag'] ?? '') === '' ? null : $arr['license_tag'],
+                'license_type' => ($arr['license_type'] ?? '') === '' ? null : $arr['license_type'],
             ],
             $unique_devices
         );
 
-        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku', 'vsx_profile', 'vsx_role', 'vsx_system_mac', 'vsx_isl_ports', 'vsx_keepalive_ports', 'mirror_session_id', 'mirror_dst_ports', 'mirror_vlans', 'mirror_name']);
+        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], ['name', 'device_function', 'client_id', 'deployment_id', 'group', 'sku', 'vsx_profile', 'vsx_role', 'vsx_system_mac', 'vsx_isl_ports', 'vsx_keepalive_ports', 'mirror_session_id', 'mirror_dst_ports', 'mirror_vlans', 'mirror_name', 'license_tag', 'license_type']);
 
         $errors = [];
         $unsaved_devices = [];
@@ -229,6 +231,8 @@ class DeviceController extends Controller
                 'mirror_dst_ports' => '',
                 'mirror_vlans' => '',
                 'mirror_name' => '',
+                'license_tag' => '',
+                'license_type' => '',
             ];
             foreach ($device as $device_info) {
                 foreach (array_keys($empty) as $key) {

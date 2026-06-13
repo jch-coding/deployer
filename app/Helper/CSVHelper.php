@@ -48,6 +48,8 @@ class CSVHelper
         'mirror_vlans',
         'mirror_name',
         'lacp_port_id',
+        'license_tag',
+        'license_type',
     ];
 
     private const MAX_ROW_ERRORS = 50;

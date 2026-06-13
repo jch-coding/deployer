@@ -6,6 +6,7 @@ use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DispatchController;
 use App\Http\Controllers\LicensingController;
+use App\Http\Controllers\ProvisioningWorkflowController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\TaskController;
 use App\Http\Resources\ClientResource;
@@ -54,6 +55,13 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/deployments/{deployment}/critical-check/step/{step}', 'criticalCheckStep')->name('deployments.critical_check.step');
         Route::patch('/deployments/{deployment}/critical-check/failed-interfaces', 'patchCriticalCheckFailedInterfaces')->name('deployments.critical_check.failed_interfaces');
         Route::post('/deployments/{deployment}/relaunch-failed-critical-config', 'relaunchFailedCriticalConfig')->name('deployments.relaunch_failed_critical_config');
+    });
+
+    Route::controller(ProvisioningWorkflowController::class)->group(function () {
+        Route::get('/deployments/{deployment}/provision', 'show')->name('deployments.provision');
+        Route::post('/deployments/{deployment}/provision', 'store')->name('deployments.provision.store');
+        Route::post('/provisioning-workflows/{workflow}/cancel', 'cancel')->name('provisioning_workflows.cancel');
+        Route::post('/provisioning-workflow-devices/{workflowDevice}/restart', 'restart')->name('provisioning_workflow_devices.restart');
     });
 
     Route::controller(DeviceController::class)->group(function () {

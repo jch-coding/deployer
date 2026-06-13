@@ -42,6 +42,7 @@ import { index as clientsIndex } from '@/routes/clients';
 import {
     critical_check as criticalCheckDeployment,
     index as deploymentsIndex,
+    provision as provisionDeployment,
     refreshScopeIds,
     show as showDeployment,
 } from '@/routes/deployments';
@@ -326,7 +327,7 @@ export default function Show() {
             <h1 className="text-center text-3xl font-semibold">
                 {deployment.name}
             </h1>
-            <div className="mt-4 flex justify-center">
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <Button asChild>
@@ -338,6 +339,27 @@ export default function Show() {
                     <TooltipContent side="top">
                         Compare LAG and VLAN config in Central with this deployment,
                         and view static routes and DNS profiles.
+                    </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button asChild variant="default">
+                            <a
+                                href={
+                                    selectedIds.length > 0
+                                        ? `${provisionDeployment(deploymentId).url}?device_ids=${selectedIds.join(',')}`
+                                        : provisionDeployment(deploymentId).url
+                                }
+                                data-test="run-provisioning-workflow"
+                            >
+                                Run provisioning workflow
+                            </a>
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                        {selectedIds.length > 0
+                            ? `Run full provisioning for ${selectedCount} selected device(s).`
+                            : 'Open the provisioning workflow page for this deployment.'}
                     </TooltipContent>
                 </Tooltip>
             </div>

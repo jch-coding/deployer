@@ -33,6 +33,8 @@ const SAMPLE_DEVICE_HEADERS = [
     'mirror_dst_ports',
     'mirror_vlans',
     'mirror_name',
+    'license_tag',
+    'license_type',
 ] as const;
 
 type SampleDeviceRow = Partial<
