@@ -1167,6 +1167,43 @@ test('getVsxPortSelections errors when name is ambiguous and overrides missing',
     expect($result)->toBe(['error' => 'Cannot determine VSX LAG ports for Primary-SW: device name must contain CORE or SVR, or set vsx_isl_ports and vsx_keepalive_ports.']);
 });
 
+test('isVsxPortchannelConfiguredOnDevice treats null name as unconfigured', function () {
+    expect(CentralAPIHelper::isVsxPortchannelConfiguredOnDevice(['name' => null]))->toBeFalse()
+        ->and(CentralAPIHelper::isVsxPortchannelConfiguredOnDevice([]))->toBeFalse()
+        ->and(CentralAPIHelper::isVsxPortchannelConfiguredOnDevice(['name' => '256']))->toBeTrue();
+});
+
+test('ensureVsxIslLag creates lag when central returns null name', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), '/portchannels/256')) {
+            return Http::response(['name' => null], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($request->url(), '/portchannels/256')) {
+            return Http::response(CentralAPIHelper::buildVsxIslLagPayload(['1/1/21', '1/1/22']), 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/ethernet-interfaces/')) {
+            return Http::response(['description' => ''], 200);
+        }
+
+        if ($request->method() === 'PATCH' && str_contains($request->url(), '/ethernet-interfaces/')) {
+            return Http::response([], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $peer = Device::factory()->for($helper->client)->create(['name' => 'Peer-SVR-SW']);
+    $device = Device::factory()->for($helper->client)->create(['name' => 'Primary-SVR-SW']);
+
+    $result = $helper->ensureVsxIslLag($device, $peer, ['1/1/21', '1/1/22']);
+
+    expect($result)->toBe(['ok' => true]);
+    Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/portchannels/256'));
+});
+
 test('vsxPortchannelMatchesExpected compares port-list order independently', function () {
     $expected = CentralAPIHelper::buildVsxIslLagPayload(['1/1/45', '1/1/46']);
     $actual = CentralAPIHelper::buildVsxIslLagPayload(['1/1/46', '1/1/45']);

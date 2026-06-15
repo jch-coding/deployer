@@ -2808,6 +2808,11 @@ class CentralAPIHelper
     /**
      * @return array<int, array{path: string, expected: mixed, actual: mixed}>
      */
+    public static function isVsxPortchannelConfiguredOnDevice(array $actual): bool
+    {
+        return ($actual['name'] ?? null) !== null;
+    }
+
     public static function vsxPortchannelMatchesExpected(array $expected, array $actual): array
     {
         $diffs = [];
@@ -3090,16 +3095,29 @@ class CentralAPIHelper
             return ['error' => (string) $getResponse['error']];
         }
 
+        $shouldCreateLag = false;
+
         if ($getResponse instanceof Response && $getResponse->ok()) {
             $actual = $getResponse->json();
             if (! is_array($actual)) {
                 $actual = [];
             }
-            $diffs = static::vsxPortchannelMatchesExpected($expectedPayload, $actual);
-            if ($diffs !== []) {
-                return ['error' => $failureLabel.' on '.$device->name.' does not match expected configuration: '.static::formatVsxPortchannelDiffSummary($diffs)];
+
+            if (static::isVsxPortchannelConfiguredOnDevice($actual)) {
+                $diffs = static::vsxPortchannelMatchesExpected($expectedPayload, $actual);
+                if ($diffs !== []) {
+                    return ['error' => $failureLabel.' on '.$device->name.' does not match expected configuration: '.static::formatVsxPortchannelDiffSummary($diffs)];
+                }
+            } else {
+                $shouldCreateLag = true;
             }
         } elseif ($getResponse instanceof Response && $getResponse->status() === 404) {
+            $shouldCreateLag = true;
+        } else {
+            return ['error' => $failureLabel.' lookup failed on '.$device->name.': '.$this->centralResponseErrorMessage($getResponse)];
+        }
+
+        if ($shouldCreateLag) {
             $postResponse = $this->post_raw_interface_portchannel($device, $lagName, $expectedPayload);
             if (! $this->isSuccessfulCentralResponse($postResponse)) {
                 $patchResponse = $this->patch_raw_interface_portchannel($device, $lagName, $expectedPayload);
@@ -3107,8 +3125,6 @@ class CentralAPIHelper
                     return ['error' => $failureLabel.' creation failed on '.$device->name.': '.$this->centralResponseErrorMessage($patchResponse)];
                 }
             }
-        } else {
-            return ['error' => $failureLabel.' lookup failed on '.$device->name.': '.$this->centralResponseErrorMessage($getResponse)];
         }
 
         return $this->ensureVsxLagMemberPortDescriptions($device, $peerDevice, $memberPortNames, $portDescriptionSuffix, $failureLabel);
