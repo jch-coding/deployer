@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 
 class Client extends Model
@@ -88,11 +90,15 @@ class Client extends Model
             return true;
         }
 
-        $response = Http::asForm()->post($this->auth_url, [
-            'grant_type' => 'client_credentials',
-            'client_id' => $this->client_id,
-            'client_secret' => $this->client_secret,
-        ]);
+        try {
+            $response = Http::asForm()->post($this->auth_url, [
+                'grant_type' => 'client_credentials',
+                'client_id' => $this->client_id,
+                'client_secret' => $this->client_secret,
+            ]);
+        } catch (RequestException|ConnectionException) {
+            return false;
+        }
 
         if ($response->ok()) {
             $this->bearer_token = $response->json('access_token');
@@ -105,47 +111,51 @@ class Client extends Model
 
     public function handleClassicBearerToken(bool $force = false)
     {
-        if (! $this->hasClassicCentralCredentials()) {
-            return false;
-        } elseif ($this->classic_refresh_token !== null && now() < $this->classic_expires_in) {
-            return true;
-        } elseif (($force && $this->classic_refresh_token !== null) || $this->classic_refresh_token !== null && now() > $this->classic_expires_in) {
-            $response = $this->refreshClassicCentralBearerToken();
-            if (! $response->ok()) {
+        try {
+            if (! $this->hasClassicCentralCredentials()) {
                 return false;
-            } else {
-                $this->classic_access_token = $response->json('access_token');
-                $this->classic_refresh_token = $response->json('refresh_token');
-                $this->classic_expires_in = now()->addSeconds($response->json('expires_in'));
-                $this->save();
-
+            } elseif ($this->classic_refresh_token !== null && now() < $this->classic_expires_in) {
                 return true;
-            }
-        } else {
-            $response = $this->authenticateClassicCentral();
-            if (! $response->ok()) {
-                return false;
-            } else {
-                $set_cookie = $response->headers()['Set-Cookie'];
-                $extracted_csrftoken_and_session = $this->extractCSRFTokenAndSession($set_cookie);
-                $response = $this->generateClassicAuthorizationCode($extracted_csrftoken_and_session['csrftoken'], $extracted_csrftoken_and_session['session']);
+            } elseif (($force && $this->classic_refresh_token !== null) || $this->classic_refresh_token !== null && now() > $this->classic_expires_in) {
+                $response = $this->refreshClassicCentralBearerToken();
                 if (! $response->ok()) {
                     return false;
                 } else {
-                    $authorization_code = $response->json()['auth_code'];
-                    $response = $this->acquireTokens($authorization_code);
+                    $this->classic_access_token = $response->json('access_token');
+                    $this->classic_refresh_token = $response->json('refresh_token');
+                    $this->classic_expires_in = now()->addSeconds($response->json('expires_in'));
+                    $this->save();
+
+                    return true;
+                }
+            } else {
+                $response = $this->authenticateClassicCentral();
+                if (! $response->ok()) {
+                    return false;
+                } else {
+                    $set_cookie = $response->headers()['Set-Cookie'];
+                    $extracted_csrftoken_and_session = $this->extractCSRFTokenAndSession($set_cookie);
+                    $response = $this->generateClassicAuthorizationCode($extracted_csrftoken_and_session['csrftoken'], $extracted_csrftoken_and_session['session']);
                     if (! $response->ok()) {
                         return false;
                     } else {
-                        $this->classic_access_token = $response->json('access_token');
-                        $this->classic_refresh_token = $response->json('refresh_token');
-                        $this->classic_expires_in = now()->addSeconds($response->json('expires_in'));
-                        $this->save();
+                        $authorization_code = $response->json()['auth_code'];
+                        $response = $this->acquireTokens($authorization_code);
+                        if (! $response->ok()) {
+                            return false;
+                        } else {
+                            $this->classic_access_token = $response->json('access_token');
+                            $this->classic_refresh_token = $response->json('refresh_token');
+                            $this->classic_expires_in = now()->addSeconds($response->json('expires_in'));
+                            $this->save();
 
-                        return true;
+                            return true;
+                        }
                     }
                 }
             }
+        } catch (RequestException|ConnectionException) {
+            return false;
         }
     }
 

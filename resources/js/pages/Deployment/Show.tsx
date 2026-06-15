@@ -159,14 +159,14 @@ export default function Show() {
 
     const devicesForTasks = useMemo(
         () =>
-            deployment.devices.map((d) => ({
+            (deployment.devices ?? []).map((d) => ({
                 id: d.id,
                 name: d.name,
                 completed: false,
                 device_function: d.device_function ?? '',
                 serial: d.serial,
             })),
-        [deployment.devices],
+        [deployment.devices ?? []],
     );
     const { setData, post, progress, errors } = useForm<{
         devices: File | null;

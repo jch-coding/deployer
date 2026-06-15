@@ -4,11 +4,12 @@ use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\DeviceInterface;
 use App\Models\Site;
 use App\Models\Task;
 use App\Models\User;
 use App\TaskType;
-use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\Request as HttpClientRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -29,7 +30,7 @@ beforeEach(function () {
 
 function fakeCentralScopeManagementApis(): void
 {
-    Http::fake(function (Request $request) {
+    Http::fake(function (HttpClientRequest $request) {
         if (str_contains($request->url(), 'network-config/v1/sites')) {
             return Http::response([
                 'items' => [
@@ -118,6 +119,56 @@ it('filters devices by name, serial, or device function search', function () {
     $this->get(route('deployments.show', $deployment).'?search='.urlencode('access_switch'))
         ->assertOk()
         ->assertSeeHtml('Beta Switch');
+});
+
+it('still loads when a deployment has interface task history', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+    ]);
+    $interface = DeviceInterface::factory()->for($device)->create([
+        'interface' => '1/1/1',
+    ]);
+    $task = Task::factory()->for($deployment)->create([
+        'task_type' => 'CONFIGURE_ETHERNET_INTERFACE',
+        'status' => 'COMPLETED',
+    ]);
+    $task->devices()->attach($device->id, ['status' => 'COMPLETED']);
+    $task->deviceInterfaces()->attach($interface->id, ['status' => 'COMPLETED']);
+
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Show')
+            ->has('items.CONFIGURE_ETHERNET_INTERFACE', 1)
+            ->where('items.CONFIGURE_ETHERNET_INTERFACE.0.name', '1/1/1'));
+});
+
+it('still loads when central api requests fail', function () {
+    Http::fake(function (HttpClientRequest $request) {
+        throw new \Illuminate\Http\Client\RequestException(
+            Http::response(['error' => 'forbidden'], 403)
+        );
+    });
+
+    $this->client->update([
+        'classic_client_id' => 'classic-client-id',
+        'classic_client_secret' => 'classic-client-secret',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'classic_refresh_token' => 'expired-refresh-token',
+        'classic_expires_in' => now()->subMinute(),
+        'licensing_synced_at' => now(),
+    ]);
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('Deployment/Show'));
 });
 
 it('finalizes expired in-progress tasks when viewing the deployment', function () {

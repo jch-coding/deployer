@@ -2461,29 +2461,33 @@ class CentralAPIHelper
      */
     public function resolveCxFirmwareVersionOptions(): array
     {
-        $response = $this->classic_get_firmware_versions(['device_type' => 'CX']);
-        if (is_array($response) && array_key_exists('error', $response)) {
-            return ['versions' => [], 'error' => (string) $response['error']];
-        }
+        try {
+            $response = $this->classic_get_firmware_versions(['device_type' => 'CX']);
+            if (is_array($response) && array_key_exists('error', $response)) {
+                return ['versions' => [], 'error' => (string) $response['error']];
+            }
 
-        if (! $response->ok()) {
+            if (! $response->ok()) {
+                return ['versions' => [], 'error' => 'Could not load CX firmware versions from Central.'];
+            }
+
+            $payload = $response->json();
+            $items = is_array($payload) && array_is_list($payload)
+                ? $payload
+                : (is_array($payload['firmware'] ?? null) ? $payload['firmware'] : []);
+
+            $versions = collect($items)
+                ->map(fn ($item) => is_array($item) ? trim((string) ($item['firmware_version'] ?? '')) : '')
+                ->filter(fn (string $version) => $version !== '')
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+
+            return ['versions' => $versions, 'error' => null];
+        } catch (RequestException|ConnectionException) {
             return ['versions' => [], 'error' => 'Could not load CX firmware versions from Central.'];
         }
-
-        $payload = $response->json();
-        $items = is_array($payload) && array_is_list($payload)
-            ? $payload
-            : (is_array($payload['firmware'] ?? null) ? $payload['firmware'] : []);
-
-        $versions = collect($items)
-            ->map(fn ($item) => is_array($item) ? trim((string) ($item['firmware_version'] ?? '')) : '')
-            ->filter(fn (string $version) => $version !== '')
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
-
-        return ['versions' => $versions, 'error' => null];
     }
 
     /**

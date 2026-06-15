@@ -18,6 +18,7 @@ use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -75,7 +76,16 @@ class DeploymentController extends Controller
 
         $items = $latest_of_tasks->map(fn ($task) => $task->devices->map(fn ($device) => $device->interfaces)->collapse());
         $items_obj = collect(array_map(fn ($task, $item) => [$task['task_type'] => $item], $latest_of_tasks->toArray(), $items->toArray()))->collapse();
-        $items_with_names = $items_obj->map(fn ($group) => array_map(fn ($member) => [...$member, 'name' => $member['interface']], $group));
+        $items_with_names = $items_obj->map(fn ($group) => collect($group)->map(
+            function ($member) {
+                $attributes = is_array($member) ? $member : $member->toArray();
+
+                return [
+                    ...$attributes,
+                    'name' => $attributes['interface'] ?? '',
+                ];
+            }
+        )->values()->all());
 
         $rawSearch = $request->query('search');
         $search = is_string($rawSearch) ? mb_substr(trim($rawSearch), 0, 255) : '';
@@ -105,31 +115,39 @@ class DeploymentController extends Controller
         $centralSitesError = null;
         $centralDeviceGroupsError = null;
         if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
-            $centralHelper = new CentralAPIHelper($currentClient);
-            $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
-            $licensingPayload = $licensingInventoryService->resolveLicensingOptions(
-                $currentClient,
-                $centralHelper,
-                $greenLakeHelper,
-            );
-            $licensingOptions = [
-                'enabled_services' => $licensingPayload['enabled_services'],
-                'available_subscriptions' => $licensingPayload['available_subscriptions'],
-                'license_tags' => $licensingPayload['license_tags'],
-                'central_licensing_error' => $licensingPayload['central_error'],
-            ];
-            $licensingSyncedAt = $licensingPayload['licensing_synced_at'];
+            try {
+                $centralHelper = new CentralAPIHelper($currentClient);
+                $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
+                $licensingPayload = $licensingInventoryService->resolveLicensingOptions(
+                    $currentClient,
+                    $centralHelper,
+                    $greenLakeHelper,
+                );
+                $licensingOptions = [
+                    'enabled_services' => $licensingPayload['enabled_services'],
+                    'available_subscriptions' => $licensingPayload['available_subscriptions'],
+                    'license_tags' => $licensingPayload['license_tags'],
+                    'central_licensing_error' => $licensingPayload['central_error'],
+                ];
+                $licensingSyncedAt = $licensingPayload['licensing_synced_at'];
 
-            $firmwarePayload = $centralHelper->resolveCxFirmwareVersionOptions();
-            $cxFirmwareVersions = $firmwarePayload['versions'];
-            $centralFirmwareError = $firmwarePayload['error'];
+                $firmwarePayload = $centralHelper->resolveCxFirmwareVersionOptions();
+                $cxFirmwareVersions = $firmwarePayload['versions'];
+                $centralFirmwareError = $firmwarePayload['error'];
 
-            $sitesResult = $centralHelper->collectScopeManagementSites();
-            $groupsResult = $centralHelper->collectScopeManagementDeviceGroups();
-            $centralSites = $sitesResult['sites'];
-            $centralSitesError = $sitesResult['error'];
-            $centralDeviceGroups = $groupsResult['groups'];
-            $centralDeviceGroupsError = $groupsResult['error'];
+                $sitesResult = $centralHelper->collectScopeManagementSites();
+                $groupsResult = $centralHelper->collectScopeManagementDeviceGroups();
+                $centralSites = $sitesResult['sites'];
+                $centralSitesError = $sitesResult['error'];
+                $centralDeviceGroups = $groupsResult['groups'];
+                $centralDeviceGroupsError = $groupsResult['error'];
+            } catch (\Throwable $exception) {
+                Log::warning('Failed to load Central options for deployment show page.', [
+                    'deployment_id' => $deployment->id,
+                    'client_id' => $currentClient->id,
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
         }
 
         return Inertia::render('Deployment/Show', [
