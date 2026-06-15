@@ -4,10 +4,13 @@ use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\Site;
 use App\Models\Task;
 use App\Models\User;
 use App\TaskType;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -15,10 +18,39 @@ beforeEach(function () {
         ->has(Client::factory())
         ->create();
     $this->client = $this->user->clients()->first();
-    $this->client->update(['current' => true]);
+    $this->client->update([
+        'current' => true,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
 });
 
+function fakeCentralScopeManagementApis(): void
+{
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-config/v1/sites')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'Central Site', 'scopeId' => 'scope-site'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'Central Group', 'scopeId' => 'scope-group'],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 404);
+    });
+}
+
 it('shows a list of devices associated with the deployment', function () {
+    fakeCentralScopeManagementApis();
+
     $deployment = Deployment::factory()->for($this->client)->create();
     $devices = Device::factory(2)->for($deployment)->create();
     $this->actingAs($this->user);
@@ -29,6 +61,34 @@ it('shows a list of devices associated with the deployment', function () {
             ->where('devices.data.0.name', $devices->first()->name)
             ->where('devices.data.1.name', $devices->last()->name)
         );
+});
+
+it('includes site and group on paginated devices and central scope options', function () {
+    fakeCentralScopeManagementApis();
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $site = Site::factory()->for($this->client)->create(['name' => 'Warehouse']);
+    $device = Device::factory()->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'site_id' => $site->id,
+        'group' => 'Edge Switches',
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Show')
+            ->where('devices.data.0.id', $device->id)
+            ->where('devices.data.0.site', 'Warehouse')
+            ->where('devices.data.0.group', 'Edge Switches')
+            ->where('central_sites_error', null)
+            ->where('central_device_groups_error', null)
+            ->has('central_sites', 1)
+            ->has('central_device_groups', 1)
+            ->where('central_sites.0.scopeName', 'Central Site')
+            ->where('central_device_groups.0.scopeName', 'Central Group'));
 });
 
 it('filters devices by name, serial, or device function search', function () {

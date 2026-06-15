@@ -62,6 +62,8 @@ type TaskCardProps = {
     licensing_synced_at?: string | null;
     license_tags?: string[];
     license_type_options?: LicenseTypeOption[];
+    cx_firmware_versions?: string[];
+    central_firmware_error?: string | null;
 };
 
 const selectClassName =
@@ -79,6 +81,8 @@ export default function TaskCard({
     licensing_synced_at = null,
     license_tags: licenseTagsProp = [],
     license_type_options = [],
+    cx_firmware_versions = [],
+    central_firmware_error = null,
 }: TaskCardProps) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
@@ -105,6 +109,7 @@ export default function TaskCard({
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
     const [vlanSitePrefix, setVlanSitePrefix] = useState('')
+    const [firmwareComplianceVersion, setFirmwareComplianceVersion] = useState('')
     const [bulkLicenseTag, setBulkLicenseTag] = useState('');
     const [bulkLicenseType, setBulkLicenseType] = useState<LicenseTypeOption | ''>('');
     const [perDeviceLicenseSelections, setPerDeviceLicenseSelections] = useState<
@@ -210,6 +215,12 @@ export default function TaskCard({
             return;
         }
 
+        if (taskStr === 'ADD_VLANS_TO_DEVICE_GROUP' && vlanPrefixTrimmed !== '' && firmwareComplianceVersion.trim() === '') {
+            toast.error('Select a CX firmware compliance version.');
+
+            return;
+        }
+
         if (taskStr === 'ASSIGN_SUBSCRIPTION') {
             if (licensingMode === 'uniform') {
                 if (!bulkLicenseTag) {
@@ -297,7 +308,11 @@ export default function TaskCard({
                     ? bulkLicenseType
                     : undefined,
             ...(taskStr === 'ADD_VLANS_TO_DEVICE_GROUP'
-                ? { vlan_site_prefix: vlanPrefixTrimmed }
+                ? {
+                      vlan_site_prefix: vlanPrefixTrimmed,
+                      firmware_compliance_version:
+                          vlanPrefixTrimmed !== '' ? firmwareComplianceVersion.trim() : undefined,
+                  }
                 : {}),
         });
     };
@@ -335,6 +350,43 @@ export default function TaskCard({
                             When set, VLANs are pushed to WHSE-{'{prefix}'}-ACCESS, CORE, MGMT, DMZ, and SERVER without
                             using device rows. Leave blank to use each selected device&apos;s group.
                         </p>
+                        {vlanPrefixTrimmed !== '' ? (
+                            <div className="space-y-1 pt-2">
+                                <label
+                                    htmlFor="cx-firmware-compliance"
+                                    className="text-sm font-medium"
+                                >
+                                    CX firmware compliance
+                                </label>
+                                <select
+                                    id="cx-firmware-compliance"
+                                    value={firmwareComplianceVersion}
+                                    onChange={(e) => setFirmwareComplianceVersion(e.target.value)}
+                                    className={selectClassName}
+                                    data-test="cx-firmware-compliance-select"
+                                >
+                                    <option value="">
+                                        {central_firmware_error
+                                            ? 'Could not load firmware versions'
+                                            : cx_firmware_versions.length === 0
+                                              ? 'No firmware versions available'
+                                              : 'Select a version'}
+                                    </option>
+                                    {cx_firmware_versions.map((version) => (
+                                        <option key={version} value={version}>
+                                            {version}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-muted-foreground text-xs">
+                                    Required for site-prefix deploys. Sets CX firmware compliance on all five
+                                    WHSE groups before VLAN templates are applied.
+                                </p>
+                                {central_firmware_error ? (
+                                    <p className="text-destructive text-xs">{central_firmware_error}</p>
+                                ) : null}
+                            </div>
+                        ) : null}
                     </div>
                 ) : null}
                 {isAssignSubscription ? (

@@ -874,9 +874,25 @@ export default function documentation() {
                             </p>
                             <p className="text-muted-foreground text-sm">
                                 Alternatively, enter a site prefix on the task card (for example{' '}
-                                <code className="rounded bg-muted px-1 py-0.5 text-sm">WHSE42</code>) to
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">SAC</code>) to
                                 target WHSE-{'{prefix}'}-ACCESS, CORE, MGMT, DMZ, and SERVER groups without
                                 selecting individual devices.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                When a site prefix is set, you must also choose a{' '}
+                                <strong>CX firmware compliance</strong> version from the dropdown. Deployer
+                                loads available CX versions from Classic Central and applies the selected
+                                version to all five WHSE groups before VLAN templates are pushed.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                For each site-prefix group, deploy order is: create the group in Central (only
+                                if missing), set CX firmware compliance, then add VLANs. Compliance runs for
+                                existing groups as well as newly created ones.
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                                Device-based deploys (selecting devices by{' '}
+                                <code className="rounded bg-muted px-1 py-0.5 text-sm">group</code> column)
+                                do not use the firmware dropdown and do not set compliance.
                             </p>
                             <ColumnPair
                                 required={['group']}

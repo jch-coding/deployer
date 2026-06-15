@@ -1,6 +1,7 @@
 <?php
 
 use App\BaseURL;
+use App\ClassicBaseUrl;
 use App\Helper\CentralAPIHelper;
 use App\InterfaceKind;
 use App\Models\Client;
@@ -1390,6 +1391,61 @@ test('deploymentUsesMirrorFallbackMode is true when no selected device has mirro
     expect(CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices))->toBeFalse();
 });
 
+test('deploymentUsesVsxFallbackMode is true when no selected device has vsx attributes', function () {
+    $devices = Device::factory()->count(2)->create([
+        'vsx_profile' => null,
+        'vsx_role' => null,
+        'vsx_system_mac' => null,
+    ]);
+
+    expect(CentralAPIHelper::deploymentUsesVsxFallbackMode(collect($devices)))->toBeTrue();
+
+    $devices->first()->vsx_profile = 'pair-1';
+
+    expect(CentralAPIHelper::deploymentUsesVsxFallbackMode($devices))->toBeFalse();
+});
+
+test('applyVsxFallbackAttributes infers core and svr profile metadata from device names', function () {
+    $corePrimary = Device::factory()->make(['name' => 'NY1-MDF-CORE-SW1']);
+    $coreSecondary = Device::factory()->make(['name' => 'NY1-MDF-CORE-SW2']);
+    $svrPrimary = Device::factory()->make(['name' => 'NY1-MDF-SVR-SW1']);
+
+    expect(CentralAPIHelper::applyVsxFallbackAttributes($corePrimary))->toBeTrue()
+        ->and($corePrimary->vsx_profile)->toBe('NY1-MDF-CORE-VSX-PROFILE')
+        ->and($corePrimary->vsx_role)->toBe('VSX_PRIMARY')
+        ->and($corePrimary->vsx_system_mac)->toBe('02:00:00:00:00:01')
+        ->and(CentralAPIHelper::applyVsxFallbackAttributes($coreSecondary))->toBeTrue()
+        ->and($coreSecondary->vsx_role)->toBe('VSX_SECONDARY')
+        ->and($coreSecondary->vsx_system_mac)->toBe('02:00:00:00:00:01')
+        ->and(CentralAPIHelper::applyVsxFallbackAttributes($svrPrimary))->toBeTrue()
+        ->and($svrPrimary->vsx_profile)->toBe('NY1-MDF-SVR-VSX-PROFILE')
+        ->and($svrPrimary->vsx_role)->toBe('VSX_PRIMARY')
+        ->and($svrPrimary->vsx_system_mac)->toBe('02:00:00:00:00:02');
+});
+
+test('inferVsxRoleFromName maps sw1 and sw2 suffixes to primary and secondary roles', function () {
+    expect(CentralAPIHelper::inferVsxRoleFromName(Device::factory()->make(['name' => 'WHSE-MDF-CORE-SW1'])))
+        ->toBe(App\VsxRole::VSX_PRIMARY)
+        ->and(CentralAPIHelper::inferVsxRoleFromName(Device::factory()->make(['name' => 'WHSE-MDF-CORE-SW2'])))
+        ->toBe(App\VsxRole::VSX_SECONDARY);
+});
+
+test('classic_collect_all_switches paginates until all pages are loaded', function () {
+    Http::fake([
+        '*' => Http::sequence()
+            ->push(['switches' => [['serial' => 'SN1', 'status' => 'Up']], 'total' => 2], 200)
+            ->push(['switches' => [['serial' => 'SN2', 'status' => 'Down']], 'total' => 2], 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->classic_collect_all_switches(['limit' => 1]);
+
+    expect($result)->toHaveKey('switches')
+        ->and($result['switches'])->toHaveCount(2)
+        ->and($result['switches'][0]['serial'])->toBe('SN1')
+        ->and($result['switches'][1]['serial'])->toBe('SN2');
+});
+
 test('deviceMatchesMirrorSessionNamePattern matches core fzn-mdf-mgmt and mdf-mgmt names', function () {
     expect(CentralAPIHelper::deviceMatchesMirrorSessionNamePattern(Device::factory()->create(['name' => 'NY1-MDF-CORE-SW1'])))->toBeTrue()
         ->and(CentralAPIHelper::deviceMatchesMirrorSessionNamePattern(Device::factory()->create(['name' => 'FZN-MDF-MGMT-SW1'])))->toBeTrue()
@@ -1574,4 +1630,93 @@ test('buildMirrorPayload matches expected mirror session shape', function () {
             ],
         ],
     ]);
+});
+
+test('classic_get_firmware_versions forwards query parameters to Central', function () {
+    $client = Client::factory()->create([
+        'classic_base_url' => ClassicBaseUrl::US1->value,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+    ]);
+
+    Http::fake([
+        '*firmware/v1/versions*' => Http::response([
+            ['firmware_version' => 'FL.10.15.1010', 'release_status' => 'GA'],
+        ], 200),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $response = $helper->classic_get_firmware_versions(['device_type' => 'CX']);
+
+    expect($response->ok())->toBeTrue();
+    Http::assertSent(function (Request $request): bool {
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return str_contains($request->url(), 'firmware/v1/versions')
+            && ($query['device_type'] ?? null) === 'CX';
+    });
+});
+
+test('classic_post_firmware_compliance posts the provided body', function () {
+    $client = Client::factory()->create([
+        'classic_base_url' => ClassicBaseUrl::US1->value,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+    ]);
+
+    Http::fake([
+        '*firmware/v1/upgrade/compliance_version*' => Http::response(['status' => 'success'], 200),
+    ]);
+
+    $body = [
+        'device_type' => 'CX',
+        'group' => 'WHSE-SAC-CORE',
+        'firmware_compliance_version' => 'FL.10.15.1010',
+    ];
+
+    $helper = new CentralAPIHelper($client);
+    $response = $helper->classic_post_firmware_compliance($body);
+
+    expect($response->ok())->toBeTrue();
+    Http::assertSent(function (Request $request) use ($body): bool {
+        return str_contains($request->url(), 'firmware/v1/upgrade/compliance_version')
+            && $request->data() === $body;
+    });
+});
+
+test('resolveCxFirmwareVersionOptions extracts unique sorted firmware_version values', function () {
+    $client = Client::factory()->create([
+        'classic_base_url' => ClassicBaseUrl::US1->value,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+    ]);
+
+    Http::fake([
+        '*firmware/v1/versions*' => Http::response([
+            ['firmware_version' => 'FL.10.14.1000', 'release_status' => 'GA'],
+            ['firmware_version' => 'FL.10.15.1010', 'release_status' => 'GA'],
+            ['firmware_version' => 'FL.10.14.1000', 'release_status' => 'GA'],
+        ], 200),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $result = $helper->resolveCxFirmwareVersionOptions();
+
+    expect($result['error'])->toBeNull()
+        ->and($result['versions'])->toBe(['FL.10.14.1000', 'FL.10.15.1010']);
 });

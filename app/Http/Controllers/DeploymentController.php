@@ -6,6 +6,7 @@ use App\Helper\CentralAPIHelper;
 use App\Helper\GreenLakeAPIHelper;
 use App\LicenseType;
 use App\Models\Deployment;
+use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Task;
 use App\Services\DeploymentCriticalCheckService;
@@ -79,7 +80,7 @@ class DeploymentController extends Controller
         $rawSearch = $request->query('search');
         $search = is_string($rawSearch) ? mb_substr(trim($rawSearch), 0, 255) : '';
 
-        $devicesQuery = $deployment->devices()->with('interfaces');
+        $devicesQuery = $deployment->devices()->with('site');
         if ($search !== '') {
             $pattern = '%'.addcslashes(mb_strtolower($search), '%_\\').'%';
             $devicesQuery->where(function ($query) use ($pattern) {
@@ -97,6 +98,12 @@ class DeploymentController extends Controller
         ];
         $currentClient = $request->user()->currentClient();
         $licensingSyncedAt = null;
+        $cxFirmwareVersions = [];
+        $centralFirmwareError = null;
+        $centralSites = [];
+        $centralDeviceGroups = [];
+        $centralSitesError = null;
+        $centralDeviceGroupsError = null;
         if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
             $centralHelper = new CentralAPIHelper($currentClient);
             $greenLakeHelper = new GreenLakeAPIHelper($currentClient);
@@ -112,11 +119,32 @@ class DeploymentController extends Controller
                 'central_licensing_error' => $licensingPayload['central_error'],
             ];
             $licensingSyncedAt = $licensingPayload['licensing_synced_at'];
+
+            $firmwarePayload = $centralHelper->resolveCxFirmwareVersionOptions();
+            $cxFirmwareVersions = $firmwarePayload['versions'];
+            $centralFirmwareError = $firmwarePayload['error'];
+
+            $sitesResult = $centralHelper->collectScopeManagementSites();
+            $groupsResult = $centralHelper->collectScopeManagementDeviceGroups();
+            $centralSites = $sitesResult['sites'];
+            $centralSitesError = $sitesResult['error'];
+            $centralDeviceGroups = $groupsResult['groups'];
+            $centralDeviceGroupsError = $groupsResult['error'];
         }
 
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
-            'devices' => $devicesQuery->paginate(20)->withQueryString(),
+            'devices' => $devicesQuery
+                ->paginate(20)
+                ->withQueryString()
+                ->through(fn (Device $device) => [
+                    'id' => $device->id,
+                    'name' => $device->name,
+                    'serial' => $device->serial,
+                    'device_function' => $device->device_function,
+                    'site' => $device->site?->name,
+                    'group' => $device->group,
+                ]),
             'device_search' => $search,
             'enabled_services' => $licensingOptions['enabled_services'],
             'available_subscriptions' => $licensingOptions['available_subscriptions'],
@@ -124,6 +152,12 @@ class DeploymentController extends Controller
             'license_type_options' => LicenseType::values(),
             'central_licensing_error' => $licensingOptions['central_licensing_error'],
             'licensing_synced_at' => $licensingSyncedAt,
+            'cx_firmware_versions' => $cxFirmwareVersions,
+            'central_firmware_error' => $centralFirmwareError,
+            'central_sites' => $centralSites,
+            'central_sites_error' => $centralSitesError,
+            'central_device_groups' => $centralDeviceGroups,
+            'central_device_groups_error' => $centralDeviceGroupsError,
             'tasks' => array_map(fn ($task) => [
                 'task_type' => $task->name,
                 'friendly_name' => Task::getTaskFriendlyName($task->name),

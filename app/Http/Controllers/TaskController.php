@@ -25,6 +25,7 @@ use App\Jobs\RemoveLocalOverrideLocalManagementProfileJob;
 use App\Jobs\RemoveLocalOverrideNTPJob;
 use App\Jobs\RemoveLocalOverrideStaticRouteJob;
 use App\Jobs\RemoveLocalOverrideVlansJob;
+use App\Jobs\SetCxFirmwareComplianceForGroup;
 use App\Jobs\UnassignSubscriptionJob;
 use App\Jobs\UpdateSystemInfo;
 use App\LicenseType;
@@ -777,6 +778,7 @@ class TaskController extends Controller
             'devices.*.service_name' => ['sometimes', 'string', 'max:255'],
             'deployment_time' => ['required', 'integer'],
             'vlan_site_prefix' => ['nullable', 'string', 'max:64'],
+            'firmware_compliance_version' => ['nullable', 'string', 'max:255'],
             'override_device_scope' => ['nullable', Rule::in(['vsf_only', 'all'])],
             'licensing_mode' => ['nullable', Rule::in(['uniform', 'per_device'])],
             'license_tag' => ['nullable', 'string', 'max:255'],
@@ -796,6 +798,9 @@ class TaskController extends Controller
         } elseif ($vlanSitePrefix !== '') {
             if (! preg_match('/^[A-Za-z0-9_-]+$/', $vlanSitePrefix)) {
                 return back()->withErrors(['vlan_site_prefix' => 'Use only letters, numbers, hyphens, or underscores.']);
+            }
+            if (trim((string) ($validated['firmware_compliance_version'] ?? '')) === '') {
+                return back()->withErrors(['firmware_compliance_version' => 'Select a CX firmware compliance version when using a site prefix.']);
             }
         } elseif (! isset($validated['devices']) || $validated['devices'] === []) {
             return back()->withErrors(['devices' => 'Select at least one device with a group set, or enter a site prefix.']);
@@ -990,7 +995,7 @@ class TaskController extends Controller
                 }
 
                 $compositeOrder++;
-                $createdTask = $deployment->tasks()->create([
+                $vlanTaskAttributes = [
                     'task_type' => 'ADD_VLANS_FOR_DEVICE_GROUP',
                     'name' => 'add_vlans_'.$groupName.'_'.now(),
                     'deployment_time' => $validated['deployment_time'],
@@ -1001,7 +1006,11 @@ class TaskController extends Controller
                     'composite_order' => $compositeOrder,
                     'vlan_target_device_group' => $groupName,
                     'central_group_creation_task_id' => $centralGroupCreationTaskId,
-                ]);
+                ];
+                if ($vlanSitePrefix !== '') {
+                    $vlanTaskAttributes['firmware_compliance_version'] = trim((string) ($validated['firmware_compliance_version'] ?? ''));
+                }
+                $createdTask = $deployment->tasks()->create($vlanTaskAttributes);
 
                 if ($deviceIdsForGroup->isNotEmpty()) {
                     $createdTask->devices()->attach($deviceIdsForGroup);
@@ -1363,8 +1372,10 @@ class TaskController extends Controller
 
         if ($missing === []) {
             session()->flash('success', 'All group names exist in Central.');
+            session()->flash('missing_central_groups', []);
         } else {
             session()->flash('error', 'These groups were not found in Central: '.implode(', ', $missing).'.');
+            session()->flash('missing_central_groups', $missing);
         }
 
         return back();
@@ -1937,6 +1948,10 @@ class TaskController extends Controller
                             $jobs[] = [new CreateNewCentralCXGroup(trim($prereqGroup), $prereq, $centralAPIHelper)];
                         }
                     }
+                }
+                $firmwareVersion = trim((string) ($task->firmware_compliance_version ?? ''));
+                if ($firmwareVersion !== '') {
+                    $jobs[] = [new SetCxFirmwareComplianceForGroup($group, $firmwareVersion, $task, $centralAPIHelper)];
                 }
                 $jobs[] = [new AddVlansToDeviceGroup($group, $vlans, $task, $centralAPIHelper)];
                 break;
