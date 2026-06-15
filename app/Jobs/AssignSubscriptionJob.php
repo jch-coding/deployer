@@ -53,7 +53,7 @@ class AssignSubscriptionJob extends BaseTaskJob
         $result = $this->greenLakeAPIHelper->assignSubscriptionToDevices($deviceIds, $subscriptionId);
         $ok = $result['error'] === null && array_filter(
             $result['responses'],
-            fn ($response) => ! $response->ok(),
+            fn ($response) => ! $response->successful(),
         ) === [];
 
         if ($ok) {

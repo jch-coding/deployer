@@ -525,7 +525,7 @@ class GreenLakeAPIHelper
 
             $responses[] = $response;
 
-            if (! $response->ok()) {
+            if (! $response->successful()) {
                 $firstError ??= $this->extractErrorMessage($response);
             }
         }

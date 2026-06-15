@@ -267,6 +267,24 @@ test('removeDevicesFromWorkspace unassigns subscription then application', funct
     });
 });
 
+test('assignSubscriptionToDevices treats 202 as success', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/*' => Http::response([], 202),
+    ]);
+
+    $helper = new GreenLakeAPIHelper($client);
+    $result = $helper->assignSubscriptionToDevices(['dev-1'], 'sub-uuid-1');
+
+    expect($result['error'])->toBeNull()
+        ->and($result['responses'])->toHaveCount(1)
+        ->and($result['responses'][0]->status())->toBe(202);
+});
+
 test('assignSubscriptionToDevices patches each device with subscription id', function () {
     $client = Client::factory()->create([
         'bearer_token' => 'test-token',
