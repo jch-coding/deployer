@@ -9,6 +9,8 @@ use App\Models\DeviceInterface;
 use App\Models\Site;
 use App\Support\TrunkVlanRanges;
 use App\VsxRole;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
@@ -238,44 +240,51 @@ class CentralAPIHelper
             ];
         }
 
-        $limit = 100;
-        $offset = 0;
-        $raw_items = [];
+        try {
+            $limit = 100;
+            $offset = 0;
+            $raw_items = [];
 
-        while (true) {
-            $central_sites = $this->get_sites([
-                'offset' => $offset,
-                'limit' => $limit,
-            ]);
+            while (true) {
+                $central_sites = $this->get_sites([
+                    'offset' => $offset,
+                    'limit' => $limit,
+                ]);
 
-            if (is_array($central_sites) && array_key_exists('error', $central_sites)) {
-                return [
-                    'sites' => [],
-                    'error' => 'Could not load sites from Central.',
-                ];
+                if (is_array($central_sites) && array_key_exists('error', $central_sites)) {
+                    return [
+                        'sites' => [],
+                        'error' => 'Could not load sites from Central.',
+                    ];
+                }
+
+                if (! $central_sites->ok()) {
+                    return [
+                        'sites' => [],
+                        'error' => 'Could not load sites from Central.',
+                    ];
+                }
+
+                $page_items = $central_sites->json('items', []);
+                $raw_items = array_merge($raw_items, is_array($page_items) ? $page_items : []);
+
+                if (count($page_items) < $limit) {
+                    break;
+                }
+
+                $offset += $limit;
             }
 
-            if (! $central_sites->ok()) {
-                return [
-                    'sites' => [],
-                    'error' => 'Could not load sites from Central.',
-                ];
-            }
-
-            $page_items = $central_sites->json('items', []);
-            $raw_items = array_merge($raw_items, is_array($page_items) ? $page_items : []);
-
-            if (count($page_items) < $limit) {
-                break;
-            }
-
-            $offset += $limit;
+            return [
+                'sites' => $this->mapScopeManagementItems($raw_items),
+                'error' => null,
+            ];
+        } catch (RequestException|ConnectionException) {
+            return [
+                'sites' => [],
+                'error' => 'Could not load sites from Central.',
+            ];
         }
-
-        return [
-            'sites' => $this->mapScopeManagementItems($raw_items),
-            'error' => null,
-        ];
     }
 
     /**
@@ -290,28 +299,35 @@ class CentralAPIHelper
             ];
         }
 
-        $response = $this->get_device_groups();
+        try {
+            $response = $this->get_device_groups();
 
-        if (is_array($response) && array_key_exists('error', $response)) {
+            if (is_array($response) && array_key_exists('error', $response)) {
+                return [
+                    'groups' => [],
+                    'error' => 'Could not load device groups from Central.',
+                ];
+            }
+
+            if (! $response->ok()) {
+                return [
+                    'groups' => [],
+                    'error' => 'Could not load device groups from Central.',
+                ];
+            }
+
+            $items = $response->json('items', []);
+
+            return [
+                'groups' => $this->mapScopeManagementItems(is_array($items) ? $items : []),
+                'error' => null,
+            ];
+        } catch (RequestException|ConnectionException) {
             return [
                 'groups' => [],
                 'error' => 'Could not load device groups from Central.',
             ];
         }
-
-        if (! $response->ok()) {
-            return [
-                'groups' => [],
-                'error' => 'Could not load device groups from Central.',
-            ];
-        }
-
-        $items = $response->json('items', []);
-
-        return [
-            'groups' => $this->mapScopeManagementItems(is_array($items) ? $items : []),
-            'error' => null,
-        ];
     }
 
     /**

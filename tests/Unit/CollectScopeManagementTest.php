@@ -2,6 +2,7 @@
 
 use App\Helper\CentralAPIHelper;
 use App\Models\Client;
+use Illuminate\Support\Facades\Http;
 
 function scopeManagementResponse(array $payload, bool $ok = true): object
 {
@@ -78,5 +79,23 @@ it('collectScopeManagementSites returns error when authentication fails', functi
     expect($helper->collectScopeManagementSites())->toMatchArray([
         'sites' => [],
         'error' => 'Could not authenticate with Central to load sites.',
+    ]);
+});
+
+it('collectScopeManagementSites returns error when Central responds with a client error', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    Http::fake([
+        '*' => Http::response([], 403),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+
+    expect($helper->collectScopeManagementSites())->toMatchArray([
+        'sites' => [],
+        'error' => 'Could not load sites from Central.',
     ]);
 });

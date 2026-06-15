@@ -23,6 +23,8 @@ beforeEach(function () {
         'bearer_token' => 'test-bearer-token',
         'expires_at' => now()->addHour(),
     ]);
+
+    fakeCentralScopeManagementApis();
 });
 
 function fakeCentralScopeManagementApis(): void
