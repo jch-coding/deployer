@@ -977,6 +977,20 @@ class CentralAPIHelper
         }
     }
 
+    public function get_monitoring_interfaces(Device $device, array $filter = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $queryParameters = array_merge(static::localDeviceInterfaceQueryParameters($device), $filter);
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->interfaces['interface_ethernet']).'/'.$device->serial.'/interfaces';
+
+            return $response;
+        }
+    }
+
     public function post_interface_portchannel(DeviceInterface $deviceInterface)
     {
         $switch_port = static::build_portchannel_from_device_interface($deviceInterface, true);
