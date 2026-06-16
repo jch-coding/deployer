@@ -128,24 +128,14 @@ test('task lag central check reports mismatch when Central differs', function ()
             ->where('results.0.diff.0.path', 'lacp.mode'));
 });
 
-test('task lag central check finds interface on a later portchannels page', function () {
+test('task lag central check requests LOCAL portchannels for the device scope', function () {
     $fixtures = createLagCentralCheckFixtures($this->device, $this->deployment);
 
-    Http::fake(function (\Illuminate\Http\Client\Request $request) use ($fixtures) {
-        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
-
-        if (! isset($query['next'])) {
-            return Http::response([
-                'interface' => [['name' => '99', 'enable' => true]],
-                'next' => 'page-2',
-            ], 200);
-        }
-
-        return Http::response([
+    Http::fake([
+        '*portchannels*' => Http::response([
             'interface' => [$fixtures['expectedCentralItem']],
-            'next' => null,
-        ], 200);
-    });
+        ], 200),
+    ]);
 
     $this->get(route('tasks.check', $fixtures['task']))
         ->assertOk()
@@ -154,7 +144,16 @@ test('task lag central check finds interface on a later portchannels page', func
             ->where('results.0.ok', true)
             ->where('results.0.interface', '10'));
 
-    Http::assertSentCount(2);
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return str_contains($request->url(), 'portchannels')
+            && ($query['view-type'] ?? '') === 'LOCAL'
+            && ($query['object-type'] ?? '') === 'LOCAL'
+            && ($query['scope-id'] ?? '') === 'scope-123'
+            && ($query['device-function'] ?? '') === 'ACCESS_SWITCH'
+            && ! array_key_exists('limit', $query);
+    });
 });
 
 test('task lag central check reports missing interface when not in Central', function () {

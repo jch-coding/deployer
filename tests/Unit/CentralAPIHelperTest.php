@@ -613,6 +613,27 @@ test('get_all_interface_portchannels paginates with limit and next until cursor 
     Http::assertSentCount(2);
 });
 
+test('get_all_interface_portchannels prefers interface key when items is empty', function () {
+    Http::fake([
+        '*portchannels*' => Http::response([
+            'items' => [],
+            'interface' => [['name' => '10', 'enable' => true]],
+        ], 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_all_interface_portchannels([
+        'view-type' => 'LOCAL',
+        'object-type' => 'LOCAL',
+        'scope-id' => 'scope-abc',
+        'device-function' => 'ACCESS_SWITCH',
+    ]);
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(1)
+        ->and($result[0]['name'])->toBe('10');
+});
+
 test('get_all_switches paginates with limit and next until cursor is null', function () {
     $pageOneSerial = 'SERIAL-PAGE-ONE';
     $pageTwoSerial = 'SERIAL-PAGE-TWO';

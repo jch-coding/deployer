@@ -431,6 +431,17 @@ test('deployment critical check reports lag match', function () {
         ->assertJsonPath('progress.message', 'Checking LAG interfaces for '.$this->device->name.'...');
 
     expect($response->json('partial.lag_results.0.details'))->toBeArray()->not->toBeEmpty();
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return str_contains($request->url(), 'portchannels')
+            && ($query['view-type'] ?? '') === 'LOCAL'
+            && ($query['object-type'] ?? '') === 'LOCAL'
+            && ($query['scope-id'] ?? '') === 'device-scope-123'
+            && ($query['device-function'] ?? '') === 'ACCESS_SWITCH'
+            && ! array_key_exists('limit', $query);
+    });
 });
 
 test('deployment critical check step endpoint returns progress', function () {
