@@ -1066,17 +1066,24 @@ class CentralAPIHelper
                 $params['next'] = $next;
             }
 
-            $response = Http::withToken($this->client->bearer_token)
-                ->withQueryParameters($params)
-                ->get($this->client->base_url.$this->interfaces['interface_portchannel']);
+            $response = $this->get_interface_portchannels($params);
 
-            if (! $response->ok()) {
-                $message = (string) ($response->json('message') ?? $response->body());
+            if (is_array($response) && array_key_exists('error', $response)) {
+                return ['error' => (string) $response['error']];
+            }
+
+            if (! $response instanceof Response || ! $response->ok()) {
+                $message = $response instanceof Response
+                    ? (string) ($response->json('message') ?? $response->body())
+                    : '';
 
                 return ['error' => $message !== '' ? $message : 'Failed to fetch portchannels from Central.'];
             }
 
-            $pageItems = $response->json('items', $response->json('interface', []));
+            $pageItems = $response->json('interface', []);
+            if ($pageItems === []) {
+                $pageItems = $response->json('items', []);
+            }
             if (! is_array($pageItems)) {
                 $pageItems = [];
             }

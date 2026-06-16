@@ -6,6 +6,7 @@ use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Task;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 
 class LagInterfaceCentralVerifier
@@ -137,16 +138,30 @@ class LagInterfaceCentralVerifier
      */
     protected function fetchPortchannelsByName(CentralAPIHelper $helper, Device $device): array
     {
-        $items = $helper->get_all_interface_portchannels(
+        $response = $helper->get_interface_portchannels(
             CentralAPIHelper::localDeviceInterfaceQueryParameters($device)
         );
 
-        if (array_key_exists('error', $items)) {
-            return ['error' => (string) $items['error']];
+        if ($response instanceof Response && ! $response->ok()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return ['error' => $message !== '' ? $message : 'Failed to fetch portchannels from Central.'];
+        }
+
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return ['error' => (string) $response['error']];
+        }
+
+        $items = $response instanceof Response ? $response->json('interface', []) : [];
+        if (! is_array($items)) {
+            $items = [];
         }
 
         $indexed = [];
         foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
             $name = (string) ($item['name'] ?? '');
             if ($name !== '') {
                 $indexed[$name] = $item;
