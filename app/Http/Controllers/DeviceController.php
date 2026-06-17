@@ -22,6 +22,7 @@ use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
 use App\Services\DeviceInterfaceUpdateResolver;
+use App\Support\CsvImportMergeHelper;
 use App\Support\TrunkVlanRanges;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -36,6 +37,27 @@ use Inertia\Response;
 
 class DeviceController extends Controller
 {
+    /**
+     * Device columns that use null-safe merge when updating existing records from CSV.
+     *
+     * @var list<string>
+     */
+    private const CSV_DEVICE_OPTIONAL_MERGE_FIELDS = [
+        'group',
+        'sku',
+        'vsx_profile',
+        'vsx_role',
+        'vsx_system_mac',
+        'vsx_isl_ports',
+        'vsx_keepalive_ports',
+        'mirror_session_id',
+        'mirror_dst_ports',
+        'mirror_vlans',
+        'mirror_name',
+        'license_tag',
+        'license_type',
+    ];
+
     /**
      * Store a newly created resource in storage.
      */
@@ -156,33 +178,7 @@ class DeviceController extends Controller
             $unique_devices
         );
 
-        $upsertColumns = [
-            'name',
-            'device_function',
-            'client_id',
-            'deployment_id',
-            'group',
-            'sku',
-            'vsx_profile',
-            'vsx_role',
-            'vsx_system_mac',
-            'vsx_isl_ports',
-            'vsx_keepalive_ports',
-            'mirror_session_id',
-            'mirror_dst_ports',
-            'mirror_vlans',
-            'mirror_name',
-        ];
-
-        if ($hasLicenseColumns && $csvHasLicenseTag) {
-            $upsertColumns[] = 'license_tag';
-        }
-
-        if ($hasLicenseColumns && $csvHasLicenseType) {
-            $upsertColumns[] = 'license_type';
-        }
-
-        $savedDevices = Device::query()->upsert($withDeployment, ['serial', 'user_id'], $upsertColumns);
+        $savedDevices = self::saveDevicesFromCsv($withDeployment, $user->id);
 
         $errors = [];
         $unsaved_devices = [];
@@ -219,8 +215,8 @@ class DeviceController extends Controller
                 foreach ($interfaces['devices_grouped_config'] as $device_interfaces) {
                     foreach ($device_interfaces as $row) {
                         $deviceQuery = Device::query()->where('serial', $row['serial']);
-                        if ($userId !== null) {
-                            $deviceQuery->where('user_id', $userId);
+                        if ($user->id !== null) {
+                            $deviceQuery->where('user_id', $user->id);
                         }
                         $device = $deviceQuery->first();
                         if ($device === null) {
@@ -460,45 +456,256 @@ class DeviceController extends Controller
                 $kind = $device_interface['interface_kind'] ?? InterfaceKind::ETHERNET;
                 $kindValue = $kind instanceof InterfaceKind ? $kind->value : (string) $kind;
 
-                $isRoutedEthernet = InterfaceHelper::isRoutedEthernetRow($device_interface);
-                $isRoutedLag = InterfaceHelper::isRoutedLagRow($device_interface);
-                $isRouted = $isRoutedEthernet || $isRoutedLag;
+                $existing = DeviceInterface::query()
+                    ->where('device_id', $device->id)
+                    ->where('interface', $device_interface['interface'])
+                    ->where('interface_kind', $kindValue)
+                    ->first();
 
-                $device_interface_config = [
-                    'device_id' => $device->id,
-                    'interface' => $device_interface['interface'],
-                    'interface_kind' => $kindValue,
-                    'description' => $device_interface['description'] ?? null,
-                    'ip_address' => $device_interface['ip_address'] ?? null,
-                    'sw_profile' => $isRouted ? null : ($device_interface['port_profile'] ?? null),
-                    'shutdown_on_split' => $isRouted ? false : BooleanHelper::toBoolean($device_interface['shutdown_on_split'] ?? false),
-                    'switch_port_id' => $isRouted ? null : DeviceInterfaceUpdateResolver::resolveSwitchPortId($device_interface),
-                    'stp_profile_id' => $isRouted ? null : DeviceInterfaceUpdateResolver::resolveStpProfileId($device_interface),
-                    'lacp_profile_id' => $isRoutedEthernet ? null : DeviceInterfaceUpdateResolver::resolveLacpProfileId($device_interface),
-                ];
+                $attributes = self::buildInterfaceAttributesFromCsvRow(
+                    $device,
+                    $device_interface,
+                    $kindValue,
+                    $existing
+                );
 
-                $upsertColumns = ['sw_profile', 'shutdown_on_split', 'switch_port_id', 'stp_profile_id', 'lacp_profile_id', 'description', 'ip_address', 'interface_kind'];
-
-                if ($isRouted) {
-                    $device_interface_config['routing'] = true;
-                    $upsertColumns[] = 'routing';
-
-                    if (array_key_exists('vrf_forwarding', $device_interface) && trim((string) ($device_interface['vrf_forwarding'] ?? '')) !== '') {
-                        $device_interface_config['vrf_forwarding'] = trim((string) $device_interface['vrf_forwarding']);
-                        $upsertColumns[] = 'vrf_forwarding';
-                    }
+                if ($existing) {
+                    $existing->fill($attributes);
+                    $existing->save();
+                } else {
+                    DeviceInterface::create($attributes);
                 }
 
-                DeviceInterface::upsert(
-                    $device_interface_config,
-                    ['interface', 'device_id', 'interface_kind'],
-                    $upsertColumns
-                );
                 $saved_interfaces++;
             }
         }
 
         return $saved_interfaces;
+    }
+
+    /**
+     * @param  array<string, mixed>  $rows
+     */
+    public static function saveDevicesFromCsv(array $rows, int $userId): int
+    {
+        $saved = 0;
+
+        foreach ($rows as $row) {
+            $existing = Device::query()
+                ->where('serial', $row['serial'])
+                ->where('user_id', $userId)
+                ->first();
+
+            if ($existing) {
+                $attributes = CsvImportMergeHelper::mergeOptionalFields(
+                    $existing->getAttributes(),
+                    $row,
+                    self::CSV_DEVICE_OPTIONAL_MERGE_FIELDS
+                );
+
+                foreach (['name', 'device_function', 'client_id', 'deployment_id'] as $field) {
+                    if (array_key_exists($field, $row)) {
+                        $attributes[$field] = $row[$field];
+                    }
+                }
+
+                $existing->update($attributes);
+            } else {
+                Device::create($row);
+            }
+
+            $saved++;
+        }
+
+        return $saved;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    protected static function buildInterfaceAttributesFromCsvRow(
+        Device $device,
+        array $row,
+        string $kindValue,
+        ?DeviceInterface $existing
+    ): array {
+        $isRoutedEthernet = InterfaceHelper::isRoutedEthernetRow($row);
+        $isRoutedLag = InterfaceHelper::isRoutedLagRow($row);
+        $isRouted = $isRoutedEthernet || $isRoutedLag;
+
+        $attributes = [
+            'device_id' => $device->id,
+            'interface' => $row['interface'],
+            'interface_kind' => $kindValue,
+        ];
+
+        if ($existing === null) {
+            return array_merge($attributes, self::buildNewInterfaceAttributesFromCsvRow(
+                $row,
+                $isRouted,
+                $isRoutedEthernet
+            ));
+        }
+
+        return array_merge($attributes, self::mergeExistingInterfaceAttributesFromCsvRow(
+            $row,
+            $existing,
+            $isRouted,
+            $isRoutedEthernet
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    protected static function buildNewInterfaceAttributesFromCsvRow(
+        array $row,
+        bool $isRouted,
+        bool $isRoutedEthernet
+    ): array {
+        $attributes = [
+            'description' => $row['description'] ?? null,
+            'ip_address' => $row['ip_address'] ?? null,
+            'sw_profile' => $isRouted ? null : ($row['port_profile'] ?? null),
+            'shutdown_on_split' => $isRouted ? false : BooleanHelper::toBoolean($row['shutdown_on_split'] ?? false),
+            'switch_port_id' => $isRouted ? null : DeviceInterfaceUpdateResolver::resolveSwitchPortId($row),
+            'stp_profile_id' => $isRouted ? null : DeviceInterfaceUpdateResolver::resolveStpProfileId($row),
+            'lacp_profile_id' => $isRoutedEthernet ? null : DeviceInterfaceUpdateResolver::resolveLacpProfileId($row),
+            'routing' => $isRouted,
+        ];
+
+        if ($isRouted) {
+            if (array_key_exists('vrf_forwarding', $row) && trim((string) ($row['vrf_forwarding'] ?? '')) !== '') {
+                $attributes['vrf_forwarding'] = trim((string) $row['vrf_forwarding']);
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    protected static function mergeExistingInterfaceAttributesFromCsvRow(
+        array $row,
+        DeviceInterface $existing,
+        bool $isRouted,
+        bool $isRoutedEthernet
+    ): array {
+        $attributes = [
+            'description' => CsvImportMergeHelper::mergeCsvValue(
+                $existing->description,
+                $row['description'] ?? null
+            ),
+            'ip_address' => CsvImportMergeHelper::mergeCsvValue(
+                $existing->ip_address,
+                $row['ip_address'] ?? null
+            ),
+            'routing' => $isRouted ? true : (bool) $existing->routing,
+        ];
+
+        if ($isRouted) {
+            $attributes['sw_profile'] = null;
+            $attributes['switch_port_id'] = null;
+            $attributes['stp_profile_id'] = null;
+            $attributes['lacp_profile_id'] = null;
+            $attributes['shutdown_on_split'] = false;
+
+            if (CsvImportMergeHelper::rowHasPopulatedValue($row, 'vrf_forwarding')) {
+                $attributes['vrf_forwarding'] = trim((string) $row['vrf_forwarding']);
+            } else {
+                $attributes['vrf_forwarding'] = $existing->vrf_forwarding;
+            }
+
+            return $attributes;
+        }
+
+        $incomingSwProfile = CsvImportMergeHelper::rowHasPopulatedValue($row, 'port_profile')
+            ? $row['port_profile']
+            : null;
+        $attributes['sw_profile'] = CsvImportMergeHelper::mergeCsvValue($existing->sw_profile, $incomingSwProfile);
+
+        $incomingShutdownOnSplit = array_key_exists('shutdown_on_split', $row)
+            ? BooleanHelper::toBoolean($row['shutdown_on_split'])
+            : null;
+        if (array_key_exists('shutdown_on_split', $row) && CsvImportMergeHelper::isCsvValueEmpty($row['shutdown_on_split'])) {
+            $incomingShutdownOnSplit = null;
+        }
+        $attributes['shutdown_on_split'] = CsvImportMergeHelper::mergeCsvValue(
+            $existing->shutdown_on_split,
+            $incomingShutdownOnSplit
+        );
+
+        $attributes['switch_port_id'] = CsvImportMergeHelper::mergeCsvValue(
+            $existing->switch_port_id,
+            self::resolveIncomingSwitchPortIdFromCsvRow($row)
+        );
+        $attributes['stp_profile_id'] = CsvImportMergeHelper::mergeCsvValue(
+            $existing->stp_profile_id,
+            self::resolveIncomingStpProfileIdFromCsvRow($row)
+        );
+        $attributes['lacp_profile_id'] = CsvImportMergeHelper::mergeCsvValue(
+            $existing->lacp_profile_id,
+            self::resolveIncomingLacpProfileIdFromCsvRow($row, $isRoutedEthernet)
+        );
+
+        if ($existing->routing && CsvImportMergeHelper::rowHasPopulatedValue($row, 'vrf_forwarding')) {
+            $attributes['vrf_forwarding'] = CsvImportMergeHelper::mergeCsvValue(
+                $existing->vrf_forwarding,
+                trim((string) $row['vrf_forwarding'])
+            );
+        } elseif ($existing->routing) {
+            $attributes['vrf_forwarding'] = $existing->vrf_forwarding;
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    protected static function resolveIncomingSwitchPortIdFromCsvRow(array $row): ?int
+    {
+        if (! CsvImportMergeHelper::rowHasPopulatedValue($row, 'interface_mode')) {
+            return null;
+        }
+
+        return DeviceInterfaceUpdateResolver::resolveSwitchPortId($row);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    protected static function resolveIncomingStpProfileIdFromCsvRow(array $row): ?int
+    {
+        $stpKeys = ['admin_edge_port', 'admin_edge_port_trunk', 'bpdu_guard', 'loop_guard'];
+        $hasStpInput = array_any($stpKeys, fn (string $key) => array_key_exists($key, $row));
+
+        if (! $hasStpInput) {
+            return null;
+        }
+
+        return DeviceInterfaceUpdateResolver::resolveStpProfileId($row);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    protected static function resolveIncomingLacpProfileIdFromCsvRow(array $row, bool $isRoutedEthernet): ?int
+    {
+        if ($isRoutedEthernet) {
+            return null;
+        }
+
+        if (! CsvImportMergeHelper::rowHasPopulatedValue($row, 'port_list')
+            && ! CsvImportMergeHelper::rowHasPopulatedValue($row, 'lacp_port_id')) {
+            return null;
+        }
+
+        return DeviceInterfaceUpdateResolver::resolveLacpProfileId($row);
     }
 
     protected static function normalizeSwitchPortAttributes(array $interfaceData): ?array

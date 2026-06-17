@@ -607,3 +607,142 @@ it('uploads devices when a name-only organizational row is present', function ()
 
     $this->assertDatabaseHas('devices', ['serial' => 'SN0000000002', 'name' => 'SW-1']);
 });
+
+it('does not null optional device fields when csv cells are blank on re-upload', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $initialUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,group,sku,vsx_profile,vsx_role'.PHP_EOL.
+        'SW-1,SN_NULLSAFE01,ACCESS_SWITCH,Group-A,JL660A,vsx-pair-1,VSX_PRIMARY'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $initialUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $secondUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,group,sku,vsx_profile,vsx_role'.PHP_EOL.
+        'SW-1 Renamed,SN_NULLSAFE01,ACCESS_SWITCH,,,,'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $secondUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', [
+        'serial' => 'SN_NULLSAFE01',
+        'name' => 'SW-1 Renamed',
+        'group' => 'Group-A',
+        'sku' => 'JL660A',
+        'vsx_profile' => 'vsx-pair-1',
+        'vsx_role' => 'VSX_PRIMARY',
+    ]);
+});
+
+it('populates previously null optional device fields from csv', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $initialUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function'.PHP_EOL.
+        'SW-2,SN_NULLSAFE02,ACCESS_SWITCH'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $initialUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device = Device::query()->where('serial', 'SN_NULLSAFE02')->firstOrFail();
+    expect($device->sku)->toBeNull()
+        ->and(in_array($device->group, [null, ''], true))->toBeTrue();
+
+    $secondUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,group,sku'.PHP_EOL.
+        'SW-2,SN_NULLSAFE02,ACCESS_SWITCH,Group-B,JL661A'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $secondUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', [
+        'serial' => 'SN_NULLSAFE02',
+        'group' => 'Group-B',
+        'sku' => 'JL661A',
+    ]);
+});
+
+it('does not null interface fields when csv cells are blank on re-upload', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $initialUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,description,interface_mode,access_vlan'.PHP_EOL.
+        'SW-3,SN_NULLSAFE03,ACCESS_SWITCH,1/1/1,Original Desc,ACCESS,30'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $initialUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device = Device::query()->where('serial', 'SN_NULLSAFE03')->firstOrFail();
+    $interface = DeviceInterface::query()->where('device_id', $device->id)->where('interface', '1/1/1')->firstOrFail();
+    $originalSwitchPortId = $interface->switch_port_id;
+
+    $secondUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,description,interface_mode,access_vlan'.PHP_EOL.
+        'SW-3,SN_NULLSAFE03,ACCESS_SWITCH,1/1/1,,,'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $secondUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $interface->refresh();
+
+    expect($interface->description)->toBe('Original Desc')
+        ->and($interface->switch_port_id)->toBe($originalSwitchPortId);
+});
+
+it('updates interface fields when csv provides new non-null values', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $initialUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,description,interface_mode,access_vlan'.PHP_EOL.
+        'SW-4,SN_NULLSAFE04,ACCESS_SWITCH,1/1/1,Original Desc,ACCESS,30'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $initialUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $secondUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,interface,description,interface_mode,access_vlan'.PHP_EOL.
+        'SW-4,SN_NULLSAFE04,ACCESS_SWITCH,1/1/1,Updated Desc,ACCESS,40'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $secondUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device = Device::query()->where('serial', 'SN_NULLSAFE04')->firstOrFail();
+    $interface = DeviceInterface::query()->where('device_id', $device->id)->where('interface', '1/1/1')->firstOrFail();
+
+    expect($interface->description)->toBe('Updated Desc')
+        ->and($interface->switch_port)->not->toBeNull()
+        ->and($interface->switch_port->access_vlan)->toBe(40);
+});
