@@ -68,6 +68,28 @@ class ConfigureLagInterfaceJob extends BaseTaskJob
             $this->task->processTaskStatusLog($message);
             $response = $this->centralAPIHelper->post_interface_portchannel($this->device_interface);
             if (! $response->ok()) {
+                $postMessage = (string) ($response->json('message') ?? '');
+                if (str_contains($postMessage, 'Cannot create duplicate config')) {
+                    $message = '\nLAG '.$this->device_interface->interface.' already configured for '.$this->device_interface->device->name.'. Trying patch...';
+                    Log::info($message);
+                    $this->task->processTaskStatusLog($message);
+                    $createPayload = CentralAPIHelper::build_portchannel_from_device_interface($this->device_interface, true);
+                    $response = $this->centralAPIHelper->patch_raw_interface_portchannel(
+                        $this->device_interface->device,
+                        $this->device_interface->interface,
+                        $createPayload
+                    );
+                }
+            }
+            if (is_array($response) && array_key_exists('error', $response)) {
+                $message = (string) $response['error'];
+                Log::error($message);
+                $this->task->processTaskStatusLog($message, true);
+                $this->release($this->wait_time * 60);
+
+                return;
+            }
+            if (! $response->ok()) {
                 Log::error($response->json('message'));
                 $this->task->processTaskStatusLog($response->json('message'), true);
                 $this->release($this->wait_time * 60);

@@ -105,6 +105,44 @@ test('ConfigureLagInterfaceJob creates vrf then posts and patches routed LAG', f
     expect($this->task->deviceInterfaces()->find($this->deviceInterface->id)->pivot->status)->toBe('COMPLETED');
 });
 
+test('ConfigureLagInterfaceJob patches LAG when post fails because it is already configured', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), '/vrfs')) {
+            return Http::response(['vrf' => [['name' => 'my-vrf']]], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($request->url(), 'portchannels/11')) {
+            return Http::response(['message' => 'Cannot create duplicate config'], 400);
+        }
+
+        if ($request->method() === 'PATCH' && str_contains($request->url(), 'portchannels/11')) {
+            return Http::response(['name' => '11'], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $job = new ConfigureLagInterfaceJob($this->deviceInterface, $this->task, $this->helper);
+    $job->handle();
+
+    Http::assertSent(function (Request $request) {
+        if ($request->method() !== 'PATCH' || ! str_contains($request->url(), 'portchannels/11')) {
+            return false;
+        }
+        $body = json_decode($request->body(), true);
+
+        return ($body['ipv4']['address'] ?? null) === '10.255.0.1/30'
+            && ($body['vrf-forwarding'] ?? null) === 'my-vrf'
+            && ! array_key_exists('routing', $body);
+    });
+    Http::assertSent(fn (Request $request) => $request->method() === 'PATCH' && str_contains($request->url(), 'portchannels/11'));
+    expect($this->task->deviceInterfaces()->find($this->deviceInterface->id)->pivot->status)->toBe('COMPLETED');
+});
+
 test('ConfigureLagInterfaceJob skips vrf post when vrf already exists for routed LAG', function () {
     Http::fake(function (Request $request) {
         if (str_contains($request->url(), 'device-groups')) {
