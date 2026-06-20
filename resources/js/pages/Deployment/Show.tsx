@@ -12,7 +12,6 @@ import {
     Card,
     CardContent,
     CardDescription,
-    CardHeader,
     CardTitle,
 } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
@@ -52,6 +51,7 @@ import {
     groupTasksByLaunchCategory,
     TASK_LAUNCH_CATEGORIES,
     taskMatchesSearch,
+    type TaskLaunchCategoryId,
     type TaskLaunchSearchable,
 } from '@/lib/task-launch-categories';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -161,6 +161,8 @@ export default function Show() {
 
     const [deviceTableSearch, setDeviceTableSearch] = useState(device_search);
     const [taskSearch, setTaskSearch] = useState('');
+    const [selectedTaskCategoryId, setSelectedTaskCategoryId] =
+        useState<TaskLaunchCategoryId | null>(null);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [allFilteredSelected, setAllFilteredSelected] = useState(false);
     const [syncingScopeIds, setSyncingScopeIds] = useState(false);
@@ -372,6 +374,28 @@ export default function Show() {
 
     const hasVisibleLaunchTasks = filteredLaunchTasks.length > 0;
 
+    const visibleTaskCategories = useMemo(
+        () =>
+            TASK_LAUNCH_CATEGORIES.filter(
+                (category) => launchTasksByCategory[category.id].length > 0,
+            ),
+        [launchTasksByCategory],
+    );
+
+    const selectedCategoryTasks =
+        selectedTaskCategoryId !== null
+            ? launchTasksByCategory[selectedTaskCategoryId]
+            : [];
+
+    useEffect(() => {
+        if (
+            selectedTaskCategoryId !== null &&
+            launchTasksByCategory[selectedTaskCategoryId].length === 0
+        ) {
+            setSelectedTaskCategoryId(null);
+        }
+    }, [launchTasksByCategory, selectedTaskCategoryId]);
+
     function renderTaskCard(task: LaunchTask) {
         const TaskComponent = isDeviceBasedTask(task.task_type)
             ? TaskCard
@@ -434,56 +458,220 @@ export default function Show() {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <h1 className="text-center text-3xl font-semibold">
-                {deployment.name}
-            </h1>
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button asChild>
-                            <a href={criticalCheckDeployment(deploymentId).url}>
-                                Critical configuration check
-                            </a>
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                        Compare LAG and VLAN config in Central with this deployment,
-                        and view static routes and DNS profiles.
-                    </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
+            <div className="flex w-full flex-col gap-6 px-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    <h1 className="text-3xl font-semibold">{deployment.name}</h1>
+                    <div className="flex flex-wrap items-center gap-2">
                         <Button
-                            asChild
-                            variant="default"
-                            className="hover:bg-pink-500 hover:text-white"
+                            type="button"
+                            variant="outline"
+                            className="gap-2"
+                            data-test="download-sample-csv"
+                            onClick={downloadSampleDeviceCsv}
                         >
-                            <a
-                                href={
-                                    selectedIds.length > 0
-                                        ? `${provisionDeployment(deploymentId).url}?device_ids=${selectedIds.join(',')}`
-                                        : provisionDeployment(deploymentId).url
-                                }
-                                data-test="run-provisioning-workflow"
-                            >
-                                <Crown className="size-4" aria-hidden />
-                                I'm a Diva
-                            </a>
+                            <Download className="size-4" aria-hidden />
+                            Sample CSV
                         </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                        {selectedIds.length > 0
-                            ? `Run full provisioning for ${selectedCount} selected device(s).`
-                            : 'Open the provisioning workflow page for this deployment.'}
-                    </TooltipContent>
-                </Tooltip>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-5 p-4">
-                <div className="col-span-2 mx-auto">
-                    <h2 className="text-center text-xl font-semibold">
-                        Latest Tasks
-                    </h2>
-                    {latest_tasks.length > 0 && (
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button data-test="add-devices">
+                                    Add Devices
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogTitle>Add Device</DialogTitle>
+                                <DialogDescription>
+                                    Add devices to this deployment
+                                </DialogDescription>
+                                <Form
+                                    action={storeMany(deployment.id).url}
+                                    method="POST"
+                                    onSuccess={() => {
+                                        toast.success(
+                                            'Devices added successfully',
+                                        );
+                                        setSubmitting(false);
+                                    }}
+                                    onError={() => {
+                                        toast.error('Failed to add devices');
+                                        setSubmitting(false);
+                                    }}
+                                    data-test="add-devices-form"
+                                    className="flex flex-col gap-4"
+                                    as="form"
+                                    encType="multipart/form-data"
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        setSubmitting(true);
+                                        handleSubmit(e);
+                                    }}
+                                >
+                                    <input
+                                        type="file"
+                                        name="devices"
+                                        onChange={(e) => {
+                                            const file =
+                                                e.target.files?.[0] ?? null;
+                                            setData('devices', file);
+                                        }}
+                                        className="block cursor-pointer rounded-lg border border-gray-300 bg-gray-50 p-2 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:placeholder-gray-400"
+                                        disabled={submitting}
+                                    />
+                                    {errors && Object.keys(errors).length > 0 && (
+                                        <div className="space-y-2 text-xs text-red-500">
+                                            {(() => {
+                                                const {
+                                                    headerErrors,
+                                                    rowErrors,
+                                                    otherErrors,
+                                                } = groupCsvUploadErrors(errors);
+
+                                                return (
+                                                    <>
+                                                        {headerErrors.length >
+                                                            0 && (
+                                                            <div className="space-y-1">
+                                                                <p className="font-medium">
+                                                                    CSV header
+                                                                    issues
+                                                                </p>
+                                                                {headerErrors.map(
+                                                                    ({
+                                                                        key,
+                                                                        message,
+                                                                    }) => (
+                                                                        <p
+                                                                            key={
+                                                                                key
+                                                                            }
+                                                                        >
+                                                                            {
+                                                                                message
+                                                                            }
+                                                                        </p>
+                                                                    ),
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {rowErrors.length >
+                                                            0 && (
+                                                            <div className="space-y-1">
+                                                                <p className="font-medium">
+                                                                    Row issues
+                                                                </p>
+                                                                {rowErrors.map(
+                                                                    ({
+                                                                        key,
+                                                                        message,
+                                                                    }) => (
+                                                                        <p
+                                                                            key={
+                                                                                key
+                                                                            }
+                                                                        >
+                                                                            <span className="font-medium">
+                                                                                {
+                                                                                    key
+                                                                                }
+                                                                                :
+                                                                            </span>{' '}
+                                                                            {
+                                                                                message
+                                                                            }
+                                                                        </p>
+                                                                    ),
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {otherErrors.map(
+                                                            ({
+                                                                key,
+                                                                message,
+                                                            }) => (
+                                                                <p key={key}>
+                                                                    {key}:{' '}
+                                                                    {message}
+                                                                </p>
+                                                            ),
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
+                                    <DialogFooter className="mt-4 flex-row-reverse sm:justify-start">
+                                        <Button
+                                            data-test="upload-devices"
+                                            type="submit"
+                                        >
+                                            Add Devices
+                                        </Button>
+                                        {progress && (
+                                            <progress
+                                                value={progress.percentage}
+                                                max="100"
+                                            >
+                                                {progress.percentage}%
+                                            </progress>
+                                        )}
+                                    </DialogFooter>
+                                </Form>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-2">
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button asChild>
+                                <a
+                                    href={criticalCheckDeployment(
+                                        deploymentId,
+                                    ).url}
+                                >
+                                    Critical configuration check
+                                </a>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            Compare LAG and VLAN config in Central with this
+                            deployment, and view static routes and DNS profiles.
+                        </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                asChild
+                                variant="default"
+                                className="hover:bg-pink-500 hover:text-white"
+                            >
+                                <a
+                                    href={
+                                        selectedIds.length > 0
+                                            ? `${provisionDeployment(deploymentId).url}?device_ids=${selectedIds.join(',')}`
+                                            : provisionDeployment(
+                                                  deploymentId,
+                                              ).url
+                                    }
+                                    data-test="run-provisioning-workflow"
+                                >
+                                    <Crown className="size-4" aria-hidden />
+                                    I'm a Diva
+                                </a>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            {selectedIds.length > 0
+                                ? `Run full provisioning for ${selectedCount} selected device(s).`
+                                : 'Open the provisioning workflow page for this deployment.'}
+                        </TooltipContent>
+                    </Tooltip>
+                </div>
+
+                <section className="w-full">
+                    <h2 className="text-xl font-semibold">Latest Tasks</h2>
+                    {latest_tasks.length > 0 ? (
                         <div className="mt-2 flex flex-wrap gap-2">
                             {latest_tasks.map((task) => (
                                 <Card key={task.id} className="max-w-sm px-2">
@@ -508,17 +696,20 @@ export default function Show() {
                                 </Card>
                             ))}
                         </div>
-                    )}
-                </div>
-                <div>
+                    ) : null}
+                </section>
+
+                <section className="w-full">
                     {devicesFromServer.length > 0 ||
                     deviceTableSearch.trim() !== '' ? (
-                        <div className="mt-6">
+                        <>
                             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    disabled={selectedCount === 0 || syncingScopeIds}
+                                    disabled={
+                                        selectedCount === 0 || syncingScopeIds
+                                    }
                                     data-test="force-sync-device-scope-ids"
                                     onClick={handleForceSyncScopeIds}
                                 >
@@ -564,8 +755,8 @@ export default function Show() {
                                             setRowSelection({});
                                         }}
                                     >
-                                        Select all {devicesPaginator.total} devices
-                                        matching this search
+                                        Select all {devicesPaginator.total}{' '}
+                                        devices matching this search
                                     </Button>
                                 </div>
                             ) : null}
@@ -586,185 +777,75 @@ export default function Show() {
                                     TPaginator={devicesPaginator}
                                 />
                             )}
-                        </div>
+                        </>
                     ) : (
                         <p>No devices assigned to this deployment</p>
                     )}
-                </div>
-                <div>
-                    <div className="mt-6 space-y-4">
-                        <div className="relative mx-auto w-full max-w-md">
-                            <Search
-                                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                                aria-hidden
-                            />
-                            <Input
-                                type="search"
-                                value={taskSearch}
-                                onChange={(e) => setTaskSearch(e.target.value)}
-                                placeholder="Search tasks by name, description, or required columns…"
-                                className="pl-9"
-                                data-test="tasks-search"
-                                aria-label="Search tasks by name, description, or required columns"
-                            />
+                </section>
+
+                <section className="w-full space-y-4">
+                    <h2 className="text-xl font-semibold">Launch tasks</h2>
+                    <div className="relative w-full max-w-md">
+                        <Search
+                            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden
+                        />
+                        <Input
+                            type="search"
+                            value={taskSearch}
+                            onChange={(e) => setTaskSearch(e.target.value)}
+                            placeholder="Search tasks by name, description, or required columns…"
+                            className="pl-9"
+                            data-test="tasks-search"
+                            aria-label="Search tasks by name, description, or required columns"
+                        />
+                    </div>
+                    {visibleTaskCategories.length > 0 ? (
+                        <div
+                            className="flex flex-wrap gap-2"
+                            role="group"
+                            aria-label="Task groups"
+                        >
+                            {visibleTaskCategories.map((category) => (
+                                <Button
+                                    key={category.id}
+                                    type="button"
+                                    variant={
+                                        selectedTaskCategoryId === category.id
+                                            ? 'default'
+                                            : 'outline'
+                                    }
+                                    aria-pressed={
+                                        selectedTaskCategoryId === category.id
+                                    }
+                                    data-test={`task-group-${category.id}`}
+                                    onClick={() =>
+                                        setSelectedTaskCategoryId(category.id)
+                                    }
+                                >
+                                    {category.label}
+                                </Button>
+                            ))}
                         </div>
+                    ) : null}
+                    <div data-test="task-group-panel">
                         {taskSearch.trim() !== '' && !hasVisibleLaunchTasks ? (
-                            <p className="text-muted-foreground text-center text-sm">
+                            <p className="text-muted-foreground text-sm">
                                 No tasks match your search.
                             </p>
-                        ) : null}
-                        {TASK_LAUNCH_CATEGORIES.map((category) => {
-                            const categoryTasks =
-                                launchTasksByCategory[category.id];
-                            if (categoryTasks.length === 0) {
-                                return null;
-                            }
-
-                            return (
-                                <Card key={category.id}>
-                                    <CardHeader className="pb-3">
-                                        <CardTitle className="text-lg">
-                                            {category.label}
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="flex flex-wrap justify-center gap-2">
-                                            {categoryTasks.map((task) =>
-                                                renderTaskCard(task),
-                                            )}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            );
-                        })}
-                    </div>
-                </div>
-                <div className="absolute top-4 right-4 flex items-center gap-2">
-                    <Button
-                        type="button"
-                        variant="outline"
-                        className="gap-2"
-                        data-test="download-sample-csv"
-                        onClick={downloadSampleDeviceCsv}
-                    >
-                        <Download className="size-4" aria-hidden />
-                        Sample CSV
-                    </Button>
-                    <Dialog>
-                        <DialogTrigger asChild>
-                            <Button data-test="add-devices">Add Devices</Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                            <DialogTitle>Add Device</DialogTitle>
-                            <DialogDescription>
-                                Add devices to this deployment
-                            </DialogDescription>
-                            <Form
-                                action={storeMany(deployment.id).url}
-                                method="POST"
-                                onSuccess={() => {
-                                    toast.success('Devices added successfully');
-                                    setSubmitting(false);
-                                }}
-                                onError={() => {
-                                    toast.error('Failed to add devices');
-                                    setSubmitting(false);
-                                }}
-                                data-test="add-devices-form"
-                                className="flex flex-col gap-4"
-                                as="form"
-                                encType="multipart/form-data"
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    setSubmitting(true);
-                                    handleSubmit(e);
-                                }}
-                            >
-                                <input
-                                    type="file"
-                                    name="devices"
-                                    onChange={(e) => {
-                                        const file =
-                                            e.target.files?.[0] ?? null;
-                                        setData('devices', file);
-                                    }}
-                                    className="block cursor-pointer rounded-lg border border-gray-300 bg-gray-50 p-2 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:placeholder-gray-400"
-                                    disabled={submitting}
-                                />
-                                {errors && Object.keys(errors).length > 0 && (
-                                    <div className="space-y-2 text-xs text-red-500">
-                                        {(() => {
-                                            const {
-                                                headerErrors,
-                                                rowErrors,
-                                                otherErrors,
-                                            } = groupCsvUploadErrors(errors);
-
-                                            return (
-                                                <>
-                                                    {headerErrors.length > 0 && (
-                                                        <div className="space-y-1">
-                                                            <p className="font-medium">
-                                                                CSV header issues
-                                                            </p>
-                                                            {headerErrors.map(
-                                                                ({ key, message }) => (
-                                                                    <p key={key}>
-                                                                        {message}
-                                                                    </p>
-                                                                ),
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    {rowErrors.length > 0 && (
-                                                        <div className="space-y-1">
-                                                            <p className="font-medium">
-                                                                Row issues
-                                                            </p>
-                                                            {rowErrors.map(
-                                                                ({ key, message }) => (
-                                                                    <p key={key}>
-                                                                        <span className="font-medium">
-                                                                            {key}:
-                                                                        </span>{' '}
-                                                                        {message}
-                                                                    </p>
-                                                                ),
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    {otherErrors.map(
-                                                        ({ key, message }) => (
-                                                            <p key={key}>
-                                                                {key}: {message}
-                                                            </p>
-                                                        ),
-                                                    )}
-                                                </>
-                                            );
-                                        })()}
-                                    </div>
+                        ) : selectedTaskCategoryId === null ? (
+                            <p className="text-muted-foreground text-sm">
+                                Select a task group above.
+                            </p>
+                        ) : (
+                            <div className="flex flex-wrap justify-start gap-2">
+                                {selectedCategoryTasks.map((task) =>
+                                    renderTaskCard(task),
                                 )}
-                                <DialogFooter className="mt-4 flex-row-reverse sm:justify-start">
-                                    <Button
-                                        data-test="upload-devices"
-                                        type="submit"
-                                    >
-                                        Add Devices
-                                    </Button>
-                                    {progress && (
-                                        <progress
-                                            value={progress.percentage}
-                                            max="100"
-                                        >
-                                            {progress.percentage}%
-                                        </progress>
-                                    )}
-                                </DialogFooter>
-                            </Form>
-                        </DialogContent>
-                    </Dialog>
-                </div>
+                            </div>
+                        )}
+                    </div>
+                </section>
             </div>
         </AppLayout>
     );
