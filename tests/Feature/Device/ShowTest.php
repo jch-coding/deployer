@@ -1,5 +1,6 @@
 <?php
 
+use App\InterfaceKind;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
@@ -77,17 +78,43 @@ it('shows the device page with interface rows for the current client', function 
             ->has('deployment', fn (Assert $d) => $d
                 ->where('id', $deployment->id)
                 ->where('name', $deployment->name))
-            ->has('interfaces', fn (Assert $interfaces) => $interfaces
-                ->where('current_page', 1)
-                ->where('per_page', 20)
-                ->where('total', 25)
-                ->has('data', 20)
-                ->has('data.0', fn (Assert $row) => $row
-                    ->where('interface', '0/0/1')
-                    ->where('shutdown_on_split', true)
-                    ->etc())
-                ->has('links')
-                ->etc()));
+            ->has('interfaces', 25)
+            ->where('interfaces.0.interface', '0/0/1')
+            ->where('interfaces.0.shutdown_on_split', true)
+            ->where('interfaces.0.interface_kind', InterfaceKind::ETHERNET->value));
+});
+
+it('includes interface_kind for vlan lag and ethernet interfaces', function () {
+    fakeCentralScopeManagementApis();
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+    ]);
+    DeviceInterface::factory()->for($device)->create([
+        'interface' => 'vlan-100',
+        'interface_kind' => InterfaceKind::VLAN,
+        'ip_address' => '192.0.2.1/24',
+    ]);
+    DeviceInterface::factory()->for($device)->create([
+        'interface' => 'lag-1',
+        'interface_kind' => InterfaceKind::LAG,
+    ]);
+    DeviceInterface::factory()->for($device)->create([
+        'interface' => '1/1/1',
+        'interface_kind' => InterfaceKind::ETHERNET,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('devices.show', $device))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Device/Show')
+            ->has('interfaces', 3)
+            ->where('interfaces.0.interface_kind', InterfaceKind::ETHERNET->value)
+            ->where('interfaces.1.interface_kind', InterfaceKind::LAG->value)
+            ->where('interfaces.2.interface_kind', InterfaceKind::VLAN->value));
 });
 
 it('includes central sites and device groups on show', function () {

@@ -882,13 +882,13 @@ class DeviceController extends Controller
         $interfaces = DeviceInterface::query()
             ->where('device_id', $device->id)
             ->with(['switch_port', 'lacp_profile', 'stp_profile'])
-            ->orderBy('id')
-            ->paginate(20)
-            ->withQueryString()
-            ->through(function (DeviceInterface $interface) {
+            ->orderBy('interface')
+            ->get()
+            ->map(function (DeviceInterface $interface) {
                 return [
                     'id' => $interface->id,
                     'interface' => $interface->interface,
+                    'interface_kind' => $interface->interface_kind->value,
                     'description' => $interface->description,
                     'ip_address' => $interface->ip_address,
                     'enable' => $interface->enable,
@@ -908,7 +908,9 @@ class DeviceController extends Controller
                         ? StpProfileResource::make($interface->stp_profile)->resolve()
                         : null,
                 ];
-            });
+            })
+            ->values()
+            ->all();
 
         $client = $request->user()->currentClient();
         $central = new CentralAPIHelper($client);

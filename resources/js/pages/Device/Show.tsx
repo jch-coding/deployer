@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
-import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import {
     Select,
     SelectContent,
@@ -32,7 +31,6 @@ import { index as clientsIndex } from '@/routes/clients';
 import { show as showDeployment } from '@/routes/deployments';
 import { show as showDevice } from '@/routes/devices';
 import type { BreadcrumbItem, SharedData } from '@/types';
-import type { Paginator } from '@/types/deployer';
 
 export type SwitchPortDetail = {
     access_vlan: number | null;
@@ -57,9 +55,12 @@ export type StpProfileDetail = {
     loop_guard: boolean;
 };
 
+export type InterfaceKind = 'ETHERNET' | 'LAG' | 'VLAN';
+
 export type DeviceInterfaceRow = {
     id: number;
     interface: string;
+    interface_kind: InterfaceKind;
     description: string | null;
     ip_address: string | null;
     enable: boolean;
@@ -311,15 +312,22 @@ function hasIpAddress(row: DeviceInterfaceRow): boolean {
 }
 
 function formatInterfaceDisplay(row: DeviceInterfaceRow): string {
-    const tags: string[] = [];
-    if (hasIpAddress(row)) {
-        tags.push('VLAN');
+    return row.interface;
+}
+
+function matchesInterfaceSearch(row: DeviceInterfaceRow, query: string): boolean {
+    const needle = query.trim().toLowerCase();
+    if (needle === '') {
+        return true;
     }
-    if (row.lacp_profile) {
-        tags.push('LAG');
-    }
-    const prefix = tags.length > 0 ? `${tags.join(' ')} ` : '';
-    return `${prefix}${row.interface}`;
+    const fields = [
+        row.interface,
+        row.description ?? '',
+        row.switch_port?.interface_mode ?? '',
+        row.lacp_profile?.trunk_type ?? '',
+        row.sw_profile ?? '',
+    ];
+    return fields.some((field) => field.toLowerCase().includes(needle));
 }
 
 function displaySwitchPortCell(
@@ -821,6 +829,153 @@ function createInterfaceColumns({
     ];
 }
 
+type InterfaceKindTableSectionProps = {
+    title: string;
+    rows: DeviceInterfaceRow[];
+    isEditing: boolean;
+    columnVisibility: VisibilityState;
+    onColumnVisibilityChange: (state: VisibilityState) => void;
+    getDraftValue: InterfaceColumnOptions['getDraftValue'];
+    setDraftField: InterfaceColumnOptions['setDraftField'];
+    clearDraftField: InterfaceColumnOptions['clearDraftField'];
+    getFieldError: InterfaceColumnOptions['getFieldError'];
+    selectedInterfaceIds: ReadonlySet<number>;
+    toggleSelect: (id: number) => void;
+    toggleSelectAllForTable: (tableIds: number[]) => void;
+    onDeleteInterface?: (row: DeviceInterfaceRow) => void;
+    deletingInterfaceId?: number | null;
+    isSavingInterfaces?: boolean;
+};
+
+function InterfaceKindTableSection({
+    title,
+    rows,
+    isEditing,
+    columnVisibility,
+    onColumnVisibilityChange,
+    getDraftValue,
+    setDraftField,
+    clearDraftField,
+    getFieldError,
+    selectedInterfaceIds,
+    toggleSelect,
+    toggleSelectAllForTable,
+    onDeleteInterface,
+    deletingInterfaceId,
+    isSavingInterfaces,
+}: InterfaceKindTableSectionProps) {
+    const tableInterfaceIds = useMemo(() => rows.map((row) => row.id), [rows]);
+    const allRowsSelected =
+        tableInterfaceIds.length > 0 &&
+        tableInterfaceIds.every((id) => selectedInterfaceIds.has(id));
+    const someRowsSelected =
+        tableInterfaceIds.some((id) => selectedInterfaceIds.has(id)) && !allRowsSelected;
+
+    const columns = useMemo(
+        () =>
+            createInterfaceColumns({
+                editing: isEditing,
+                getDraftValue,
+                setDraftField,
+                clearDraftField,
+                getFieldError,
+                allInterfaceIds: tableInterfaceIds,
+                selectedInterfaceIds,
+                toggleSelect,
+                toggleSelectAll: () => toggleSelectAllForTable(tableInterfaceIds),
+                allRowsSelected,
+                someRowsSelected,
+                onDeleteInterface,
+                deletingInterfaceId,
+                isSavingInterfaces,
+            }),
+        [
+            isEditing,
+            getDraftValue,
+            setDraftField,
+            clearDraftField,
+            getFieldError,
+            tableInterfaceIds,
+            selectedInterfaceIds,
+            toggleSelect,
+            toggleSelectAllForTable,
+            allRowsSelected,
+            someRowsSelected,
+            onDeleteInterface,
+            deletingInterfaceId,
+            isSavingInterfaces,
+        ],
+    );
+
+    return (
+        <section className="space-y-2">
+            <h3 className="text-base font-medium">
+                {title} ({rows.length})
+            </h3>
+            {rows.length === 0 ? (
+                <p className="text-muted-foreground text-sm">No matching {title.toLowerCase()}.</p>
+            ) : (
+                <DataTable<DeviceInterfaceRow, unknown>
+                    data={rows}
+                    columns={columns}
+                    getRowId={(row) => String(row.id)}
+                    stickyLeftColumnIds={isEditing ? ['select', 'interface'] : ['interface']}
+                    enableColumnPicker
+                    columnPickerTitle="Columns"
+                    columnVisibility={columnVisibility}
+                    onColumnVisibilityChange={onColumnVisibilityChange}
+                    columnGroups={[
+                        {
+                            label: 'Core',
+                            columnIds: [
+                                'select',
+                                'id',
+                                'interface',
+                                'description',
+                                'ip_address',
+                                'enable',
+                                'jumbo_frames',
+                                'routing',
+                                'shutdown_on_split',
+                                'vrf_forwarding',
+                                'sw_profile',
+                            ],
+                        },
+                        {
+                            label: 'Switch Port',
+                            columnIds: [
+                                'switch_port_mode',
+                                'switch_port_access_vlan',
+                                'switch_port_native_vlan',
+                                'switch_port_trunk_vlan_all',
+                                'switch_port_trunk_vlan_ranges',
+                            ],
+                        },
+                        {
+                            label: 'LACP',
+                            columnIds: [
+                                'lacp_mode',
+                                'lacp_rate',
+                                'lacp_trunk_type',
+                                'lacp_port_list',
+                            ],
+                        },
+                        {
+                            label: 'STP',
+                            columnIds: [
+                                'stp_admin_edge',
+                                'stp_admin_edge_trunk',
+                                'stp_bpdu_guard',
+                                'stp_loop_guard',
+                            ],
+                        },
+                    ]}
+                />
+            )}
+        </section>
+    );
+}
+
 const DEVICE_SHOW_VISIBILITY_KEY = 'device-show-columns:v2';
 
 /** Shown only if the user turns the column on in the column picker. */
@@ -891,7 +1046,7 @@ type DeviceShowProps = {
         id: number;
         name: string;
     };
-    interfaces: Paginator<DeviceInterfaceRow>;
+    interfaces: DeviceInterfaceRow[];
     central_sites: CentralScopeOption[];
     central_sites_error: string | null;
     central_device_groups: CentralScopeOption[];
@@ -943,9 +1098,9 @@ export default function Show() {
     const [bulkLacpModeChoice, setBulkLacpModeChoice] = useState<string>(BULK_ENUM_NOOP);
     const [bulkLacpRateChoice, setBulkLacpRateChoice] = useState<string>(BULK_ENUM_NOOP);
     const [bulkLacpTrunkTypeChoice, setBulkLacpTrunkTypeChoice] = useState<string>(BULK_ENUM_NOOP);
+    const [interfaceSearch, setInterfaceSearch] = useState('');
 
-    const interfaceRows = interfaces.data;
-    const allInterfaceIds = useMemo(() => interfaceRows.map((r) => r.id), [interfaceRows]);
+    const interfaceRows = interfaces;
 
     const errorsFingerprint = useMemo(() => JSON.stringify(errors ?? {}), [errors]);
 
@@ -1059,19 +1214,41 @@ export default function Show() {
         });
     }, []);
 
-    const toggleSelectAll = useCallback(() => {
+    const toggleSelectAllForTable = useCallback((tableIds: number[]) => {
         setSelectedInterfaceIds((prev) => {
-            if (prev.size === allInterfaceIds.length) {
-                return new Set();
+            const allSelected =
+                tableIds.length > 0 && tableIds.every((id) => prev.has(id));
+            const next = new Set(prev);
+            if (allSelected) {
+                for (const id of tableIds) {
+                    next.delete(id);
+                }
+            } else {
+                for (const id of tableIds) {
+                    next.add(id);
+                }
             }
-            return new Set(allInterfaceIds);
+            return next;
         });
-    }, [allInterfaceIds]);
+    }, []);
 
-    const allRowsSelected =
-        allInterfaceIds.length > 0 && selectedInterfaceIds.size === allInterfaceIds.length;
-    const someRowsSelected =
-        selectedInterfaceIds.size > 0 && selectedInterfaceIds.size < allInterfaceIds.length;
+    const filteredInterfaceRows = useMemo(
+        () => interfaceRows.filter((row) => matchesInterfaceSearch(row, interfaceSearch)),
+        [interfaceRows, interfaceSearch],
+    );
+
+    const vlanInterfaceRows = useMemo(
+        () => filteredInterfaceRows.filter((row) => row.interface_kind === 'VLAN'),
+        [filteredInterfaceRows],
+    );
+    const lagInterfaceRows = useMemo(
+        () => filteredInterfaceRows.filter((row) => row.interface_kind === 'LAG'),
+        [filteredInterfaceRows],
+    );
+    const ethernetInterfaceRows = useMemo(
+        () => filteredInterfaceRows.filter((row) => row.interface_kind === 'ETHERNET'),
+        [filteredInterfaceRows],
+    );
 
     const applyBoolToSelected = (key: 'enable' | 'jumbo_frames' | 'routing', value: boolean) => {
         for (const id of selectedInterfaceIds) {
@@ -1200,57 +1377,36 @@ export default function Show() {
     const batchUpdateError =
         errors && typeof errors.updates === 'string' ? errors.updates : undefined;
 
-    const interfaceColumns = useMemo(
-        () =>
-            createInterfaceColumns({
-                editing: isEditing,
-                getDraftValue,
-                setDraftField,
-                clearDraftField,
-                getFieldError,
-                allInterfaceIds,
-                selectedInterfaceIds,
-                toggleSelect,
-                toggleSelectAll,
-                allRowsSelected,
-                someRowsSelected,
-                onDeleteInterface: deleteInterfaceRow,
-                deletingInterfaceId,
-                isSavingInterfaces: isSaving,
-            }),
-        [
-            isEditing,
-            getDraftValue,
-            setDraftField,
-            clearDraftField,
-            getFieldError,
-            allInterfaceIds,
-            selectedInterfaceIds,
-            toggleSelect,
-            toggleSelectAll,
-            allRowsSelected,
-            someRowsSelected,
-            deleteInterfaceRow,
-            deletingInterfaceId,
-            isSaving,
-        ],
-    );
-
     const allLeafColumnIds = useMemo(() => {
-        return interfaceColumns.map((column) => {
-            if ('id' in column && typeof column.id === 'string') {
-                return column.id;
-            }
-            if (
-                'accessorKey' in column &&
-                (typeof column.accessorKey === 'string' ||
-                    typeof column.accessorKey === 'number')
-            ) {
-                return String(column.accessorKey);
-            }
-            return '';
-        }).filter((id) => id.length > 0);
-    }, [interfaceColumns]);
+        const sampleColumns = createInterfaceColumns({
+            editing: false,
+            getDraftValue: () => '',
+            setDraftField: () => {},
+            clearDraftField: () => {},
+            getFieldError: () => undefined,
+            allInterfaceIds: [],
+            selectedInterfaceIds: new Set(),
+            toggleSelect: () => {},
+            toggleSelectAll: () => {},
+            allRowsSelected: false,
+            someRowsSelected: false,
+        });
+        return sampleColumns
+            .map((column) => {
+                if ('id' in column && typeof column.id === 'string') {
+                    return column.id;
+                }
+                if (
+                    'accessorKey' in column &&
+                    (typeof column.accessorKey === 'string' ||
+                        typeof column.accessorKey === 'number')
+                ) {
+                    return String(column.accessorKey);
+                }
+                return '';
+            })
+            .filter((id) => id.length > 0);
+    }, []);
 
     const allColumnIdSet = useMemo(() => new Set(allLeafColumnIds), [allLeafColumnIds]);
 
@@ -1356,11 +1512,7 @@ export default function Show() {
 
     const discardEdits = () => {
         setDrafts({});
-                        router.get(
-                            showDevice(device.id).url,
-                            { page: interfaces.current_page },
-                            { preserveScroll: true, replace: true },
-                        );
+        router.get(showDevice(device.id).url, {}, { preserveScroll: true, replace: true });
     };
 
     return (
@@ -1771,63 +1923,69 @@ export default function Show() {
                             {batchUpdateError}
                         </div>
                     ) : null}
-                    <DataTable<DeviceInterfaceRow, unknown>
-                        data={interfaceRows}
-                        columns={interfaceColumns}
-                        getRowId={(row) => String(row.id)}
-                        stickyLeftColumnIds={isEditing ? ['select', 'interface'] : ['interface']}
-                        enableColumnPicker
-                        columnPickerTitle="Columns"
-                        columnVisibility={columnVisibility}
-                        onColumnVisibilityChange={setColumnVisibility}
-                        columnGroups={[
-                            {
-                                label: 'Core',
-                                columnIds: [
-                                    'select',
-                                    'id',
-                                    'interface',
-                                    'description',
-                                    'ip_address',
-                                    'enable',
-                                    'jumbo_frames',
-                                    'routing',
-                                    'shutdown_on_split',
-                                    'vrf_forwarding',
-                                    'sw_profile',
-                                ],
-                            },
-                            {
-                                label: 'Switch Port',
-                                columnIds: [
-                                    'switch_port_mode',
-                                    'switch_port_access_vlan',
-                                    'switch_port_native_vlan',
-                                    'switch_port_trunk_vlan_all',
-                                    'switch_port_trunk_vlan_ranges',
-                                ],
-                            },
-                            {
-                                label: 'LACP',
-                                columnIds: [
-                                    'lacp_mode',
-                                    'lacp_rate',
-                                    'lacp_trunk_type',
-                                    'lacp_port_list',
-                                ],
-                            },
-                            {
-                                label: 'STP',
-                                columnIds: [
-                                    'stp_admin_edge',
-                                    'stp_admin_edge_trunk',
-                                    'stp_bpdu_guard',
-                                    'stp_loop_guard',
-                                ],
-                            },
-                        ]}
-                    />
-                    {interfaces.last_page > 1 ? <LaravelPaginator TPaginator={interfaces} /> : null}
+                    <div className="mb-4">
+                        <Input
+                            type="search"
+                            placeholder="Search interface, description, mode, trunk type, profile…"
+                            value={interfaceSearch}
+                            onChange={(e) => setInterfaceSearch(e.target.value)}
+                            className="max-w-md"
+                            aria-label="Search interfaces"
+                        />
+                    </div>
+                    <div className="space-y-6">
+                        <InterfaceKindTableSection
+                            title="VLAN interfaces"
+                            rows={vlanInterfaceRows}
+                            isEditing={isEditing}
+                            columnVisibility={columnVisibility}
+                            onColumnVisibilityChange={setColumnVisibility}
+                            getDraftValue={getDraftValue}
+                            setDraftField={setDraftField}
+                            clearDraftField={clearDraftField}
+                            getFieldError={getFieldError}
+                            selectedInterfaceIds={selectedInterfaceIds}
+                            toggleSelect={toggleSelect}
+                            toggleSelectAllForTable={toggleSelectAllForTable}
+                            onDeleteInterface={deleteInterfaceRow}
+                            deletingInterfaceId={deletingInterfaceId}
+                            isSavingInterfaces={isSaving}
+                        />
+                        <InterfaceKindTableSection
+                            title="LAG interfaces"
+                            rows={lagInterfaceRows}
+                            isEditing={isEditing}
+                            columnVisibility={columnVisibility}
+                            onColumnVisibilityChange={setColumnVisibility}
+                            getDraftValue={getDraftValue}
+                            setDraftField={setDraftField}
+                            clearDraftField={clearDraftField}
+                            getFieldError={getFieldError}
+                            selectedInterfaceIds={selectedInterfaceIds}
+                            toggleSelect={toggleSelect}
+                            toggleSelectAllForTable={toggleSelectAllForTable}
+                            onDeleteInterface={deleteInterfaceRow}
+                            deletingInterfaceId={deletingInterfaceId}
+                            isSavingInterfaces={isSaving}
+                        />
+                        <InterfaceKindTableSection
+                            title="Ethernet interfaces"
+                            rows={ethernetInterfaceRows}
+                            isEditing={isEditing}
+                            columnVisibility={columnVisibility}
+                            onColumnVisibilityChange={setColumnVisibility}
+                            getDraftValue={getDraftValue}
+                            setDraftField={setDraftField}
+                            clearDraftField={clearDraftField}
+                            getFieldError={getFieldError}
+                            selectedInterfaceIds={selectedInterfaceIds}
+                            toggleSelect={toggleSelect}
+                            toggleSelectAllForTable={toggleSelectAllForTable}
+                            onDeleteInterface={deleteInterfaceRow}
+                            deletingInterfaceId={deletingInterfaceId}
+                            isSavingInterfaces={isSaving}
+                        />
+                    </div>
                 </div>
             </div>
         </AppLayout>
