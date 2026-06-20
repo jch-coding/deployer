@@ -12,6 +12,7 @@ import {
     Card,
     CardContent,
     CardDescription,
+    CardHeader,
     CardTitle,
 } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
@@ -47,6 +48,12 @@ import {
     show as showDeployment,
 } from '@/routes/deployments';
 import { show as showTask } from '@/routes/tasks';
+import {
+    groupTasksByLaunchCategory,
+    TASK_LAUNCH_CATEGORIES,
+    taskMatchesSearch,
+    type TaskLaunchSearchable,
+} from '@/lib/task-launch-categories';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import type { Paginator } from '@/types/deployer';
 
@@ -75,6 +82,8 @@ type Task = {
     friendly_description: string;
     required_columns: string[];
 };
+
+type LaunchTask = TaskLaunchSearchable;
 
 function formatCsvUploadErrorMessage(message: string | string[]): string {
     return Array.isArray(message) ? message.join(' ') : message;
@@ -124,7 +133,7 @@ type DeploymentPageProps = {
     device_search?: string;
     base_urls: string[];
     deployment: DeploymentSummary;
-    tasks: Task[];
+    tasks: LaunchTask[];
     latest_tasks: Task[];
     available_subscriptions: AvailableSubscription[];
     enabled_services: string[];
@@ -151,6 +160,7 @@ export default function Show() {
     const deploymentId = Number(deployment.id);
 
     const [deviceTableSearch, setDeviceTableSearch] = useState(device_search);
+    const [taskSearch, setTaskSearch] = useState('');
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [allFilteredSelected, setAllFilteredSelected] = useState(false);
     const [syncingScopeIds, setSyncingScopeIds] = useState(false);
@@ -350,6 +360,73 @@ export default function Show() {
     const isDeviceBasedTask = (task_type: string) =>
         deviceBasedTaskTypes.has(task_type);
 
+    const filteredLaunchTasks = useMemo(
+        () => tasks.filter((task) => taskMatchesSearch(task, taskSearch)),
+        [tasks, taskSearch],
+    );
+
+    const launchTasksByCategory = useMemo(
+        () => groupTasksByLaunchCategory(filteredLaunchTasks),
+        [filteredLaunchTasks],
+    );
+
+    const hasVisibleLaunchTasks = filteredLaunchTasks.length > 0;
+
+    function renderTaskCard(task: LaunchTask) {
+        const TaskComponent = isDeviceBasedTask(task.task_type)
+            ? TaskCard
+            : TaskItemsCard;
+
+        return (
+            <TaskComponent
+                key={task.task_type}
+                task={task.task_type}
+                task_friendly_name={task.friendly_name}
+                task_friendly_description={task.friendly_description}
+                required_columns={task.required_columns}
+                devices={devicesForTasks}
+                deployment={{
+                    id: deployment.id,
+                    name: deployment.name,
+                }}
+                requiresClassicCentral={classicCentralTaskTypes.has(
+                    task.task_type,
+                )}
+                available_subscriptions={
+                    task.task_type === 'ASSIGN_SUBSCRIPTION'
+                        ? available_subscriptions
+                        : undefined
+                }
+                licensing_synced_at={
+                    task.task_type === 'ASSIGN_SUBSCRIPTION' ||
+                    task.task_type === 'UNASSIGN_SUBSCRIPTION'
+                        ? licensing_synced_at
+                        : undefined
+                }
+                license_tags={
+                    task.task_type === 'ASSIGN_SUBSCRIPTION'
+                        ? license_tags
+                        : undefined
+                }
+                license_type_options={
+                    task.task_type === 'ASSIGN_SUBSCRIPTION'
+                        ? (license_type_options as LicenseTypeOption[])
+                        : undefined
+                }
+                cx_firmware_versions={
+                    task.task_type === 'ADD_VLANS_TO_DEVICE_GROUP'
+                        ? cx_firmware_versions
+                        : undefined
+                }
+                central_firmware_error={
+                    task.task_type === 'ADD_VLANS_TO_DEVICE_GROUP'
+                        ? central_firmware_error
+                        : undefined
+                }
+            />
+        );
+    }
+
     function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         post(storeMany(deployment.id).url);
@@ -515,62 +592,49 @@ export default function Show() {
                     )}
                 </div>
                 <div>
-                    <div className="mt-6 flex flex-wrap justify-center gap-2">
-                        {tasks.map((task) => {
-                            const TaskComponent = isDeviceBasedTask(
-                                task.task_type,
-                            )
-                                ? TaskCard
-                                : TaskItemsCard;
+                    <div className="mt-6 space-y-4">
+                        <div className="relative mx-auto w-full max-w-md">
+                            <Search
+                                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                                aria-hidden
+                            />
+                            <Input
+                                type="search"
+                                value={taskSearch}
+                                onChange={(e) => setTaskSearch(e.target.value)}
+                                placeholder="Search tasks by name, description, or required columns…"
+                                className="pl-9"
+                                data-test="tasks-search"
+                                aria-label="Search tasks by name, description, or required columns"
+                            />
+                        </div>
+                        {taskSearch.trim() !== '' && !hasVisibleLaunchTasks ? (
+                            <p className="text-muted-foreground text-center text-sm">
+                                No tasks match your search.
+                            </p>
+                        ) : null}
+                        {TASK_LAUNCH_CATEGORIES.map((category) => {
+                            const categoryTasks =
+                                launchTasksByCategory[category.id];
+                            if (categoryTasks.length === 0) {
+                                return null;
+                            }
+
                             return (
-                                <TaskComponent
-                                    key={task.task_type}
-                                    task={task.task_type}
-                                    task_friendly_name={task.friendly_name}
-                                    task_friendly_description={
-                                        task.friendly_description
-                                    }
-                                    required_columns={task.required_columns}
-                                    devices={devicesForTasks}
-                                    deployment={{
-                                        id: deployment.id,
-                                        name: deployment.name,
-                                    }}
-                                    requiresClassicCentral={classicCentralTaskTypes.has(
-                                        task.task_type,
-                                    )}
-                                    available_subscriptions={
-                                        task.task_type === 'ASSIGN_SUBSCRIPTION'
-                                            ? available_subscriptions
-                                            : undefined
-                                    }
-                                    licensing_synced_at={
-                                        task.task_type === 'ASSIGN_SUBSCRIPTION' ||
-                                        task.task_type === 'UNASSIGN_SUBSCRIPTION'
-                                            ? licensing_synced_at
-                                            : undefined
-                                    }
-                                    license_tags={
-                                        task.task_type === 'ASSIGN_SUBSCRIPTION'
-                                            ? license_tags
-                                            : undefined
-                                    }
-                                    license_type_options={
-                                        task.task_type === 'ASSIGN_SUBSCRIPTION'
-                                            ? (license_type_options as LicenseTypeOption[])
-                                            : undefined
-                                    }
-                                    cx_firmware_versions={
-                                        task.task_type === 'ADD_VLANS_TO_DEVICE_GROUP'
-                                            ? cx_firmware_versions
-                                            : undefined
-                                    }
-                                    central_firmware_error={
-                                        task.task_type === 'ADD_VLANS_TO_DEVICE_GROUP'
-                                            ? central_firmware_error
-                                            : undefined
-                                    }
-                                />
+                                <Card key={category.id}>
+                                    <CardHeader className="pb-3">
+                                        <CardTitle className="text-lg">
+                                            {category.label}
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="flex flex-wrap justify-center gap-2">
+                                            {categoryTasks.map((task) =>
+                                                renderTaskCard(task),
+                                            )}
+                                        </div>
+                                    </CardContent>
+                                </Card>
                             );
                         })}
                     </div>
