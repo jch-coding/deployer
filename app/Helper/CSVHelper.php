@@ -338,37 +338,32 @@ class CSVHelper
     private static function validateRequiredRowFields(array $row, int $csvRowNumber, array &$validationMessages): void
     {
         $name = trim((string) ($row['name'] ?? ''));
-        if ($name === '') {
-            self::addValidationMessage(
-                $validationMessages,
-                $csvRowNumber,
-                'name',
-                $row,
-                'name is required on every data row.'
-            );
+        $serial = trim((string) ($row['serial'] ?? ''));
+        $deviceFunction = trim((string) ($row['device_function'] ?? ''));
 
+        if ($serial === '' && $deviceFunction === '') {
             return;
         }
 
-        $serial = trim((string) ($row['serial'] ?? ''));
+        $deviceLabel = $name !== '' ? $name : ($serial !== '' ? $serial : 'device');
+
         if ($serial === '') {
             self::addValidationMessage(
                 $validationMessages,
                 $csvRowNumber,
                 'serial',
                 $row,
-                "serial is required on this row because no other row for device \"{$name}\" provides name, serial, and device_function together."
+                "serial is required on this row because no other row for {$deviceLabel} provides name, serial, and device_function together."
             );
         }
 
-        $deviceFunction = trim((string) ($row['device_function'] ?? ''));
         if ($deviceFunction === '') {
             self::addValidationMessage(
                 $validationMessages,
                 $csvRowNumber,
                 'device_function',
                 $row,
-                "device_function is required on this row because no other row for device \"{$name}\" provides name, serial, and device_function together."
+                "device_function is required on this row because no other row for {$deviceLabel} provides name, serial, and device_function together."
             );
         }
     }

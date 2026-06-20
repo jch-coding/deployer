@@ -73,6 +73,7 @@ class ProvisioningWorkflowController extends Controller
             'devices.*.id' => ['nullable', 'integer'],
             'devices.*.license_tag' => ['nullable', 'string'],
             'devices.*.license_type' => ['nullable', 'string'],
+            'devices.*.name' => ['nullable', 'string', 'max:255'],
         ]);
 
         $workflow = $workflowService->start(

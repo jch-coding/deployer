@@ -93,8 +93,22 @@ enum ProvisioningStep: string
             self::ConfigureLagInterfaces => $device->interfaces()->where('interface_kind', 'LAG')->doesntExist(),
             self::ConfigureEthernetInterfaces => $device->interfaces()->where('interface_kind', 'ETHERNET')->doesntExist(),
             self::ClearLocalOverrides => $device->sku === null,
+            self::NameDevice => self::isApDevice($device) && ! self::apHasExplicitName($device, $context),
             default => false,
         };
+    }
+
+    public static function apHasExplicitName(Device $device, ?ProvisioningStepContext $context = null): bool
+    {
+        $provisioningName = trim((string) ($context?->provisioningNames[$device->id] ?? ''));
+        if ($provisioningName !== '') {
+            return true;
+        }
+
+        $name = trim((string) $device->name);
+        $serial = trim((string) $device->serial);
+
+        return $name !== '' && $name !== $serial;
     }
 
     public static function isApDevice(Device $device): bool

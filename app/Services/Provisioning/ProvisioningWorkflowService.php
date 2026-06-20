@@ -49,6 +49,8 @@ class ProvisioningWorkflowService
 
         $deployment->loadMissing('client');
         $licensingConfig = $this->buildLicensingConfig($deployment, $devices, $options);
+        $provisioningNames = $this->applyProvisioningDeviceNames($devices, $options);
+        $licensingConfig['naming'] = ['per_device' => $provisioningNames];
 
         $deploymentTime = max(1, (int) ($options['deployment_time'] ?? 10));
         $waitTime = max(1, (int) ($options['wait_time'] ?? 1));
@@ -56,6 +58,7 @@ class ProvisioningWorkflowService
         $stepContext = new ProvisioningStepContext(
             CentralAPIHelper::deploymentUsesVsxFallbackMode($devices),
             CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices),
+            $provisioningNames,
         );
 
         return DB::transaction(function () use ($deployment, $user, $devices, $licensingConfig, $deploymentTime, $waitTime, $jobQueue, $stepContext): ProvisioningWorkflow {
@@ -325,6 +328,41 @@ class ProvisioningWorkflowService
             'license_tag' => $licenseTag,
             'license_type' => $licenseType->value,
         ];
+    }
+
+    /**
+     * @param  Collection<int, Device>  $devices
+     * @param  array<string, mixed>  $options
+     * @return array<int, string>
+     */
+    private function applyProvisioningDeviceNames(Collection $devices, array $options): array
+    {
+        $provisioningNames = [];
+
+        foreach (($options['devices'] ?? []) as $row) {
+            $deviceId = (int) ($row['id'] ?? 0);
+            $name = trim((string) ($row['name'] ?? ''));
+
+            if ($deviceId <= 0 || $name === '') {
+                continue;
+            }
+
+            if (strlen($name) < 3) {
+                throw ValidationException::withMessages([
+                    'devices' => 'Device names must be at least 3 characters when provided.',
+                ]);
+            }
+
+            $device = $devices->firstWhere('id', $deviceId);
+            if ($device === null || ! ProvisioningStep::isApDevice($device)) {
+                continue;
+            }
+
+            $device->update(['name' => $name]);
+            $provisioningNames[$deviceId] = $name;
+        }
+
+        return $provisioningNames;
     }
 
     private function firstRunnableStep(Device $device, ProvisioningStepContext $context): ?ProvisioningStep

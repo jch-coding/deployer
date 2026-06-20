@@ -145,9 +145,11 @@ class DeviceController extends Controller
 
         $withDeployment = array_map(
             function ($arr) use ($currentClient, $user, $deployment, $hasLicenseColumns, $csvHasLicenseTag, $csvHasLicenseType) {
+                $name = trim((string) ($arr['name'] ?? ''));
+                $serial = trim((string) ($arr['serial'] ?? ''));
                 $row = [
-                    'name' => $arr['name'],
-                    'serial' => $arr['serial'],
+                    'name' => $name !== '' ? $name : $serial,
+                    'serial' => $serial,
                     'device_function' => $arr['device_function'],
                     'client_id' => $currentClient->id,
                     'user_id' => $user->id,

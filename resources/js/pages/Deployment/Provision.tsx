@@ -14,6 +14,11 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
+import {
+    deviceHasExplicitName,
+    formatDeviceLabel,
+    isApDevice,
+} from '@/lib/device-label';
 import type { LicenseTypeOption } from '@/lib/license-types';
 import { cn } from '@/lib/utils';
 import { index as clientIndex } from '@/routes/clients';
@@ -138,6 +143,7 @@ export default function Provision() {
     const [perDeviceLicense, setPerDeviceLicense] = useState<
         Record<number, { license_tag: string; license_type: LicenseTypeOption | '' }>
     >({});
+    const [perDeviceApNames, setPerDeviceApNames] = useState<Record<number, string>>({});
 
     const shouldPoll = workflow !== null && !workflow.is_terminal;
     usePoll(shouldPoll ? 2000 : 0);
@@ -155,6 +161,44 @@ export default function Provision() {
     const needsLicensingDialog = selectedDevices.some(
         (d) => !d.license_tag || !d.license_type,
     );
+
+    const apDevicesNeedingOptionalName = useMemo(
+        () =>
+            selectedDevices.filter(
+                (d) =>
+                    isApDevice(d.device_function) &&
+                    !deviceHasExplicitName(d.name, d.serial),
+            ),
+        [selectedDevices],
+    );
+
+    const needsApNamingDialog = apDevicesNeedingOptionalName.length > 0;
+
+    const buildDevicesPayload = (): Array<Record<string, string | number>> => {
+        const byId = new Map<number, Record<string, string | number>>();
+
+        if (needsLicensingDialog && licensingMode === 'per_device') {
+            selectedDevices
+                .filter((d) => !d.license_tag || !d.license_type)
+                .forEach((device) => {
+                    byId.set(device.id, {
+                        id: device.id,
+                        license_tag: perDeviceLicense[device.id]?.license_tag ?? '',
+                        license_type: perDeviceLicense[device.id]?.license_type ?? '',
+                    });
+                });
+        }
+
+        if (needsApNamingDialog) {
+            apDevicesNeedingOptionalName.forEach((device) => {
+                const existing = byId.get(device.id) ?? { id: device.id };
+                existing.name = perDeviceApNames[device.id] ?? '';
+                byId.set(device.id, existing);
+            });
+        }
+
+        return Array.from(byId.values());
+    };
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: current_client?.name ?? 'Clients', href: clientIndex().url },
@@ -174,13 +218,12 @@ export default function Provision() {
             if (licensingMode === 'uniform') {
                 payload.license_tag = uniformLicenseTag;
                 payload.license_type = uniformLicenseType;
-            } else {
-                payload.devices = selectedDevices.map((device) => ({
-                    id: device.id,
-                    license_tag: perDeviceLicense[device.id]?.license_tag ?? '',
-                    license_type: perDeviceLicense[device.id]?.license_type ?? '',
-                }));
             }
+        }
+
+        const devicesPayload = buildDevicesPayload();
+        if (devicesPayload.length > 0) {
+            payload.devices = devicesPayload;
         }
 
         router.post(storeProvision(deployment.id).url, payload as Record<string, string | number | number[] | Array<Record<string, string | number>>>);
@@ -385,6 +428,41 @@ export default function Provision() {
                                             )}
                                         </div>
                                     ) : null}
+                                    {needsApNamingDialog ? (
+                                        <div className="space-y-3 rounded-md border p-3">
+                                            <p className="text-sm font-medium">
+                                                Device naming (optional for APs)
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                APs without a hostname can be fully provisioned.
+                                                Leave blank to skip naming in Central.
+                                            </p>
+                                            <div className="max-h-48 space-y-2 overflow-y-auto">
+                                                {apDevicesNeedingOptionalName.map((device) => (
+                                                    <div
+                                                        key={device.id}
+                                                        className="grid grid-cols-2 items-center gap-2"
+                                                    >
+                                                        <span className="truncate text-sm text-muted-foreground">
+                                                            {device.serial}
+                                                        </span>
+                                                        <input
+                                                            type="text"
+                                                            className={selectClassName}
+                                                            placeholder="Optional hostname"
+                                                            value={perDeviceApNames[device.id] ?? ''}
+                                                            onChange={(e) =>
+                                                                setPerDeviceApNames((prev) => ({
+                                                                    ...prev,
+                                                                    [device.id]: e.target.value,
+                                                                }))
+                                                            }
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : null}
                                 </div>
                                 <DialogFooter>
                                     <Button onClick={startWorkflow}>Start</Button>
@@ -429,7 +507,9 @@ export default function Provision() {
                                     <ul className="space-y-2 text-sm">
                                         {workflow.licensing_failures.map((row) => (
                                             <li key={row.device_id} className="rounded border p-2">
-                                                <span className="font-medium">{row.name}</span>{' '}
+                                                <span className="font-medium">
+                                                    {formatDeviceLabel(row.name, row.serial)}
+                                                </span>{' '}
                                                 <span className="text-muted-foreground">({row.serial})</span>
                                                 <p className="text-destructive">{row.message}</p>
                                             </li>
@@ -483,7 +563,9 @@ function DeviceWorkflowCard({ deviceCard }: { deviceCard: WorkflowDeviceCard }) 
             <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
                     <div>
-                        <CardTitle className="text-lg">{deviceCard.name}</CardTitle>
+                        <CardTitle className="text-lg">
+                            {formatDeviceLabel(deviceCard.name, deviceCard.serial)}
+                        </CardTitle>
                         <p className="text-xs text-muted-foreground">{deviceCard.serial}</p>
                     </div>
                     <span

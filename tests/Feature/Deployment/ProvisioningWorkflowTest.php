@@ -81,6 +81,94 @@ it('starts a workflow and dispatches the first step job for each device', functi
     });
 });
 
+it('skips name device step for APs without an explicit hostname', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'name' => 'SN0000000001',
+        'serial' => 'SN0000000001',
+        'device_function' => \App\DeviceFunction::CAMPUS_AP->name,
+        'license_tag' => 'pool-a',
+        'license_type' => 'Advanced AP',
+        'group' => 'TestGroup',
+    ]);
+
+    ClientSubscription::factory()->for($this->client)->create([
+        'subscription_key' => 'sub-key',
+        'greenlake_subscription_id' => 'gl-sub-1',
+        'tags' => ['pool-a'],
+        'license_type' => 'Advanced AP',
+        'available' => 5,
+    ]);
+
+    LicensingInventoryDevice::factory()->for($this->client)->create([
+        'serial' => $device->serial,
+        'greenlake_device_id' => 'gl-dev-1',
+        'licensed' => true,
+        'subscription_key' => 'sub-key',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    $nameStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->first();
+
+    expect($nameStep->status)->toBe('skipped');
+});
+
+it('updates AP hostname and runs name device step when provided at workflow start', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'name' => 'SN0000000002',
+        'serial' => 'SN0000000002',
+        'device_function' => \App\DeviceFunction::CAMPUS_AP->name,
+        'license_tag' => 'pool-a',
+        'license_type' => 'Advanced AP',
+        'group' => 'TestGroup',
+    ]);
+
+    ClientSubscription::factory()->for($this->client)->create([
+        'subscription_key' => 'sub-key',
+        'greenlake_subscription_id' => 'gl-sub-1',
+        'tags' => ['pool-a'],
+        'license_type' => 'Advanced AP',
+        'available' => 5,
+    ]);
+
+    LicensingInventoryDevice::factory()->for($this->client)->create([
+        'serial' => $device->serial,
+        'greenlake_device_id' => 'gl-dev-2',
+        'licensed' => true,
+        'subscription_key' => 'sub-key',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'devices' => [
+            ['id' => $device->id, 'name' => 'Campus AP East'],
+        ],
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $device->refresh();
+    expect($device->name)->toBe('Campus AP East');
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    $nameStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->first();
+
+    expect($nameStep->status)->toBe('pending');
+});
+
 it('restarts a failed device workflow from the selected step', function () {
     Queue::fake();
 

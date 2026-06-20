@@ -49,6 +49,38 @@ it('skips post-naming steps for AP devices', function () {
         ->and(ProvisioningStep::NameDevice->shouldSkipForDevice($device))->toBeFalse();
 });
 
+it('skips name device step for APs with serial-default hostname', function () {
+    $device = Device::factory()->make([
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+        'name' => 'SN0000000001',
+        'serial' => 'SN0000000001',
+    ]);
+
+    expect(ProvisioningStep::NameDevice->shouldSkipForDevice($device))->toBeTrue();
+});
+
+it('does not skip name device step for APs with explicit hostname', function () {
+    $device = Device::factory()->make([
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+        'name' => 'Campus AP 1',
+        'serial' => 'SN0000000001',
+    ]);
+
+    expect(ProvisioningStep::NameDevice->shouldSkipForDevice($device))->toBeFalse();
+});
+
+it('does not skip name device step for APs when provisioning supplies a hostname', function () {
+    $device = Device::factory()->make([
+        'id' => 42,
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+        'name' => 'SN0000000001',
+        'serial' => 'SN0000000001',
+    ]);
+    $context = new ProvisioningStepContext(provisioningNames: [42 => 'Campus AP 1']);
+
+    expect(ProvisioningStep::NameDevice->shouldSkipForDevice($device, $context))->toBeFalse();
+});
+
 it('includes mirror fallback devices in mirror step', function () {
     $device = Device::factory()->make([
         'name' => 'NY1-MDF-CORE-SW1',

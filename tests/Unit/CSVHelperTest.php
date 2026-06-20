@@ -289,6 +289,21 @@ it('keeps missing optional columns absent from mapped rows', function () {
     expect($deviceArrays[0])->not()->toHaveKeys(['group', 'sku', 'site', 'interface', 'description', 'ip_address']);
 });
 
+it('accepts empty name when serial and device_function are present', function () {
+    $csvData = [
+        ['name', 'serial', 'device_function'],
+        ['', 'SN0000000001', 'CAMPUS_AP'],
+        ['', 'SN0000000002', 'ACCESS_SWITCH'],
+    ];
+
+    $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+
+    expect($deviceArrays)->toHaveCount(2)
+        ->and($deviceArrays[0]['name'])->toBe('')
+        ->and($deviceArrays[0]['serial'])->toBe('SN0000000001')
+        ->and($deviceArrays[1]['device_function'])->toBe('ACCESS_SWITCH');
+});
+
 it('strips leading zeros from numeric segments in the interface column', function () {
     $out = CSVHelper::createDeviceArrays([
         ['name', 'serial', 'device_function', 'interface'],

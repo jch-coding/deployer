@@ -2,6 +2,7 @@
 
 namespace App\Actions\Provisioning;
 
+use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Services\Provisioning\ProvisioningStepResult;
@@ -11,6 +12,10 @@ class NameDeviceAction
 {
     public function execute(Device $device, CentralAPIHelper $centralAPIHelper): ProvisioningStepResult
     {
+        if (ProvisioningStep::isApDevice($device) && ! ProvisioningStep::apHasExplicitName($device)) {
+            return ProvisioningStepResult::skipped('No hostname provided; naming skipped for AP.');
+        }
+
         if (! $device->scope_id) {
             $scopeResult = (new ResolveDeviceScopeIdAction)->execute($device, $centralAPIHelper);
             if (! $scopeResult->isCompleted()) {
