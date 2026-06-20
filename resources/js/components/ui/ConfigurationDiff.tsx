@@ -26,7 +26,18 @@ function formatValue(value: unknown): string {
 }
 
 function valuesMatch(expected: unknown, actual: unknown): boolean {
-    return formatValue(expected) === formatValue(actual);
+    if (formatValue(expected) === formatValue(actual)) {
+        return true;
+    }
+
+    if (
+        (actual === null || actual === undefined) &&
+        expected === false
+    ) {
+        return true;
+    }
+
+    return false;
 }
 
 type ConfigurationDiffProps = {

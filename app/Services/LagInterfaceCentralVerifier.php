@@ -265,6 +265,10 @@ class LagInterfaceCentralVerifier
             }
         }
 
+        if ($normalizedExpected === false && $normalizedActual === null) {
+            return true;
+        }
+
         return $normalizedExpected === $normalizedActual;
     }
 

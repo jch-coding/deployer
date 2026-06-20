@@ -9,6 +9,7 @@ use App\Models\DeviceInterface;
 use App\Models\LacpProfile;
 use App\Models\Site;
 use App\Models\SwitchPort;
+use App\Models\StpProfile;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -442,6 +443,56 @@ test('deployment critical check reports lag match', function () {
             && ($query['device-function'] ?? '') === 'ACCESS_SWITCH'
             && ! array_key_exists('limit', $query);
     });
+});
+
+test('deployment critical check passes lag when central omits null boolean stp fields', function () {
+    $lacpProfile = LacpProfile::factory()->create([
+        'mode' => 'ACTIVE',
+        'rate' => 'SLOW',
+        'port_list' => '1/1/1-1/1/2',
+        'trunk_type' => 'LACP',
+    ]);
+    $switchPort = SwitchPort::factory()->create([
+        'interface_mode' => 'TRUNK',
+        'access_vlan' => null,
+        'native_vlan' => 10,
+        'trunk_vlan_all' => 'true',
+        'trunk_vlan_ranges' => null,
+    ]);
+    $stpProfile = StpProfile::factory()->create();
+    DeviceInterface::factory()->create([
+        'device_id' => $this->device->id,
+        'interface' => '10',
+        'switch_port_id' => $switchPort->id,
+        'lacp_profile_id' => $lacpProfile->id,
+        'stp_profile_id' => $stpProfile->id,
+        'interface_kind' => InterfaceKind::LAG,
+        'description' => null,
+        'shutdown_on_split' => false,
+    ]);
+
+    $centralLag = [
+        'name' => '10',
+        'switchport' => [
+            'access-vlan' => null,
+            'interface-mode' => 'TRUNK',
+            'native-vlan' => 10,
+            'trunk-vlan-all' => true,
+            'trunk-vlan-ranges' => null,
+        ],
+        'lacp' => ['mode' => 'ACTIVE', 'rate' => 'SLOW'],
+        'trunk-type' => 'LACP',
+        'port-list' => ['1/1/1', '1/1/2'],
+        'enable' => true,
+    ];
+
+    fakeCriticalCheckCentralApis([
+        '*portchannels*' => Http::response(['interface' => [$centralLag]], 200),
+    ]);
+
+    $this->getJson(criticalCheckStepUrl($this->deployment, 1))
+        ->assertOk()
+        ->assertJsonPath('partial.lag_results.0.ok', true);
 });
 
 test('deployment critical check step endpoint returns progress', function () {

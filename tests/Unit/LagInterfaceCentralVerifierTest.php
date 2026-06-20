@@ -42,6 +42,35 @@ test('diffExpectedAgainstActual reports nested mismatches', function () {
         ->and($diff[0]['actual'])->toBe('PASSIVE');
 });
 
+test('diffExpectedAgainstActual treats false expected and null actual as equal for booleans', function () {
+    $verifier = new LagInterfaceCentralVerifier;
+
+    $expected = [
+        'stp' => ['bpdu-guard' => false],
+    ];
+    $actual = [
+        'stp' => ['bpdu-guard' => null],
+    ];
+
+    expect($verifier->diffExpectedAgainstActual($expected, $actual))->toBe([]);
+});
+
+test('diffExpectedAgainstActual still fails when expected true and actual null', function () {
+    $verifier = new LagInterfaceCentralVerifier;
+
+    $expected = [
+        'stp' => ['bpdu-guard' => true],
+    ];
+    $actual = [
+        'stp' => ['bpdu-guard' => null],
+    ];
+
+    $diff = $verifier->diffExpectedAgainstActual($expected, $actual);
+
+    expect($diff)->toHaveCount(1)
+        ->and($diff[0]['path'])->toBe('stp.bpdu-guard');
+});
+
 test('buildExpectedPayload merges sw-profile patch body', function () {
     $switchPort = SwitchPort::factory()->create([
         'interface_mode' => 'TRUNK',
