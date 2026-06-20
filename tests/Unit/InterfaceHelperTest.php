@@ -29,3 +29,12 @@ it('normalizes interface ranges before expansion in InterfaceHelper', function (
 it('delegates interface range expansion from DeviceController', function () {
     expect(DeviceController::expandInterfaceRange('01/01/01-01/01/02'))->toBe(['1/1/1', '1/1/2']);
 });
+
+it('normalizes port-list members in order-insensitive sorted sets', function () {
+    expect(InterfaceHelper::normalizePortListMembers(['1/1/2', '1/1/1']))
+        ->toBe(['1/1/1', '1/1/2'])
+        ->and(InterfaceHelper::normalizePortListMembers('1/1/1&1/1/2'))
+        ->toBe(['1/1/1', '1/1/2'])
+        ->and(InterfaceHelper::normalizePortListMembers(['1/1/1-1/1/2']))
+        ->toBe(['1/1/1', '1/1/2']);
+});

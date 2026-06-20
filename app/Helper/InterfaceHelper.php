@@ -61,6 +61,37 @@ final class InterfaceHelper
         return $expandedRanges;
     }
 
+    /**
+     * Normalize LAG port-list values for comparison (order-insensitive member sets).
+     *
+     * @return list<string>
+     */
+    public static function normalizePortListMembers(mixed $value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+
+        $segments = is_array($value)
+            ? array_map(static fn ($item) => (string) $item, $value)
+            : [(string) $value];
+
+        $members = [];
+        foreach ($segments as $segment) {
+            $segment = trim($segment);
+            if ($segment === '') {
+                continue;
+            }
+
+            $members = array_merge($members, self::expandInterfaceRange($segment));
+        }
+
+        $members = array_values(array_unique($members));
+        sort($members);
+
+        return $members;
+    }
+
     private static function normalizePathToken(string $token): string
     {
         $token = trim($token);

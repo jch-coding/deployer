@@ -25,7 +25,47 @@ function formatValue(value: unknown): string {
     return String(value);
 }
 
-function valuesMatch(expected: unknown, actual: unknown): boolean {
+function normalizePortListMembers(value: unknown): string[] {
+    if (value === null || value === undefined) {
+        return [];
+    }
+
+    const segments = Array.isArray(value)
+        ? value.map((item) => String(item))
+        : [String(value)];
+
+    const members: string[] = [];
+    for (const segment of segments) {
+        for (const part of segment.split('&')) {
+            const piece = part.trim();
+            if (piece !== '') {
+                members.push(piece);
+            }
+        }
+    }
+
+    return [...members].sort();
+}
+
+function isPortListPath(path?: string): boolean {
+    return path === 'port-list' || path?.endsWith('.port-list') === true;
+}
+
+function valuesMatch(
+    expected: unknown,
+    actual: unknown,
+    path?: string,
+): boolean {
+    if (isPortListPath(path)) {
+        const expectedMembers = normalizePortListMembers(expected);
+        const actualMembers = normalizePortListMembers(actual);
+
+        return (
+            expectedMembers.length === actualMembers.length &&
+            expectedMembers.every((member, index) => member === actualMembers[index])
+        );
+    }
+
     if (formatValue(expected) === formatValue(actual)) {
         return true;
     }
@@ -78,7 +118,11 @@ export function ConfigurationDiffTable({
                 </thead>
                 <tbody>
                     {rows.map((entry) => {
-                        const matches = valuesMatch(entry.expected, entry.actual);
+                        const matches = valuesMatch(
+                            entry.expected,
+                            entry.actual,
+                            entry.path,
+                        );
 
                         return (
                             <tr
@@ -139,7 +183,8 @@ export default function ConfigurationDiff({
     const [open, setOpen] = useState(false);
     const rows = details.length > 0 ? details : diff;
     const mismatchCount = rows.filter(
-        (entry) => !valuesMatch(entry.expected, entry.actual),
+        (entry) =>
+            !valuesMatch(entry.expected, entry.actual, entry.path),
     ).length;
 
     if (rows.length === 0) {

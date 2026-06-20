@@ -2873,6 +2873,19 @@ class CentralAPIHelper
                 continue;
             }
 
+            if ($key === 'port-list') {
+                if (InterfaceHelper::normalizePortListMembers($expectedValue)
+                    !== InterfaceHelper::normalizePortListMembers($actualValue)) {
+                    $diffs[] = [
+                        'path' => $path,
+                        'expected' => $expectedValue,
+                        'actual' => $actualValue,
+                    ];
+                }
+
+                continue;
+            }
+
             if (! static::vsxPortchannelValuesMatch($expectedValue, $actualValue)) {
                 $diffs[] = [
                     'path' => $path,

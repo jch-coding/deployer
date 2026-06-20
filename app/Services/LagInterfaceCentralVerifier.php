@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Helper\CentralAPIHelper;
+use App\Helper\InterfaceHelper;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Task;
@@ -230,6 +231,18 @@ class LagInterfaceCentralVerifier
                 continue;
             }
 
+            if ($key === 'port-list') {
+                if (! $this->portListsMatch($expectedValue, $actualValue)) {
+                    $diffs[] = [
+                        'path' => $path,
+                        'expected' => $expectedValue,
+                        'actual' => $actualValue,
+                    ];
+                }
+
+                continue;
+            }
+
             if (! $this->valuesMatch($expectedValue, $actualValue)) {
                 $diffs[] = [
                     'path' => $path,
@@ -270,6 +283,12 @@ class LagInterfaceCentralVerifier
         }
 
         return $normalizedExpected === $normalizedActual;
+    }
+
+    protected function portListsMatch(mixed $expected, mixed $actual): bool
+    {
+        return InterfaceHelper::normalizePortListMembers($expected)
+            === InterfaceHelper::normalizePortListMembers($actual);
     }
 
     protected function isListArray(array $value): bool

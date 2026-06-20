@@ -15,6 +15,27 @@ test('diffExpectedAgainstActual treats port-list order as equal', function () {
     expect($verifier->diffExpectedAgainstActual($expected, $actual))->toBe([]);
 });
 
+test('diffExpectedAgainstActual treats port-list range notation as equal to expanded members', function () {
+    $verifier = new LagInterfaceCentralVerifier;
+
+    $expected = ['port-list' => ['1/1/1', '1/1/2']];
+    $actual = ['port-list' => ['1/1/1-1/1/2']];
+
+    expect($verifier->diffExpectedAgainstActual($expected, $actual))->toBe([]);
+});
+
+test('diffExpectedAgainstActual still fails when port-list members differ', function () {
+    $verifier = new LagInterfaceCentralVerifier;
+
+    $expected = ['port-list' => ['1/1/1', '1/1/2']];
+    $actual = ['port-list' => ['1/1/1', '1/1/3']];
+
+    $diff = $verifier->diffExpectedAgainstActual($expected, $actual);
+
+    expect($diff)->toHaveCount(1)
+        ->and($diff[0]['path'])->toBe('port-list');
+});
+
 test('diffExpectedAgainstActual coerces trunk-vlan-all true and string true', function () {
     $verifier = new LagInterfaceCentralVerifier;
 
