@@ -669,10 +669,11 @@ export default function Show() {
                     </Tooltip>
                 </div>
 
+                <div className="mt-6 space-y-10">
                 <section className="w-full">
                     <h2 className="text-xl font-semibold">Latest Tasks</h2>
                     {latest_tasks.length > 0 ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
+                        <div className="mx-auto mt-2 flex flex-wrap justify-center gap-2">
                             {latest_tasks.map((task) => (
                                 <Card key={task.id} className="max-w-sm px-2">
                                     <CardTitle className="text-center text-xs">
@@ -700,10 +701,11 @@ export default function Show() {
                 </section>
 
                 <section className="w-full">
+                    <h2 className="text-xl font-semibold">Devices</h2>
                     {devicesFromServer.length > 0 ||
                     deviceTableSearch.trim() !== '' ? (
                         <>
-                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <div className="mt-2 mb-2 flex flex-wrap items-center justify-between gap-2">
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -779,7 +781,7 @@ export default function Show() {
                             )}
                         </>
                     ) : (
-                        <p>No devices assigned to this deployment</p>
+                        <p className="mt-2">No devices assigned to this deployment</p>
                     )}
                 </section>
 
@@ -846,6 +848,7 @@ export default function Show() {
                         )}
                     </div>
                 </section>
+                </div>
             </div>
         </AppLayout>
     );
