@@ -10,6 +10,7 @@ type Client = {
     classic_username?: string | null;
     classic_password?: string | null;
     has_classic_refresh_token?: boolean;
+    has_classic_access_token?: boolean;
     classic_expires_in?: string | null;
 }
 

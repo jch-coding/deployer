@@ -135,21 +135,38 @@ class ClientController extends Controller
             $validated = array_merge($validated, $request->validate(['base_url' => 'string']));
         }
 
-        if ($request->has('classic_refresh_token')) {
-            $classicRefreshToken = $request->validate([
-                'classic_refresh_token' => 'required|string|min:12|max:65535',
-            ])['classic_refresh_token'];
+        if ($request->has('classic_refresh_token') || $request->has('classic_access_token') || $request->has('classic_client_id')) {
+            $validated = $request->validate([
+                'classic_client_id' => 'sometimes|required|string|min:12|max:255',
+                'classic_refresh_token' => 'sometimes|required|string|min:12|max:65535',
+                'classic_access_token' => 'sometimes|required|string|min:12|max:65535',
+            ]);
 
-            if (! $client->updateClassicRefreshToken($classicRefreshToken)) {
+            $classicClientId = $validated['classic_client_id'] ?? null;
+            $classicRefreshToken = $validated['classic_refresh_token'] ?? null;
+            $classicAccessToken = $validated['classic_access_token'] ?? null;
+
+            if ($classicClientId !== null) {
+                $client->update(['classic_client_id' => $classicClientId]);
+            }
+
+            if ($classicRefreshToken !== null || $classicAccessToken !== null) {
+                if (! $client->updateClassicCentralTokens($classicRefreshToken, $classicAccessToken)) {
+                    return to_route('clients.index')->with(
+                        'error',
+                        'Failed to validate Classic Central tokens with Central.',
+                    );
+                }
+
                 return to_route('clients.index')->with(
-                    'error',
-                    'Failed to refresh Classic Central token with the provided refresh token.',
+                    'success',
+                    'Classic Central tokens saved and validated.',
                 );
             }
 
             return to_route('clients.index')->with(
                 'success',
-                'Classic refresh token saved and validated.',
+                'Classic client ID saved.',
             );
         }
 
