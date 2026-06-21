@@ -37,6 +37,7 @@ use App\Models\Task;
 use App\Services\DeploymentCriticalCheckService;
 use App\Services\DeviceCentralVerifier;
 use App\Services\EthernetInterfaceCentralVerifier;
+use App\Services\InterfaceConfigurationCheckService;
 use App\Services\LagInterfaceCentralVerifier;
 use App\Services\LicensingInventoryService;
 use App\Services\LicensingPoolResolver;
@@ -1467,6 +1468,54 @@ class TaskController extends Controller
             session()->flash('success', 'All site names exist in Central.');
         } else {
             session()->flash('error', 'These sites were not found in Central: '.implode(', ', $missing).'.');
+        }
+
+        return back();
+    }
+
+    public function checkLagPortLists(Request $request, Deployment $deployment)
+    {
+        $request->validate([
+            'task_type' => ['required', Rule::in(['CONFIGURE_LAG_INTERFACE', 'CONFIGURE_ALL_INTERFACE'])],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before checking LAG port lists.');
+
+            return back();
+        }
+
+        $result = (new InterfaceConfigurationCheckService)->checkLagPortListUniqueness($deployment);
+
+        if ($result['ok']) {
+            session()->flash('success', $result['message']);
+        } else {
+            session()->flash('error', $result['message']);
+        }
+
+        return back();
+    }
+
+    public function checkVlanIpAddresses(Request $request, Deployment $deployment)
+    {
+        $request->validate([
+            'task_type' => ['required', Rule::in(['CONFIGURE_VLAN_INTERFACE', 'CONFIGURE_ALL_INTERFACE'])],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before checking VLAN IP addresses.');
+
+            return back();
+        }
+
+        $result = (new InterfaceConfigurationCheckService)->checkVlanIpAddressUniqueness($deployment);
+
+        if ($result['ok']) {
+            session()->flash('success', $result['message']);
+        } else {
+            session()->flash('error', $result['message']);
         }
 
         return back();
