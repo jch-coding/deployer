@@ -1863,11 +1863,11 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $devices_by_group = $in_progress->groupBy('group');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
-                $devices_by_group_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, PreprovisionDevicesToGroupJob::class);
-                foreach (array_values($devices_by_group_jobs) as $index => $job) {
-                    $job->delay(now()->addSeconds(PreprovisionDevicesToGroupJob::BATCH_DELAY_SECONDS * $index));
-                }
-                // One batch segment so all chunk jobs dispatch together (avoids Bus::chain of batches and preserves batch_id).
+                $devices_by_group_jobs = array_map(
+                    fn (array $chunks, string $group) => new PreprovisionDevicesToGroupJob($chunks, $group, $task, $centralAPIHelper),
+                    $chunked_devices_by_group_with_keys['chunked_devices_by_group'],
+                    $chunked_devices_by_group_with_keys['keys']
+                );
                 $jobs[] = $devices_by_group_jobs;
                 break;
             case 'MOVE_DEVICE_TO_GROUP':
