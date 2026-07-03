@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\BaseURL;
-use App\ClassicBaseUrl;
 use App\Http\Resources\ClientResource;
 use App\Models\Client;
 use Illuminate\Http\Request;
@@ -93,20 +92,9 @@ class ClientController extends Controller
         }
     }
 
-    public function mapClassicBaseUrl(string $base_url)
+    public function mapClassicBaseUrl(string $base_url): ?string
     {
-        switch ($base_url) {
-            case BaseURL::US1->value:
-                return ClassicBaseUrl::US1->value;
-            case BaseURL::US2->value:
-                return ClassicBaseUrl::US2->value;
-            case BaseURL::US4->value:
-                return ClassicBaseUrl::US_WEST4->value;
-            case BaseURL::US5->value:
-                return ClassicBaseUrl::US_WEST5->value;
-            case BaseURL::CA1->value:
-                return ClassicBaseUrl::CANADA1->value;
-        }
+        return BaseURL::from($base_url)->toClassicBaseUrl()?->value;
     }
 
     /**
