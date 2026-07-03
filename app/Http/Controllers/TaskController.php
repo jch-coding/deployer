@@ -1864,6 +1864,9 @@ class TaskController extends Controller
                 $devices_by_group = $in_progress->groupBy('group');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
                 $devices_by_group_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, PreprovisionDevicesToGroupJob::class);
+                foreach (array_values($devices_by_group_jobs) as $index => $job) {
+                    $job->delay(now()->addSeconds(PreprovisionDevicesToGroupJob::BATCH_DELAY_SECONDS * $index));
+                }
                 // One batch segment so all chunk jobs dispatch together (avoids Bus::chain of batches and preserves batch_id).
                 $jobs[] = $devices_by_group_jobs;
                 break;

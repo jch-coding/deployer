@@ -10,6 +10,8 @@ use Throwable;
 
 class PreprovisionDevicesToGroupJob extends BaseTaskJob
 {
+    public const BATCH_DELAY_SECONDS = 30;
+
     /**
      * Create a new job instance.
      */
@@ -64,22 +66,18 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
         }
 
         if (! $ok) {
-            foreach ($this->devices as $device) {
-                $this->markDeviceFailed($device['id']);
-            }
             $status = $response instanceof Response ? $response->status() : 'unknown';
             $body = $response instanceof Response ? $response->body() : json_encode($response);
             Log::error('Failed to preprovision devices to group', ['status' => $status, 'body' => $body]);
             $message = array_reduce(
                 $devices,
-                fn (string $carry, string $item): string => $carry."\nFailed to preprovision device ".$item.' to group '.$this->group_name,
+                fn (string $carry, string $item): string => $carry."\nFailed to preprovision device ".$item.' to group '.$this->group_name.'. Will retry.',
                 ''
             );
             $this->task->processTaskStatusLog($message);
+            $this->release(self::BATCH_DELAY_SECONDS);
 
-            if ($this->allTaskDevicesFailed()) {
-                $this->failTask('All devices failed to preprovision to group.');
-            }
+            return;
         } else {
             foreach ($this->devices as $device) {
                 $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
