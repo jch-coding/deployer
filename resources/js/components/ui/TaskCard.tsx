@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Spinner } from '@/components/ui/spinner';
 import TaskDurationDialog from '@/components/ui/TaskDurationDialog';
 import {
     type AvailableSubscription,
@@ -85,8 +86,7 @@ export default function TaskCard({
     central_firmware_error = null,
 }: TaskCardProps) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
-    const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
-    const [statusMessage, setStatusMessage] = useState()
+    const [isLaunching, setIsLaunching] = useState(false)
     const [switchesOnly, setSwitchesOnly] = useState(false)
     const [apsOnly, setAPsOnly] = useState(false)
     const [deviceSearch, setDeviceSearch] = useState('')
@@ -278,6 +278,7 @@ export default function TaskCard({
         }
 
         setTaskDevices(devices_for_task);
+        setIsLaunching(true);
         const deploymentTimeTotalMinutes = deploymentTimeHours * 60 + deploymentTimeMinutes;
 
         const devicePayload = devices_for_task.map((device) => {
@@ -314,10 +315,10 @@ export default function TaskCard({
                           vlanPrefixTrimmed !== '' ? firmwareComplianceVersion.trim() : undefined,
                   }
                 : {}),
+        }, {
+            onError: () => setIsLaunching(false),
         });
     };
-
-    const resetCompletedDevices = () => setCompletedDevices([])
 
     return (
         <Card className="w-96">
@@ -700,23 +701,21 @@ export default function TaskCard({
                         </DialogContent>
                     </Dialog>
                 ) : null}
-                <Dialog>
+                <Dialog open={isLaunching}>
                     {taskDevices.length > 0 &&
                     taskDevices.length < devices.length &&
                     !isAddVlansWithPrefix ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <DialogTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            size="icon"
-                                            className="rounded-full"
-                                            aria-label="Deploy selected devices"
-                                            onClick={() => dispatch_task_with_devices(task, devices)}
-                                        >
-                                            <BoltIcon className="size-4" aria-hidden />
-                                        </Button>
-                                    </DialogTrigger>
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        className="rounded-full"
+                                        aria-label="Deploy selected devices"
+                                        onClick={() => dispatch_task_with_devices(task, devices)}
+                                    >
+                                        <BoltIcon className="size-4" aria-hidden />
+                                    </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                     <p>Deploy selected</p>
@@ -725,17 +724,15 @@ export default function TaskCard({
                         ) : (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <DialogTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            size="icon"
-                                            className="rounded-full"
-                                            aria-label="Deploy all devices"
-                                            onClick={() => dispatch_task_with_devices(task, devices, true)}
-                                        >
-                                            <BoltIcon className="size-4" aria-hidden />
-                                        </Button>
-                                    </DialogTrigger>
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        className="rounded-full"
+                                        aria-label="Deploy all devices"
+                                        onClick={() => dispatch_task_with_devices(task, devices, true)}
+                                    >
+                                        <BoltIcon className="size-4" aria-hidden />
+                                    </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                     <p>
@@ -747,23 +744,22 @@ export default function TaskCard({
                             </Tooltip>
                         )
                     }
-                    <DialogContent>
-                        <DialogTitle>{task} Progress</DialogTitle>
-                        <DialogDescription>
-                            {completedDevices.length} / {taskDevices.length} {statusMessage}
-                        </DialogDescription>
-                        <DialogClose asChild>
-                            <Button onClick={() => resetCompletedDevices()}>Close</Button>
-                        </DialogClose>
-                        <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4">
-                            <ul>
-                                {
-                                    completedDevices.length > 0 ?
-                                        completedDevices.map((device, index) =>
-                                            <li key={index} className='text-emerald-500'>{ device ? device.name : device }</li>
-                                        ) : <li>Deployment started</li>
-                                }
-                            </ul>
+                    <DialogContent
+                        className="sm:max-w-sm [&>button]:hidden"
+                        onInteractOutside={(event) => event.preventDefault()}
+                        onEscapeKeyDown={(event) => event.preventDefault()}
+                    >
+                        <DialogTitle className="sr-only">Launching task</DialogTitle>
+                        <div
+                            className="flex flex-col items-center gap-3 py-4"
+                            role="status"
+                            aria-live="polite"
+                            aria-busy="true"
+                        >
+                            <Spinner className="size-8" />
+                            <p className="text-sm font-medium">
+                                launching {task_friendly_name}
+                            </p>
                         </div>
                     </DialogContent>
                 </Dialog>
