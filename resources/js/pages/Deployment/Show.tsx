@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/dialog';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import type { AvailableSubscription } from '@/components/licensing/LicenseSelect';
+import { Spinner } from '@/components/ui/spinner';
 import {
     Select,
     SelectContent,
@@ -1126,6 +1127,22 @@ export default function Show() {
                 </section>
                 </div>
             </div>
+            {applyingMetadata ? (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+                    role="status"
+                    aria-live="polite"
+                    aria-busy="true"
+                    data-test="bulk-metadata-loading"
+                >
+                    <div className="flex flex-col items-center gap-3 rounded-lg border bg-card px-8 py-6 shadow-lg">
+                        <Spinner className="size-8" />
+                        <p className="text-sm font-medium">
+                            Applying settings to device(s)
+                        </p>
+                    </div>
+                </div>
+            ) : null}
         </AppLayout>
     );
 }
