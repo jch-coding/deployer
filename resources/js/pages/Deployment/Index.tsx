@@ -64,9 +64,10 @@ export default function Index() {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="min-w-6xl mx-auto flex-1">
-                <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex flex-col items-center gap-3">
                     <h1 className="font-bold text-2xl">Deployments</h1>
                     <CentralScopeRefreshButtons
+                        className="justify-center"
                         centralSitesCache={central_sites_cache}
                         centralGroupsCache={central_groups_cache}
                         reloadOnly={[

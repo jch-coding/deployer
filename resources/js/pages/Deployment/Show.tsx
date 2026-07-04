@@ -610,26 +610,76 @@ export default function Show() {
         post(storeMany(deployment.id).url);
     }
 
+    const scopeCacheReloadOnly = [
+        'central_sites_cache',
+        'central_groups_cache',
+        'central_sites',
+        'central_sites_error',
+        'central_device_groups',
+        'central_device_groups_error',
+        'device_group_options',
+        'classic_device_groups_error',
+    ] as const;
+
+    const deviceTableSearchInput = (
+        <div className="relative w-full max-w-sm shrink-0 sm:ml-auto">
+            <Search
+                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+            />
+            <Input
+                type="search"
+                value={deviceTableSearch}
+                onChange={(e) => setDeviceTableSearch(e.target.value)}
+                placeholder="Search name, serial, or function…"
+                className="pl-9"
+                data-test="devices-search"
+                aria-label="Search devices by name, serial, or device function"
+            />
+        </div>
+    );
+
+    const deviceTableToolbar = (
+        <div className="mb-1 flex flex-wrap items-end justify-end gap-2">
+            <CentralScopeRefreshButtons
+                centralSitesCache={central_sites_cache}
+                centralGroupsCache={central_groups_cache}
+                reloadOnly={[...scopeCacheReloadOnly]}
+            />
+            {deviceTableSearchInput}
+        </div>
+    );
+
+    const deviceTableToolbarWithSync = (
+        <div className="mb-1 flex flex-wrap items-end gap-2">
+            <Button
+                type="button"
+                variant="outline"
+                className="shrink-0"
+                disabled={selectedCount === 0 || syncingScopeIds}
+                data-test="force-sync-device-scope-ids"
+                onClick={handleForceSyncScopeIds}
+            >
+                {isAllFilteredSelected
+                    ? 'force sync scope-id for all devices'
+                    : 'force sync scope-id for selected'}
+            </Button>
+            <CentralScopeRefreshButtons
+                layout="compact"
+                centralSitesCache={central_sites_cache}
+                centralGroupsCache={central_groups_cache}
+                reloadOnly={[...scopeCacheReloadOnly]}
+            />
+            {deviceTableSearchInput}
+        </div>
+    );
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="flex w-full flex-col gap-6 px-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <h1 className="text-3xl font-semibold">{deployment.name}</h1>
                     <div className="flex flex-wrap items-center gap-2">
-                        <CentralScopeRefreshButtons
-                            centralSitesCache={central_sites_cache}
-                            centralGroupsCache={central_groups_cache}
-                            reloadOnly={[
-                                'central_sites_cache',
-                                'central_groups_cache',
-                                'central_sites',
-                                'central_sites_error',
-                                'central_device_groups',
-                                'central_device_groups_error',
-                                'device_group_options',
-                                'classic_device_groups_error',
-                            ]}
-                        />
                         <Button
                             type="button"
                             variant="outline"
@@ -881,25 +931,9 @@ export default function Show() {
                     {devicesFromServer.length > 0 ||
                     deviceTableSearch.trim() !== '' ? (
                         <>
-                            <div className="mt-2 mb-2 flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        disabled={
-                                            selectedCount === 0 ||
-                                            syncingScopeIds
-                                        }
-                                        data-test="force-sync-device-scope-ids"
-                                        onClick={handleForceSyncScopeIds}
-                                    >
-                                        {isAllFilteredSelected
-                                            ? 'force sync scope-id for all devices'
-                                            : 'force sync scope-id for selected'}
-                                    </Button>
-                                    {selectedCount > 0 ? (
-                                        <>
-                                            <Select
+                            {selectedCount > 0 ? (
+                                <div className="mt-2 mb-2 flex flex-wrap items-center gap-2">
+                                    <Select
                                                 value={
                                                     bulkSite === BULK_NO_CHANGE
                                                         ? undefined
@@ -1027,27 +1061,8 @@ export default function Show() {
                                                     ? 'Apply to all matching'
                                                     : `Apply to selected (${selectedCount})`}
                                             </Button>
-                                        </>
-                                    ) : null}
                                 </div>
-                                <div className="relative w-full max-w-sm sm:ml-auto">
-                                    <Search
-                                        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                                        aria-hidden
-                                    />
-                                    <Input
-                                        type="search"
-                                        value={deviceTableSearch}
-                                        onChange={(e) =>
-                                            setDeviceTableSearch(e.target.value)
-                                        }
-                                        placeholder="Search name, serial, or function…"
-                                        className="pl-9"
-                                        data-test="devices-search"
-                                        aria-label="Search devices by name, serial, or device function"
-                                    />
-                                </div>
-                            </div>
+                            ) : null}
                             {showSelectAllFilteredBanner ? (
                                 <div
                                     className="mb-2 flex flex-wrap items-center gap-4"
@@ -1073,6 +1088,7 @@ export default function Show() {
                                     </Button>
                                 </div>
                             ) : null}
+                            {deviceTableToolbarWithSync}
                             <DataTable<DeviceDef, unknown>
                                 data={devicesFromServer}
                                 columns={deviceTableColumns}
@@ -1121,7 +1137,10 @@ export default function Show() {
                             </div>
                         </>
                     ) : (
-                        <p className="mt-2">No devices assigned to this deployment</p>
+                        <>
+                            <div className="mt-2">{deviceTableToolbar}</div>
+                            <p>No devices assigned to this deployment</p>
+                        </>
                     )}
                 </section>
 

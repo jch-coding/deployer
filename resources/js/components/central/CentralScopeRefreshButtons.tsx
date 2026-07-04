@@ -2,6 +2,12 @@ import { router } from '@inertiajs/react';
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { refresh as refreshGroups } from '@/routes/central-scope-cache/groups';
 import { refresh as refreshSites } from '@/routes/central-scope-cache/sites';
 
@@ -18,12 +24,11 @@ type CentralScopeRefreshButtonsProps = {
     centralSitesCache: CentralScopeCacheMeta;
     centralGroupsCache: CentralScopeGroupsCacheMeta;
     reloadOnly?: string[];
-    variant?: 'default' | 'outline' | 'ghost';
-    size?: 'default' | 'sm';
+    layout?: 'default' | 'compact';
     className?: string;
 };
 
-function formatRefreshedAt(iso: string | null | undefined): string {
+export function formatRefreshedAt(iso: string | null | undefined): string {
     if (!iso) {
         return 'Not refreshed yet';
     }
@@ -42,6 +47,7 @@ function ScopeRefreshButton({
     isRefreshing,
     onClick,
     testId,
+    layout,
 }: {
     label: string;
     refreshingLabel: string;
@@ -49,7 +55,35 @@ function ScopeRefreshButton({
     isRefreshing: boolean;
     onClick: () => void;
     testId: string;
+    layout: 'default' | 'compact';
 }) {
+    const tooltipText = `Last refreshed ${formatRefreshedAt(refreshedAt)}`;
+
+    if (layout === 'compact') {
+        return (
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={onClick}
+                        disabled={isRefreshing}
+                        data-test={testId}
+                        className="gap-2"
+                    >
+                        <RefreshCw
+                            className={`size-4 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`}
+                            aria-hidden
+                        />
+                        {isRefreshing ? refreshingLabel : label}
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">{tooltipText}</TooltipContent>
+            </Tooltip>
+        );
+    }
+
     return (
         <Button
             type="button"
@@ -68,7 +102,7 @@ function ScopeRefreshButton({
                 {isRefreshing ? refreshingLabel : label}
             </span>
             <span className="pl-6 text-xs font-normal text-muted-foreground">
-                Last refreshed {formatRefreshedAt(refreshedAt)}
+                {tooltipText}
             </span>
         </Button>
     );
@@ -89,6 +123,7 @@ export default function CentralScopeRefreshButtons({
         'site_options',
         'central_error',
     ],
+    layout = 'default',
     className,
 }: CentralScopeRefreshButtonsProps) {
     const [refreshingSites, setRefreshingSites] = useState(false);
@@ -125,18 +160,24 @@ export default function CentralScopeRefreshButtons({
     };
 
     return (
-        <div className={`flex flex-wrap items-start gap-2 ${className ?? ''}`}>
+        <div className={cn('flex flex-wrap gap-2', className)}>
             <ScopeRefreshButton
-                label="Refresh sites"
-                refreshingLabel="Refreshing sites…"
+                layout={layout}
+                label={layout === 'compact' ? 'Sites' : 'Refresh sites'}
+                refreshingLabel={
+                    layout === 'compact' ? 'Sites…' : 'Refreshing sites…'
+                }
                 refreshedAt={centralSitesCache.refreshed_at}
                 isRefreshing={refreshingSites}
                 onClick={handleRefreshSites}
                 testId="refresh-central-sites-button"
             />
             <ScopeRefreshButton
-                label="Refresh groups"
-                refreshingLabel="Refreshing groups…"
+                layout={layout}
+                label={layout === 'compact' ? 'Groups' : 'Refresh groups'}
+                refreshingLabel={
+                    layout === 'compact' ? 'Groups…' : 'Refreshing groups…'
+                }
                 refreshedAt={centralGroupsCache.refreshed_at}
                 isRefreshing={refreshingGroups}
                 onClick={handleRefreshGroups}
