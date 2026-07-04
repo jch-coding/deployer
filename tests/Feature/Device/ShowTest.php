@@ -188,8 +188,8 @@ it('updates shutdown_on_split from the interface edit endpoint', function () {
     ]);
 });
 
-it('updates device site and group via metadata patch', function () {
-    fakeCentralScopeManagementApis();
+it('updates device site and group via metadata patch without calling Central', function () {
+    Http::fake();
 
     $deployment = Deployment::factory()->for($this->client)->create();
     $device = Device::factory()->create([
@@ -211,8 +211,9 @@ it('updates device site and group via metadata patch', function () {
 
     expect($device->group)->toBe('Central Group')
         ->and($device->site)->not->toBeNull()
-        ->and($device->site->name)->toBe('Central Site')
-        ->and($device->site->scope_id)->toBe('scope-site');
+        ->and($device->site->name)->toBe('Central Site');
+
+    Http::assertNothingSent();
 });
 
 it('clears device site via metadata patch', function () {

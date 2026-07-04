@@ -960,7 +960,7 @@ class DeviceController extends Controller
         $validated = $request->validated();
 
         if (array_key_exists('site', $validated)) {
-            $this->applyDeviceSite($device, $validated['site']);
+            $this->applyDeviceSiteLocally($device, $validated['site']);
         }
 
         if (array_key_exists('group', $validated)) {
@@ -1033,7 +1033,7 @@ class DeviceController extends Controller
 
         foreach ($devices as $device) {
             if ($updateSite) {
-                $this->applyDeviceSite($device, $data['site']);
+                $this->applyDeviceSiteLocally($device, $data['site']);
             }
             if ($updateGroup) {
                 $this->applyDeviceGroup($device, $data['group']);
@@ -1050,7 +1050,7 @@ class DeviceController extends Controller
         return back();
     }
 
-    private function applyDeviceSite(Device $device, ?string $siteName): void
+    private function applyDeviceSiteLocally(Device $device, ?string $siteName): void
     {
         if ($siteName === null || $siteName === '') {
             $device->update(['site_id' => null]);
@@ -1059,13 +1059,6 @@ class DeviceController extends Controller
         }
 
         $site = Site::firstOrCreateForClient($device->client, $siteName);
-        $central = new CentralAPIHelper($device->client);
-        $centralSite = collect($central->collectScopeManagementSites()['sites'])
-            ->firstWhere('scopeName', $siteName);
-        if (is_array($centralSite) && ($centralSite['scopeId'] ?? '') !== '') {
-            $site->scope_id = $centralSite['scopeId'];
-            $site->save();
-        }
         $device->update(['site_id' => $site->id]);
     }
 

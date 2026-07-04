@@ -188,6 +188,7 @@ export default function Show() {
     const [bulkSite, setBulkSite] = useState(BULK_NO_CHANGE);
     const [bulkGroup, setBulkGroup] = useState(BULK_NO_CHANGE);
     const [applyingMetadata, setApplyingMetadata] = useState(false);
+    const applyingMetadataRef = useRef(false);
     const previousDeploymentIdRef = useRef(deploymentId);
     const previousDeviceSearchRef = useRef(device_search.trim());
 
@@ -261,6 +262,36 @@ export default function Show() {
     }, [flash?.success, flash?.error]);
 
     useEffect(() => {
+        applyingMetadataRef.current = applyingMetadata;
+    }, [applyingMetadata]);
+
+    useEffect(() => {
+        const stopBulkMetadataLoading = () => {
+            if (!applyingMetadataRef.current) {
+                return;
+            }
+
+            applyingMetadataRef.current = false;
+            setApplyingMetadata(false);
+        };
+
+        const removeFinishListener = router.on('finish', stopBulkMetadataLoading);
+        const removeCancelListener = router.on('cancel', stopBulkMetadataLoading);
+        const removeErrorListener = router.on('error', stopBulkMetadataLoading);
+        const removeExceptionListener = router.on(
+            'exception',
+            stopBulkMetadataLoading,
+        );
+
+        return () => {
+            removeFinishListener();
+            removeCancelListener();
+            removeErrorListener();
+            removeExceptionListener();
+        };
+    }, []);
+
+    useEffect(() => {
         if (previousDeploymentIdRef.current !== deploymentId) {
             previousDeploymentIdRef.current = deploymentId;
             setDeviceTableSearch(device_search);
@@ -330,6 +361,11 @@ export default function Show() {
     const canApplyBulkMetadata =
         bulkSite !== BULK_NO_CHANGE || bulkGroup !== BULK_NO_CHANGE;
 
+    const stopBulkMetadataLoading = useCallback(() => {
+        applyingMetadataRef.current = false;
+        setApplyingMetadata(false);
+    }, []);
+
     const handleBulkUpdateMetadata = useCallback(() => {
         if (!canApplyBulkMetadata) {
             return;
@@ -357,17 +393,18 @@ export default function Show() {
             payload.group = bulkGroup === BULK_NONE ? null : bulkGroup;
         }
 
+        applyingMetadataRef.current = true;
         setApplyingMetadata(true);
         router.post(bulkUpdateMetadata.url(deploymentId), payload, {
             preserveScroll: true,
-            only: ['devices'],
             onSuccess: () => {
                 setBulkSite(BULK_NO_CHANGE);
                 setBulkGroup(BULK_NO_CHANGE);
                 setRowSelection({});
                 setAllFilteredSelected(false);
             },
-            onFinish: () => setApplyingMetadata(false),
+            onError: stopBulkMetadataLoading,
+            onFinish: stopBulkMetadataLoading,
         });
     }, [
         bulkGroup,
@@ -377,6 +414,7 @@ export default function Show() {
         deviceTableSearch,
         isAllFilteredSelected,
         selectedIds,
+        stopBulkMetadataLoading,
     ]);
 
     const deviceTableQuery = useCallback(
@@ -415,10 +453,13 @@ export default function Show() {
     useEffect(() => {
         const trimmed = deviceTableSearch.trim();
         const trimmedServer = device_search.trim();
-        if (trimmed === trimmedServer) {
+        if (trimmed === trimmedServer || applyingMetadataRef.current) {
             return;
         }
         const handle = window.setTimeout(() => {
+            if (applyingMetadataRef.current) {
+                return;
+            }
             router.get(
                 showDeployment.url(deploymentId, {
                     query: deviceTableQuery({ search: trimmed }),

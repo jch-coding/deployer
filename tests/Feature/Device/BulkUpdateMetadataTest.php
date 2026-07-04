@@ -1,47 +1,25 @@
 <?php
 
-use App\ClassicBaseUrl;
 use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\Site;
 use App\Models\User;
-use Illuminate\Http\Client\Request as HttpClientRequest;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
     $this->client = Client::factory()->for($this->user)->create([
         'current' => true,
-        'bearer_token' => 'test-bearer-token',
-        'expires_at' => now()->addHour(),
-        'classic_base_url' => ClassicBaseUrl::US1,
-        'classic_client_id' => 'classic-id',
-        'classic_client_secret' => 'classic-secret',
-        'classic_username' => 'user',
-        'classic_password' => 'pass',
-        'classic_refresh_token' => 'refresh',
-        'classic_expires_in' => now()->addHour(),
-        'classic_access_token' => 'access-token',
     ]);
     $this->deployment = Deployment::factory()->for($this->client)->create();
     $this->actingAs($this->user);
-
-    Http::fake(function (HttpClientRequest $request) {
-        if (str_contains($request->url(), 'network-config/v1/sites')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'Warehouse', 'scopeId' => 'scope-warehouse'],
-                ],
-            ], 200);
-        }
-
-        return Http::response([], 404);
-    });
 });
 
 test('bulk update metadata updates site and group for selected devices', function () {
+    Http::fake();
+
     $deviceA = Device::factory()->create([
         'client_id' => $this->client->id,
         'user_id' => $this->user->id,
@@ -78,8 +56,9 @@ test('bulk update metadata updates site and group for selected devices', functio
     $this->assertDatabaseHas('sites', [
         'client_id' => $this->client->id,
         'name' => 'Warehouse',
-        'scope_id' => 'scope-warehouse',
     ]);
+
+    Http::assertNothingSent();
 });
 
 test('bulk update metadata sync all respects search filter', function () {
