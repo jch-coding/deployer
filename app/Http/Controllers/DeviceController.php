@@ -21,6 +21,7 @@ use App\Models\LacpProfile;
 use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
+use App\Services\CentralScopeCacheService;
 use App\Services\DeviceInterfaceUpdateResolver;
 use App\Support\CsvImportMergeHelper;
 use App\Support\TrunkVlanRanges;
@@ -913,17 +914,17 @@ class DeviceController extends Controller
             ->all();
 
         $client = $request->user()->currentClient();
-        $central = new CentralAPIHelper($client);
-        $sitesResult = $central->collectScopeManagementSites();
-        $groupsResult = $central->collectScopeManagementDeviceGroups();
+        $centralScopeCacheService = app(CentralScopeCacheService::class);
+        $sitesPayload = $centralScopeCacheService->getSites($client);
+        $groupsPayload = $centralScopeCacheService->getGroups($client);
 
         $centralSites = self::ensureScopeNameInCentralList(
-            $sitesResult['sites'],
+            $sitesPayload['sites'],
             $device->site?->name,
             $device->site?->scope_id,
         );
         $centralDeviceGroups = self::ensureScopeNameInCentralList(
-            $groupsResult['groups'],
+            $groupsPayload['central_device_groups'],
             $device->group,
             null,
         );
@@ -945,9 +946,9 @@ class DeviceController extends Controller
             ],
             'interfaces' => $interfaces,
             'central_sites' => $centralSites,
-            'central_sites_error' => $sitesResult['error'],
+            'central_sites_error' => $sitesPayload['error'],
             'central_device_groups' => $centralDeviceGroups,
-            'central_device_groups_error' => $groupsResult['error'],
+            'central_device_groups_error' => $groupsPayload['error'],
         ]);
     }
 

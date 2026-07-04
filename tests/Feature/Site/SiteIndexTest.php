@@ -16,6 +16,7 @@ beforeEach(function () {
         'expires_at' => now()->addHour(),
     ]);
     $this->actingAs($this->user);
+    seedCentralScopeCache($this->client);
 });
 
 test('sites index redirects when no current client is set', function () {
@@ -26,14 +27,6 @@ test('sites index redirects when no current client is set', function () {
 });
 
 test('sites index renders without devices when no filters are applied', function () {
-    Http::fake([
-        '*network-config/v1/sites*' => Http::response([
-            'items' => [
-                ['scopeName' => 'HQ', 'scopeId' => 'scope-hq'],
-            ],
-        ], 200),
-    ]);
-
     $this->get(route('sites.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
@@ -41,24 +34,18 @@ test('sites index renders without devices when no filters are applied', function
             ->where('devices', [])
             ->where('has_active_filters', false)
             ->has('site_options', 1)
-            ->where('site_options.0.siteId', 'scope-hq')
-            ->where('site_options.0.siteName', 'HQ'));
+            ->where('site_options.0.siteId', 'scope-site')
+            ->where('site_options.0.siteName', 'Central Site')
+            ->has('central_sites_cache.refreshed_at')
+            ->has('central_groups_cache.refreshed_at'));
 });
 
 test('sites index fetches devices when filters are applied', function () {
     Http::fake(function (Request $request) {
-        if (str_contains($request->url(), 'network-config/v1/sites')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'HQ', 'scopeId' => 'scope-hq'],
-                ],
-            ], 200);
-        }
-
         if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
             parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
 
-            expect($query['filter'] ?? null)->toBe('siteId eq scope-hq and status eq ONLINE');
+            expect($query['filter'] ?? null)->toBe('siteId eq scope-site and status eq ONLINE');
 
             return Http::response([
                 'items' => [[
@@ -81,7 +68,7 @@ test('sites index fetches devices when filters are applied', function () {
     });
 
     $this->get(route('sites.index', [
-        'site_id' => 'scope-hq',
+        'site_id' => 'scope-site',
         'status' => 'ONLINE',
         'submitted' => true,
     ]))
@@ -89,7 +76,7 @@ test('sites index fetches devices when filters are applied', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('Site/Index')
             ->where('has_active_filters', true)
-            ->where('filters.site_id', 'scope-hq')
+            ->where('filters.site_id', 'scope-site')
             ->where('filters.status', 'ONLINE')
             ->has('devices', 1)
             ->where('devices.0.deviceName', 'Switch-A')
@@ -101,14 +88,6 @@ test('sites index fetches devices when filters are applied', function () {
 
 test('sites index does not fetch devices when filters are applied without submission', function () {
     Http::fake(function (Request $request) {
-        if (str_contains($request->url(), 'network-config/v1/sites')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'HQ', 'scopeId' => 'scope-hq'],
-                ],
-            ], 200);
-        }
-
         if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
             return Http::response([
                 'items' => [[
@@ -131,25 +110,21 @@ test('sites index does not fetch devices when filters are applied without submis
     });
 
     $this->get(route('sites.index', [
-        'site_id' => 'scope-hq',
+        'site_id' => 'scope-site',
         'status' => 'ONLINE',
     ]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Site/Index')
             ->where('has_active_filters', true)
-            ->where('filters.site_id', 'scope-hq')
+            ->where('filters.site_id', 'scope-site')
             ->where('filters.status', 'ONLINE')
             ->where('devices', []));
 
-    Http::assertSentCount(1);
+    Http::assertNothingSent();
 });
 
 test('sites index rejects invalid filter enums', function () {
-    Http::fake([
-        '*network-config/v1/sites*' => Http::response(['items' => []], 200),
-    ]);
-
     $this->get(route('sites.index', ['device_type' => 'INVALID']))
         ->assertSessionHasErrors('device_type');
 });

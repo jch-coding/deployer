@@ -9,6 +9,7 @@ use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Task;
+use App\Services\CentralScopeCacheService;
 use App\Services\DeploymentCriticalCheckService;
 use App\Services\DeviceInterfacePayloadSync;
 use App\Services\FinalizeExpiredTasksService;
@@ -24,7 +25,7 @@ use Inertia\Inertia;
 
 class DeploymentController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, CentralScopeCacheService $centralScopeCacheService)
     {
         $currentClient = $request->user()->currentClient();
 
@@ -38,6 +39,7 @@ class DeploymentController extends Controller
 
         return Inertia::render('Deployment/Index', [
             'deployments' => $deployments,
+            ...$centralScopeCacheService->getCacheMetadata($currentClient),
         ]);
     }
 
@@ -46,6 +48,7 @@ class DeploymentController extends Controller
         Deployment $deployment,
         FinalizeExpiredTasksService $finalizeExpiredTasks,
         LicensingInventoryService $licensingInventoryService,
+        CentralScopeCacheService $centralScopeCacheService,
     ) {
         $deployment->load('devices');
 
@@ -123,6 +126,17 @@ class DeploymentController extends Controller
         $centralSitesError = null;
         $centralDeviceGroupsError = null;
         $classicDeviceGroupsError = null;
+        $centralScopeCacheMetadata = [
+            'central_sites_cache' => [
+                'refreshed_at' => null,
+                'error' => null,
+            ],
+            'central_groups_cache' => [
+                'refreshed_at' => null,
+                'error' => null,
+                'classic_error' => null,
+            ],
+        ];
         if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
             try {
                 $centralHelper = new CentralAPIHelper($currentClient);
@@ -144,42 +158,15 @@ class DeploymentController extends Controller
                 $cxFirmwareVersions = $firmwarePayload['versions'];
                 $centralFirmwareError = $firmwarePayload['error'];
 
-                $sitesResult = $centralHelper->collectScopeManagementSites();
-                $groupsResult = $centralHelper->collectScopeManagementDeviceGroups();
-                $centralSites = $sitesResult['sites'];
-                $centralSitesError = $sitesResult['error'];
-                $centralDeviceGroups = $groupsResult['groups'];
-                $centralDeviceGroupsError = $groupsResult['error'];
-
-                $centralGroupNames = collect($centralDeviceGroups)
-                    ->pluck('scopeName')
-                    ->flip();
-                $deviceGroupOptions = collect($centralDeviceGroups)
-                    ->map(fn (array $group) => [
-                        'scopeName' => $group['scopeName'],
-                        'scopeId' => $group['scopeId'],
-                        'isClassic' => false,
-                    ])
-                    ->values()
-                    ->all();
-
-                $classicGroupsResult = $centralHelper->classic_collect_all_group_names();
-                if (array_key_exists('error', $classicGroupsResult)) {
-                    $classicDeviceGroupsError = $classicGroupsResult['error'];
-                } else {
-                    $classicOnlyNames = collect($classicGroupsResult['names'] ?? [])
-                        ->filter(fn (string $name) => ! $centralGroupNames->has($name))
-                        ->sort()
-                        ->values();
-
-                    foreach ($classicOnlyNames as $name) {
-                        $deviceGroupOptions[] = [
-                            'scopeName' => $name,
-                            'scopeId' => '',
-                            'isClassic' => true,
-                        ];
-                    }
-                }
+                $sitesPayload = $centralScopeCacheService->getSites($currentClient);
+                $groupsPayload = $centralScopeCacheService->getGroups($currentClient);
+                $centralSites = $sitesPayload['sites'];
+                $centralSitesError = $sitesPayload['error'];
+                $centralDeviceGroups = $groupsPayload['central_device_groups'];
+                $centralDeviceGroupsError = $groupsPayload['error'];
+                $deviceGroupOptions = $groupsPayload['device_group_options'];
+                $classicDeviceGroupsError = $groupsPayload['classic_device_groups_error'];
+                $centralScopeCacheMetadata = $centralScopeCacheService->getCacheMetadata($currentClient);
             } catch (\Throwable $exception) {
                 Log::warning('Failed to load Central options for deployment show page.', [
                     'deployment_id' => $deployment->id,
@@ -217,6 +204,7 @@ class DeploymentController extends Controller
             'central_device_groups_error' => $centralDeviceGroupsError,
             'device_group_options' => $deviceGroupOptions,
             'classic_device_groups_error' => $classicDeviceGroupsError,
+            ...$centralScopeCacheMetadata,
             'tasks' => array_map(fn ($task) => [
                 'task_type' => $task->name,
                 'friendly_name' => Task::getTaskFriendlyName($task->name),

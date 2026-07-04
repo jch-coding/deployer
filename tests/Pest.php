@@ -219,3 +219,38 @@ function seedLicensingCache(Client $client, array $devices = [], array $subscrip
     );
     $client->refresh();
 }
+
+function fakeCentralScopeManagementApis(): void
+{
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-config/v1/sites')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'Central Site', 'scopeId' => 'scope-site'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'device-groups')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'Central Group', 'scopeId' => 'scope-group'],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'configuration/v2/groups')) {
+            return Http::response([
+                'data' => [['Classic Only Group', 'Central Group']],
+            ], 200);
+        }
+
+        return Http::response([], 404);
+    });
+}
+
+function seedCentralScopeCache(Client $client): void
+{
+    \App\Models\CentralScopeCache::factory()->for($client)->sites()->create();
+    \App\Models\CentralScopeCache::factory()->for($client)->groups()->create();
+}

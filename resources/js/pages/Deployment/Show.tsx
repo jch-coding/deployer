@@ -41,6 +41,10 @@ import {
 } from '@/components/ui/select';
 import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
+import CentralScopeRefreshButtons, {
+    type CentralScopeCacheMeta,
+    type CentralScopeGroupsCacheMeta,
+} from '@/components/central/CentralScopeRefreshButtons';
 import {
     Tooltip,
     TooltipContent,
@@ -166,6 +170,8 @@ type DeploymentPageProps = {
     central_device_groups_error: string | null;
     device_group_options: CentralScopeOption[];
     classic_device_groups_error: string | null;
+    central_sites_cache: CentralScopeCacheMeta;
+    central_groups_cache: CentralScopeGroupsCacheMeta;
 } & SharedData;
 export default function Show() {
     const {
@@ -224,6 +230,8 @@ export default function Show() {
         central_sites_error = null,
         central_device_groups_error = null,
         device_group_options = [],
+        central_sites_cache,
+        central_groups_cache,
     } = usePage<DeploymentPageProps>().props;
 
     const deviceTableColumns = useMemo(
@@ -608,6 +616,20 @@ export default function Show() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <h1 className="text-3xl font-semibold">{deployment.name}</h1>
                     <div className="flex flex-wrap items-center gap-2">
+                        <CentralScopeRefreshButtons
+                            centralSitesCache={central_sites_cache}
+                            centralGroupsCache={central_groups_cache}
+                            reloadOnly={[
+                                'central_sites_cache',
+                                'central_groups_cache',
+                                'central_sites',
+                                'central_sites_error',
+                                'central_device_groups',
+                                'central_device_groups_error',
+                                'device_group_options',
+                                'classic_device_groups_error',
+                            ]}
+                        />
                         <Button
                             type="button"
                             variant="outline"

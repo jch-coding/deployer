@@ -8,7 +8,6 @@ use App\Models\DeviceInterface;
 use App\Models\Site;
 use App\Models\User;
 use App\SwitchSKU;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -22,34 +21,11 @@ beforeEach(function () {
         'bearer_token' => 'test-bearer-token',
         'expires_at' => now()->addHour(),
     ]);
+
+    seedCentralScopeCache($this->client);
 });
 
-function fakeCentralScopeManagementApis(): void
-{
-    Http::fake(function (Request $request) {
-        if (str_contains($request->url(), 'network-config/v1/sites')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'Central Site', 'scopeId' => 'scope-site'],
-                ],
-            ], 200);
-        }
-
-        if (str_contains($request->url(), 'device-groups')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'Central Group', 'scopeId' => 'scope-group'],
-                ],
-            ], 200);
-        }
-
-        return Http::response([], 404);
-    });
-}
-
 it('shows the device page with interface rows for the current client', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     $device = Device::factory()->create([
         'deployment_id' => $deployment->id,
@@ -85,8 +61,6 @@ it('shows the device page with interface rows for the current client', function 
 });
 
 it('includes interface_kind for vlan lag and ethernet interfaces', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     $device = Device::factory()->create([
         'deployment_id' => $deployment->id,
@@ -118,8 +92,6 @@ it('includes interface_kind for vlan lag and ethernet interfaces', function () {
 });
 
 it('includes central sites and device groups on show', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     $device = Device::factory()->create([
         'deployment_id' => $deployment->id,
@@ -141,8 +113,6 @@ it('includes central sites and device groups on show', function () {
 });
 
 it('includes sku in device props when set', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     $device = Device::factory()->create([
         'deployment_id' => $deployment->id,
@@ -217,8 +187,6 @@ it('updates device site and group via metadata patch without calling Central', f
 });
 
 it('clears device site via metadata patch', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     $site = Site::factory()->for($this->client)->create(['name' => 'Old Site']);
     $device = Device::factory()->create([

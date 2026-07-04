@@ -21,6 +21,10 @@ import {
 } from '@/components/ui/dialog';
 import { FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import CentralScopeRefreshButtons, {
+    type CentralScopeCacheMeta,
+    type CentralScopeGroupsCacheMeta,
+} from '@/components/central/CentralScopeRefreshButtons';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import { destroy, show as showDeployment } from '@/routes/deployments';
@@ -34,10 +38,17 @@ type Deployment = {
 
 type DeploymentIndexProps = {
     deployments: Deployment[];
+    central_sites_cache: CentralScopeCacheMeta;
+    central_groups_cache: CentralScopeGroupsCacheMeta;
 } & SharedData;
 
 export default function Index() {
-    const { deployments, current_client } = usePage<DeploymentIndexProps>().props;
+    const {
+        deployments,
+        current_client,
+        central_sites_cache,
+        central_groups_cache,
+    } = usePage<DeploymentIndexProps>().props;
     const dialogCloseRef = useRef<HTMLButtonElement | null>(null);
     const [success, setSuccess] = useState(false);
     const breadcrumbs: BreadcrumbItem[] = [
@@ -53,7 +64,17 @@ export default function Index() {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="min-w-6xl mx-auto flex-1">
-                <h1 className="font-bold text-2xl text-center">Deployments</h1>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    <h1 className="font-bold text-2xl">Deployments</h1>
+                    <CentralScopeRefreshButtons
+                        centralSitesCache={central_sites_cache}
+                        centralGroupsCache={central_groups_cache}
+                        reloadOnly={[
+                            'central_sites_cache',
+                            'central_groups_cache',
+                        ]}
+                    />
+                </div>
                 {deployments.length > 0 ? (
                     <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                         {deployments.map((deployment) => (

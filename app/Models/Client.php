@@ -40,6 +40,11 @@ class Client extends Model
         return $this->hasMany(Site::class);
     }
 
+    public function centralScopeCaches(): HasMany
+    {
+        return $this->hasMany(CentralScopeCache::class);
+    }
+
     public function clientSubscriptions(): HasMany
     {
         return $this->hasMany(ClientSubscription::class);

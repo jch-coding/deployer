@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CentralApiExplorerController;
+use App\Http\Controllers\CentralScopeCacheController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
@@ -80,6 +81,11 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(SiteController::class)->group(function () {
         Route::get('/sites', 'index')->name('sites.index');
+    });
+
+    Route::controller(CentralScopeCacheController::class)->group(function () {
+        Route::post('/central-scope-cache/sites/refresh', 'refreshSites')->name('central-scope-cache.sites.refresh');
+        Route::post('/central-scope-cache/groups/refresh', 'refreshGroups')->name('central-scope-cache.groups.refresh');
     });
 
     Route::controller(LicensingController::class)->group(function () {

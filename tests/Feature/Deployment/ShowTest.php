@@ -33,41 +33,10 @@ beforeEach(function () {
         'classic_access_token' => 'access-token',
     ]);
 
-    fakeCentralScopeManagementApis();
+    seedCentralScopeCache($this->client);
 });
 
-function fakeCentralScopeManagementApis(): void
-{
-    Http::fake(function (HttpClientRequest $request) {
-        if (str_contains($request->url(), 'network-config/v1/sites')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'Central Site', 'scopeId' => 'scope-site'],
-                ],
-            ], 200);
-        }
-
-        if (str_contains($request->url(), 'device-groups')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'Central Group', 'scopeId' => 'scope-group'],
-                ],
-            ], 200);
-        }
-
-        if (str_contains($request->url(), 'configuration/v2/groups')) {
-            return Http::response([
-                'data' => [['Classic Only Group', 'Central Group']],
-            ], 200);
-        }
-
-        return Http::response([], 404);
-    });
-}
-
 it('shows a list of devices associated with the deployment', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     $devices = Device::factory(2)->for($deployment)->create();
     $this->actingAs($this->user);
@@ -81,8 +50,6 @@ it('shows a list of devices associated with the deployment', function () {
 });
 
 it('includes site and group on paginated devices and central scope options', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     $site = Site::factory()->for($this->client)->create(['name' => 'Warehouse']);
     $device = Device::factory()->for($deployment)->create([
@@ -110,12 +77,12 @@ it('includes site and group on paginated devices and central scope options', fun
             ->where('device_group_options.0.scopeName', 'Central Group')
             ->where('device_group_options.0.isClassic', false)
             ->where('device_group_options.1.scopeName', 'Classic Only Group')
-            ->where('device_group_options.1.isClassic', true));
+            ->where('device_group_options.1.isClassic', true)
+            ->has('central_sites_cache.refreshed_at')
+            ->has('central_groups_cache.refreshed_at'));
 });
 
 it('respects per_page query parameter', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     Device::factory(30)->for($deployment)->create([
         'client_id' => $this->client->id,
@@ -131,8 +98,6 @@ it('respects per_page query parameter', function () {
 });
 
 it('falls back to default per_page for invalid values', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     Device::factory()->for($deployment)->create([
         'client_id' => $this->client->id,
@@ -147,8 +112,6 @@ it('falls back to default per_page for invalid values', function () {
 });
 
 it('preserves per_page in pagination links', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     Device::factory(15)->for($deployment)->create([
         'client_id' => $this->client->id,
