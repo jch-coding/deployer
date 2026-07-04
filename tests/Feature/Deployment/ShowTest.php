@@ -23,6 +23,14 @@ beforeEach(function () {
         'current' => true,
         'bearer_token' => 'test-bearer-token',
         'expires_at' => now()->addHour(),
+        'classic_base_url' => \App\ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
     ]);
 
     fakeCentralScopeManagementApis();
@@ -44,6 +52,12 @@ function fakeCentralScopeManagementApis(): void
                 'items' => [
                     ['scopeName' => 'Central Group', 'scopeId' => 'scope-group'],
                 ],
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'configuration/v2/groups')) {
+            return Http::response([
+                'data' => [['Classic Only Group', 'Central Group']],
             ], 200);
         }
 
@@ -90,8 +104,63 @@ it('includes site and group on paginated devices and central scope options', fun
             ->where('central_device_groups_error', null)
             ->has('central_sites', 1)
             ->has('central_device_groups', 1)
+            ->has('device_group_options', 2)
             ->where('central_sites.0.scopeName', 'Central Site')
-            ->where('central_device_groups.0.scopeName', 'Central Group'));
+            ->where('central_device_groups.0.scopeName', 'Central Group')
+            ->where('device_group_options.0.scopeName', 'Central Group')
+            ->where('device_group_options.0.isClassic', false)
+            ->where('device_group_options.1.scopeName', 'Classic Only Group')
+            ->where('device_group_options.1.isClassic', true));
+});
+
+it('respects per_page query parameter', function () {
+    fakeCentralScopeManagementApis();
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+    Device::factory(30)->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment).'?per_page=50')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('devices.per_page', 50)
+            ->has('devices.data', 30));
+});
+
+it('falls back to default per_page for invalid values', function () {
+    fakeCentralScopeManagementApis();
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+    Device::factory()->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment).'?per_page=999')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('devices.per_page', 25));
+});
+
+it('preserves per_page in pagination links', function () {
+    fakeCentralScopeManagementApis();
+
+    $deployment = Deployment::factory()->for($this->client)->create();
+    Device::factory(15)->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment).'?per_page=10')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('devices.per_page', 10)
+            ->where('devices.next_page_url', fn ($url) => is_string($url) && str_contains($url, 'per_page=10')));
 });
 
 it('filters devices by name, serial, or device function search', function () {

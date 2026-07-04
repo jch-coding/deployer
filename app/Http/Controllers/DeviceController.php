@@ -960,30 +960,120 @@ class DeviceController extends Controller
         $validated = $request->validated();
 
         if (array_key_exists('site', $validated)) {
-            $siteName = $validated['site'];
-            if ($siteName === null || $siteName === '') {
-                $device->update(['site_id' => null]);
-            } else {
-                $site = Site::firstOrCreateForClient($device->client, $siteName);
-                $central = new CentralAPIHelper($device->client);
-                $centralSite = collect($central->collectScopeManagementSites()['sites'])
-                    ->firstWhere('scopeName', $siteName);
-                if (is_array($centralSite) && ($centralSite['scopeId'] ?? '') !== '') {
-                    $site->scope_id = $centralSite['scopeId'];
-                    $site->save();
-                }
-                $device->update(['site_id' => $site->id]);
-            }
+            $this->applyDeviceSite($device, $validated['site']);
         }
 
         if (array_key_exists('group', $validated)) {
-            $group = $validated['group'];
-            $device->update([
-                'group' => $group === null || $group === '' ? null : $group,
-            ]);
+            $this->applyDeviceGroup($device, $validated['group']);
         }
 
         return back()->with('success', 'Device updated successfully.');
+    }
+
+    public function bulkUpdateMetadata(Request $request, Deployment $deployment)
+    {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before updating device metadata.');
+
+            return back();
+        }
+
+        $data = $request->validate([
+            'device_ids' => ['nullable', 'array', 'min:1'],
+            'device_ids.*' => ['integer'],
+            'sync_all' => ['nullable', 'boolean'],
+            'search' => ['nullable', 'string', 'max:255'],
+            'site' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'group' => ['sometimes', 'nullable', 'string', 'max:255'],
+        ]);
+
+        if (! array_key_exists('site', $data) && ! array_key_exists('group', $data)) {
+            throw ValidationException::withMessages([
+                'site' => 'Select a site or group to apply.',
+            ]);
+        }
+
+        $syncAll = $request->boolean('sync_all');
+        $deviceIds = $data['device_ids'] ?? [];
+
+        if (! $syncAll && $deviceIds === []) {
+            throw ValidationException::withMessages([
+                'device_ids' => 'Select at least one device or sync all devices.',
+            ]);
+        }
+
+        $search = is_string($data['search'] ?? null) ? mb_substr(trim($data['search']), 0, 255) : '';
+
+        if ($syncAll) {
+            $devicesQuery = $deployment->devices();
+            $this->applyDeploymentDeviceSearch($devicesQuery, $search);
+            $devices = $devicesQuery->get();
+        } else {
+            $devices = $deployment->devices()
+                ->whereIn('id', $deviceIds)
+                ->get();
+
+            $missingIds = collect($deviceIds)->diff($devices->pluck('id'));
+            if ($missingIds->isNotEmpty()) {
+                session()->flash('error', 'One or more selected devices do not belong to this deployment.');
+
+                return back();
+            }
+        }
+
+        if ($devices->isEmpty()) {
+            session()->flash('error', 'No devices selected to update.');
+
+            return back();
+        }
+
+        $updateSite = array_key_exists('site', $data);
+        $updateGroup = array_key_exists('group', $data);
+
+        foreach ($devices as $device) {
+            if ($updateSite) {
+                $this->applyDeviceSite($device, $data['site']);
+            }
+            if ($updateGroup) {
+                $this->applyDeviceGroup($device, $data['group']);
+            }
+        }
+
+        $count = $devices->count();
+        $message = $count === 1
+            ? 'Updated metadata for 1 device.'
+            : "Updated metadata for {$count} devices.";
+
+        session()->flash('success', $message);
+
+        return back();
+    }
+
+    private function applyDeviceSite(Device $device, ?string $siteName): void
+    {
+        if ($siteName === null || $siteName === '') {
+            $device->update(['site_id' => null]);
+
+            return;
+        }
+
+        $site = Site::firstOrCreateForClient($device->client, $siteName);
+        $central = new CentralAPIHelper($device->client);
+        $centralSite = collect($central->collectScopeManagementSites()['sites'])
+            ->firstWhere('scopeName', $siteName);
+        if (is_array($centralSite) && ($centralSite['scopeId'] ?? '') !== '') {
+            $site->scope_id = $centralSite['scopeId'];
+            $site->save();
+        }
+        $device->update(['site_id' => $site->id]);
+    }
+
+    private function applyDeviceGroup(Device $device, ?string $group): void
+    {
+        $device->update([
+            'group' => $group === null || $group === '' ? null : $group,
+        ]);
     }
 
     /**

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import type { LicenseTypeOption } from '@/lib/license-types';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -30,6 +31,13 @@ import {
 } from '@/components/ui/dialog';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
 import type { AvailableSubscription } from '@/components/licensing/LicenseSelect';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
 import {
@@ -40,6 +48,7 @@ import {
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import {
+    bulkUpdateMetadata,
     critical_check as criticalCheckDeployment,
     index as deploymentsIndex,
     provision as provisionDeployment,
@@ -126,7 +135,14 @@ function groupCsvUploadErrors(
 type CentralScopeOption = {
     scopeName: string;
     scopeId: string;
+    isClassic?: boolean;
 };
+
+const BULK_NO_CHANGE = '__no_change__';
+const BULK_NONE = '__none__';
+
+const selectClassName =
+    'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
 type DeploymentPageProps = {
     devices: Paginator<DeviceDef>;
@@ -147,6 +163,8 @@ type DeploymentPageProps = {
     central_sites_error: string | null;
     central_device_groups: CentralScopeOption[];
     central_device_groups_error: string | null;
+    device_group_options: CentralScopeOption[];
+    classic_device_groups_error: string | null;
 } & SharedData;
 export default function Show() {
     const {
@@ -166,6 +184,9 @@ export default function Show() {
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [allFilteredSelected, setAllFilteredSelected] = useState(false);
     const [syncingScopeIds, setSyncingScopeIds] = useState(false);
+    const [bulkSite, setBulkSite] = useState(BULK_NO_CHANGE);
+    const [bulkGroup, setBulkGroup] = useState(BULK_NO_CHANGE);
+    const [applyingMetadata, setApplyingMetadata] = useState(false);
     const previousDeploymentIdRef = useRef(deploymentId);
     const previousDeviceSearchRef = useRef(device_search.trim());
 
@@ -199,21 +220,21 @@ export default function Show() {
         central_firmware_error = null,
         central_sites = [],
         central_sites_error = null,
-        central_device_groups = [],
         central_device_groups_error = null,
+        device_group_options = [],
     } = usePage<DeploymentPageProps>().props;
 
     const deviceTableColumns = useMemo(
         () =>
             createDeploymentShowColumns({
                 centralSites: central_sites,
-                centralDeviceGroups: central_device_groups,
+                deviceGroupOptions: device_group_options,
                 centralSitesError: central_sites_error,
                 centralDeviceGroupsError: central_device_groups_error,
             }),
         [
             central_sites,
-            central_device_groups,
+            device_group_options,
             central_sites_error,
             central_device_groups_error,
         ],
@@ -305,6 +326,91 @@ export default function Show() {
         selectedIds,
     ]);
 
+    const canApplyBulkMetadata =
+        bulkSite !== BULK_NO_CHANGE || bulkGroup !== BULK_NO_CHANGE;
+
+    const handleBulkUpdateMetadata = useCallback(() => {
+        if (!canApplyBulkMetadata) {
+            return;
+        }
+
+        const payload: {
+            sync_all?: boolean;
+            search?: string;
+            device_ids?: number[];
+            site?: string | null;
+            group?: string | null;
+        } = isAllFilteredSelected
+            ? {
+                  sync_all: true,
+                  ...(deviceTableSearch.trim() !== ''
+                      ? { search: deviceTableSearch.trim() }
+                      : {}),
+              }
+            : { device_ids: selectedIds };
+
+        if (bulkSite !== BULK_NO_CHANGE) {
+            payload.site = bulkSite === BULK_NONE ? null : bulkSite;
+        }
+        if (bulkGroup !== BULK_NO_CHANGE) {
+            payload.group = bulkGroup === BULK_NONE ? null : bulkGroup;
+        }
+
+        setApplyingMetadata(true);
+        router.post(bulkUpdateMetadata.url(deploymentId), payload, {
+            preserveScroll: true,
+            only: ['devices'],
+            onSuccess: () => {
+                setBulkSite(BULK_NO_CHANGE);
+                setBulkGroup(BULK_NO_CHANGE);
+                setRowSelection({});
+                setAllFilteredSelected(false);
+            },
+            onFinish: () => setApplyingMetadata(false),
+        });
+    }, [
+        bulkGroup,
+        bulkSite,
+        canApplyBulkMetadata,
+        deploymentId,
+        deviceTableSearch,
+        isAllFilteredSelected,
+        selectedIds,
+    ]);
+
+    const deviceTableQuery = useCallback(
+        (overrides?: { search?: string; per_page?: number }) => {
+            const searchValue =
+                overrides?.search ?? deviceTableSearch.trim();
+            const perPageValue =
+                overrides?.per_page ?? devicesPaginator.per_page;
+
+            return {
+                ...(searchValue !== '' ? { search: searchValue } : {}),
+                ...(perPageValue !== 25 ? { per_page: perPageValue } : {}),
+            };
+        },
+        [deviceTableSearch, devicesPaginator.per_page],
+    );
+
+    const handlePerPageChange = useCallback(
+        (nextPerPage: number) => {
+            router.get(
+                showDeployment.url(deploymentId, {
+                    query: deviceTableQuery({ per_page: nextPerPage }),
+                }),
+                {},
+                {
+                    preserveState: true,
+                    preserveScroll: true,
+                    replace: true,
+                    only: ['devices', 'device_search'],
+                },
+            );
+        },
+        [deploymentId, deviceTableQuery],
+    );
+
     useEffect(() => {
         const trimmed = deviceTableSearch.trim();
         const trimmedServer = device_search.trim();
@@ -314,9 +420,7 @@ export default function Show() {
         const handle = window.setTimeout(() => {
             router.get(
                 showDeployment.url(deploymentId, {
-                    query: {
-                        ...(trimmed !== '' ? { search: trimmed } : {}),
-                    },
+                    query: deviceTableQuery({ search: trimmed }),
                 }),
                 {},
                 {
@@ -328,7 +432,7 @@ export default function Show() {
             );
         }, 350);
         return () => window.clearTimeout(handle);
-    }, [deploymentId, deviceTableSearch, device_search]);
+    }, [deploymentId, deviceTableSearch, device_search, deviceTableQuery]);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -701,24 +805,167 @@ export default function Show() {
                 </section>
 
                 <section className="w-full">
-                    <h2 className="text-xl font-semibold">Devices</h2>
+                    <h2 className="text-xl font-semibold">
+                        Devices{' '}
+                        <span
+                            className="text-base font-normal text-muted-foreground"
+                            data-test="devices-total-count"
+                        >
+                            ({devicesPaginator.total})
+                        </span>
+                    </h2>
                     {devicesFromServer.length > 0 ||
                     deviceTableSearch.trim() !== '' ? (
                         <>
                             <div className="mt-2 mb-2 flex flex-wrap items-center justify-between gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    disabled={
-                                        selectedCount === 0 || syncingScopeIds
-                                    }
-                                    data-test="force-sync-device-scope-ids"
-                                    onClick={handleForceSyncScopeIds}
-                                >
-                                    {isAllFilteredSelected
-                                        ? 'force sync scope-id for all devices'
-                                        : 'force sync scope-id for selected'}
-                                </Button>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={
+                                            selectedCount === 0 ||
+                                            syncingScopeIds
+                                        }
+                                        data-test="force-sync-device-scope-ids"
+                                        onClick={handleForceSyncScopeIds}
+                                    >
+                                        {isAllFilteredSelected
+                                            ? 'force sync scope-id for all devices'
+                                            : 'force sync scope-id for selected'}
+                                    </Button>
+                                    {selectedCount > 0 ? (
+                                        <>
+                                            <Select
+                                                value={
+                                                    bulkSite === BULK_NO_CHANGE
+                                                        ? undefined
+                                                        : bulkSite
+                                                }
+                                                onValueChange={setBulkSite}
+                                                disabled={
+                                                    central_sites_error !==
+                                                        null ||
+                                                    applyingMetadata
+                                                }
+                                            >
+                                                <SelectTrigger
+                                                    className="h-9 w-36"
+                                                    aria-label="Bulk assign site"
+                                                    data-test="bulk-site-select"
+                                                >
+                                                    <SelectValue placeholder="Select site" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem
+                                                        value={BULK_NO_CHANGE}
+                                                    >
+                                                        No change
+                                                    </SelectItem>
+                                                    <SelectItem
+                                                        value={BULK_NONE}
+                                                    >
+                                                        None
+                                                    </SelectItem>
+                                                    {central_sites.map(
+                                                        (site) => (
+                                                            <SelectItem
+                                                                key={
+                                                                    site.scopeName
+                                                                }
+                                                                value={
+                                                                    site.scopeName
+                                                                }
+                                                            >
+                                                                {
+                                                                    site.scopeName
+                                                                }
+                                                            </SelectItem>
+                                                        ),
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                            <Select
+                                                value={
+                                                    bulkGroup === BULK_NO_CHANGE
+                                                        ? undefined
+                                                        : bulkGroup
+                                                }
+                                                onValueChange={setBulkGroup}
+                                                disabled={
+                                                    (central_device_groups_error !==
+                                                        null &&
+                                                        device_group_options.length ===
+                                                            0) ||
+                                                    applyingMetadata
+                                                }
+                                            >
+                                                <SelectTrigger
+                                                    className="h-9 w-44"
+                                                    aria-label="Bulk assign group"
+                                                    data-test="bulk-group-select"
+                                                >
+                                                    <SelectValue placeholder="Select group" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem
+                                                        value={BULK_NO_CHANGE}
+                                                    >
+                                                        No change
+                                                    </SelectItem>
+                                                    <SelectItem
+                                                        value={BULK_NONE}
+                                                    >
+                                                        None
+                                                    </SelectItem>
+                                                    {device_group_options.map(
+                                                        (option) => (
+                                                            <SelectItem
+                                                                key={
+                                                                    option.scopeName
+                                                                }
+                                                                value={
+                                                                    option.scopeName
+                                                                }
+                                                            >
+                                                                {option.isClassic ? (
+                                                                    <span className="flex items-center gap-2">
+                                                                        {
+                                                                            option.scopeName
+                                                                        }
+                                                                        <Badge
+                                                                            variant="outline"
+                                                                            className="text-xs font-normal"
+                                                                        >
+                                                                            classic
+                                                                        </Badge>
+                                                                    </span>
+                                                                ) : (
+                                                                    option.scopeName
+                                                                )}
+                                                            </SelectItem>
+                                                        ),
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                disabled={
+                                                    !canApplyBulkMetadata ||
+                                                    applyingMetadata
+                                                }
+                                                data-test="bulk-update-device-metadata"
+                                                onClick={
+                                                    handleBulkUpdateMetadata
+                                                }
+                                            >
+                                                {isAllFilteredSelected
+                                                    ? 'Apply to all matching'
+                                                    : `Apply to selected (${selectedCount})`}
+                                            </Button>
+                                        </>
+                                    ) : null}
+                                </div>
                                 <div className="relative w-full max-w-sm sm:ml-auto">
                                     <Search
                                         className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
@@ -773,12 +1020,41 @@ export default function Show() {
                                     setRowSelection(updater);
                                 }}
                             />
-                            {devicesPaginator.total >
-                                devicesPaginator.per_page && (
-                                <LaravelPaginator
-                                    TPaginator={devicesPaginator}
-                                />
-                            )}
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-muted-foreground">
+                                        Per page
+                                    </span>
+                                    <select
+                                        value={devicesPaginator.per_page}
+                                        onChange={(e) => {
+                                            const next = Number(e.target.value);
+                                            if (
+                                                next === 10 ||
+                                                next === 25 ||
+                                                next === 50 ||
+                                                next === 100
+                                            ) {
+                                                handlePerPageChange(next);
+                                            }
+                                        }}
+                                        className={selectClassName}
+                                        data-test="devices-page-size"
+                                        aria-label="Devices per page"
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={25}>25</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                    </select>
+                                </div>
+                                {devicesPaginator.total >
+                                    devicesPaginator.per_page && (
+                                    <LaravelPaginator
+                                        TPaginator={devicesPaginator}
+                                    />
+                                )}
+                            </div>
                         </>
                     ) : (
                         <p className="mt-2">No devices assigned to this deployment</p>

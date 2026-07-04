@@ -90,6 +90,13 @@ class DeploymentController extends Controller
         $rawSearch = $request->query('search');
         $search = is_string($rawSearch) ? mb_substr(trim($rawSearch), 0, 255) : '';
 
+        $allowedPerPage = [10, 25, 50, 100];
+        $rawPerPage = $request->query('per_page');
+        $perPage = is_numeric($rawPerPage) ? (int) $rawPerPage : 25;
+        if (! in_array($perPage, $allowedPerPage, true)) {
+            $perPage = 25;
+        }
+
         $devicesQuery = $deployment->devices()->with('site');
         if ($search !== '') {
             $pattern = '%'.addcslashes(mb_strtolower($search), '%_\\').'%';
@@ -112,8 +119,10 @@ class DeploymentController extends Controller
         $centralFirmwareError = null;
         $centralSites = [];
         $centralDeviceGroups = [];
+        $deviceGroupOptions = [];
         $centralSitesError = null;
         $centralDeviceGroupsError = null;
+        $classicDeviceGroupsError = null;
         if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
             try {
                 $centralHelper = new CentralAPIHelper($currentClient);
@@ -141,6 +150,36 @@ class DeploymentController extends Controller
                 $centralSitesError = $sitesResult['error'];
                 $centralDeviceGroups = $groupsResult['groups'];
                 $centralDeviceGroupsError = $groupsResult['error'];
+
+                $centralGroupNames = collect($centralDeviceGroups)
+                    ->pluck('scopeName')
+                    ->flip();
+                $deviceGroupOptions = collect($centralDeviceGroups)
+                    ->map(fn (array $group) => [
+                        'scopeName' => $group['scopeName'],
+                        'scopeId' => $group['scopeId'],
+                        'isClassic' => false,
+                    ])
+                    ->values()
+                    ->all();
+
+                $classicGroupsResult = $centralHelper->classic_collect_all_group_names();
+                if (array_key_exists('error', $classicGroupsResult)) {
+                    $classicDeviceGroupsError = $classicGroupsResult['error'];
+                } else {
+                    $classicOnlyNames = collect($classicGroupsResult['names'] ?? [])
+                        ->filter(fn (string $name) => ! $centralGroupNames->has($name))
+                        ->sort()
+                        ->values();
+
+                    foreach ($classicOnlyNames as $name) {
+                        $deviceGroupOptions[] = [
+                            'scopeName' => $name,
+                            'scopeId' => '',
+                            'isClassic' => true,
+                        ];
+                    }
+                }
             } catch (\Throwable $exception) {
                 Log::warning('Failed to load Central options for deployment show page.', [
                     'deployment_id' => $deployment->id,
@@ -153,7 +192,7 @@ class DeploymentController extends Controller
         return Inertia::render('Deployment/Show', [
             'deployment' => $deployment,
             'devices' => $devicesQuery
-                ->paginate(20)
+                ->paginate($perPage)
                 ->withQueryString()
                 ->through(fn (Device $device) => [
                     'id' => $device->id,
@@ -176,6 +215,8 @@ class DeploymentController extends Controller
             'central_sites_error' => $centralSitesError,
             'central_device_groups' => $centralDeviceGroups,
             'central_device_groups_error' => $centralDeviceGroupsError,
+            'device_group_options' => $deviceGroupOptions,
+            'classic_device_groups_error' => $classicDeviceGroupsError,
             'tasks' => array_map(fn ($task) => [
                 'task_type' => $task->name,
                 'friendly_name' => Task::getTaskFriendlyName($task->name),
