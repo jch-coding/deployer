@@ -1,6 +1,5 @@
 <?php
 
-use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
@@ -44,12 +43,12 @@ it('shows a list of devices associated with the deployment', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/Show')
-            ->where('devices.data.0.name', $devices->first()->name)
-            ->where('devices.data.1.name', $devices->last()->name)
+            ->where('devices.0.name', $devices->first()->name)
+            ->where('devices.1.name', $devices->last()->name)
         );
 });
 
-it('includes site and group on paginated devices and central scope options', function () {
+it('includes site and group on devices and central scope options', function () {
     $deployment = Deployment::factory()->for($this->client)->create();
     $site = Site::factory()->for($this->client)->create(['name' => 'Warehouse']);
     $device = Device::factory()->for($deployment)->create([
@@ -64,9 +63,9 @@ it('includes site and group on paginated devices and central scope options', fun
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/Show')
-            ->where('devices.data.0.id', $device->id)
-            ->where('devices.data.0.site', 'Warehouse')
-            ->where('devices.data.0.group', 'Edge Switches')
+            ->where('devices.0.id', $device->id)
+            ->where('devices.0.site', 'Warehouse')
+            ->where('devices.0.group', 'Edge Switches')
             ->where('central_sites_error', null)
             ->where('central_device_groups_error', null)
             ->has('central_sites', 1)
@@ -82,7 +81,7 @@ it('includes site and group on paginated devices and central scope options', fun
             ->has('central_groups_cache.refreshed_at'));
 });
 
-it('respects per_page query parameter', function () {
+it('returns all devices in a flat array', function () {
     $deployment = Deployment::factory()->for($this->client)->create();
     Device::factory(30)->for($deployment)->create([
         'client_id' => $this->client->id,
@@ -90,67 +89,10 @@ it('respects per_page query parameter', function () {
     ]);
 
     $this->actingAs($this->user)
-        ->get(route('deployments.show', $deployment).'?per_page=50')
+        ->get(route('deployments.show', $deployment))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('devices.per_page', 50)
-            ->has('devices.data', 30));
-});
-
-it('falls back to default per_page for invalid values', function () {
-    $deployment = Deployment::factory()->for($this->client)->create();
-    Device::factory()->for($deployment)->create([
-        'client_id' => $this->client->id,
-        'user_id' => $this->user->id,
-    ]);
-
-    $this->actingAs($this->user)
-        ->get(route('deployments.show', $deployment).'?per_page=999')
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('devices.per_page', 25));
-});
-
-it('preserves per_page in pagination links', function () {
-    $deployment = Deployment::factory()->for($this->client)->create();
-    Device::factory(15)->for($deployment)->create([
-        'client_id' => $this->client->id,
-        'user_id' => $this->user->id,
-    ]);
-
-    $this->actingAs($this->user)
-        ->get(route('deployments.show', $deployment).'?per_page=10')
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('devices.per_page', 10)
-            ->where('devices.next_page_url', fn ($url) => is_string($url) && str_contains($url, 'per_page=10')));
-});
-
-it('filters devices by name, serial, or device function search', function () {
-    $deployment = Deployment::factory()->for($this->client)->create();
-    Device::factory()->for($deployment)->create([
-        'name' => 'Alpha Switch',
-        'serial' => 'SERIAL-ALPHA-100',
-        'device_function' => DeviceFunction::CAMPUS_AP->name,
-    ]);
-    Device::factory()->for($deployment)->create([
-        'name' => 'Beta Switch',
-        'serial' => 'SERIAL-BETA-200',
-        'device_function' => DeviceFunction::ACCESS_SWITCH->name,
-    ]);
-    $this->actingAs($this->user);
-
-    $this->get(route('deployments.show', $deployment).'?search='.urlencode('Alpha'))
-        ->assertOk()
-        ->assertSeeHtml('Alpha Switch');
-
-    $this->get(route('deployments.show', $deployment).'?search='.urlencode('SERIAL-BETA'))
-        ->assertOk()
-        ->assertSeeHtml('Beta Switch');
-
-    $this->get(route('deployments.show', $deployment).'?search='.urlencode('access_switch'))
-        ->assertOk()
-        ->assertSeeHtml('Beta Switch');
+            ->has('devices', 30));
 });
 
 it('still loads when a deployment has interface task history', function () {
@@ -230,7 +172,7 @@ it('has an upload devices button', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/Show')
-            ->has('devices.data', 0)
+            ->has('devices', 0)
         );
 });
 

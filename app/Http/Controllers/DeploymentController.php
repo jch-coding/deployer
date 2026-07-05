@@ -50,8 +50,6 @@ class DeploymentController extends Controller
         LicensingInventoryService $licensingInventoryService,
         CentralScopeCacheService $centralScopeCacheService,
     ) {
-        $deployment->load('devices');
-
         $finalizeExpiredTasks->run((int) $deployment->id);
 
         $latest_tasks = $deployment->tasks()->withCount('devices')->latest()->take(6)->get()
@@ -90,25 +88,19 @@ class DeploymentController extends Controller
             }
         )->values()->all());
 
-        $rawSearch = $request->query('search');
-        $search = is_string($rawSearch) ? mb_substr(trim($rawSearch), 0, 255) : '';
-
-        $allowedPerPage = [10, 25, 50, 100];
-        $rawPerPage = $request->query('per_page');
-        $perPage = is_numeric($rawPerPage) ? (int) $rawPerPage : 25;
-        if (! in_array($perPage, $allowedPerPage, true)) {
-            $perPage = 25;
-        }
-
-        $devicesQuery = $deployment->devices()->with('site');
-        if ($search !== '') {
-            $pattern = '%'.addcslashes(mb_strtolower($search), '%_\\').'%';
-            $devicesQuery->where(function ($query) use ($pattern) {
-                $query->whereRaw('lower(name) LIKE ?', [$pattern])
-                    ->orWhereRaw('lower(serial) LIKE ?', [$pattern])
-                    ->orWhereRaw('lower(device_function) LIKE ?', [$pattern]);
-            });
-        }
+        $devices = $deployment->devices()
+            ->with('site')
+            ->get()
+            ->map(fn (Device $device) => [
+                'id' => $device->id,
+                'name' => $device->name,
+                'serial' => $device->serial,
+                'device_function' => $device->device_function,
+                'site' => $device->site?->name,
+                'group' => $device->group,
+            ])
+            ->values()
+            ->all();
 
         $licensingOptions = [
             'enabled_services' => [],
@@ -177,19 +169,11 @@ class DeploymentController extends Controller
         }
 
         return Inertia::render('Deployment/Show', [
-            'deployment' => $deployment,
-            'devices' => $devicesQuery
-                ->paginate($perPage)
-                ->withQueryString()
-                ->through(fn (Device $device) => [
-                    'id' => $device->id,
-                    'name' => $device->name,
-                    'serial' => $device->serial,
-                    'device_function' => $device->device_function,
-                    'site' => $device->site?->name,
-                    'group' => $device->group,
-                ]),
-            'device_search' => $search,
+            'deployment' => [
+                'id' => $deployment->id,
+                'name' => $deployment->name,
+            ],
+            'devices' => $devices,
             'enabled_services' => $licensingOptions['enabled_services'],
             'available_subscriptions' => $licensingOptions['available_subscriptions'],
             'license_tags' => $licensingOptions['license_tags'],

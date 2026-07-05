@@ -29,7 +29,15 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import LaravelPaginator from '@/components/ui/LaravelPaginator';
+import {
+    Pagination,
+    PaginationContent,
+    PaginationEllipsis,
+    PaginationItem,
+    PaginationLink,
+    PaginationNext,
+    PaginationPrevious,
+} from '@/components/ui/pagination';
 import type { AvailableSubscription } from '@/components/licensing/LicenseSelect';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -69,18 +77,11 @@ import {
     type TaskLaunchSearchable,
 } from '@/lib/task-launch-categories';
 import type { BreadcrumbItem, SharedData } from '@/types';
-import type { Paginator } from '@/types/deployer';
 
-/** Matches deployment payload from DeploymentController::show (devices used by task cards). */
+/** Matches deployment payload from DeploymentController::show. */
 type DeploymentSummary = {
     id: number;
     name: string;
-    devices: Array<{
-        id: number;
-        name: string;
-        serial?: string | number;
-        device_function?: string;
-    }>;
 };
 
 type Task = {
@@ -149,9 +150,67 @@ const BULK_NONE = '__none__';
 const selectClassName =
     'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
+type PaginationPageItem = number | 'ellipsis';
+
+function getVisiblePageNumbers(
+    currentPageIndex: number,
+    totalPages: number,
+): PaginationPageItem[] {
+    if (totalPages <= 1) {
+        return totalPages === 1 ? [1] : [];
+    }
+
+    const currentPage = currentPageIndex + 1;
+    const delta = 2;
+    const range: number[] = [];
+    const rangeWithDots: PaginationPageItem[] = [];
+    let previousPage: number | undefined;
+
+    for (let page = 1; page <= totalPages; page++) {
+        if (
+            page === 1 ||
+            page === totalPages ||
+            (page >= currentPage - delta && page <= currentPage + delta)
+        ) {
+            range.push(page);
+        }
+    }
+
+    for (const page of range) {
+        if (previousPage !== undefined) {
+            if (page - previousPage === 2) {
+                rangeWithDots.push(previousPage + 1);
+            } else if (page - previousPage !== 1) {
+                rangeWithDots.push('ellipsis');
+            }
+        }
+
+        rangeWithDots.push(page);
+        previousPage = page;
+    }
+
+    return rangeWithDots;
+}
+
+function filterDeploymentDevices(
+    devices: DeviceDef[],
+    search: string,
+): DeviceDef[] {
+    const q = search.trim().toLowerCase();
+    if (!q) {
+        return devices;
+    }
+
+    return devices.filter(
+        (d) =>
+            String(d.name).toLowerCase().includes(q) ||
+            String(d.serial).toLowerCase().includes(q) ||
+            String(d.device_function).toLowerCase().includes(q),
+    );
+}
+
 type DeploymentPageProps = {
-    devices: Paginator<DeviceDef>;
-    device_search?: string;
+    devices: DeviceDef[];
     base_urls: string[];
     deployment: DeploymentSummary;
     tasks: LaunchTask[];
@@ -176,15 +235,15 @@ type DeploymentPageProps = {
 export default function Show() {
     const {
         deployment,
+        devices,
         current_client,
         flash,
-        device_search = '',
     } = usePage<DeploymentPageProps>().props;
-    const devicesPaginator = usePage<DeploymentPageProps>().props.devices;
-    const devicesFromServer = devicesPaginator.data;
     const deploymentId = Number(deployment.id);
 
-    const [deviceTableSearch, setDeviceTableSearch] = useState(device_search);
+    const [deviceTableSearch, setDeviceTableSearch] = useState('');
+    const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
+    const [pageIndex, setPageIndex] = useState(0);
     const [taskSearch, setTaskSearch] = useState('');
     const [selectedTaskCategoryId, setSelectedTaskCategoryId] =
         useState<TaskLaunchCategoryId | null>(null);
@@ -196,18 +255,18 @@ export default function Show() {
     const [applyingMetadata, setApplyingMetadata] = useState(false);
     const applyingMetadataRef = useRef(false);
     const previousDeploymentIdRef = useRef(deploymentId);
-    const previousDeviceSearchRef = useRef(device_search.trim());
+    const previousDeviceSearchRef = useRef('');
 
     const devicesForTasks = useMemo(
         () =>
-            (deployment.devices ?? []).map((d) => ({
+            devices.map((d) => ({
                 id: d.id,
                 name: d.name,
                 completed: false,
                 device_function: d.device_function ?? '',
                 serial: d.serial,
             })),
-        [deployment.devices ?? []],
+        [devices],
     );
     const { setData, post, progress, errors } = useForm<{
         devices: File | null;
@@ -302,20 +361,48 @@ export default function Show() {
     useEffect(() => {
         if (previousDeploymentIdRef.current !== deploymentId) {
             previousDeploymentIdRef.current = deploymentId;
-            setDeviceTableSearch(device_search);
+            setDeviceTableSearch('');
+            setPageIndex(0);
             setRowSelection({});
             setAllFilteredSelected(false);
         }
-    }, [deploymentId, device_search]);
+    }, [deploymentId]);
 
     useEffect(() => {
         const trimmed = deviceTableSearch.trim();
         if (previousDeviceSearchRef.current !== trimmed) {
             previousDeviceSearchRef.current = trimmed;
+            setPageIndex(0);
             setRowSelection({});
             setAllFilteredSelected(false);
         }
     }, [deviceTableSearch]);
+
+    useEffect(() => {
+        setPageIndex(0);
+    }, [pageSize]);
+
+    const filteredDevices = useMemo(
+        () => filterDeploymentDevices(devices, deviceTableSearch),
+        [devices, deviceTableSearch],
+    );
+
+    const totalPages = Math.max(
+        1,
+        Math.ceil(filteredDevices.length / pageSize),
+    );
+    const safePageIndex = Math.min(pageIndex, totalPages - 1);
+
+    const paginatedDevices = useMemo(() => {
+        const start = safePageIndex * pageSize;
+
+        return filteredDevices.slice(start, start + pageSize);
+    }, [filteredDevices, pageSize, safePageIndex]);
+
+    const visiblePageNumbers = useMemo(
+        () => getVisiblePageNumbers(safePageIndex, totalPages),
+        [safePageIndex, totalPages],
+    );
 
     const selectedIds = useMemo(
         () =>
@@ -326,21 +413,21 @@ export default function Show() {
     );
 
     const selectedCount = allFilteredSelected
-        ? devicesPaginator.total
+        ? filteredDevices.length
         : selectedIds.length;
 
     const isAllFilteredSelected =
         allFilteredSelected ||
-        (selectedCount > 0 && selectedCount === devicesPaginator.total);
+        (selectedCount > 0 && selectedCount === filteredDevices.length);
 
     const allPageRowsSelected =
-        devicesFromServer.length > 0 &&
-        devicesFromServer.every((device) => rowSelection[String(device.id)]);
+        paginatedDevices.length > 0 &&
+        paginatedDevices.every((device) => rowSelection[String(device.id)]);
 
     const showSelectAllFilteredBanner =
         allPageRowsSelected &&
         !allFilteredSelected &&
-        devicesPaginator.total > devicesFromServer.length;
+        filteredDevices.length > paginatedDevices.length;
 
     const handleForceSyncScopeIds = useCallback(() => {
         setSyncingScopeIds(true);
@@ -424,65 +511,6 @@ export default function Show() {
         selectedIds,
         stopBulkMetadataLoading,
     ]);
-
-    const deviceTableQuery = useCallback(
-        (overrides?: { search?: string; per_page?: number }) => {
-            const searchValue =
-                overrides?.search ?? deviceTableSearch.trim();
-            const perPageValue =
-                overrides?.per_page ?? devicesPaginator.per_page;
-
-            return {
-                ...(searchValue !== '' ? { search: searchValue } : {}),
-                ...(perPageValue !== 25 ? { per_page: perPageValue } : {}),
-            };
-        },
-        [deviceTableSearch, devicesPaginator.per_page],
-    );
-
-    const handlePerPageChange = useCallback(
-        (nextPerPage: number) => {
-            router.get(
-                showDeployment.url(deploymentId, {
-                    query: deviceTableQuery({ per_page: nextPerPage }),
-                }),
-                {},
-                {
-                    preserveState: true,
-                    preserveScroll: true,
-                    replace: true,
-                    only: ['devices', 'device_search'],
-                },
-            );
-        },
-        [deploymentId, deviceTableQuery],
-    );
-
-    useEffect(() => {
-        const trimmed = deviceTableSearch.trim();
-        const trimmedServer = device_search.trim();
-        if (trimmed === trimmedServer || applyingMetadataRef.current) {
-            return;
-        }
-        const handle = window.setTimeout(() => {
-            if (applyingMetadataRef.current) {
-                return;
-            }
-            router.get(
-                showDeployment.url(deploymentId, {
-                    query: deviceTableQuery({ search: trimmed }),
-                }),
-                {},
-                {
-                    preserveState: true,
-                    preserveScroll: true,
-                    replace: true,
-                    only: ['devices', 'device_search', 'latest_tasks'],
-                },
-            );
-        }, 350);
-        return () => window.clearTimeout(handle);
-    }, [deploymentId, deviceTableSearch, device_search, deviceTableQuery]);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -925,10 +953,10 @@ export default function Show() {
                             className="text-base font-normal text-muted-foreground"
                             data-test="devices-total-count"
                         >
-                            ({devicesPaginator.total})
+                            ({filteredDevices.length})
                         </span>
                     </h2>
-                    {devicesFromServer.length > 0 ||
+                    {devices.length > 0 ||
                     deviceTableSearch.trim() !== '' ? (
                         <>
                             {selectedCount > 0 ? (
@@ -1069,7 +1097,7 @@ export default function Show() {
                                     data-test="select-all-filtered-devices-banner"
                                 >
                                     <p className="text-sm text-muted-foreground">
-                                        All {devicesFromServer.length} devices on
+                                        All {paginatedDevices.length} devices on
                                         this page are selected.
                                     </p>
                                     <Button
@@ -1083,14 +1111,14 @@ export default function Show() {
                                             setRowSelection({});
                                         }}
                                     >
-                                        Select all {devicesPaginator.total}{' '}
+                                        Select all {filteredDevices.length}{' '}
                                         devices matching this search
                                     </Button>
                                 </div>
                             ) : null}
                             {deviceTableToolbarWithSync}
                             <DataTable<DeviceDef, unknown>
-                                data={devicesFromServer}
+                                data={paginatedDevices}
                                 columns={deviceTableColumns}
                                 getRowId={(row) => String(row.id)}
                                 enableRowSelection
@@ -1106,7 +1134,7 @@ export default function Show() {
                                         Per page
                                     </span>
                                     <select
-                                        value={devicesPaginator.per_page}
+                                        value={pageSize}
                                         onChange={(e) => {
                                             const next = Number(e.target.value);
                                             if (
@@ -1115,7 +1143,7 @@ export default function Show() {
                                                 next === 50 ||
                                                 next === 100
                                             ) {
-                                                handlePerPageChange(next);
+                                                setPageSize(next);
                                             }
                                         }}
                                         className={selectClassName}
@@ -1128,11 +1156,74 @@ export default function Show() {
                                         <option value={100}>100</option>
                                     </select>
                                 </div>
-                                {devicesPaginator.total >
-                                    devicesPaginator.per_page && (
-                                    <LaravelPaginator
-                                        TPaginator={devicesPaginator}
-                                    />
+                                {filteredDevices.length > pageSize && (
+                                    <Pagination>
+                                        <PaginationContent>
+                                            {safePageIndex > 0 && (
+                                                <PaginationItem>
+                                                    <PaginationPrevious
+                                                        href="#"
+                                                        onClick={(event) => {
+                                                            event.preventDefault();
+                                                            setPageIndex((p) =>
+                                                                Math.max(0, p - 1),
+                                                            );
+                                                        }}
+                                                    />
+                                                </PaginationItem>
+                                            )}
+                                            {visiblePageNumbers.map(
+                                                (item, index) => (
+                                                    <PaginationItem
+                                                        key={
+                                                            item === 'ellipsis'
+                                                                ? `ellipsis-${index}`
+                                                                : `page-${item}`
+                                                        }
+                                                    >
+                                                        {item === 'ellipsis' ? (
+                                                            <PaginationEllipsis />
+                                                        ) : (
+                                                            <PaginationLink
+                                                                href="#"
+                                                                isActive={
+                                                                    safePageIndex ===
+                                                                    item - 1
+                                                                }
+                                                                onClick={(
+                                                                    event,
+                                                                ) => {
+                                                                    event.preventDefault();
+                                                                    setPageIndex(
+                                                                        item - 1,
+                                                                    );
+                                                                }}
+                                                            >
+                                                                {item}
+                                                            </PaginationLink>
+                                                        )}
+                                                    </PaginationItem>
+                                                ),
+                                            )}
+                                            {safePageIndex <
+                                                totalPages - 1 && (
+                                                <PaginationItem>
+                                                    <PaginationNext
+                                                        href="#"
+                                                        onClick={(event) => {
+                                                            event.preventDefault();
+                                                            setPageIndex((p) =>
+                                                                Math.min(
+                                                                    totalPages - 1,
+                                                                    p + 1,
+                                                                ),
+                                                            );
+                                                        }}
+                                                    />
+                                                </PaginationItem>
+                                            )}
+                                        </PaginationContent>
+                                    </Pagination>
                                 )}
                             </div>
                         </>
