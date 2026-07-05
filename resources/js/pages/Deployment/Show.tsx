@@ -1290,7 +1290,7 @@ export default function Show() {
                                 Select a task group above.
                             </p>
                         ) : (
-                            <div className="flex flex-wrap justify-start gap-2">
+                            <div className="flex flex-wrap items-stretch justify-start gap-2">
                                 {selectedCategoryTasks.map((task) =>
                                     renderTaskCard(task),
                                 )}

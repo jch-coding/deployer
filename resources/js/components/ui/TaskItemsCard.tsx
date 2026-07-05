@@ -85,7 +85,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
     }
 
     return (
-        <Card className="w-96">
+        <Card className="h-full w-96">
             <CardHeader className="relative pr-10">
                 <TaskRequiredColumnsInfo columns={required_columns} />
                 <CardTitle>{task_friendly_name}</CardTitle>
@@ -119,7 +119,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                     </div>
                 ) : null}
             </CardHeader>
-            <CardContent className="flex w-full flex-wrap items-center gap-2">
+            <CardContent className="mt-auto flex w-full flex-wrap items-center gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                 <TaskDurationDialog
                     deploymentTimeHours={deploymentTimeHours}
