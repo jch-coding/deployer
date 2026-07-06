@@ -102,7 +102,7 @@ class CentralAPIHelper
 
     public array $classic_firmware = [
         'firmware_versions' => 'firmware/v1/versions',
-        'firmware_compliance' => 'firmware/v1/upgrade/compliance_version'
+        'firmware_compliance' => 'firmware/v1/upgrade/compliance_version',
     ];
 
     public function __construct(public Client $client) {}
@@ -283,6 +283,65 @@ class CentralAPIHelper
             return [
                 'sites' => [],
                 'error' => 'Could not load sites from Central.',
+            ];
+        }
+    }
+
+    /**
+     * @return array{site_collections: array<int, array{scopeName: string, scopeId: string}>, error: string|null}
+     */
+    public function collectScopeManagementSiteCollections(): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'site_collections' => [],
+                'error' => 'Could not authenticate with Central to load site collections.',
+            ];
+        }
+
+        try {
+            $raw_items = [];
+            $next = null;
+
+            while (true) {
+                $query = [];
+                if ($next !== null && $next !== '') {
+                    $query['next'] = $next;
+                }
+
+                $response = $this->get_site_collections($query);
+
+                if (is_array($response) && array_key_exists('error', $response)) {
+                    return [
+                        'site_collections' => [],
+                        'error' => 'Could not load site collections from Central.',
+                    ];
+                }
+
+                if (! $response->ok()) {
+                    return [
+                        'site_collections' => [],
+                        'error' => 'Could not load site collections from Central.',
+                    ];
+                }
+
+                $page_items = $response->json('items', []);
+                $raw_items = array_merge($raw_items, is_array($page_items) ? $page_items : []);
+
+                $next = $response->json('next');
+                if ($next === null || $next === '') {
+                    break;
+                }
+            }
+
+            return [
+                'site_collections' => $this->mapScopeManagementItems($raw_items),
+                'error' => null,
+            ];
+        } catch (RequestException|ConnectionException) {
+            return [
+                'site_collections' => [],
+                'error' => 'Could not load site collections from Central.',
             ];
         }
     }
@@ -1805,12 +1864,13 @@ class CentralAPIHelper
         }
     }
 
-    public function get_site_collections()
+    public function get_site_collections(array $queryParameters = [])
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
                 ->get($this->client->base_url.$this->scopeManagement['site_collections']['site_collections']);
 
             return $response;
@@ -2448,7 +2508,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @param array<string, mixed> $queryParameters [ 'limit' => int, 'offset' => int, 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'serial' => string ]
+     * @param  array<string, mixed>  $queryParameters  [ 'limit' => int, 'offset' => int, 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'serial' => string ]
      * @return [ [ 'create_date' => datetime, 'firmware_version' => string, 'release_status' => string ], ...]
      */
     public function classic_get_firmware_versions($queryParameters = [])
@@ -2498,7 +2558,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @param array<string, mixed> $body [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string, 'firmware_compliance_version' => string, 'reboot' => boolean, 'allow_unsupported_version' => boolean (optional)]
+     * @param  array<string, mixed>  $body  [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string, 'firmware_compliance_version' => string, 'reboot' => boolean, 'allow_unsupported_version' => boolean (optional)]
      */
     public function classic_post_firmware_compliance(array $body)
     {
@@ -2512,7 +2572,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @param array<string, mixed> $queryParameters [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string ]
+     * @param  array<string, mixed>  $queryParameters  [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string ]
      * @return array [ 'firmware_compliance_version' => string]
      */
     public function classic_get_firmware_compliance($queryParameters = [])

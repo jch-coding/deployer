@@ -34,6 +34,11 @@ export type CentralApiDeviceOption = {
     device_function: string;
 };
 
+export type CentralApiScopeOption = {
+    scopeName: string;
+    scopeId: string;
+};
+
 export type CentralApiExecuteResponse = {
     ok: boolean;
     status: number | null;

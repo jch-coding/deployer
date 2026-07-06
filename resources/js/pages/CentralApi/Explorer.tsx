@@ -7,6 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { csrfHeaders } from '@/lib/csrf';
 import AppLayout from '@/layouts/app-layout';
+import ScopeContextPicker from '@/components/central/ScopeContextPicker';
+import type {
+    CentralScopeCacheMeta,
+    CentralScopeGroupsCacheMeta,
+} from '@/components/central/CentralScopeRefreshButtons';
 import { index as clientsIndex } from '@/routes/clients';
 import { execute as centralApiExecute, index as centralApiIndex } from '@/routes/central-api';
 import type {
@@ -14,6 +19,7 @@ import type {
     CentralApiExecuteResponse,
     CentralApiOperation,
     CentralApiParameter,
+    CentralApiScopeOption,
     CentralApiTag,
 } from '@/types/central-api';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -22,6 +28,14 @@ type ExplorerProps = {
     tags: CentralApiTag[];
     operations_by_tag: Record<string, CentralApiOperation[]>;
     device_options: CentralApiDeviceOption[];
+    scope_sites: CentralApiScopeOption[];
+    scope_groups: CentralApiScopeOption[];
+    scope_site_collections: CentralApiScopeOption[];
+    scope_sites_error: string | null;
+    scope_groups_error: string | null;
+    scope_site_collections_error: string | null;
+    central_sites_cache: CentralScopeCacheMeta;
+    central_groups_cache: CentralScopeGroupsCacheMeta;
     base_url_display: string;
     docs_url: string;
 } & SharedData;
@@ -92,6 +106,14 @@ export default function Explorer() {
         tags,
         operations_by_tag,
         device_options,
+        scope_sites,
+        scope_groups,
+        scope_site_collections,
+        scope_sites_error,
+        scope_groups_error,
+        scope_site_collections_error,
+        central_sites_cache,
+        central_groups_cache,
         base_url_display,
         docs_url,
     } = usePage<ExplorerProps>().props;
@@ -119,6 +141,13 @@ export default function Explorer() {
     const selectedOperation = useMemo(
         () => allOperations.find((op) => op.operation_id === selectedOperationId) ?? null,
         [allOperations, selectedOperationId],
+    );
+
+    const operationHasScopeId = useMemo(
+        () =>
+            selectedOperation?.parameters.some((parameter) => parameter.name === 'scope-id') ??
+            false,
+        [selectedOperation],
     );
 
     const filteredOperationsByTag = useMemo(() => {
@@ -180,6 +209,13 @@ export default function Explorer() {
             'object-type': 'LOCAL',
         }));
     }, [selectedDevice]);
+
+    const applyScopeContext = useCallback((scopeId: string) => {
+        setParamValues((prev) => ({
+            ...prev,
+            'scope-id': scopeId,
+        }));
+    }, []);
 
     const executeRequest = useCallback(async () => {
         if (!selectedOperation) {
@@ -435,6 +471,20 @@ export default function Explorer() {
                                         </Button>
                                     </div>
                                 </div>
+
+                                {operationHasScopeId && (
+                                    <ScopeContextPicker
+                                        scopeSites={scope_sites}
+                                        scopeGroups={scope_groups}
+                                        scopeSiteCollections={scope_site_collections}
+                                        scopeSitesError={scope_sites_error}
+                                        scopeGroupsError={scope_groups_error}
+                                        scopeSiteCollectionsError={scope_site_collections_error}
+                                        centralSitesCache={central_sites_cache}
+                                        centralGroupsCache={central_groups_cache}
+                                        onApply={applyScopeContext}
+                                    />
+                                )}
 
                                 <div className="rounded-md border p-4">
                                     <h3 className="mb-3 text-sm font-medium">Parameters</h3>

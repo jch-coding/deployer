@@ -1778,3 +1778,28 @@ test('resolveCxFirmwareVersionOptions extracts unique sorted firmware_version va
     expect($result['error'])->toBeNull()
         ->and($result['versions'])->toBe(['FL.10.14.1000', 'FL.10.15.1010']);
 });
+
+test('collectScopeManagementSiteCollections maps site collections from Central', function () {
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope'],
+                ['scopeName' => 'Regional', 'scopeId' => 'regional-scope'],
+            ],
+        ], 200),
+    ]);
+
+    $result = (new CentralAPIHelper($client))->collectScopeManagementSiteCollections();
+
+    expect($result['error'])->toBeNull()
+        ->and($result['site_collections'])->toBe([
+            ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope'],
+            ['scopeName' => 'Regional', 'scopeId' => 'regional-scope'],
+        ]);
+});

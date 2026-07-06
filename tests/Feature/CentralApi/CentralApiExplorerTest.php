@@ -12,6 +12,14 @@ beforeEach(function () {
     $this->withoutVite();
     app(\App\Services\CentralOpenApiRegistry::class)->clearCache();
 
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope'],
+            ],
+        ], 200),
+    ]);
+
     $this->user = User::factory()->create();
     $this->client = Client::factory()->for($this->user)->create([
         'current' => true,
@@ -212,4 +220,26 @@ test('explorer includes device options for current client', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->has('device_options', 1)
             ->where('device_options.0.serial', 'DEVICE-SERIAL-1'));
+});
+
+test('explorer includes scope options from cache and live site collections', function () {
+    seedCentralScopeCache($this->client);
+
+    $this->get(route('central-api.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('scope_sites', 1)
+            ->where('scope_sites.0.scopeName', 'Central Site')
+            ->where('scope_sites.0.scopeId', 'scope-site')
+            ->has('scope_groups', 1)
+            ->where('scope_groups.0.scopeName', 'Central Group')
+            ->where('scope_groups.0.scopeId', 'scope-group')
+            ->has('scope_site_collections', 1)
+            ->where('scope_site_collections.0.scopeName', 'WCD')
+            ->where('scope_site_collections.0.scopeId', 'wcd-scope')
+            ->where('scope_sites_error', null)
+            ->where('scope_groups_error', null)
+            ->where('scope_site_collections_error', null));
+
+    Http::assertSent(fn (Request $request) => str_contains($request->url(), 'site-collections'));
 });
