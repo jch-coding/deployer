@@ -5,6 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { csrfHeaders } from '@/lib/csrf';
 import AppLayout from '@/layouts/app-layout';
 import ScopeContextPicker from '@/components/central/ScopeContextPicker';
@@ -36,6 +43,7 @@ type ExplorerProps = {
     scope_site_collections_error: string | null;
     central_sites_cache: CentralScopeCacheMeta;
     central_groups_cache: CentralScopeGroupsCacheMeta;
+    device_function_options: string[];
     base_url_display: string;
     docs_url: string;
 } & SharedData;
@@ -56,6 +64,21 @@ function defaultParamValue(parameter: CentralApiParameter): string {
     }
 
     return '';
+}
+
+const DEVICE_FUNCTION_NONE = '__none__';
+
+function deviceFunctionSelectOptions(
+    options: string[],
+    currentValue: string,
+): string[] {
+    const trimmed = currentValue.trim();
+
+    if (trimmed !== '' && !options.includes(trimmed)) {
+        return [...options, trimmed];
+    }
+
+    return options;
 }
 
 function buildInitialParams(operation: CentralApiOperation | null): Record<string, string> {
@@ -114,6 +137,7 @@ export default function Explorer() {
         scope_site_collections_error,
         central_sites_cache,
         central_groups_cache,
+        device_function_options,
         base_url_display,
         docs_url,
     } = usePage<ExplorerProps>().props;
@@ -510,16 +534,57 @@ export default function Explorer() {
                                                             {parameter.description}
                                                         </p>
                                                     )}
-                                                    <Input
-                                                        id={`param-${parameter.name}`}
-                                                        value={paramValues[parameter.name] ?? ''}
-                                                        onChange={(e) =>
-                                                            setParamValues((prev) => ({
-                                                                ...prev,
-                                                                [parameter.name]: e.target.value,
-                                                            }))
-                                                        }
-                                                    />
+                                                    {parameter.name === 'device-function' ? (
+                                                        <Select
+                                                            value={
+                                                                (paramValues[parameter.name] ?? '') === ''
+                                                                    ? DEVICE_FUNCTION_NONE
+                                                                    : (paramValues[parameter.name] ?? '')
+                                                            }
+                                                            onValueChange={(value) =>
+                                                                setParamValues((prev) => ({
+                                                                    ...prev,
+                                                                    [parameter.name]:
+                                                                        value === DEVICE_FUNCTION_NONE
+                                                                            ? ''
+                                                                            : value,
+                                                                }))
+                                                            }
+                                                        >
+                                                            <SelectTrigger
+                                                                id={`param-${parameter.name}`}
+                                                                className="w-full"
+                                                            >
+                                                                <SelectValue placeholder="Select device function…" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {!parameter.required && (
+                                                                    <SelectItem value={DEVICE_FUNCTION_NONE}>
+                                                                        None
+                                                                    </SelectItem>
+                                                                )}
+                                                                {deviceFunctionSelectOptions(
+                                                                    device_function_options,
+                                                                    paramValues[parameter.name] ?? '',
+                                                                ).map((option) => (
+                                                                    <SelectItem key={option} value={option}>
+                                                                        {option}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    ) : (
+                                                        <Input
+                                                            id={`param-${parameter.name}`}
+                                                            value={paramValues[parameter.name] ?? ''}
+                                                            onChange={(e) =>
+                                                                setParamValues((prev) => ({
+                                                                    ...prev,
+                                                                    [parameter.name]: e.target.value,
+                                                                }))
+                                                            }
+                                                        />
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>

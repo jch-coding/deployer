@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\DeviceFunction;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Services\CentralApiProxyService;
@@ -69,6 +70,10 @@ class CentralApiExplorerController extends Controller
             'scope_site_collections_error' => $siteCollectionsPayload['error'],
             'central_sites_cache' => $cacheMetadata['central_sites_cache'],
             'central_groups_cache' => $cacheMetadata['central_groups_cache'],
+            'device_function_options' => array_map(
+                fn (DeviceFunction $deviceFunction): string => $deviceFunction->name,
+                DeviceFunction::cases(),
+            ),
             'base_url_display' => $currentClient->base_url,
             'docs_url' => 'https://developer.arubanetworks.com/new-central-config/reference/getactiveissues',
         ]);

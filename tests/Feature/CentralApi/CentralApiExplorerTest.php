@@ -49,6 +49,7 @@ test('central api index renders explorer page', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('CentralApi/Explorer')
             ->has('operations_by_tag')
+            ->has('device_function_options')
             ->where('base_url_display', $this->client->base_url));
 });
 
