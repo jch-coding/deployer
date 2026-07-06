@@ -2587,7 +2587,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, message: string}|array{error: string}
      */
     public function ensureVsxKeepAliveVrf(Device $device): array
     {
@@ -2621,7 +2621,10 @@ class CentralAPIHelper
         }
 
         if (static::vrfNameExists($vrfs, self::VSX_KEEPALIVE_VRF)) {
-            return ['ok' => true];
+            return [
+                'ok' => true,
+                'message' => self::VSX_KEEPALIVE_VRF.' VRF already exists at group scope for '.$device->name.' (group '.$device->group.').',
+            ];
         }
 
         $postResponse = $this->post_vrf(['name' => self::VSX_KEEPALIVE_VRF], $queryParams);
@@ -2638,7 +2641,10 @@ class CentralAPIHelper
             return ['error' => self::VSX_KEEPALIVE_VRF.' VRF creation failed at group level for '.$device->name.': '.($message !== '' ? $message : 'unknown error')];
         }
 
-        return ['ok' => true];
+        return [
+            'ok' => true,
+            'message' => 'Created '.self::VSX_KEEPALIVE_VRF.' VRF at group scope for '.$device->name.' (group '.$device->group.').',
+        ];
     }
 
     /**
@@ -3121,7 +3127,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, message: string}|array{error: string}
      */
     public function ensureVsxIslLag(Device $device, Device $peerDevice, array $portList): array
     {
@@ -3139,7 +3145,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, message: string}|array{error: string}
      */
     public function ensureVsxKeepaliveLag(Device $device, Device $peerDevice, VsxRole $role, array $portList): array
     {
@@ -3158,7 +3164,7 @@ class CentralAPIHelper
 
     /**
      * @param  array<int, string>  $memberPortNames
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, message: string}|array{error: string}
      */
     public function ensureVsxPortchannelLag(
         Device $device,
@@ -3207,12 +3213,26 @@ class CentralAPIHelper
             }
         }
 
-        return $this->ensureVsxLagMemberPortDescriptions($device, $peerDevice, $memberPortNames, $portDescriptionSuffix, $failureLabel);
+        $descriptionResult = $this->ensureVsxLagMemberPortDescriptions($device, $peerDevice, $memberPortNames, $portDescriptionSuffix, $failureLabel);
+        if (array_key_exists('error', $descriptionResult)) {
+            return $descriptionResult;
+        }
+
+        $portList = implode(', ', $memberPortNames);
+        $action = $shouldCreateLag ? 'Created' : 'Verified';
+        $message = "{$action} {$failureLabel} on {$device->name} (ports: {$portList}).";
+
+        $descriptionsUpdated = (int) ($descriptionResult['descriptions_updated'] ?? 0);
+        if ($descriptionsUpdated > 0) {
+            $message .= " Updated {$descriptionsUpdated} member port description(s).";
+        }
+
+        return ['ok' => true, 'message' => $message];
     }
 
     /**
      * @param  array<int, string>  $portNames
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, descriptions_updated: int}|array{error: string}
      */
     public function ensureVsxLagMemberPortDescriptions(
         Device $device,
@@ -3221,6 +3241,8 @@ class CentralAPIHelper
         string $labelSuffix,
         string $failureLabel
     ): array {
+        $descriptionsUpdated = 0;
+
         foreach ($portNames as $portName) {
             $expectedDescription = static::buildVsxLagMemberPortDescription($peerDevice->name, $portName, $labelSuffix);
             $getResponse = $this->get_ethernet_interface_by_name($device, $portName);
@@ -3246,9 +3268,11 @@ class CentralAPIHelper
             if (! $this->isSuccessfulCentralResponse($patchResponse)) {
                 return ['error' => $failureLabel.' member port description failed on '.$device->name.' '.$portName.': '.$this->centralResponseErrorMessage($patchResponse)];
             }
+
+            $descriptionsUpdated++;
         }
 
-        return ['ok' => true];
+        return ['ok' => true, 'descriptions_updated' => $descriptionsUpdated];
     }
 
     public function get_interface_portchannel(Device $device, string $interfaceName): Response|array

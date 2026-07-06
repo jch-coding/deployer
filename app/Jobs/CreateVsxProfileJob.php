@@ -27,6 +27,8 @@ class CreateVsxProfileJob extends BaseTaskJob
     public function handle(): void
     {
         $this->handleSafely(function (): void {
+            $this->logTaskStatus('Starting VSX profile '.$this->vsxProfileName.' for '.$this->devices->count().' device(s).');
+
             $validationError = $this->validatePeerPair();
             if ($validationError !== null) {
                 $this->abortPair($validationError, true);
@@ -43,29 +45,44 @@ class CreateVsxProfileJob extends BaseTaskJob
                 return;
             }
 
+            $this->logTaskStatus(
+                'Validated VSX peer pair: '.$primary->name.' (VSX_PRIMARY) and '.$secondary->name.' (VSX_SECONDARY), system MAC '.$primary->vsx_system_mac.'.'
+            );
+
             $siteScopeId = $this->resolveSiteScopeId($primary);
             if ($siteScopeId === null) {
-                $this->abortPair('Could not resolve site scope ID for VSX profile creation.', true);
+                $siteName = $primary->site?->name ?? 'unknown';
+                $this->abortPair('Could not resolve site scope ID for VSX profile creation (site: '.$siteName.').', true);
 
                 return;
             }
 
+            $this->logTaskStatus('Resolved site scope ID '.$siteScopeId.' for VSX profile '.$this->vsxProfileName.'.');
+
             foreach ($this->devices as $device) {
                 if (! $device->scope_id) {
+                    $this->logTaskStatus('Resolving device scope ID for '.$device->name.' ('.$device->serial.').');
                     $scopeIdResponse = $this->centralAPIHelper->getScopeIdFromCentral($device);
                     if (array_key_exists('error', $scopeIdResponse)) {
-                        $this->abortPair('Failed to get scope id for device '.$device->name, true);
+                        $this->abortPair(
+                            'Failed to get scope id for device '.$device->name.': '.$scopeIdResponse['error'],
+                            true
+                        );
 
                         return;
                     }
                     $scopeEntries = array_values($scopeIdResponse);
                     if ($scopeEntries === [] || ! isset($scopeEntries[0]['scopeId'])) {
-                        $this->abortPair('Failed to get scope id for device '.$device->name, true);
+                        $this->abortPair(
+                            'Failed to get scope id for device '.$device->name.': no scopeId in Central hierarchy response.',
+                            true
+                        );
 
                         return;
                     }
                     $device->scope_id = $scopeEntries[0]['scopeId'];
                     $device->save();
+                    $this->logTaskStatus('Resolved device scope ID '.$device->scope_id.' for '.$device->name.'.');
                 }
             }
 
@@ -78,6 +95,8 @@ class CreateVsxProfileJob extends BaseTaskJob
                     return;
                 }
 
+                $this->logTaskStatus('Preparing '.$device->name.' ('.$role->name.') for VSX profile '.$this->vsxProfileName.'.');
+
                 $portSelections = CentralAPIHelper::getVsxPortSelections($device);
                 if (array_key_exists('error', $portSelections)) {
                     $this->abortPair((string) $portSelections['error'], true);
@@ -86,33 +105,40 @@ class CreateVsxProfileJob extends BaseTaskJob
                 }
 
                 [$islPorts, $keepalivePorts] = $portSelections;
+                $this->logTaskStatus(
+                    'Using LAG 256 ports '.implode(', ', $islPorts).' and LAG 255 ports '.implode(', ', $keepalivePorts).' on '.$device->name.'.'
+                );
 
+                $this->logTaskStatus('Checking '.CentralAPIHelper::VSX_KEEPALIVE_VRF.' VRF for '.$device->name.' (group '.$device->group.').');
                 $vrfResult = $this->centralAPIHelper->ensureVsxKeepAliveVrf($device);
                 if (array_key_exists('error', $vrfResult)) {
                     $this->abortPair($vrfResult['error'], true);
 
                     return;
                 }
+                $this->logTaskStatus((string) ($vrfResult['message'] ?? CentralAPIHelper::VSX_KEEPALIVE_VRF.' VRF ready for '.$device->name.'.'));
 
+                $this->logTaskStatus('Checking LAG 256 inter-switch-link on '.$device->name.'.');
                 $islResult = $this->centralAPIHelper->ensureVsxIslLag($device, $peerDevice, $islPorts);
                 if (array_key_exists('error', $islResult)) {
                     $this->abortPair($islResult['error'], true);
 
                     return;
                 }
+                $this->logTaskStatus((string) ($islResult['message'] ?? 'LAG 256 inter-switch-link ready on '.$device->name.'.'));
 
+                $this->logTaskStatus('Checking LAG 255 keepalive on '.$device->name.' ('.$role->name.').');
                 $keepaliveResult = $this->centralAPIHelper->ensureVsxKeepaliveLag($device, $peerDevice, $role, $keepalivePorts);
                 if (array_key_exists('error', $keepaliveResult)) {
                     $this->abortPair($keepaliveResult['error'], true);
 
                     return;
                 }
+                $this->logTaskStatus((string) ($keepaliveResult['message'] ?? 'LAG 255 keepalive ready on '.$device->name.'.'));
             }
 
             $payload = CentralAPIHelper::buildVsxProfilePayload($primary, $secondary);
-            $message = 'Creating VSX profile '.$this->vsxProfileName;
-            Log::info($message);
-            $this->task->processTaskStatusLog($message);
+            $this->logTaskStatus('Creating VSX profile '.$this->vsxProfileName.' at site scope '.$siteScopeId.'.');
 
             $response = $this->centralAPIHelper->post_vsx_profile(
                 $payload,
@@ -120,7 +146,7 @@ class CreateVsxProfileJob extends BaseTaskJob
             );
 
             if (is_array($response) && array_key_exists('error', $response)) {
-                $this->task->processTaskStatusLog($response['error'], true);
+                $this->logTaskStatus('VSX profile creation failed: '.$response['error'], true);
                 $this->release($this->wait_time * 60);
 
                 return;
@@ -128,15 +154,13 @@ class CreateVsxProfileJob extends BaseTaskJob
 
             if (! $response->ok()) {
                 $errorMessage = (string) ($response->json('message') ?? $response->body());
-                $this->task->processTaskStatusLog('VSX profile creation failed: '.$errorMessage, true);
+                $this->logTaskStatus('VSX profile creation failed: '.$errorMessage, true);
                 $this->release($this->wait_time * 60);
 
                 return;
             }
 
-            $successMessage = '\nVSX profile created: '.$this->vsxProfileName;
-            Log::info($successMessage);
-            $this->task->processTaskStatusLog($successMessage);
+            $this->logTaskStatus('VSX profile created: '.$this->vsxProfileName);
 
             foreach ($this->devices as $device) {
                 $this->task->devices()->find($device->id)?->pivot?->update(['status' => 'COMPLETED']);
@@ -229,6 +253,12 @@ class CreateVsxProfileJob extends BaseTaskJob
         }
 
         return (string) $site->scope_id;
+    }
+
+    private function logTaskStatus(string $message, bool $withTimestamp = false): void
+    {
+        Log::info($message);
+        $this->task->processTaskStatusLog($message, $withTimestamp);
     }
 
     private function abortPair(string $message, bool $withTimestamp = false): void

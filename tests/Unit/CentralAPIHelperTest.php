@@ -1221,7 +1221,8 @@ test('ensureVsxIslLag creates lag when central returns null name', function () {
 
     $result = $helper->ensureVsxIslLag($device, $peer, ['1/1/21', '1/1/22']);
 
-    expect($result)->toBe(['ok' => true]);
+    expect($result)->toMatchArray(['ok' => true])
+        ->and($result['message'] ?? '')->toContain('Created LAG 256 inter-switch-link');
     Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/portchannels/256'));
 });
 
@@ -1343,7 +1344,8 @@ test('ensureVsxKeepAliveVrf skips post when vrf exists at group scope', function
 
     $result = $helper->ensureVsxKeepAliveVrf($device);
 
-    expect($result)->toBe(['ok' => true]);
+    expect($result)->toMatchArray(['ok' => true])
+        ->and($result['message'] ?? '')->toContain('already exists');
     Http::assertNotSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/vrfs/'));
 });
 
@@ -1377,10 +1379,8 @@ test('ensureVsxKeepAliveVrf posts vrf at group scope when missing', function () 
 
     $result = $helper->ensureVsxKeepAliveVrf($device);
 
-    expect($result)->toBe(['ok' => true]);
-});
-
-test('ensureVsxKeepAliveVrf returns error when vrf post fails', function () {
+    expect($result)->toMatchArray(['ok' => true])
+        ->and($result['message'] ?? '')->toContain('Created');
     Http::fake(function (Request $request) {
         if (str_contains($request->url(), 'device-groups')) {
             return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);

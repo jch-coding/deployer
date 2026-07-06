@@ -77,15 +77,24 @@ it('creates vsx profile and marks both devices completed on success', function (
     $successResponse->shouldReceive('ok')->andReturn(true);
 
     $centralApi = Mockery::mock(CentralAPIHelper::class);
-    $centralApi->shouldReceive('ensureVsxKeepAliveVrf')->twice()->andReturn(['ok' => true]);
+    $centralApi->shouldReceive('ensureVsxKeepAliveVrf')->twice()->andReturn([
+        'ok' => true,
+        'message' => 'WHSE-VSX-Keep-Alive VRF already exists at group scope for Primary-SVR-SW (group WHSE-TEST-ACCESS).',
+    ]);
     $centralApi->shouldReceive('ensureVsxIslLag')
         ->twice()
         ->with(Mockery::type(Device::class), Mockery::type(Device::class), ['1/1/21', '1/1/22'])
-        ->andReturn(['ok' => true]);
+        ->andReturn([
+            'ok' => true,
+            'message' => 'Verified LAG 256 inter-switch-link on Primary-SVR-SW (ports: 1/1/21, 1/1/22).',
+        ]);
     $centralApi->shouldReceive('ensureVsxKeepaliveLag')
         ->twice()
         ->with(Mockery::type(Device::class), Mockery::type(Device::class), Mockery::type(App\VsxRole::class), ['1/1/23', '1/1/24'])
-        ->andReturn(['ok' => true]);
+        ->andReturn([
+            'ok' => true,
+            'message' => 'Verified LAG 255 keepalive on Primary-SVR-SW (ports: 1/1/23, 1/1/24).',
+        ]);
     $centralApi->shouldReceive('post_vsx_profile')
         ->once()
         ->with(Mockery::type('array'), 'site-scope-id')
@@ -101,7 +110,37 @@ it('creates vsx profile and marks both devices completed on success', function (
 
     expect($task->devices()->find($primary->id)->pivot->status)->toBe('COMPLETED')
         ->and($task->devices()->find($secondary->id)->pivot->status)->toBe('COMPLETED')
-        ->and($task->fresh()->status)->toBe('COMPLETED');
+        ->and($task->fresh()->status)->toBe('COMPLETED')
+        ->and($task->fresh()->status_log)->toContain('Starting VSX profile vsx-pair-1')
+        ->and($task->fresh()->status_log)->toContain('Checking LAG 256 inter-switch-link on Primary-SVR-SW')
+        ->and($task->fresh()->status_log)->toContain('Checking LAG 255 keepalive on Primary-SVR-SW')
+        ->and($task->fresh()->status_log)->toContain('VSX profile created: vsx-pair-1');
+});
+
+it('logs vrf and lag failure messages to the task status log', function () {
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'CREATE_VSX_PROFILE',
+        'status' => 'IN_PROGRESS',
+    ]);
+
+    [$primary, $secondary] = makeVsxDevicePair($task, $this->client);
+
+    $centralApi = Mockery::mock(CentralAPIHelper::class);
+    $centralApi->shouldReceive('ensureVsxKeepAliveVrf')->andReturn(['ok' => true, 'message' => 'VRF ready.']);
+    $centralApi->shouldReceive('ensureVsxIslLag')
+        ->andReturn(['error' => 'LAG 256 inter-switch-link on Primary-SVR-SW does not match expected configuration']);
+    $centralApi->shouldNotReceive('post_vsx_profile');
+
+    $job = new CreateVsxProfileJob(
+        'vsx-pair-1',
+        collect([$primary, $secondary]),
+        $task,
+        $centralApi
+    );
+    $job->handle();
+
+    expect($task->fresh()->status)->toBe('FAILED')
+        ->and($task->fresh()->status_log)->toContain('LAG 256 inter-switch-link on Primary-SVR-SW does not match expected configuration');
 });
 
 it('aborts when vrf creation fails', function () {
@@ -166,31 +205,6 @@ it('fails validation when only one device is provided', function () {
     $job = new CreateVsxProfileJob(
         'vsx-pair-1',
         collect([$primary]),
-        $task,
-        $centralApi
-    );
-    $job->handle();
-
-    expect($task->fresh()->status)->toBe('FAILED');
-});
-
-it('aborts when lag ensure fails', function () {
-    $task = Task::factory()->for($this->deployment)->create([
-        'task_type' => 'CREATE_VSX_PROFILE',
-        'status' => 'IN_PROGRESS',
-    ]);
-
-    [$primary, $secondary] = makeVsxDevicePair($task, $this->client);
-
-    $centralApi = Mockery::mock(CentralAPIHelper::class);
-    $centralApi->shouldReceive('ensureVsxKeepAliveVrf')->andReturn(['ok' => true]);
-    $centralApi->shouldReceive('ensureVsxIslLag')
-        ->andReturn(['error' => 'LAG 256 inter-switch-link on Primary-SVR-SW does not match expected configuration']);
-    $centralApi->shouldNotReceive('post_vsx_profile');
-
-    $job = new CreateVsxProfileJob(
-        'vsx-pair-1',
-        collect([$primary, $secondary]),
         $task,
         $centralApi
     );
