@@ -78,6 +78,10 @@ class CentralAPIHelper
         'vsx' => 'network-config/v1alpha1/vsx-profiles',
     ];
 
+    public array $wireless = [
+        'wlan_ssids' => 'network-config/v1alpha1/wlan-ssids',
+    ];
+
     public array $classic_monitoring = [
         'sites' => 'central/v2/sites',
         'switches' => 'monitoring/v1/switches',
@@ -1793,6 +1797,23 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->post($this->client->base_url.$this->interfaces['mirrors'].'/'.$mirror['name'], $mirror);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @param  array<string, mixed>  $body
+     */
+    public function post_wlan_ssid_profile(string $ssid_profile_name, array $queryParameters, array $body)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->wireless['wlan_ssids'].'/'.$ssid_profile_name, $body);
 
             return $response;
         }

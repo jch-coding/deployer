@@ -850,6 +850,24 @@ test('get_all_interface_portchannels uses LOCAL device query parameters', functi
     });
 });
 
+test('post_wlan_ssid_profile posts to wlan-ssids endpoint with query parameters and body', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $body = ['ssid' => 'CorpWiFi'];
+
+    $helper->post_wlan_ssid_profile('my-ssid-profile', ['view-type' => 'LIBRARY'], $body);
+
+    Http::assertSent(function (Request $request) use ($body) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/my-ssid-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY'
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
 test('post_interface_portchannel omits lacp in request body for TRUNK trunk type', function () {
     Http::fake(['*' => Http::response(['ok' => true], 200)]);
 
