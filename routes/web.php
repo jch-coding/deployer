@@ -7,6 +7,7 @@ use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DispatchController;
 use App\Http\Controllers\LicensingController;
+use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\ProvisioningWorkflowController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\TaskController;
@@ -99,6 +100,12 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(CentralApiExplorerController::class)->group(function () {
         Route::get('/central-api', 'index')->name('central-api.index');
         Route::post('/central-api/execute', 'execute')->name('central-api.execute');
+    });
+
+    Route::controller(MigrationController::class)->group(function () {
+        Route::get('/migrations', 'index')->name('migrations.index');
+        Route::post('/migrations/parse', 'parse')->name('migrations.parse');
+        Route::post('/migrations/deploy-wlan', 'deployWlan')->name('migrations.deploy-wlan');
     });
 
     Route::controller(DispatchController::class)->group(function () {
