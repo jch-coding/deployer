@@ -1,0 +1,2483 @@
+
+(DAY-HUB-WLC1) #show ap database long 
+
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+DAY-H-IDF02-021  DAY-Hub-AGV  514      10.44.30.27   Up 59d:6h:31m:10s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:6a  PHS2KD006J  N/A   N/A   N/A       
+DAY-H-IDF02-025  DAY-Hub-AGV  514      10.44.30.36   Up 59d:6h:31m:2s   2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bf:26  PHS2KD006F  N/A   N/A   N/A       
+DAY-H-IDF02-026  DAY-Hub-AGV  567      10.44.30.29   Up 59d:6h:31m:28s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a3:5e  CNQQKWD38T  N/A   N/A   N/A       
+DAY-H-IDF02-027  DAY-Hub-AGV  514      10.44.30.40   Up 59d:6h:31m:22s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:c0:e8  PHS2KD006W  N/A   N/A   N/A       
+DAY-H-IDF02-031  DAY-Hub-AGV  514      10.44.30.37   Up 59d:6h:31m:27s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:be:06  PHS2KD006M  N/A   N/A   N/A       
+DAY-H-IDF02-032  DAY-Hub-AGV  514      10.44.30.38   Up 59d:6h:31m:18s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:be:10  PHS2KD006S  N/A   N/A   N/A       
+DAY-H-IDF02-033  DAY-Hub-AGV  514      10.44.30.35   Up 59d:6h:31m:35s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:c0:ba  PHS2KD006R  N/A   N/A   N/A       
+DAY-H-IDF02-037  DAY-Hub-AGV  514      10.44.30.28   Up 59d:6h:31m:30s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:c0:aa  PHS2KD006H  N/A   N/A   N/A       
+DAY-H-IDF02-038  DAY-Hub-AGV  567      10.44.30.31   Up 59d:6h:31m:36s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a2:00  CNQQKWD246  N/A   N/A   N/A       
+DAY-H-IDF02-039  DAY-Hub-AGV  514      10.44.30.30   Up 59d:6h:31m:13s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bc:32  PHS2KD006P  N/A   N/A   N/A       
+DAY-H-IDF02-044  DAY-Hub-AGV  514      10.44.30.39   Up 59d:6h:30m:52s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bd:9e  PHS2KD006C  N/A   N/A   N/A       
+DAY-H-IDF02-045  DAY-Hub-AGV  514      10.44.30.32   Up 59d:6h:30m:56s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bd:82  PHS2KD006K  N/A   N/A   N/A       
+DAY-H-IDF03-001  DAY-Hub-AGV  567      10.44.30.21   Up 59d:6h:31m:20s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a8:8c  CNQQKWD2WK  N/A   N/A   N/A       
+DAY-H-IDF03-002  DAY-Hub-AGV  567      10.44.30.57   Up 59d:6h:32m:10s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a1:24  CNQQKWD2J8  N/A   N/A   N/A       
+DAY-H-IDF03-003  DAY-Hub-AGV  567      10.44.30.20   Up 59d:6h:32m:47s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a5:08  CNQQKWD2QS  N/A   N/A   N/A       
+DAY-H-IDF03-008  DAY-Hub-AGV  514      10.44.30.25   Up 59d:6h:32m:38s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:e2  PHS2KD0066  N/A   N/A   N/A       
+DAY-H-IDF03-009  DAY-Hub-AGV  567      10.44.30.41   Up 59d:6h:33m:34s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a7:74  CNQQKWD31G  N/A   N/A   N/A       
+DAY-H-IDF03-010  DAY-Hub-AGV  514      10.44.30.23   Up 59d:6h:32m:16s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:50  PHS2KD0065  N/A   N/A   N/A       
+DAY-H-IDF03-015  DAY-Hub-AGV  514      10.44.30.24   Up 59d:6h:32m:41s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:be:18  PHS2KD0062  N/A   N/A   N/A       
+DAY-H-IDF03-016  DAY-Hub-AGV  514      10.44.30.26   Up 59d:6h:32m:45s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bc:48  PHS2KD006G  N/A   N/A   N/A       
+DAY-H-IDF03-020  DAY-Hub-AGV  514      10.44.30.22   Up 59d:6h:32m:4s   2      10.44.30.6  10.44.30.8  50:e4:e0:c3:be:de  PHS2KD005Y  N/A   N/A   N/A       
+DAY-H-IDF04-005  DAY-OFFICE   515      10.44.30.120  Up 59d:6h:32m:23s  2      10.44.30.6  10.44.30.8  68:28:cf:cb:20:d0  PHQFLJ6009  N/A   N/A   N/A       
+DAY-H-IDF05-004  DAY-Hub-AGV  567      10.44.30.49   Up 59d:6h:30m:47s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:ac:dc  CNQQKWD31T  N/A   N/A   N/A       
+DAY-H-IDF05-007  DAY-Hub-AGV  514      10.44.30.56   Up 59d:6h:32m:58s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bc:b2  PHS2KD0060  N/A   N/A   N/A       
+DAY-H-IDF05-011  DAY-Hub-AGV  514      10.44.30.51   Up 59d:6h:32m:31s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bf:76  PHS2KD005X  N/A   N/A   N/A       
+DAY-H-IDF05-012  DAY-Hub-AGV  514      10.44.30.42   Up 59d:6h:32m:29s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:c1:5c  PHS2KD0063  N/A   N/A   N/A       
+DAY-H-IDF05-013  DAY-Hub-AGV  567      10.44.30.54   Up 59d:6h:31m:51s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:ad:ea  CNQQKWD2T4  N/A   N/A   N/A       
+DAY-H-IDF05-014  DAY-Hub-AGV  514      10.44.30.50   Up 59d:6h:32m:5s   2      10.44.30.6  10.44.30.8  50:e4:e0:c3:c1:3e  PHS2KD005H  N/A   N/A   N/A       
+DAY-H-IDF05-017  DAY-Hub-AGV  514      10.44.30.44   Up 59d:6h:30m:35s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bd:64  PHS2KD005W  N/A   N/A   N/A       
+DAY-H-IDF05-018  DAY-Hub-AGV  567      10.44.30.46   Up 59d:6h:32m:17s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a4:f2  CNQQKWD2BB  N/A   N/A   N/A       
+DAY-H-IDF05-019  DAY-Hub-AGV  514      10.44.30.48   Up 59d:6h:30m:41s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bc:8a  PHS2KD001B  N/A   N/A   N/A       
+DAY-H-IDF05-022  DAY-Hub-AGV  514      10.44.30.52   Up 59d:6h:32m:1s   2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bf:0a  PHS2KD006L  N/A   N/A   N/A       
+
+Flags: 1 = 802.1x authenticated AP use EAP-PEAP;   1+ = 802.1x use EST;    1- = 802.1x use factory cert
+       2 = Using IKE version 2;                    4 = WiFi Uplink
+       B = Built-in AP;                            C = Cellular RAP;       D = Dirty or no config
+       E = Regulatory Domain Mismatch;             F = AP failed 802.1x authentication
+       G = No such group;        I = Inactive;     J = USB cert at AP;     L = Unlicensed
+       M = Mesh node
+       N = Duplicate name;       P = PPPoe AP;     R = Remote AP;          R- = Remote AP requires Auth
+       S = Standby-mode AP;      T = Thermal ShutDown;    U = Unprovisioned;    X = Maintenance Mode
+       Y = Mesh Recovery
+       b = bypass of AP1x timeout;    c = CERT-based RAP;    e = Custom EST cert;    f = No Spectrum FFT support
+       i = Indoor;                    o = Outdoor;           l = LAG 802.3ad;        m = Protocol Mismatch
+       p = In deep-sleep status;      r = Power Restricted;  s = LACP striping;      t = Temperature Restricted
+       u = Custom-Cert RAP;           z = Datazone AP
+
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+DAY-H-IDF05-023  DAY-Hub-AGV  514      10.44.30.55   Up 59d:6h:32m:10s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bd:94  PHS2KD0013  N/A   N/A   N/A       
+DAY-H-IDF05-024  DAY-Hub-AGV  514      10.44.30.43   Up 59d:6h:30m:50s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:be:86  PHS2KD0028  N/A   N/A   N/A       
+DAY-H-IDF05-028  DAY-Hub-AGV  514      10.44.30.53   Up 59d:6h:32m:57s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:c0:b8  PHS2KD0029  N/A   N/A   N/A       
+DAY-H-IDF05-029  DAY-Hub-AGV  567      10.44.30.113  Up 59d:6h:32m:10s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:aa:7c  CNQQKWD24F  N/A   N/A   N/A       
+DAY-H-IDF05-030  DAY-Hub-AGV  514      10.44.30.45   Up 59d:6h:31m:15s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bf:de  PHS2KD0009  N/A   N/A   N/A       
+DAY-H-IDF06-034  DAY-Hub-AGV  514      10.44.30.63   Up 59d:6h:32m:51s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bd:8e  PHS2KD006T  N/A   N/A   N/A       
+DAY-H-IDF06-035  DAY-Hub-AGV  567      10.44.30.62   Up 59d:6h:31m:52s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:ad:5a  CNQQKWD23G  N/A   N/A   N/A       
+DAY-H-IDF06-036  DAY-Hub-AGV  514      10.44.30.110  Up 59d:6h:33m:22s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bf:8c  PHS2KD006Q  N/A   N/A   N/A       
+DAY-H-IDF06-040  DAY-Hub-AGV  514      10.44.30.109  Up 59d:6h:32m:31s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bf:70  PHS2KD006N  N/A   N/A   N/A       
+DAY-H-IDF06-041  DAY-Hub-AGV  567      10.44.30.111  Up 59d:6h:31m:31s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:66:84  CNQKKWD26C  N/A   N/A   N/A       
+DAY-H-IDF06-042  DAY-Hub-AGV  514      10.44.30.60   Up 59d:6h:31m:6s   2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bc:26  PHS2KD006V  N/A   N/A   N/A       
+DAY-H-IDF06-043  DAY-Hub-AGV  514      10.44.30.108  Up 59d:6h:31m:46s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:c1:42  PHS2KD0056  N/A   N/A   N/A       
+DAY-H-IDF06-046  DAY-Hub-AGV  514      10.44.30.58   Up 59d:6h:32m:3s   2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bf:46  PHS2KD000G  N/A   N/A   N/A       
+DAY-H-IDF06-048  DAY-Hub-AGV  567      10.44.30.59   Up 59d:6h:32m:31s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:5b:78  CNQKKWD1BJ  N/A   N/A   N/A       
+DAY-H-IDF06-049  DAY-Hub-AGV  567      10.44.30.61   Up 59d:6h:30m:46s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:62:3e  CNQKKWD1BZ  N/A   N/A   N/A       
+DAY-H-IDF07-047  DAY-OFFICE   515      10.44.30.125  Up 59d:6h:32m:37s  2S     10.44.30.8  10.44.30.6  54:d7:e3:c7:b7:aa  CNQ6LJ68BW  N/A   N/A   N/A       
+DAY-H-IDF08-056  DAY-Hub-AGV  567      10.44.30.64   Up 59d:6h:32m:22s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:aa:e0  CNQQKWD290  N/A   N/A   N/A       
+DAY-H-IDF08-057  DAY-Hub-AGV  567      10.44.30.71   Up 59d:6h:31m:52s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a4:92  CNQQKWD2YC  N/A   N/A   N/A       
+DAY-H-IDF08-058  DAY-Hub-AGV  567      10.44.30.67   Up 59d:6h:31m:27s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a9:ca  CNQQKWD1KV  N/A   N/A   N/A       
+DAY-H-IDF08-059  DAY-Hub-AGV  567      10.44.30.66   Up 59d:6h:31m:22s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a1:e6  CNQQKWD2Q8  N/A   N/A   N/A       
+DAY-H-IDF08-060  DAY-Hub-AGV  514      10.44.30.65   Up 59d:6h:33m:31s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:ec  PHS2KD002F  N/A   N/A   N/A       
+DAY-H-IDF08-063  DAY-Hub-AGV  514      10.44.30.68   Up 59d:6h:32m:50s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bd:c2  PHS2KD0024  N/A   N/A   N/A       
+DAY-H-IDF08-064  DAY-Hub-AGV  514      10.44.30.70   Up 59d:6h:30m:49s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:c0:02  PHS2KD002B  N/A   N/A   N/A       
+DAY-H-IDF08-065  DAY-Hub-AGV  514      10.44.30.114  Up 59d:6h:31m:6s   2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bc:4e  PHS2KD002L  N/A   N/A   N/A       
+DAY-H-IDF08-069  DAY-Hub-AGV  514      10.44.30.69   Up 59d:6h:31m:10s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:7a  PHS2KD002N  N/A   N/A   N/A       
+DAY-H-IDF09-070  DAY-Hub-AGV  567      10.44.30.115  Up 59d:6h:30m:33s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a1:ea  CNQQKWD2HD  N/A   N/A   N/A       
+DAY-H-IDF09-071  DAY-Hub-AGV  567      10.44.30.118  Up 59d:6h:30m:57s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a2:42  CNQQKWD283  N/A   N/A   N/A       
+DAY-H-IDF09-076  DAY-Hub-AGV  514      10.44.30.73   Up 59d:6h:32m:35s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:7e  PHS2KD002J  N/A   N/A   N/A       
+DAY-H-IDF09-077  DAY-Hub-AGV  567      10.44.30.75   Up 59d:6h:33m:19s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a8:c4  CNQQKWD2SQ  N/A   N/A   N/A       
+DAY-H-IDF09-078  DAY-Hub-AGV  514      10.44.30.72   Up 59d:6h:31m:49s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bc:2c  PHS2KD001G  N/A   N/A   N/A       
+DAY-H-IDF09-083  DAY-Hub-AGV  514      10.44.30.74   Up 59d:6h:33m:11s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bc:82  PHS2KD002G  N/A   N/A   N/A       
+DAY-H-IDF10-084  DAY-Hub-AGV  514      10.44.30.79   Up 59d:6h:32m:20s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bd:58  PHS2KD00FB  N/A   N/A   N/A       
+
+Flags: 1 = 802.1x authenticated AP use EAP-PEAP;   1+ = 802.1x use EST;    1- = 802.1x use factory cert
+       2 = Using IKE version 2;                    4 = WiFi Uplink
+       B = Built-in AP;                            C = Cellular RAP;       D = Dirty or no config
+       E = Regulatory Domain Mismatch;             F = AP failed 802.1x authentication
+       G = No such group;        I = Inactive;     J = USB cert at AP;     L = Unlicensed
+       M = Mesh node
+       N = Duplicate name;       P = PPPoe AP;     R = Remote AP;          R- = Remote AP requires Auth
+       S = Standby-mode AP;      T = Thermal ShutDown;    U = Unprovisioned;    X = Maintenance Mode
+       Y = Mesh Recovery
+       b = bypass of AP1x timeout;    c = CERT-based RAP;    e = Custom EST cert;    f = No Spectrum FFT support
+       i = Indoor;                    o = Outdoor;           l = LAG 802.3ad;        m = Protocol Mismatch
+       p = In deep-sleep status;      r = Power Restricted;  s = LACP striping;      t = Temperature Restricted
+       u = Custom-Cert RAP;           z = Datazone AP
+
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+DAY-H-IDF10-087  DAY-Hub-AGV  514      10.44.30.88   Up 59d:6h:30m:42s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:c0:3c  PHS2KD0094  N/A   N/A   N/A       
+DAY-H-IDF10-088  DAY-Hub-AGV  514      10.44.30.80   Up 59d:6h:30m:45s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bc:d4  PHS2KD00F5  N/A   N/A   N/A       
+DAY-H-IDF10-089  DAY-Hub-AGV  514      10.44.30.81   Up 59d:6h:31m:35s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bf:84  PHS2KD009G  N/A   N/A   N/A       
+DAY-H-IDF10-092  DAY-Hub-AGV  514      10.44.30.82   Up 59d:6h:30m:43s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:be:24  PHS2KD009J  N/A   N/A   N/A       
+DAY-H-IDF10-093  DAY-Hub-AGV  567      10.44.30.116  Up 59d:6h:33m:23s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:aa:60  CNQQKWD2CY  N/A   N/A   N/A       
+DAY-H-IDF10-094  DAY-Hub-AGV  514      10.44.30.86   Up 59d:6h:32m:46s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bd:de  PHS2KD00CR  N/A   N/A   N/A       
+DAY-H-IDF10-099  DAY-Hub-AGV  567      10.44.30.83   Up 59d:6h:33m:16s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a3:fe  CNQQKWD2TK  N/A   N/A   N/A       
+DAY-H-IDF10-100  DAY-Hub-AGV  567      10.44.30.84   Up 59d:6h:30m:59s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a7:68  CNQQKWD278  N/A   N/A   N/A       
+DAY-H-IDF10-101  DAY-OFFICE   515      10.44.30.85   Up 59d:6h:31m:40s  2S     10.44.30.8  10.44.30.6  68:28:cf:cb:7b:da  PHQGLBN7DG  N/A   N/A   N/A       
+DAY-H-IDF10-102  DAY-Hub-AGV  567      10.44.30.117  Up 59d:6h:30m:35s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a8:4c  CNQQKWD27J  N/A   N/A   N/A       
+DAY-H-IDF10-103  DAY-Hub-AGV  567      10.44.30.87   Up 59d:6h:32m:46s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:ae:1c  CNQQKWD2FF  N/A   N/A   N/A       
+DAY-H-IDF11-096  DAY-OFFICE   515      10.44.30.122  Up 59d:6h:33m:45s  2S     10.44.30.8  10.44.30.6  68:28:cf:cb:05:5c  PHQFLJ69XD  N/A   N/A   N/A       
+DAY-H-IDF12-006  DAY-Hub-AGV  567      10.44.30.106  Up 59d:6h:31m:49s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a6:78  CNQQKWD2Y5  N/A   N/A   N/A       
+DAY-H-IDF12-079  DAY-Hub-AGV  514      10.44.30.103  Up 8d:15h:55m:5s   2      10.44.30.6  10.44.30.8  50:e4:e0:c3:c1:2a  PHS2KD009M  N/A   N/A   N/A       
+DAY-H-IDF12-080  DAY-Hub-AGV  514      10.44.30.124  Up 59d:6h:30m:52s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bc:be  PHS2KD008L  N/A   N/A   N/A       
+DAY-H-IDF12-081  DAY-Hub-AGV  567      10.44.30.100  Up 59d:6h:33m:12s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:ab:68  CNQQKWD2SN  N/A   N/A   N/A       
+DAY-H-IDF12-082  DAY-Hub-AGV  514      10.44.30.107  Up 59d:6h:31m:21s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:64  PHS2KD0016  N/A   N/A   N/A       
+DAY-H-IDF12-085  DAY-Hub-AGV  514      10.44.30.101  Up 59d:6h:30m:29s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:dc  PHS2KD009B  N/A   N/A   N/A       
+DAY-H-IDF12-086  DAY-Hub-AGV  514      10.44.30.99   Up 59d:6h:31m:4s   2      10.44.30.6  10.44.30.8  50:e4:e0:c3:be:fe  PHS2KD0068  N/A   N/A   N/A       
+DAY-H-IDF12-090  DAY-Hub-AGV  514      10.44.30.104  Up 59d:6h:31m:10s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bf:b4  PHS2KD0069  N/A   N/A   N/A       
+DAY-H-IDF12-091  DAY-Hub-AGV  514      10.44.30.121  Up 59d:6h:32m:11s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bd:00  PHS2KD006D  N/A   N/A   N/A       
+DAY-H-IDF12-095  DAY-Hub-AGV  514      10.44.30.102  Up 59d:6h:33m:27s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:c1:70  PHS2KD0067  N/A   N/A   N/A       
+DAY-H-IDF12-097  DAY-Hub-AGV  567      10.44.30.105  Up 59d:6h:32m:56s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a9:a2  CNQQKWD2G6  N/A   N/A   N/A       
+DAY-H-IDF12-098  DAY-Hub-AGV  567      10.44.30.119  Up 59d:6h:31m:12s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a9:0a  CNQQKWD2K8  N/A   N/A   N/A       
+DAY-H-IDF12-104  DAY-Hub-AGV  514      10.44.30.98   Up 59d:6h:32m:1s   2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bf:22  PHS2KD0059  N/A   N/A   N/A       
+DAY-H-IDF12-105  DAY-Hub-AGV  514      10.44.30.97   Up 59d:6h:32m:46s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bc:2e  PHS2KD0064  N/A   N/A   N/A       
+DAY-H-IDF12-106  DAY-Hub-AGV  567      10.44.30.47   Up 59d:6h:31m:35s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a5:6a  CNQQKWD2SY  N/A   N/A   N/A       
+DAY-H-IDF13-072  DAY-Hub-AGV  567      10.44.30.77   Up 59d:6h:31m:45s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a6:d4  CNQQKWD2DJ  N/A   N/A   N/A       
+DAY-H-IDF13-073  DAY-Hub-AGV  567      10.44.30.112  Up 59d:6h:32m:42s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:aa:3c  CNQQKWD2HS  N/A   N/A   N/A       
+DAY-H-IDF13-074  DAY-Hub-AGV  567      10.44.30.76   Up 59d:6h:31m:39s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a8:46  CNQQKWD2L3  N/A   N/A   N/A       
+DAY-H-IDF13-075  DAY-Hub-AGV  514      10.44.30.78   Up 59d:6h:32m:29s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:bd:7e  PHS2KD006B  N/A   N/A   N/A       
+DAY-H-IDF14-050  DAY-Hub-AGV  567      10.44.30.33   Up 59d:6h:31m:42s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a3:b0  CNQQKWD27Q  N/A   N/A   N/A       
+
+Flags: 1 = 802.1x authenticated AP use EAP-PEAP;   1+ = 802.1x use EST;    1- = 802.1x use factory cert
+       2 = Using IKE version 2;                    4 = WiFi Uplink
+       B = Built-in AP;                            C = Cellular RAP;       D = Dirty or no config
+       E = Regulatory Domain Mismatch;             F = AP failed 802.1x authentication
+       G = No such group;        I = Inactive;     J = USB cert at AP;     L = Unlicensed
+       M = Mesh node
+       N = Duplicate name;       P = PPPoe AP;     R = Remote AP;          R- = Remote AP requires Auth
+       S = Standby-mode AP;      T = Thermal ShutDown;    U = Unprovisioned;    X = Maintenance Mode
+       Y = Mesh Recovery
+       b = bypass of AP1x timeout;    c = CERT-based RAP;    e = Custom EST cert;    f = No Spectrum FFT support
+       i = Indoor;                    o = Outdoor;           l = LAG 802.3ad;        m = Protocol Mismatch
+       p = In deep-sleep status;      r = Power Restricted;  s = LACP striping;      t = Temperature Restricted
+       u = Custom-Cert RAP;           z = Datazone AP
+
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+DAY-H-IDF14-051  DAY-Hub-AGV  567      10.44.30.34   Up 59d:6h:31m:36s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a0:da  CNQQKWD2B2  N/A   N/A   N/A       
+DAY-H-IDF14-053  DAY-Hub-AGV  567      10.44.30.90   Up 59d:6h:31m:41s  2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a7:d0  CNQQKWD2P7  N/A   N/A   N/A       
+DAY-H-IDF14-054  DAY-Hub-AGV  567      10.44.30.95   Up 59d:6h:30m:37s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a1:fc  CNQQKWD2FY  N/A   N/A   N/A       
+DAY-H-IDF14-055  DAY-Hub-AGV  567      10.44.30.93   Up 59d:6h:31m:55s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c1:a2:d8  CNQQKWD2FT  N/A   N/A   N/A       
+DAY-H-IDF14-061  DAY-Hub-AGV  514      10.44.30.91   Up 59d:6h:31m:59s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:be:2e  PHS2KD0061  N/A   N/A   N/A       
+DAY-H-IDF14-062  DAY-Hub-AGV  514      10.44.30.92   Up 59d:6h:30m:17s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:c1:4e  PHS2KD005R  N/A   N/A   N/A       
+DAY-H-IDF14-066  DAY-Hub-AGV  514      10.44.30.94   Up 59d:6h:30m:22s  2      10.44.30.6  10.44.30.8  50:e4:e0:c3:c0:96  PHS2KD005Z  N/A   N/A   N/A       
+DAY-H-IDF14-067  DAY-Hub-AGV  567      10.44.30.89   Up 59d:6h:32m:5s   2      10.44.30.6  10.44.30.8  50:e4:e0:c1:a1:fe  CNQQKWD26B  N/A   N/A   N/A       
+DAY-H-IDF14-068  DAY-Hub-AGV  514      10.44.30.96   Up 59d:6h:30m:54s  2S     10.44.30.8  10.44.30.6  50:e4:e0:c3:bb:6c  PHS2KD00DM  N/A   N/A   N/A       
+DAY-H-MDF-052    DAY-OFFICE   515      10.44.30.127  Up 59d:6h:33m:34s  2      10.44.30.6  10.44.30.8  68:28:cf:cb:9a:b4  PHQGLBN7DD  N/A   N/A   N/A       
+
+Flags: 1 = 802.1x authenticated AP use EAP-PEAP;   1+ = 802.1x use EST;    1- = 802.1x use factory cert
+       2 = Using IKE version 2;                    4 = WiFi Uplink
+       B = Built-in AP;                            C = Cellular RAP;       D = Dirty or no config
+       E = Regulatory Domain Mismatch;             F = AP failed 802.1x authentication
+       G = No such group;        I = Inactive;     J = USB cert at AP;     L = Unlicensed
+       M = Mesh node
+       N = Duplicate name;       P = PPPoe AP;     R = Remote AP;          R- = Remote AP requires Auth
+       S = Standby-mode AP;      T = Thermal ShutDown;    U = Unprovisioned;    X = Maintenance Mode
+       Y = Mesh Recovery
+       b = bypass of AP1x timeout;    c = CERT-based RAP;    e = Custom EST cert;    f = No Spectrum FFT support
+       i = Indoor;                    o = Outdoor;           l = LAG 802.3ad;        m = Protocol Mismatch
+       p = In deep-sleep status;      r = Power Restricted;  s = LACP striping;      t = Temperature Restricted
+       u = Custom-Cert RAP;           z = Datazone AP
+
+Total APs:106
+(DAY-HUB-WLC1) #show ap lldp neighbors 
+
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+DAY-H-IDF06-048  bond0      0         DAY-IDF6-SW1.traderjoes.com   Te1/0/42  AP         10.44.1.16     B
+DAY-H-IDF06-049  bond0      0         DAY-IDF6-SW1.traderjoes.com   Te1/0/41  AP         10.44.1.16     B
+DAY-H-IDF06-041  bond0      0         DAY-IDF6-SW1.traderjoes.com   Te2/0/46  AP         10.44.1.16     B
+DAY-H-IDF09-070  bond0      0         DAY-IDF9-SW1.traderjoes.com   Te1/0/46  AP         10.44.1.19     B
+DAY-H-IDF14-067  bond0      0         DAY-IDF14-SW1.traderjoes.com  Te1/0/41  AP         10.44.1.24     B
+DAY-H-IDF02-026  bond0      0         DAY-IDF2-SW1.traderjoes.com   Te1/0/45  AP         10.44.1.12     B
+DAY-H-IDF14-050  bond0      0         DAY-IDF2-SW1.traderjoes.com   Te2/0/41  AP         10.44.1.12     B
+DAY-H-IDF10-099  bond0      0         DAY-IDF10-SW1.traderjoes.com  Te2/0/44  AP         10.44.1.20     B
+DAY-H-IDF03-003  bond0      0         DAY-IDF3-SW1.traderjoes.com   Te1/0/45  AP         10.44.1.13     B
+DAY-H-IDF12-106  bond0      0         DAY-IDF5-SW1.traderjoes.com   Te2/0/46  AP         10.44.1.15     B
+DAY-H-IDF12-006  bond0      0         DAY-IDF12-SW1.traderjoes.com  Fi1/0/40  AP         10.44.1.22     B
+DAY-H-IDF14-053  bond0      0         DAY-IDF14-SW1.traderjoes.com  Te1/0/46  AP         10.44.1.24     B
+DAY-H-IDF13-074  bond0      0         DAY-IDF13-SW1.traderjoes.com  Te1/0/45  AP         10.44.1.23     B
+DAY-H-IDF09-077  bond0      0         DAY-IDF9-SW1.traderjoes.com   Te2/0/45  AP         10.44.1.19     B
+DAY-H-IDF12-098  bond0      0         DAY-IDF12-SW1.traderjoes.com  Te1/0/42  AP         10.44.1.22     B
+DAY-H-IDF12-097  bond0      0         DAY-IDF12-SW1.traderjoes.com  Te2/0/41  AP         10.44.1.22     B
+DAY-H-IDF13-073  bond0      0         DAY-IDF13-SW1.traderjoes.com  Te2/0/46  AP         10.44.1.23     B
+
+Capability codes: (R)Router, (B)Bridge, (A)Access Point, (P)Phone, (O)Other
+
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+DAY-H-IDF12-081  bond0      0         DAY-IDF12-SW1.traderjoes.com  Te2/0/45  AP         10.44.1.22     B
+DAY-H-IDF06-035  bond0      0         DAY-IDF6-SW1.traderjoes.com   Te1/0/45  AP         10.44.1.16     B
+DAY-H-IDF05-013  bond0      0         DAY-IDF5-SW1.traderjoes.com   Te1/0/43  AP         10.44.1.15     B
+DAY-H-IDF10-103  bond0      0         DAY-IDF10-SW1.traderjoes.com  Fi1/0/40  AP         10.44.1.20     B
+DAY-H-IDF06-042  eth0       0         DAY-IDF6-SW1.traderjoes.com   Te1/0/44  AP         10.44.1.16     B
+DAY-H-IDF09-078  eth0       0         DAY-IDF9-SW1.traderjoes.com   Te1/0/44  AP         10.44.1.19     B
+DAY-H-IDF12-105  eth0       0         DAY-IDF12-SW1.traderjoes.com  Fi2/0/40  AP         10.44.1.22     B
+DAY-H-IDF12-080  eth0       0         DAY-IDF12-SW1.traderjoes.com  Te2/0/46  AP         10.44.1.22     B
+DAY-H-IDF10-084  eth0       0         DAY-IDF10-SW1.traderjoes.com  Te1/0/46  AP         10.44.1.20     B
+DAY-H-IDF05-017  eth0       0         DAY-IDF5-SW1.traderjoes.com   Te2/0/44  AP         10.44.1.15     B
+DAY-H-IDF13-075  eth0       0         DAY-IDF13-SW1.traderjoes.com  Te1/0/44  AP         10.44.1.23     B
+
+Capability codes: (R)Router, (B)Bridge, (A)Access Point, (P)Phone, (O)Other
+
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+DAY-H-IDF02-044  eth0       0         DAY-IDF2-SW1.traderjoes.com   Te2/0/42  AP         10.44.1.12     B
+DAY-H-IDF08-063  eth0       0         DAY-IDF8-SW1.traderjoes.com   Te1/0/43  AP         10.44.1.18     B
+DAY-H-IDF10-094  eth0       0         DAY-IDF10-SW1.traderjoes.com  Te2/0/43  AP         10.44.1.20     B
+DAY-H-IDF02-031  eth0       0         DAY-IDF2-SW1.traderjoes.com   Te2/0/45  AP         10.44.1.12     B
+DAY-H-IDF10-092  eth0       0         DAY-IDF10-SW1.traderjoes.com  Te1/0/44  AP         10.44.1.20     B
+DAY-H-IDF05-024  eth0       0         DAY-IDF5-SW1.traderjoes.com   Fi1/0/39  AP         10.44.1.15     B
+DAY-H-IDF03-020  eth0       0         DAY-IDF3-SW1.traderjoes.com   Te1/0/42  AP         10.44.1.13     B
+DAY-H-IDF12-086  eth0       0         DAY-IDF12-SW1.traderjoes.com  Te1/0/44  AP         10.44.1.22     B
+DAY-H-IDF02-025  eth0       0         DAY-IDF2-SW1.traderjoes.com   Te2/0/46  AP         10.44.1.12     B
+DAY-H-IDF06-046  eth0       0         DAY-IDF6-SW1.traderjoes.com   Te1/0/43  AP         10.44.1.16     B
+DAY-H-IDF06-040  eth0       0         DAY-IDF6-SW1.traderjoes.com   Te2/0/44  AP         10.44.1.16     B
+DAY-H-IDF05-011  eth0       0         DAY-IDF5-SW1.traderjoes.com   Te1/0/44  AP         10.44.1.15     B
+DAY-H-IDF12-090  eth0       0         DAY-IDF12-SW1.traderjoes.com  Te2/0/43  AP         10.44.1.22     B
+DAY-H-IDF05-030  eth0       0         DAY-IDF5-SW1.traderjoes.com   Fi1/0/37  AP         10.44.1.15     B
+DAY-H-IDF10-087  eth0       0         DAY-IDF10-SW1.traderjoes.com  Te2/0/46  AP         10.44.1.20     B
+DAY-H-IDF14-066  eth0       0         DAY-IDF14-SW1.traderjoes.com  Te2/0/43  AP         10.44.1.24     B
+DAY-H-IDF02-037  eth0       0         DAY-IDF2-SW1.traderjoes.com   Te2/0/44  AP         10.44.1.12     B
+DAY-H-IDF02-033  eth0       0         DAY-IDF2-SW1.traderjoes.com   Te1/0/42  AP         10.44.1.12     B
+DAY-H-IDF12-079  eth0       0         DAY-IDF12-SW1.traderjoes.com  Te1/0/46  AP         10.44.1.22     B
+
+Capability codes: (R)Router, (B)Bridge, (A)Access Point, (P)Phone, (O)Other
+
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+DAY-H-IDF05-014  eth0       0         DAY-IDF5-SW1.traderjoes.com   Te1/0/42  AP         10.44.1.15     B
+DAY-H-IDF06-043  eth0       0         DAY-IDF6-SW1.traderjoes.com   Te2/0/43  AP         10.44.1.16     B
+DAY-H-IDF14-062  eth0       0         DAY-IDF14-SW1.traderjoes.com  Te2/0/45  AP         10.44.1.24     B
+DAY-H-IDF04-005  eth0       0         DAY-IDF4-SW1.traderjoes.com   Te1/0/46  AP         10.44.1.14     B
+DAY-H-MDF-052    eth0       0         DAY-MDF-SW1.traderjoes.com    Fi4/0/36  AP         10.44.1.8      B
+
+Capability codes: (R)Router, (B)Bridge, (A)Access Point, (P)Phone, (O)Other
+(DAY-HUB-WLC1) #  
+
+(DAY-HUB-WLC1) #encrypt disable 
+(DAY-HUB-WLC1) #show running-config 
+Building Configuration...
+ 
+version 8.10
+hostname "DAY-HUB-WLC1" 
+clock timezone America/New_York -04 0 
+!
+conductorip 10.242.143.22 ipsec aruba123 interface vlan 30 
+secondary conductorip 10.246.143.22 ipsec aruba123 interface vlan 30 
+location "Building1.floor1" 
+controller config 2317
+crypto-local pki PublicCert master-ssh-pub-cert master-ssh-pub-cert 
+ip nat pool dynamic-srcnat 0.0.0.0 0.0.0.0 
+ip nat pool localip 0.0.0.0 0.0.0.0 
+ip access-list eth validuserethacl 
+    permit any 
+!
+ip access-list geolocation global-geolocation-acl 
+!
+netservice svc-snmp-trap udp 162 
+netservice svc-netbios-dgm udp 138 
+netservice svc-pcoip2-tcp tcp 4172 
+netservice svc-facetime-tcp tcp 5223 ALG facetime 
+netservice svc-https tcp 443 
+netservice svc-dhcp udp 67 68 ALG dhcp 
+netservice svc-ike udp 500                         
+netservice svc-smb-tcp tcp 445 
+netservice svc-l2tp udp 1701 
+netservice svc-citrix tcp 2598 
+netservice svc-syslog udp 514 
+netservice svc-ica tcp 1494 
+netservice svc-pptp tcp 1723 
+netservice svc-telnet tcp 23 
+netservice svc-sccp tcp 2000 ALG sccp 
+netservice svc-sec-papi udp 8209 
+netservice svc-tftp udp 69 ALG tftp 
+netservice svc-sip-tcp tcp 5060 ALG sip 
+netservice svc-lpd tcp 515 
+netservice svc-web tcp list "80 443" 
+netservice svc-kerberos udp 88 
+netservice svc-netbios-ssn tcp 139 
+netservice svc-pcoip-udp udp 50002 
+netservice svc-pop3 tcp 110 
+netservice svc-pcoip-tcp tcp 50002 
+netservice svc-http-proxy3 tcp 8888 
+netservice svc-adp udp 8200 
+netservice svc-cfgm-tcp tcp 8211 
+netservice svc-noe udp 32512 ALG noe 
+netservice svc-dns udp 53 ALG dns                  
+netservice svc-rtsp tcp 554 ALG rtsp 
+netservice svc-msrpc-tcp tcp 135 139 
+netservice svc-h323-tcp tcp 1720 ALG h323 
+netservice svc-vocera udp 5002 ALG vocera 
+netservice svc-http tcp 80 
+netservice svc-h323-udp udp 1718 1719 ALG h323 
+netservice vnc tcp 5900 5905 
+netservice svc-nterm tcp 1026 1028 
+netservice svc-http-proxy2 tcp 8080 
+netservice svc-sip-udp udp 5060 ALG sip 
+netservice svc-noe-oxo udp 5000 ALG noe 
+netservice svc-papi udp 8211 
+netservice svc-natt udp 4500 
+netservice svc-ftp tcp 21 ALG ftp 
+netservice svc-svp 119 ALG svp 
+netservice svc-microsoft-ds tcp 445 
+netservice svc-gre 47 
+netservice svc-smtp tcp 25 
+netservice svc-sips tcp 5061 ALG sips 
+netservice svc-netbios-ns udp 137 
+netservice svc-smb-udp udp 445 
+netservice svc-esp 50 
+netservice svc-ipp-tcp tcp 631                     
+netservice svc-pcoip2-udp udp 4172 
+netservice svc-snmp udp 161 
+netservice svc-bootp udp 67 69 
+netservice svc-v6-dhcp udp 546 547 
+netservice svc-icmp 1 
+netservice svc-ntp udp 123 
+netservice svc-msrpc-udp udp 135 139 
+netservice svc-ssh tcp 22 
+netservice svc-ipp-udp udp 631 
+netservice svc-http-proxy1 tcp 3128 
+netservice svc-v6-icmp 58 
+netservice svc-vmware-rdp tcp 3389 
+netdestination6 ipv6-reserved-range 
+    invert 
+    network 2000::/3 
+!
+netdestination wificalling-block 
+    name pub.3gppnetwork.org 
+    name vowifi.com 
+!
+netexthdr default 
+!
+time-range periodic night-hours                    
+    Weekday 18:01 to 23:59 
+    Weekday 00:00 to 07:59 
+!
+time-range periodic working-hours 
+    Weekday 08:00 to 18:00 
+!
+ip access-list session control 
+    user any udp 68 deny 
+    any any svc-icmp permit 
+    any any svc-dns permit 
+    any any svc-papi permit 
+    any any svc-sec-papi permit 
+    any any svc-cfgm-tcp permit 
+    any any svc-adp permit 
+    any any svc-tftp permit 
+    any any svc-dhcp permit 
+    any any svc-natt permit 
+    any any tcp 6633 permit 
+!
+ip access-list session v6-icmp-acl 
+    ipv6 any any svc-v6-icmp permit 
+!
+ip access-list session allow-diskservices          
+    any any svc-netbios-dgm permit 
+    any any svc-netbios-ssn permit 
+    any any svc-microsoft-ds permit 
+    any any svc-netbios-ns permit 
+!
+ip access-list session apprf-wcd_scanner-sacl 
+!
+ip access-list session ap-role 
+    network 10.48.8.0 255.255.255.0 network 10.49.10.0 255.255.255.0 tcp 3389 permit 
+!
+ip access-list session validuser 
+    network 127.0.0.0 255.0.0.0 any any deny 
+    network 169.254.0.0 255.255.0.0 any any deny 
+    network 224.0.0.0 240.0.0.0 any any deny 
+    host 255.255.255.255 any any deny 
+    network 240.0.0.0 240.0.0.0 any any deny 
+    any any any permit 
+    ipv6 host fe80:: any any deny 
+    ipv6 network fc00::/7 any any permit 
+    ipv6 network fe80::/64 any any permit 
+    ipv6 alias ipv6-reserved-range any any deny 
+    ipv6 any any any permit                        
+!
+ip access-list session vocera-acl 
+    any any svc-vocera permit queue high 
+!
+ip access-list session v6-https-acl 
+    ipv6 any any svc-https permit 
+!
+ip access-list session voip-applications-acl 
+    any any app alg-skype4b-audio permit 
+    any any app alg-skype4b-video permit 
+    any any app alg-skype4b-desktop-sharing permit 
+    any any app alg-skype4b-app-sharing permit 
+    any any app alg-sip-audio permit 
+    any any app alg-sip-video permit 
+    any any app alg-sccp permit 
+    any any app alg-vocera permit 
+    any any app alg-noe permit 
+    any any app alg-h323 permit 
+    any any app alg-jabber-audio permit 
+    any any app alg-jabber-video permit 
+    any any app alg-jabber-desktop-sharing permit 
+    any any app alg-facetime permit 
+    any any app alg-wifi-calling permit            
+    any any app alg-teams-audio permit 
+    any any app alg-teams-video permit 
+    any any app alg-webrtc-audio permit 
+    any any app alg-webrtc-video permit 
+    any any app alg-rtp permit 
+!
+ip access-list session apprf-wcd_printer-sacl 
+!
+ip access-list session vmware-acl 
+    any any svc-vmware-rdp permit tos 46 dot1p-priority 6 
+    any any svc-pcoip-tcp permit tos 46 dot1p-priority 6 
+    any any svc-pcoip-udp permit tos 46 dot1p-priority 6 
+    any any svc-pcoip2-tcp permit tos 46 dot1p-priority 6 
+    any any svc-pcoip2-udp permit tos 46 dot1p-priority 6 
+!
+ip access-list session icmp-acl 
+    any any svc-icmp permit 
+!
+ip access-list session apprf-default-vpn-role-sacl 
+!
+ip access-list session apprf-logon-sacl 
+!
+ip access-list session v6-control                  
+    ipv6 user any udp 546 deny 
+    ipv6 any any svc-v6-icmp permit 
+    ipv6 any any svc-dns permit 
+    ipv6 any any svc-papi permit 
+    ipv6 any any svc-sec-papi permit 
+    ipv6 any any svc-cfgm-tcp permit 
+    ipv6 any any svc-adp permit 
+    ipv6 any any svc-tftp permit 
+    ipv6 any any svc-v6-dhcp permit 
+    ipv6 any any svc-natt permit 
+    ipv6 any any svc-dhcp permit 
+!
+ip access-list session jabber-acl 
+    any any tcp 5222 permit 
+    any any tcp 8443 permit 
+!
+ip access-list session apprf-authenticated-sacl 
+!
+ip access-list session apprf-switch-logon-sacl 
+!
+ip access-list session apprf-stateful-dot1x-sacl 
+!
+ip access-list session v6-dhcp-acl                 
+    ipv6 any any svc-v6-dhcp permit 
+!
+ip access-list session captiveportal 
+    user alias controller svc-https dst-nat 8081 
+    user any svc-http dst-nat 8080 
+    user any svc-https dst-nat 8081 
+    user any svc-http-proxy1 dst-nat 8088 
+    user any svc-http-proxy2 dst-nat 8088 
+    user any svc-http-proxy3 dst-nat 8088 
+!
+ip access-list session wificalling-acl 
+    any any tcp 443 permit 
+!
+ip access-list session apprf-wcd_pc-sacl 
+!
+ip access-list session apprf-wcd_pi-sacl 
+!
+ip access-list session allowall 
+    any any any permit 
+    ipv6 any any any permit 
+!
+ip access-list session v6-dns-acl 
+    ipv6 any any svc-dns permit                    
+!
+ip access-list session apprf-tj_printer-sacl 
+!
+ip access-list session facetime-acl 
+    any any svc-facetime-tcp permit queue high 
+    any any udp 3478 3497 permit 
+    any any udp 16384 16387 permit 
+    any any udp 16393 16402 permit 
+!
+ip access-list session apprf-voice-sacl 
+!
+ip access-list session skype4b-acl 
+    any any svc-sips permit 
+    any any svc-https permit 
+!
+ip access-list session captiveportalbridge 
+    user alias localip svc-https dual-nat pool localip 8081 
+    user any svc-http dual-nat pool localip 8080 
+    user any svc-https dual-nat pool localip 8081 
+    user any svc-http-proxy1 dual-nat pool localip 8088 
+    user any svc-http-proxy2 dual-nat pool localip 8088 
+    user any svc-http-proxy3 dual-nat pool localip 8088 
+!                                                  
+ip access-list session wan-uplink-protect-acl 
+    any any sys-svc-v6-dhcp permit 
+    any any sys-svc-esp permit 
+    any any sys-svc-natt permit 
+    any any sys-svc-ike permit 
+    any any sys-svc-icmp permit 
+    any any sys-svc-icmp6 permit 
+    ipv6 any any sys-svc-v6-dhcp permit 
+    any any sys-svc-dhcp permit 
+    ipv6 any any sys-svc-icmp6 permit 
+!
+ip access-list session apprf-tj_iot-sacl 
+!
+ip access-list session apprf-tj_machine-sacl 
+!
+ip access-list session sip-acl 
+    any any svc-sip-udp permit queue high 
+    any any svc-sip-tcp permit queue high 
+!
+ip access-list session https-acl 
+    any any svc-https permit 
+!
+ip access-list session apprf-wcd_talkman-sacl      
+!
+ip access-list session apprf-wcd_mobile-sacl 
+!
+ip access-list session citrix-acl 
+    any any svc-citrix permit tos 46 dot1p-priority 6 
+    any any svc-ica permit tos 46 dot1p-priority 6 
+!
+ip access-list session ra-guard 
+    ipv6 user any icmpv6 rtr-adv deny 
+!
+ip access-list session dns-acl 
+    any any svc-dns permit 
+!
+ip access-list session allow-printservices 
+    any any svc-lpd permit 
+    any any svc-ipp-tcp permit 
+    any any svc-ipp-udp permit 
+!
+ip access-list session skinny-acl 
+    any any svc-sccp permit queue high 
+!
+ip access-list session logon-control 
+    user any udp 68 deny                           
+    any any svc-icmp permit 
+    any any svc-dns permit 
+    any any svc-dhcp permit 
+    any any svc-natt permit 
+    any network 169.254.0.0 255.255.0.0 any deny 
+    any network 240.0.0.0 240.0.0.0 any deny 
+!
+ip access-list session v6-allowall 
+    ipv6 any any any permit 
+!
+ip access-list session tftp-acl 
+    any any svc-tftp permit 
+!
+ip access-list session vpnlogon 
+    user any svc-ike permit 
+    user any svc-esp permit 
+    any any svc-l2tp permit 
+    any any svc-pptp permit 
+    any any svc-gre permit 
+!
+ip access-list session srcnat 
+    user any any src-nat 
+!                                                  
+ip access-list session wificalling-block 
+    any alias wificalling-block any deny 
+!
+ip access-list session apprf-wcd_agv-sacl 
+!
+ip access-list session cplogout 
+    user alias controller svc-https dst-nat 8081 
+!
+ip access-list session captiveportal6 
+    ipv6 user alias controller6 svc-https captive 
+    ipv6 user any svc-http captive 
+    ipv6 user any svc-https captive 
+    ipv6 user any svc-http-proxy1 captive 
+    ipv6 user any svc-http-proxy2 captive 
+    ipv6 user any svc-http-proxy3 captive 
+!
+ip access-list session http-acl 
+    any any svc-http permit 
+!
+ip access-list session apprf-default-via-role-sacl 
+!
+ip access-list session dhcp-acl 
+    any any svc-dhcp permit                        
+!
+ip access-list session v6-http-acl 
+    ipv6 any any svc-http permit 
+!
+ip access-list session stateful-dot1x 
+    any any svc-dns permit 
+    any any svc-dhcp permit 
+!
+ip access-list session apprf-ap-role-sacl 
+!
+ip access-list session apprf-guest-sacl 
+!
+ip access-list session ap-uplink-acl 
+    any any udp 68 permit 
+    any any svc-icmp permit 
+    any host 224.0.0.251 udp 5353 permit 
+    ipv6 any any udp 546 permit 
+    ipv6 any any svc-v6-icmp permit 
+    ipv6 any host ff02::fb udp 5353 permit 
+!
+ip access-list session apprf-guest-logon-sacl 
+!
+ip access-list session noe-acl                     
+    any any svc-noe permit queue high 
+!
+ip access-list session ap-acl 
+    any any svc-gre permit 
+    any any svc-syslog permit 
+    any user svc-snmp permit 
+    user any svc-snmp-trap permit 
+    user any svc-ntp permit 
+    user any svc-ftp permit 
+    user any svc-telnet deny 
+!
+ip access-list session logon-control-bridge 
+    user any udp 68 deny 
+    any any svc-icmp src-nat 
+    any any svc-dns src-nat 
+    any any svc-dhcp permit 
+    any network 169.254.0.0 255.255.0.0 any deny 
+    any network 240.0.0.0 240.0.0.0 any deny 
+!
+ip access-list session svp-acl 
+    any any svc-svp permit queue high 
+    user host 224.0.1.116 any permit 
+!                                                  
+ip access-list session global-sacl 
+!
+ip access-list session v6-ap-acl 
+    ipv6 any any svc-gre permit 
+    ipv6 any any svc-syslog permit 
+    ipv6 any user svc-snmp permit 
+    ipv6 user any svc-snmp-trap permit 
+    ipv6 user any svc-ntp permit 
+    ipv6 user any svc-ftp permit 
+!
+ip access-list session apprf-sys-switch-role-sacl 
+!
+ip access-list session h323-acl 
+    any any svc-h323-tcp permit queue high 
+    any any svc-h323-udp permit queue high 
+!
+ip access-list session v6-logon-control 
+    ipv6 user any udp 546 deny 
+    ipv6 any any svc-v6-icmp permit 
+    ipv6 any any svc-v6-dhcp permit 
+    ipv6 any any svc-dns permit 
+    ipv6 any network fc00::/7 any permit 
+    ipv6 any network fe80::/64 any permit          
+    ipv6 any alias ipv6-reserved-range any deny 
+!
+ip access-list session apprf-sys-ap-role-sacl 
+!
+ip access-list route uplink-lb-cfg-racl 
+!
+ip access-list route master-boc-traffic 
+!
+vpn-dialer default-dialer 
+    ike authentication pre-share changeme 
+!
+user-role ap-role 
+    no openflow-enable 
+    access-list session ra-guard 
+    access-list session control 
+    access-list session ap-acl 
+    access-list session v6-control 
+    access-list session v6-ap-acl 
+!
+user-role TJ_Machine 
+    access-list session global-sacl 
+    access-list session apprf-tj_machine-sacl 
+    access-list session allowall                   
+!
+user-role WCD_Printer 
+    access-list session global-sacl 
+    access-list session apprf-wcd_printer-sacl 
+    access-list session allowall 
+!
+user-role denyall 
+!
+user-role TJ_IOT 
+    access-list session global-sacl 
+    access-list session apprf-tj_iot-sacl 
+    access-list session allowall 
+!
+user-role TJ_Printer 
+    access-list session global-sacl 
+    access-list session apprf-tj_printer-sacl 
+    access-list session allowall 
+!
+user-role default-vpn-role 
+    access-list session global-sacl 
+    access-list session apprf-default-vpn-role-sacl 
+    access-list session ra-guard 
+    access-list session allowall                   
+    access-list session v6-allowall 
+!
+user-role WCD_PC 
+    access-list session global-sacl 
+    access-list session apprf-wcd_pc-sacl 
+    access-list session allowall 
+!
+user-role WCD_AGV 
+    access-list session global-sacl 
+    access-list session apprf-wcd_agv-sacl 
+    access-list session allowall 
+!
+user-role sys-switch-role 
+!
+user-role sys-ap-role 
+    no openflow-enable 
+!
+user-role voice 
+    access-list session global-sacl 
+    access-list session apprf-voice-sacl 
+    access-list session ra-guard 
+    access-list session sip-acl 
+    access-list session noe-acl                    
+    access-list session svp-acl 
+    access-list session vocera-acl 
+    access-list session skinny-acl 
+    access-list session h323-acl 
+    access-list session dhcp-acl 
+    access-list session tftp-acl 
+    access-list session dns-acl 
+    access-list session icmp-acl 
+    access-list session http-acl 
+    access-list session https-acl 
+    access-list session skype4b-acl 
+    access-list session facetime-acl 
+    access-list session jabber-acl 
+    access-list session wificalling-acl 
+    access-list session voip-applications-acl 
+!
+user-role WCD_Talkman 
+    access-list session global-sacl 
+    access-list session apprf-wcd_talkman-sacl 
+    access-list session allowall 
+!
+user-role default-via-role 
+    access-list session global-sacl                
+    access-list session apprf-default-via-role-sacl 
+    access-list session allowall 
+    access-list session v6-allowall 
+!
+user-role switch-logon 
+!
+user-role guest-logon 
+    captive-portal "default" 
+    access-list session ra-guard 
+    access-list session logon-control 
+    access-list session captiveportal 
+    access-list session v6-logon-control 
+    access-list session captiveportal6 
+!
+user-role guest 
+    access-list session global-sacl 
+    access-list session apprf-guest-sacl 
+    access-list session ra-guard 
+    access-list session http-acl 
+    access-list session https-acl 
+    access-list session dhcp-acl 
+    access-list session icmp-acl 
+    access-list session dns-acl                    
+    access-list session v6-http-acl 
+    access-list session v6-https-acl 
+    access-list session v6-dhcp-acl 
+    access-list session v6-icmp-acl 
+    access-list session v6-dns-acl 
+!
+user-role stateful-dot1x 
+    access-list session global-sacl 
+    access-list session apprf-stateful-dot1x-sacl 
+!
+user-role authenticated 
+    access-list session global-sacl 
+    access-list session apprf-authenticated-sacl 
+    access-list session ra-guard 
+    access-list session allowall 
+    access-list session v6-allowall 
+!
+user-role WCD_PI 
+    access-list session global-sacl 
+    access-list session apprf-wcd_pi-sacl 
+    access-list session allowall 
+!
+user-role default-iap-user-role                    
+    access-list session allowall 
+!
+user-role logon 
+    access-list session ra-guard 
+    access-list session logon-control 
+    access-list session captiveportal 
+    access-list session vpnlogon 
+    access-list session v6-logon-control 
+    access-list session captiveportal6 
+!
+user-role WCD_Mobile 
+    access-list session global-sacl 
+    access-list session apprf-wcd_mobile-sacl 
+    access-list session allowall 
+!
+user-role WCD_Scanner 
+    access-list session global-sacl 
+    access-list session apprf-wcd_scanner-sacl 
+    access-list session allowall 
+!
+!
+aaa tacacs-accounting 
+                                                   
+
+controller-ip vlan 30 
+datapath energy-efficiency 
+kernel coredump 
+no kernel printk 
+interface mgmt 
+    shutdown 
+!
+
+vlan 1 
+!
+vlan 6 
+!
+vlan 10 
+!
+vlan 12 
+!
+vlan 17 
+!
+vlan 23 
+!
+vlan 24 
+!                                                  
+vlan 30 
+!
+vlan 42 
+!
+
+vlan-name DAYAGV 
+vlan DAYAGV 6 
+vlan-name DAYKIT 
+vlan DAYKIT 24 
+vlan-name DAYRF 
+vlan DAYRF 42 
+vlan-name DAYTJ 
+vlan DAYTJ 17 
+vlan-name DAYTM 
+vlan DAYTM 12 
+vlan-name DAYWCD 
+vlan DAYWCD 10 
+vlan-name MGMT 
+vlan MGMT 30 
+vlan-name WCD_PI 
+vlan WCD_PI 23 
+
+                                                   
+interface gigabitethernet 0/0/0 
+    trusted 
+    trusted vlan 1-4094 
+    no poe 
+    switchport mode trunk 
+    switchport trunk native vlan 1 
+    switchport trunk allowed vlan 1-4094 
+    no spanning-tree 
+!
+
+interface gigabitethernet 0/0/1 
+    shutdown 
+    no poe 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+    no spanning-tree 
+!
+
+interface gigabitethernet 0/0/2 
+    shutdown 
+    no poe 
+    switchport mode access                         
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+    no spanning-tree 
+!
+
+interface port-channel 0 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+!
+
+interface port-channel 1 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+!
+
+interface port-channel 2 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+!
+                                                   
+interface port-channel 3 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+!
+
+interface port-channel 4 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+!
+
+interface port-channel 5 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+!
+
+interface port-channel 6 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+!                                                  
+
+interface port-channel 7 
+    switchport mode access 
+    switchport access vlan 1 
+    switchport trunk allowed vlan 1-4094 
+!
+
+interface vlan 30 
+    ip address 10.44.30.6 255.255.254.0 
+!
+
+interface vlan 1 
+!
+
+!
+uplink health-check 
+!
+ip default-gateway 10.44.30.1 
+ip nexthop-list load-balance-gateways 
+!
+ip nexthop-list load-balance-ipsecs 
+!
+ip nexthop-list traditional-ipsecs                 
+!
+
+crypto isakmp policy 20 
+    encryption AES256 
+    authentication pre-share 
+!
+
+crypto isakmp policy 10001 
+    authentication pre-share 
+!
+
+crypto isakmp policy 10002 
+    encryption AES256 
+    authentication rsa-sig 
+!
+
+crypto isakmp policy 10003 
+    encryption AES256 
+    authentication pre-share 
+!
+
+crypto isakmp policy 10004 
+    version v2                                     
+    encryption AES256 
+    authentication rsa-sig 
+!
+
+crypto isakmp policy 10005 
+    encryption AES256 
+    authentication pre-share 
+!
+
+crypto isakmp policy 10006 
+    version v2 
+    encryption AES128 
+    authentication rsa-sig 
+!
+
+crypto isakmp policy 10007 
+    version v2 
+    encryption AES128 
+    authentication pre-share 
+!
+
+crypto isakmp policy 10008 
+    version v2                                     
+    encryption AES128 
+    hash sha2-256-128 
+    group 19 
+    authentication ecdsa-256 
+    prf PRF-HMAC-SHA256 
+!
+
+crypto isakmp policy 10009 
+    version v2 
+    encryption AES256 
+    hash sha2-384-192 
+    group 20 
+    authentication ecdsa-384 
+    prf PRF-HMAC-SHA384 
+!
+
+crypto isakmp policy 10012 
+    version v2 
+    encryption AES256 
+    authentication rsa-sig 
+!
+
+crypto isakmp policy 10013                         
+    encryption AES256 
+    authentication pre-share 
+!
+
+crypto isakmp policy 10014 
+    version v2 
+    encryption AES256 
+    hash sha2-256-128 
+    group 14 
+    authentication pre-share 
+    prf PRF-HMAC-SHA256 
+!
+
+crypto isakmp policy 10015 
+    version v2 
+    encryption AES128 
+    hash sha2-256-128 
+    group 14 
+    authentication rsa-sig 
+    prf PRF-HMAC-SHA256 
+!
+
+crypto ipsec transform-set default-ha-transform esp-3des esp-sha-hmac 
+crypto ipsec transform-set default-boc-bm-transform esp-aes256 esp-sha-hmac 
+crypto ipsec transform-set default-1st-ikev2-transform esp-aes256 esp-sha-hmac 
+crypto ipsec transform-set default-3rd-ikev2-transform esp-aes128 esp-sha-hmac 
+crypto ipsec transform-set default-rap-transform esp-aes256 esp-sha-hmac 
+crypto ipsec transform-set default-aes esp-aes256 esp-sha-hmac 
+crypto dynamic-map default-rap-ipsecmap 10001 
+    version v2 
+    set transform-set "default-gcm256" "default-gcm128" "default-rap-transform" 
+!
+
+crypto dynamic-map default-rap-ipsecmap-gcm 10001 
+    version v2 
+    set transform-set "default-gcm256" "default-gcm128" 
+!
+
+crypto dynamic-map default-rap-ipsecmap-aes 10001 
+    version v2 
+    set transform-set "default-rap-transform" 
+!
+
+crypto dynamic-map default-dynamicmap 10000 
+    set transform-set "default-transform" "default-aes" 
+!
+
+crypto map GLOBAL-IKEV2-MAP 10000 ipsec-isakmp dynamic default-rap-ipsecmap 
+crypto map GLOBAL-MAP 10000 ipsec-isakmp dynamic default-dynamicmap 
+crypto-local ipsec-map default-ha-ipsecmap10.44.30.8 9999
+    version v2
+    set ikev2-policy 10015
+    peer-ip 10.44.30.8
+    src-net 10.44.30.6 255.255.255.255
+    dst-net 10.44.30.8 255.255.255.255
+    set transform-set "default-ha-transform" 
+    factory-cert-auth
+    trusted
+!
+
+crypto isakmp eap-passthrough eap-tls 
+crypto isakmp eap-passthrough eap-peap 
+crypto isakmp eap-passthrough eap-mschapv2 
+
+vpdn group l2tp 
+    no ppp authentication PAP 
+!
+                                                   
+ip dynamic-dns interval 900 
+  
+  
+  
+  
+
+
+
+snmp-server community "TrAdEr" 
+snmp-server community "TrAdErrw" 
+snmp-server user "tjoes-snmp" auth-prot sha TJOq5tDHcPH3pRkR priv-prot AES TJOAjmRk5zscrDYV 
+vpdn group pptp 
+!
+
+tunneled-node-address 0.0.0.0 
+
+adp discovery enable
+adp igmp-join enable
+adp igmp-vlan-id 0
+
+ap flush-r1-on-new-r0 disable
+amon msg-buffer-size 1264                          
+amon udp 0
+mgmt-server primary-server 10.246.143.23 profile default-amp transport udp 
+mgmt-server primary-server conductor profile default-controller transport udp 
+
+
+
+no ssh mgmt-auth public-key 
+ssh mgmt-auth username/password 
+mgmt-user admin root ******************** 
+mgmt-user jay root ******************** 
+mgmt-user tjoes-local root ******************** 
+mgmt-user ssh-pubkey client-cert master-ssh-pub-cert seamless-logon read-only 
+mgmt-user ssh-pubkey client-cert master-ssh-pub-cert seamless-logon-w standard 
+
+ntp 
+
+ntp server lasntp1.traderjoes.com iburst 
+ntp server atlntp1.traderjoes.com iburst 
+
+
+no database synchronize 
+ip mobile domain default 
+!                                                  
+
+ip igmp 
+!
+
+ipv6 mld 
+!
+
+firewall 
+    prohibit-ip-spoofing 
+    attack-rate grat-arp 50 drop 
+    session-idle-timeout 16 
+    cp-bandwidth-contract untrusted-ucast 9765 
+    cp-bandwidth-contract untrusted-mcast 1953 
+    cp-bandwidth-contract trusted-ucast 65535 
+    cp-bandwidth-contract trusted-mcast 1953 
+    cp-bandwidth-contract route 976 
+    cp-bandwidth-contract sessmirr 976 
+    cp-bandwidth-contract vrrp 512 
+    cp-bandwidth-contract arp-traffic 976 
+    cp-bandwidth-contract l2-other 976 
+    cp-bandwidth-contract auth 976 
+    cp-bandwidth-contract ike 1953 
+    cp-bandwidth-contract ippkt-err 128            
+    amsdu 
+wireless-bridge-aging 
+    session-tunnel-fib
+    optimize-dad-frames
+    deny-needfrag-df-ipsec  
+!
+ipv6 firewall 
+    ext-hdr-parse-len 100 
+    dpi-classif-cache  0
+!
+!
+
+!
+cp-bandwidth-contract cpbwc-ipv4-arm pps 48000 
+cp-bandwidth-contract cpbwc-ipv6-arm pps 48000 
+cp-bandwidth-contract cpbwc-ipv4-amp pps 96000 
+cp-bandwidth-contract cpbwc-ipv4-wms-lo pps 48000 
+cp-bandwidth-contract cpbwc-ipv6-amp pps 96000 
+cp-bandwidth-contract cpbwc-ipv6-wms-lo pps 48000 
+
+!
+firewall cp 
+    ipv4 deny any proto 6 ports 1723 1723          
+    ipv4 deny any proto 17 ports 1701 1701 
+    ipv4 permit any proto 6 ports 9190 9190 
+    ipv4 permit any proto 6 ports 2126 2126 
+    ipv6 deny any proto 0 ports 0 65535 
+    ipv6 deny any proto 6 ports 1723 1723 
+    ipv6 deny any proto 17 ports 1701 1701 
+    ipv6 permit any proto 6 ports 9190 9190 
+    ipv6 permit any proto 6 ports 2126 2126 
+    ipv6 permit any proto 6 ports 15260 15260 
+!
+ip domain lookup 
+!
+ip name-server 10.44.22.207 
+!
+country US 
+change-config-node /
+aaa rfc-3576-server "10.232.188.4" 
+    key "r3@LcH0c0L@t315tH3B35t" 
+!
+aaa rfc-3576-server "10.236.188.4" 
+    key "r3@LcH0c0L@t315tH3B35t" 
+!
+aaa authentication mac "CPPM-mac-auth-prof"        
+!
+aaa authentication mac "default" 
+!
+aaa authentication dot1x "DAYKIT_dot1_aut" 
+!
+aaa authentication dot1x "DAYRF_dot1_aut" 
+!
+aaa authentication dot1x "DAYTJ_dot1_aut" 
+!
+aaa authentication dot1x "DAYTM_dot1_aut" 
+!
+aaa authentication dot1x "DAYWCD_dot1_aut" 
+!
+aaa authentication dot1x "default" 
+!
+aaa authentication dot1x "default-psk" 
+!
+aaa authentication dot1x "WCD_AGV_dot1_aut" 
+!
+aaa authentication dot1x "WCD_PI_dot1_aut" 
+!
+aaa authentication via global-config 
+!                                                  
+scheduler-profile "default" 
+    queue-weights q0 0 q1 0 q2 0 q3 0 
+    priority-map q0 "6 7" q1 "4 5" q2 "2 3" q3 "0 1" 
+!
+aaa authentication-server radius "dalnet52.traderjoes.com" 
+    host "10.240.145.252" 
+!
+aaa authentication-server radius "ECPPM" 
+    host "10.232.188.4" 
+    key "r3@LcH0c0L@t315tH3B35t" 
+!
+aaa authentication-server radius "migrated_dalnet52" 
+    host "10.240.145.252" 
+    key "$3sK)Qj7Cw8G" 
+    nas-identifier "dprarubammv1" 
+    nas-ip 10.240.143.22 
+!
+aaa authentication-server radius "migrated_monnet52" 
+    host "192.168.128.152" 
+    key "$3sK)Qj7Cw8G" 
+    nas-identifier "dprarubammv1" 
+    nas-ip 10.240.143.22 
+!                                                  
+aaa authentication-server radius "migrated_tjoes-s-bmn01" 
+    host "10.240.42.29" 
+    key "w39m4TDmQa9tnVSK" 
+    authport 1645 
+    acctport 1645 
+!
+aaa authentication-server radius "monnet52" 
+    host "192.168.128.152" 
+    key "captainJack" 
+!
+aaa authentication-server radius "monnet52.traderjoes.com" 
+    host "192.168.128.152" 
+!
+aaa authentication-server radius "tjoes-s-bmn03" 
+    host "10.246.42.29" 
+    key "w39m4TDmQa9tnVSK" 
+    authport 1645 
+    acctport 1646 
+!
+aaa authentication-server radius "WCPPM" 
+    host "10.236.188.4" 
+    key "r3@LcH0c0L@t315tH3B35t" 
+!                                                  
+aaa server-group "BMNRadius" 
+    auth-server tjoes-s-bmn03 position 1 
+!
+aaa server-group "CPPM-East-preferred-svr-group" 
+    auth-server ECPPM position 1 
+    auth-server WCPPM position 2 
+!
+aaa server-group "CPPM-West-preferred-svr-group" 
+    auth-server WCPPM position 1 
+    auth-server ECPPM position 2 
+!
+aaa server-group "default" 
+    auth-server Internal position 1 
+    set role condition role value-of 
+!
+aaa server-group "internal" 
+    auth-server Internal position 1 
+    set role condition Role value-of 
+!
+aaa server-group "migrated_BMNRadius" 
+    auth-server migrated_tjoes-s-bmn01 position 1 
+!
+aaa server-group "migrated_TJRadius-Servers"       
+    allow-fail-through 
+    load-balance 
+    auth-server migrated_dalnet52 position 1 
+    auth-server migrated_monnet52 position 2 
+!
+aaa server-group "TJRadius-Servers" 
+    auth-server monnet52 position 1 
+!
+aaa profile "DAYKIT_aaa_prof" 
+    initial-role "authenticated" 
+    authentication-dot1x "DAYKIT_dot1_aut" 
+!
+aaa profile "DAYRF_aaa_prof" 
+    initial-role "authenticated" 
+    authentication-dot1x "DAYRF_dot1_aut" 
+!
+aaa profile "DAYTJ_aaa_prof" 
+    initial-role "authenticated" 
+    authentication-dot1x "DAYTJ_dot1_aut" 
+!
+aaa profile "DAYTM_aaa_prof" 
+    initial-role "authenticated" 
+    authentication-dot1x "DAYTM_dot1_aut"          
+!
+aaa profile "DAYWCD_aaa_prof" 
+    initial-role "authenticated" 
+    authentication-dot1x "DAYWCD_dot1_aut" 
+!
+aaa profile "default" 
+!
+aaa profile "default-dot1x" 
+    authentication-dot1x "default" 
+    dot1x-default-role "authenticated" 
+!
+aaa profile "default-dot1x-psk" 
+    authentication-dot1x "default-psk" 
+!
+aaa profile "default-iap-aaa-profile" 
+    initial-role "default-iap-user-role" 
+    no wired-to-wireless-roam 
+    no devtype-classification 
+!
+aaa profile "default-mac-auth" 
+    authentication-mac "default" 
+    mac-default-role "authenticated" 
+!                                                  
+aaa profile "default-open" 
+!
+aaa profile "default-tunneled-user" 
+    initial-role "guest" 
+    no wired-to-wireless-roam 
+    no devtype-classification 
+!
+aaa profile "default-xml-api" 
+!
+aaa profile "NoAuthAAAProfile" 
+!
+aaa profile "RF-psk-CPPM-aaa-prof" 
+    authentication-mac "CPPM-mac-auth-prof" 
+    mac-server-group "CPPM-West-preferred-svr-group" 
+    authentication-dot1x "default-psk" 
+    radius-accounting "CPPM-West-preferred-svr-group" 
+    radius-interim-accounting 
+    rfc-3576-server "10.232.188.4" 
+    rfc-3576-server "10.236.188.4" 
+!
+aaa profile "TJs-dot1x-aaa-prof" 
+    authentication-dot1x "default" 
+    dot1x-server-group "CPPM-West-preferred-svr-group" 
+    radius-interim-accounting 
+    rfc-3576-server "10.232.188.4" 
+    rfc-3576-server "10.236.188.4" 
+!
+aaa profile "WCD_AGV_aaa_prof" 
+    initial-role "authenticated" 
+    authentication-dot1x "WCD_AGV_dot1_aut" 
+!
+aaa profile "WCD_PI_aaa_prof" 
+    initial-role "authenticated" 
+    authentication-dot1x "WCD_PI_dot1_aut" 
+!
+aaa authentication captive-portal "default" 
+!
+aaa authentication wispr "default" 
+!
+aaa authentication vpn "default" 
+!
+aaa authentication vpn "default-cap" 
+    default-role "sys-ap-role" 
+    server-group "internal" 
+!
+aaa authentication vpn "default-hp-switch"         
+!
+aaa authentication vpn "default-iap" 
+!
+aaa authentication vpn "default-rap" 
+!
+aaa authentication mgmt 
+    server-group "BMNRadius" 
+    enable 
+!
+aaa authentication stateful-ntlm "default" 
+!
+aaa authentication stateful-kerberos "default" 
+!
+aaa authentication stateful-dot1x 
+!
+aaa authentication via auth-profile "default" 
+!
+aaa authentication wired 
+!
+aaa authentication via connection-profile "default" 
+!
+aaa authentication via web-auth "default" 
+!                                                  
+web-server profile 
+    cipher-suite ECDHE-ECDSA-AES256-GCM-SHA384 ECDHE-ECDSA-AES128-GCM-SHA256 ECDHE-RSA-AES256-GCM-SHA384 ECDHE-RSA-AES128-GCM-SHA256 ECDHE-ECDSA-AES256-SHA384 ECDHE-ECDSA-AES128-SHA256 ECDHE-ECDSA-AES256-SHA ECDHE-ECDSA-AES128-SHA ECDHE-RSA-AES256-SHA ECDHE-RSA-AES128-SHA 
+    web-https-port-443 
+!
+guest-access-email 
+!
+aaa password-policy mgmt 
+!
+control-plane-security 
+    auto-cert-prov 
+!
+ids management-profile 
+!
+ids wms-general-profile 
+!
+ids wms-local-system-profile 
+!
+ids ap-rule-matching 
+!
+valid-network-oui-profile                          
+!
+traceoptions
+!
+activate 
+!
+file syncing profile 
+!
+ucc skype4b 
+!
+ucc teams 
+!
+ucc webrtc 
+!
+ucc custom-sip 
+!
+ucc rtpa-config 
+!
+ucc jabber 
+!
+ucc sip 
+!
+ucc h323 
+!                                                  
+ucc vocera 
+!
+ucc sccp 
+!
+ucc noe 
+!
+ucc facetime 
+!
+ucc ich 
+!
+ucc session-idle-timeout 
+!
+ucc wificalling 
+!
+lc-cluster group-profile "DAY-Cluster" 
+    controller 10.44.30.6 priority 128 mcast-vlan 0 vrrp-ip 10.44.30.7 vrrp-vlan 30 group 0 rap-public-ip 0.0.0.0 
+    controller 10.44.30.8 priority 128 mcast-vlan 0 vrrp-ip 10.44.30.9 vrrp-vlan 30 group 0 rap-public-ip 0.0.0.0 
+!
+license-pool-profile-root 
+!
+papi-security                                      
+!
+est profile "default" 
+!
+aruba-central 
+!
+wlan sae-profile 
+!
+ifmap cppm 
+!
+pan profile "default" 
+!
+pan-options
+!
+websocket clearpass 
+!
+pan active-profile 
+!
+openflow-profile 
+    controller-ip "conductorip" 6633 
+    bind-vlan 1-4094 
+!
+dump-auto-uploading-profile "default" 
+!                                                  
+ap regulatory-domain-profile "DAY-Hub-AGV_rdp_ui" 
+    country-code US 
+    valid-11g-channel 1 
+    valid-11g-channel 6 
+    valid-11g-channel 11 
+    valid-11a-channel 36 
+    valid-11a-channel 40 
+    valid-11a-channel 44 
+    valid-11a-channel 48 
+    valid-11a-channel 52 
+    valid-11a-channel 56 
+    valid-11a-channel 60 
+    valid-11a-channel 64 
+    valid-11a-channel 100 
+    valid-11a-channel 104 
+    valid-11a-channel 108 
+    valid-11a-channel 112 
+    valid-11a-channel 116 
+    valid-11a-channel 132 
+    valid-11a-channel 136 
+    valid-11a-channel 140 
+    valid-11a-channel 149 
+    valid-11a-channel 153                          
+    valid-11a-channel 157 
+    valid-11a-channel 161 
+    valid-11a-channel 165 
+    valid-11a-channel 169 
+    valid-11a-channel 173 
+    valid-11g-40mhz-channel-pair 1-5 
+    valid-11g-40mhz-channel-pair 7-11 
+    valid-11a-40mhz-channel-pair 36-40 
+    valid-11a-40mhz-channel-pair 44-48 
+    valid-11a-40mhz-channel-pair 149-153 
+    valid-11a-40mhz-channel-pair 157-161 
+    valid-11a-80mhz-channel-group 36-48 
+    valid-11a-80mhz-channel-group 149-161 
+    valid-11a-160mhz-channel-group 36-64 
+    valid-6ghz-channel 1 
+    valid-6ghz-channel 5 
+    valid-6ghz-channel 9 
+    valid-6ghz-channel 13 
+    valid-6ghz-channel 17 
+    valid-6ghz-channel 21 
+    valid-6ghz-channel 25 
+    valid-6ghz-channel 29 
+    valid-6ghz-channel 33                          
+    valid-6ghz-channel 37 
+    valid-6ghz-channel 41 
+    valid-6ghz-channel 45 
+    valid-6ghz-channel 49 
+    valid-6ghz-channel 53 
+    valid-6ghz-channel 57 
+    valid-6ghz-channel 61 
+    valid-6ghz-channel 65 
+    valid-6ghz-channel 69 
+    valid-6ghz-channel 73 
+    valid-6ghz-channel 77 
+    valid-6ghz-channel 81 
+    valid-6ghz-channel 85 
+    valid-6ghz-channel 89 
+    valid-6ghz-channel 93 
+    valid-6ghz-channel 97 
+    valid-6ghz-channel 101 
+    valid-6ghz-channel 105 
+    valid-6ghz-channel 109 
+    valid-6ghz-channel 113 
+    valid-6ghz-channel 117 
+    valid-6ghz-channel 121 
+    valid-6ghz-channel 125                         
+    valid-6ghz-channel 129 
+    valid-6ghz-channel 133 
+    valid-6ghz-channel 137 
+    valid-6ghz-channel 141 
+    valid-6ghz-channel 145 
+    valid-6ghz-channel 149 
+    valid-6ghz-channel 153 
+    valid-6ghz-channel 157 
+    valid-6ghz-channel 161 
+    valid-6ghz-channel 165 
+    valid-6ghz-channel 169 
+    valid-6ghz-channel 173 
+    valid-6ghz-channel 177 
+    valid-6ghz-channel 181 
+    valid-6ghz-channel 185 
+    valid-6ghz-channel 189 
+    valid-6ghz-channel 193 
+    valid-6ghz-channel 197 
+    valid-6ghz-channel 201 
+    valid-6ghz-channel 205 
+    valid-6ghz-channel 209 
+    valid-6ghz-channel 213 
+    valid-6ghz-channel 217                         
+    valid-6ghz-channel 221 
+    valid-6ghz-channel 225 
+    valid-6ghz-channel 229 
+    valid-6ghz-channel 233 
+!
+ap regulatory-domain-profile "DAY-OFFICE_rdp_ui" 
+    country-code US 
+    valid-11g-channel 1 
+    valid-11g-channel 6 
+    valid-11g-channel 11 
+    valid-11a-channel 36 
+    valid-11a-channel 40 
+    valid-11a-channel 44 
+    valid-11a-channel 48 
+    valid-11a-channel 52 
+    valid-11a-channel 56 
+    valid-11a-channel 60 
+    valid-11a-channel 64 
+    valid-11a-channel 100 
+    valid-11a-channel 104 
+    valid-11a-channel 108 
+    valid-11a-channel 112 
+    valid-11a-channel 116                          
+    valid-11a-channel 132 
+    valid-11a-channel 136 
+    valid-11a-channel 140 
+    valid-11a-channel 149 
+    valid-11a-channel 153 
+    valid-11a-channel 157 
+    valid-11a-channel 161 
+    valid-11a-channel 165 
+    valid-11a-channel 169 
+    valid-11a-channel 173 
+    valid-11g-40mhz-channel-pair 1-5 
+    valid-11g-40mhz-channel-pair 7-11 
+    valid-11a-40mhz-channel-pair 36-40 
+    valid-11a-40mhz-channel-pair 44-48 
+    valid-11a-40mhz-channel-pair 149-153 
+    valid-11a-40mhz-channel-pair 157-161 
+    valid-11a-80mhz-channel-group 36-48 
+    valid-11a-80mhz-channel-group 149-161 
+    valid-11a-160mhz-channel-group 36-64 
+    valid-6ghz-channel 1 
+    valid-6ghz-channel 5 
+    valid-6ghz-channel 9 
+    valid-6ghz-channel 13                          
+    valid-6ghz-channel 17 
+    valid-6ghz-channel 21 
+    valid-6ghz-channel 25 
+    valid-6ghz-channel 29 
+    valid-6ghz-channel 33 
+    valid-6ghz-channel 37 
+    valid-6ghz-channel 41 
+    valid-6ghz-channel 45 
+    valid-6ghz-channel 49 
+    valid-6ghz-channel 53 
+    valid-6ghz-channel 57 
+    valid-6ghz-channel 61 
+    valid-6ghz-channel 65 
+    valid-6ghz-channel 69 
+    valid-6ghz-channel 73 
+    valid-6ghz-channel 77 
+    valid-6ghz-channel 81 
+    valid-6ghz-channel 85 
+    valid-6ghz-channel 89 
+    valid-6ghz-channel 93 
+    valid-6ghz-channel 97 
+    valid-6ghz-channel 101 
+    valid-6ghz-channel 105                         
+    valid-6ghz-channel 109 
+    valid-6ghz-channel 113 
+    valid-6ghz-channel 117 
+    valid-6ghz-channel 121 
+    valid-6ghz-channel 125 
+    valid-6ghz-channel 129 
+    valid-6ghz-channel 133 
+    valid-6ghz-channel 137 
+    valid-6ghz-channel 141 
+    valid-6ghz-channel 145 
+    valid-6ghz-channel 149 
+    valid-6ghz-channel 153 
+    valid-6ghz-channel 157 
+    valid-6ghz-channel 161 
+    valid-6ghz-channel 165 
+    valid-6ghz-channel 169 
+    valid-6ghz-channel 173 
+    valid-6ghz-channel 177 
+    valid-6ghz-channel 181 
+    valid-6ghz-channel 185 
+    valid-6ghz-channel 189 
+    valid-6ghz-channel 193 
+    valid-6ghz-channel 197                         
+    valid-6ghz-channel 201 
+    valid-6ghz-channel 205 
+    valid-6ghz-channel 209 
+    valid-6ghz-channel 213 
+    valid-6ghz-channel 217 
+    valid-6ghz-channel 221 
+    valid-6ghz-channel 225 
+    valid-6ghz-channel 229 
+    valid-6ghz-channel 233 
+!
+ap regulatory-domain-profile "default" 
+    country-code US 
+    valid-11g-channel 1 
+    valid-11g-channel 6 
+    valid-11g-channel 11 
+    valid-11a-channel 36 
+    valid-11a-channel 40 
+    valid-11a-channel 44 
+    valid-11a-channel 48 
+    valid-11a-channel 149 
+    valid-11a-channel 153 
+    valid-11a-channel 157 
+    valid-11a-channel 161                          
+    valid-11a-channel 165 
+    valid-11g-40mhz-channel-pair 1-5 
+    valid-11g-40mhz-channel-pair 7-11 
+    valid-11a-40mhz-channel-pair 36-40 
+    valid-11a-40mhz-channel-pair 44-48 
+    valid-11a-40mhz-channel-pair 149-153 
+    valid-11a-40mhz-channel-pair 157-161 
+    valid-11a-80mhz-channel-group 36-48 
+    valid-11a-80mhz-channel-group 149-161 
+    valid-11a-160mhz-channel-group 36-64 
+!
+ap wired-ap-profile "default" 
+!
+ap wired-ap-profile "NoAuthWiredAp" 
+    wired-ap-enable 
+!
+ap enet-link-profile "default" 
+!
+ap mesh-ht-ssid-profile "default" 
+!
+ap lldp med-network-policy-profile "default" 
+!
+ap mesh-cluster-profile "default"                  
+!
+ap mesh-accesslist-profile "default" 
+!
+ap wifi-uplink-profile "default" 
+!
+ap multizone-profile "default" 
+!
+ap usb-acl-prof "default" 
+!
+dump-collection-profile "default" 
+!
+ap lldp profile "default" 
+!
+ap mesh-radio-profile "default" 
+!
+ap usb-profile "default" 
+!
+ap system-profile "default" 
+    ap-console-password "b6eaf40a+|H!~." 
+    bkup-passwords "MCBE56D06!+^>" 
+!
+ap system-profile "NoAuthApSystem" 
+    ap-console-password "2d5e29bf+|H!~."           
+    bkup-passwords "MCBE56D06!+^>" 
+!
+ap wired-port-profile "default" 
+!
+ap wired-port-profile "NoAuthWiredPort" 
+    wired-ap-profile "NoAuthWiredAp" 
+    aaa-profile "NoAuthAAAProfile" 
+!
+ap wired-port-profile "shutdown" 
+    shutdown 
+!
+gps service-profile "default" 
+!
+ids general-profile "default" 
+!
+ids rate-thresholds-profile "default" 
+!
+ids rate-thresholds-profile "probe-request-response-thresholds" 
+    channel-inc-time 30 
+    channel-threshold 350 
+    node-time-interval 10 
+    node-threshold 250 
+!                                                  
+ids signature-profile "AirJack" 
+    frame-type beacon ssid AirJack 
+!
+ids signature-profile "ASLEAP" 
+    frame-type beacon ssid asleap 
+!
+ids signature-profile "Deauth-Broadcast" 
+    frame-type deauth 
+    dst-mac ff:ff:ff:ff:ff:ff 
+!
+ids signature-profile "Deauth-Broadcast-From-Valid-AP" 
+    frame-type deauth 
+    dst-mac ff:ff:ff:ff:ff:ff 
+    src-mac valid-ap 
+    bssid valid-ap 
+!
+ids signature-profile "default" 
+!
+ids signature-profile "Disassoc-Broadcast" 
+    frame-type disassoc 
+    dst-mac ff:ff:ff:ff:ff:ff 
+!
+ids signature-profile "Disassoc-Broadcast-From-Valid-AP" 
+    frame-type disassoc 
+    dst-mac ff:ff:ff:ff:ff:ff 
+    src-mac valid-ap 
+    bssid valid-ap 
+!
+ids signature-profile "Netstumbler Generic" 
+    payload 0x00601d 3 
+    payload 0x0001 6 
+!
+ids signature-profile "Netstumbler Version 3.3.0x" 
+    payload 0x00601d 3 
+    payload 0x000102 12 
+!
+ids signature-profile "Null-Probe-Response" 
+    frame-type probe-response ssid-length 0 
+!
+ids signature-profile "Wellenreiter" 
+    frame-type probe-request ssid this_is_used_for_wellenreiter 
+!
+ids impersonation-profile "default" 
+!
+ids unauthorized-device-profile "default" 
+!                                                  
+ids signature-matching-profile "default" 
+    signature "Disassoc-Broadcast" 
+!
+ids dos-profile "default" 
+!
+ids profile "default" 
+!
+rf dot11-60GHz-radio-profile "default" 
+!
+wlan 6ghz-rrm-ie-profile "default" 
+!
+rf arm-profile "arm-maintain" 
+    no scanning 
+!
+rf arm-profile "arm-scan" 
+!
+rf arm-profile "default-6ghz" 
+    160MHz-support Auto 
+    min-tx-power 12 
+    max-tx-power 18 
+!
+rf arm-profile "default-a" 
+!                                                  
+rf arm-profile "default-g" 
+!
+rf ht-radio-profile "default-6ghz" 
+!
+rf ht-radio-profile "default-a" 
+!
+rf ht-radio-profile "default-g" 
+!
+rf spectrum-profile "default-6ghz" 
+!
+rf spectrum-profile "default-a" 
+!
+rf spectrum-profile "default-g" 
+!
+rf optimization-profile "default" 
+!
+rf event-thresholds-profile "default" 
+!
+rf am-scan-profile "DAY-Hub-a_amscan_a_ui" 
+!
+rf am-scan-profile "DAY-Hub-g_amscan_g_ui" 
+!
+rf am-scan-profile "default"                       
+!
+rf dot11a-radio-profile "DAY-Hub-a" 
+    am-scan-profile "DAY-Hub-a_amscan_a_ui" 
+    max-channel-bandwidth 20MHz 
+    eirp-min 18 
+!
+rf dot11a-radio-profile "default" 
+!
+rf dot11a-radio-profile "rp-maintain-a" 
+    arm-profile "arm-maintain" 
+!
+rf dot11a-radio-profile "rp-monitor-a" 
+    mode am-mode 
+!
+rf dot11a-radio-profile "rp-scan-a" 
+    arm-profile "arm-scan" 
+!
+rf dot11a-radio-profile "Spectrum-a" 
+    mode spectrum-mode 
+!
+rf dot11g-radio-profile "DAY-Hub-g" 
+    am-scan-profile "DAY-Hub-g_amscan_g_ui" 
+    eirp-min 12                                    
+    eirp-max 15 
+!
+rf dot11g-radio-profile "default" 
+!
+rf dot11g-radio-profile "rp-maintain-g" 
+    arm-profile "arm-maintain" 
+!
+rf dot11g-radio-profile "rp-monitor-g" 
+    mode am-mode 
+!
+rf dot11g-radio-profile "rp-scan-g" 
+    arm-profile "arm-scan" 
+!
+rf dot11g-radio-profile "Spectrum-g" 
+    mode spectrum-mode 
+!
+rf dot11-6GHz-radio-profile "DAY-Hub-AGV_radio11_ghz6_ui" 
+!
+rf dot11-6GHz-radio-profile "DAY-OFFICE_radio11_ghz6_ui" 
+!
+rf dot11-6GHz-radio-profile "default" 
+!
+wlan rrm-ie-profile "default"                      
+!
+wlan bcn-rpt-req-profile "default" 
+!
+wlan dot11r-profile "default" 
+!
+wlan tsm-req-profile "default" 
+!
+wlan ht-ssid-profile "default" 
+!
+wlan ht-ssid-profile "TJ-HT" 
+    no 80MHz-enable 
+!
+wlan he-ssid-profile "default" 
+!
+wlan hotspot anqp-venue-name-profile "default" 
+!
+wlan hotspot anqp-nwk-auth-profile "default" 
+!
+wlan hotspot anqp-roam-cons-profile "default" 
+!
+wlan hotspot anqp-nai-realm-profile "default" 
+!
+wlan hotspot anqp-3gpp-nwk-profile "default"       
+!
+wlan hotspot h2qp-operator-friendly-name-profile "default" 
+!
+wlan hotspot h2qp-wan-metrics-profile "default" 
+!
+wlan hotspot h2qp-conn-capability-profile "default" 
+!
+wlan hotspot h2qp-op-cl-profile "default" 
+!
+wlan hotspot h2qp-osu-prov-list-profile "default" 
+!
+wlan hotspot anqp-ip-addr-avail-profile "default" 
+!
+wlan hotspot anqp-domain-name-profile "default" 
+!
+wlan edca-parameters-profile station "default" 
+!
+wlan edca-parameters-profile ap "default" 
+!
+wlan mu-edca-parameters-profile "default" 
+!
+wlan dot11k-profile "default" 
+    dot11k-enable                                  
+!
+wlan ssid-profile "DAYKIT_ssid_prof" 
+    essid "DAYKIT" 
+    wpa-passphrase "xzsawqerdfcvnbhgyt" 
+    opmode wpa2-psk-aes 
+    a-basic-rates 12 24 
+    a-tx-rates 12 18 24 36 48 54 
+    wmm 
+    advertise-ap-name 
+!
+wlan ssid-profile "DAYRF_ssid_prof" 
+    essid "DAYRF" 
+    wpa-passphrase "prO5ir=XovUf3l8z!" 
+    opmode wpa2-psk-aes 
+    a-basic-rates 12 24 
+    a-tx-rates 12 18 24 36 48 54 
+    g-basic-rates 12 24 
+    g-tx-rates 12 18 24 36 48 54 
+    advertise-ap-name 
+!
+wlan ssid-profile "DAYTJ_ssid_prof" 
+    essid "DAYTJ" 
+    wpa-passphrase "mju76yhnBGT%$RFV"              
+    opmode wpa2-psk-aes 
+    a-basic-rates 12 24 
+    a-tx-rates 12 18 24 36 48 54 
+    g-basic-rates 12 24 
+    g-tx-rates 12 18 24 36 48 54 
+!
+wlan ssid-profile "DAYTM_ssid_prof" 
+    essid "DAYTM" 
+    wpa-passphrase "yturieowpqhgjfkdls" 
+    opmode wpa2-psk-aes 
+    a-basic-rates 12 24 
+    a-tx-rates 12 18 24 36 48 54 
+    g-basic-rates 12 24 
+    g-tx-rates 12 18 24 36 48 54 
+!
+wlan ssid-profile "DAYWCD_ssid_prof" 
+    essid "DAYWCD" 
+    wpa-passphrase "465rytfhgvnb798uoijlk" 
+    opmode wpa2-psk-aes 
+    a-basic-rates 12 24 
+    a-tx-rates 12 18 24 36 48 54 
+    g-basic-rates 12 24 
+    g-tx-rates 12 18 24 36 48 54                   
+!
+wlan ssid-profile "default" 
+!
+wlan ssid-profile "TJs-SSID-profile" 
+    essid "TJs" 
+    opmode wpa3-aes-ccm-128 
+    a-basic-rates 12 24 
+    a-tx-rates 24 36 48 54 
+    g-basic-rates 12 24 
+    g-tx-rates 5 12 18 24 36 48 54 
+!
+wlan ssid-profile "WCD_AGV_ssid_prof" 
+    essid "WCD_AGV" 
+    wpa-passphrase "E35RyK2fJmaK3INBYoYO" 
+    opmode wpa2-psk-aes 
+    a-basic-rates 18 
+    a-tx-rates 18 24 36 48 54 
+!
+wlan ssid-profile "WCD_PI_ssid_prof" 
+    essid "WCD_PI" 
+    wpa-passphrase "zaq13edcbgtFP" 
+    opmode wpa2-psk-aes 
+!                                                  
+wlan hotspot advertisement-profile "default" 
+!
+wlan hotspot hs2-profile "default" 
+!
+wlan virtual-ap "DAYKIT" 
+    aaa-profile "DAYKIT_aaa_prof" 
+    vlan DAYKIT 
+    ssid-profile "DAYKIT_ssid_prof" 
+    allowed-band a 
+!
+wlan virtual-ap "DAYRF" 
+    aaa-profile "DAYRF_aaa_prof" 
+    vlan DAYRF 
+    ssid-profile "DAYRF_ssid_prof" 
+!
+wlan virtual-ap "DAYTJ" 
+    aaa-profile "DAYTJ_aaa_prof" 
+    vlan DAYTJ 
+    ssid-profile "DAYTJ_ssid_prof" 
+!
+wlan virtual-ap "DAYTM" 
+    aaa-profile "DAYTM_aaa_prof" 
+    vlan DAYTM                                     
+    ssid-profile "DAYTM_ssid_prof" 
+!
+wlan virtual-ap "DAYWCD" 
+    aaa-profile "DAYWCD_aaa_prof" 
+    vlan DAYWCD 
+    ssid-profile "DAYWCD_ssid_prof" 
+!
+wlan virtual-ap "default" 
+    denylist-time 0 
+!
+wlan virtual-ap "TJs-vap-prof" 
+    aaa-profile "TJs-dot1x-aaa-prof" 
+    ssid-profile "TJs-SSID-profile" 
+    band-steering 
+!
+wlan virtual-ap "WCD_AGV" 
+    aaa-profile "WCD_AGV_aaa_prof" 
+    no vap-enable 
+    vlan DAYAGV 
+    ssid-profile "WCD_AGV_ssid_prof" 
+    allowed-band a 
+!
+wlan virtual-ap "WCD_PI"                           
+    aaa-profile "WCD_PI_aaa_prof" 
+    no vap-enable 
+    vlan WCD_PI 
+    ssid-profile "WCD_PI_ssid_prof" 
+!
+mgmt-server profile "default-acp" 
+    stats-enable 
+    tag-enable 
+    sessions-enable 
+    monitored-info-enable 
+    monitored-info-del-enable 
+    monitored-info-snapshot-enable 
+    wids-event-info-enable 
+    misc-enable 
+    location-enable 
+    uccmonitoring-enable 
+    airgroupinfo-enable 
+    wan-state 
+!
+mgmt-server profile "default-ale" 
+    stats-enable 
+    tag-enable 
+    sessions-enable                                
+    misc-enable 
+    location-enable 
+    uccmonitoring-enable 
+!
+mgmt-server profile "default-amp" 
+    stats-enable 
+    tag-enable 
+    sessions-enable 
+    user-visibility-enable 
+    misc-enable 
+    location-enable 
+    ap-app-stats 
+!
+mgmt-server profile "default-controller" 
+    stats-enable 
+    tag-enable 
+    sessions-enable 
+    user-visibility-enable 
+    misc-enable 
+    location-enable 
+    uccmonitoring-enable 
+    airgroupinfo-enable 
+    wan-state                                      
+    ap-stats 
+!
+mgmt-server profile "default-niara" 
+    no generic-amon-enable 
+    sessions-enable 
+    no inline-dhcp-stats 
+    no inline-ap-stats 
+    no inline-auth-stats 
+    no inline-dns-stats 
+!
+mgmt-server profile "TJ_Airwave" 
+    stats-enable 
+    tag-enable 
+    sessions-enable 
+    misc-enable 
+    location-enable 
+!
+ap authorization-profile "default" 
+    ap-authorization-group "NoAuthApGroup" 
+!
+ap provisioning-profile "default" 
+!
+rf arm-rf-domain-profile                           
+!
+ap am-filter-profile "default" 
+!
+ap spectrum local-override 
+!
+airmatch profile 
+!
+ap-lacp-striping-ip 
+!
+ap general-profile 
+!
+ap deploy-profile 
+!
+airslice-profile "default" 
+!
+ap provisioning-rules 
+!
+ap-group "DAY-Hub-AGV" 
+    virtual-ap "WCD_AGV" 
+    virtual-ap "DAYTJ" 
+    virtual-ap "DAYTM" 
+    virtual-ap "DAYWCD" 
+    virtual-ap "DAYRF"                             
+    virtual-ap "DAYKIT" 
+    dot11a-radio-profile "DAY-Hub-a" 
+    dot11g-radio-profile "DAY-Hub-g" 
+    dot11-6GHz-radio-profile "DAY-Hub-AGV_radio11_ghz6_ui" 
+    regulatory-domain-profile "DAY-Hub-AGV_rdp_ui" 
+!
+ap-group "DAY-OFFICE" 
+    virtual-ap "DAYTJ" 
+    virtual-ap "DAYTM" 
+    virtual-ap "DAYWCD" 
+    virtual-ap "DAYRF" 
+    virtual-ap "DAYKIT" 
+    dot11a-radio-profile "DAY-Hub-a" 
+    dot11g-radio-profile "DAY-Hub-g" 
+    dot11-6GHz-radio-profile "DAY-OFFICE_radio11_ghz6_ui" 
+    regulatory-domain-profile "DAY-OFFICE_rdp_ui" 
+!
+ap-group "default" 
+    virtual-ap "WCD_PI" 
+!
+ap-group "NoAuthApGroup" 
+    enet1-port-profile "NoAuthWiredPort" 
+    enet2-port-profile "NoAuthWiredPort"           
+    enet3-port-profile "NoAuthWiredPort" 
+    enet4-port-profile "NoAuthWiredPort" 
+    ap-system-profile "NoAuthApSystem" 
+!
+ap-group "Spectrum" 
+    dot11a-radio-profile "Spectrum-a" 
+    dot11g-radio-profile "Spectrum-g" 
+!
+airgroupprofile service "default-airplay" 
+    id "_airplay._tcp" 
+    id "_appletv-v2._tcp" 
+    id "_raop._tcp" 
+    description "AirPlay" 
+!
+airgroupprofile service "default-airprint" 
+    id "_canon-bjnp1._tcp" 
+    id "_fax-ipp._tcp" 
+    id "_http-alt._tcp" 
+    id "_http._tcp" 
+    id "_ica-networking._tcp" 
+    id "_ica-networking2._tcp" 
+    id "_ipp-tls._tcp" 
+    id "_ipp._tcp"                                 
+    id "_ipps._tcp" 
+    id "_pdl-datastream._tcp" 
+    id "_printer._tcp" 
+    id "_ptp._tcp" 
+    id "_riousbprint._tcp" 
+    id "_universal._sub._ipp._tcp" 
+    id "_universal._sub._ipps._tcp" 
+    description "AirPrint" 
+!
+airgroupprofile service "default-allowall" 
+    description "Remaining-Services" 
+!
+airgroupprofile service "default-amazontv" 
+    id "_amzn-wplay._tcp" 
+    description "Amazon fire tv" 
+!
+airgroupprofile service "default-dial" 
+    id "urn:dial-multiscreen-org:device:dial:1" 
+    id "urn:dial-multiscreen-org:service:dial:1" 
+    description "DIAL supported by Chromecast, FireTV, Roku etc" 
+!
+airgroupprofile service "default-dlna-media" 
+    id "urn:schemas-upnp-org:device:MediaPlayer:1" 
+    id "urn:schemas-upnp-org:device:MediaRenderer:1" 
+    id "urn:schemas-upnp-org:device:MediaRenderer:2" 
+    id "urn:schemas-upnp-org:device:MediaRenderer:3" 
+    id "urn:schemas-upnp-org:device:MediaServer:1" 
+    id "urn:schemas-upnp-org:device:MediaServer:2" 
+    id "urn:schemas-upnp-org:device:MediaServer:3" 
+    id "urn:schemas-upnp-org:device:MediaServer:4" 
+    id "urn:schemas-upnp-org:device:ZonePlayer:1" 
+    id "urn:schemas-upnp-org:service:AVTransport:1" 
+    id "urn:schemas-upnp-org:service:AlarmClock:1" 
+    id "urn:schemas-upnp-org:service:ConnectionManager:1" 
+    id "urn:schemas-upnp-org:service:ContentDirectory:1" 
+    id "urn:schemas-upnp-org:service:DeviceProperties:1" 
+    id "urn:schemas-upnp-org:service:GroupManagement:1" 
+    id "urn:schemas-upnp-org:service:GroupRenderingControl:1" 
+    id "urn:schemas-upnp-org:service:MusicServices:1" 
+    id "urn:schemas-upnp-org:service:RenderingControl:1" 
+    id "urn:schemas-upnp-org:service:SystemProperties:1" 
+    id "urn:schemas-upnp-org:service:ZoneGroupTopology:1" 
+    description "Media" 
+!
+airgroupprofile service "default-dlna-print" 
+    id "urn:schemas-upnp-org:device:Printer:1"     
+    id "urn:schemas-upnp-org:service:PrintBasic:1" 
+    id "urn:schemas-upnp-org:service:PrintEnhanced:1" 
+    description "Print" 
+!
+airgroupprofile service "default-googlecast" 
+    id "_0F5096E8._sub._googlecast._tcp" 
+    id "_17608BC8._sub._googlecast._tcp" 
+    id "_233637DE._sub._googlecast._tcp" 
+    id "_42B56469._sub._googlecast._tcp" 
+    id "_668E5548._sub._googlecast._tcp" 
+    id "_674A0243._sub._googlecast._tcp" 
+    id "_85CDB22F._sub._googlecast._tcp" 
+    id "_8DA7527D._sub._googlecast._tcp" 
+    id "_8E6C866D._sub._googlecast._tcp" 
+    id "_96084372._sub._googlecast._tcp" 
+    id "_CA5E8412._sub._googlecast._tcp" 
+    id "_CC1AD845._sub._googlecast._tcp" 
+    id "_googlecast._tcp" 
+    id "_googlezone._tcp" 
+    description "GoogleCast supported by Chromecast etc" 
+!
+airgroupprofile service "default-itunes" 
+    id "_apple-mobdev._tcp"                        
+    id "_daap._tcp" 
+    id "_dacp._tcp" 
+    id "_home-sharing._tcp" 
+    description "iTunes" 
+!
+airgroupprofile service "default-remotemgmt" 
+    id "_ftp._tcp" 
+    id "_net-assistant._tcp" 
+    id "_rfb._tcp" 
+    id "_sftp-ssh._tcp" 
+    id "_ssh._tcp" 
+    id "_telnet._tcp" 
+    description "Remote management" 
+!
+airgroupprofile service "default-sharing" 
+    id "_afpovertcp._tcp" 
+    id "_odisk._tcp" 
+    id "_xgrid._tcp" 
+    description "Sharing" 
+!
+airgroupprofile ipv6 "default" 
+!
+airgroupprofile network "default"                  
+!
+airgroupprofile "default" 
+    service "default-airplay" 
+    service "default-airprint" 
+    service "default-dial" 
+    disallow-vlan  type servers service ""
+    disallow-role "" type servers service ""
+!
+logging security subcat ids level warnings 
+logging security subcat ids-ap level warnings 
+logging system process snmp subcat snmp level debugging 
+logging 10.246.42.29 format bsd-standard type network severity warnings facility local7 
+logging level debugging user-debug 80:73:9f:7b:d4:a4 
+
+snmp-server enable trap 
+snmp-server host 10.246.143.23 version 2c TrAdEr udp-port 162 
+snmp-server host 10.246.42.29 version 2c TrAdEr udp-port 162 
+snmp-server trap source 0.0.0.0 
+snmp-server trap disable wlsxAPBROADCASTSTORM
+snmp-server trap disable wlsxAPIPConflict
+snmp-server trap disable wlsxAPLoopDetected
+snmp-server trap disable wlsxAPPortDown            
+snmp-server trap disable wlsxAPPortUp
+snmp-server trap disable wlsxAPUSBPLUGALARM
+snmp-server trap disable wlsxAceUsageThreshold
+snmp-server trap disable wlsxAdhocNetwork
+snmp-server trap disable wlsxAdhocNetworkBridgeDetectedAP
+snmp-server trap disable wlsxAdhocNetworkBridgeDetectedSta
+snmp-server trap disable wlsxAdhocUsingValidSSID
+snmp-server trap disable wlsxAuthMaxAclEntries
+snmp-server trap disable wlsxAuthMaxBWContracts
+snmp-server trap disable wlsxAuthMaxUserEntries
+snmp-server trap disable wlsxAuthServerIsUp
+snmp-server trap disable wlsxAuthServerReqTimedOut
+snmp-server trap disable wlsxAuthServerTimedOut
+snmp-server trap disable wlsxCLEARPASSSERVERINVALID
+snmp-server trap disable wlsxChannelChanged
+snmp-server trap disable wlsxClientPskAuthenticationFailed
+snmp-server trap disable wlsxClientRejectedByMaxClientCount
+snmp-server trap disable wlsxClusterVlanProbeStatus
+snmp-server trap disable wlsxCoverageHoleDetected
+snmp-server trap disable wlsxDBCommunicationFailure
+snmp-server trap disable wlsxDisconnectStationAttack
+snmp-server trap disable wlsxDot1xThresholdLimitHit
+snmp-server trap disable wlsxDot1xTotalLimitHit    
+snmp-server trap disable wlsxESIServerDown
+snmp-server trap disable wlsxESIServerUp
+snmp-server trap disable wlsxFanAbsent
+snmp-server trap disable wlsxFanFailure
+snmp-server trap disable wlsxFanTrayInserted
+snmp-server trap disable wlsxFanTrayRemoved
+snmp-server trap disable wlsxFlash1SpaceOK
+snmp-server trap disable wlsxGBICInserted
+snmp-server trap disable wlsxGhostTunnelclientAttack
+snmp-server trap disable wlsxGhostTunnelserverAttack
+snmp-server trap disable wlsxHaFailoverRequestFromAp
+snmp-server trap disable wlsxHaFailoverTrigger
+snmp-server trap disable wlsxHaIntercontrollerHbtMiss
+snmp-server trap disable wlsxHaStandbyConnectivityState
+snmp-server trap disable wlsxHaStandbyIpSentFailed
+snmp-server trap disable wlsxHaState
+snmp-server trap disable wlsxIpSpoofingDetected
+snmp-server trap disable wlsxLCInserted
+snmp-server trap disable wlsxLCRemoved
+snmp-server trap disable wlsxLicenseExpiry
+snmp-server trap disable wlsxLowMemory
+snmp-server trap disable wlsxLowOnFlash1Space
+snmp-server trap disable wlsxLowOnFlashSpace       
+snmp-server trap disable wlsxNAceUsageThreshold
+snmp-server trap disable wlsxNDot1xThresholdLimitHit
+snmp-server trap disable wlsxNDot1xTotalLimitHit
+snmp-server trap disable wlsxNFanAbsent
+snmp-server trap disable wlsxNLowOnFlash1Space
+snmp-server trap disable wlsxNSwitchIPv6Changed
+snmp-server trap disable wlsxNWebCCLicenseEnforcement
+snmp-server trap disable wlsxOutOfRangeTemperature
+snmp-server trap disable wlsxOutOfRangeVoltage
+snmp-server trap disable wlsxPhonyBSSIDDetected
+snmp-server trap disable wlsxPowerSupplyFailure
+snmp-server trap disable wlsxPowerSupplyMissing
+snmp-server trap disable wlsxProcessDied
+snmp-server trap disable wlsxProcessExceedsMemoryLimits
+snmp-server trap disable wlsxSCInserted
+snmp-server trap disable wlsxSignatureMatch
+snmp-server trap disable wlsxStaUnAssociatedFromUnsecureAP
+snmp-server trap disable wlsxSwitchIPChanged
+snmp-server trap disable wlsxSwitchIPv6Changed
+snmp-server trap disable wlsxSwitchRoleChange
+snmp-server trap disable wlsxTHERMALSHUTDOWN
+snmp-server trap disable wlsxUserAuthenticationFailed
+snmp-server trap disable wlsxUserEntryAuthenticated
+snmp-server trap disable wlsxUserEntryChanged
+snmp-server trap disable wlsxUserEntryCreated
+snmp-server trap disable wlsxUserEntryDeAuthenticated
+snmp-server trap disable wlsxUserEntryDeleted
+snmp-server trap disable wlsxVrrpStateChange
+snmp-server trap disable wlsxWebCCLicenseEnforcement
+firewall-visibility 
+
+process monitor log 
+lc-cluster group-membership "DAY-Cluster" 
+lc-cluster exclude-vlan "1" 
+
+ip probe default 
+    mode ping 
+    frequency 10 
+    retries 3 
+    burst-size 5 
+!
+ip probe health-check 
+    mode ping 
+    frequency 10 
+    retries 3 
+    burst-size 5                                   
+!
+ip probe data-vpnc 
+    mode udp 
+    frequency 10 
+    retries 3 
+    burst-size 5 
+    jitter 
+!
+vrrp 30 
+    authentication aruba123 
+    ip address 10.44.30.10 
+    description "Discovery" 
+    vlan 30 
+    no shutdown 
+!
+vrrp 220 
+    priority 255 
+    ip address 10.44.30.7 
+    vlan 30 
+    preempt delay 0 
+    no shutdown 
+!
+vrrp 221                                           
+    priority 235 
+    ip address 10.44.30.9 
+    vlan 30 
+    preempt delay 0 
+    no shutdown 
+!
+
+
+
+end
+(DAY-HUB-WLC1) #        
