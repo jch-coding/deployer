@@ -208,11 +208,14 @@ class ArubaControllerConfigParser
             $rawVlan = $vlanBySsidProfile[$profileName] ?? null;
             $vlanName = $rawVlan !== null ? self::mapVlanName($rawVlan) : null;
             $warnings = $this->buildProfileWarnings($ssidData, $rawVlan, $vlanName);
+            $deployName = ($ssidData['essid'] !== null && $ssidData['essid'] !== '')
+                ? $ssidData['essid']
+                : $profileName;
             $profiles[] = [
-                'ssid_profile_name' => $profileName,
+                'ssid_profile_name' => $deployName,
                 'raw_vlan' => $rawVlan,
                 'vlan_name' => $vlanName,
-                'body' => $this->buildWlanSsidProfileBody($profileName, $ssidData, $vlanName),
+                'body' => $this->buildWlanSsidProfileBody($deployName, $ssidData, $vlanName),
                 'warnings' => $warnings,
             ];
         }
@@ -372,32 +375,57 @@ class ArubaControllerConfigParser
      * }  $ssidData
      * @return array<string, mixed>
      */
-    private function buildWlanSsidProfileBody(string $profileName, array $ssidData, ?string $vlanName): array
+    private function buildWlanSsidProfileBody(string $ssidName, array $ssidData, ?string $vlanName): array
     {
         $body = [
             'essid' => ['name' => $ssidData['essid']],
-            'g-legacy-rates' => [
-                'basic-rates' => $this->ratesToApiFormat($ssidData['g_basic_rates']),
-                'tx-rates' => $this->ratesToApiFormat($ssidData['g_tx_rates']),
-            ],
             'opmode' => 'WPA2_PERSONAL',
             'personal-security' => [
                 'passphrase-format' => 'STRING',
                 'wpa-passphrase' => $ssidData['wpa_passphrase'],
             ],
             'type' => 'EMPLOYEE',
-            'internal-auth-server' => 'INTERNAL_SERVER',
+            'high-throughput' => ['enable' => true, 'very-high-throughput' => true],
+            'high-efficiency' => ['enable' => true],
             'vlan-name' => $vlanName,
             'vlan-selector' => 'NAMED_VLAN',
             'enable' => true,
-            'ssid' => $profileName,
-            'a-legacy-rates' => [
-                'basic-rates' => $this->ratesToApiFormat($ssidData['a_basic_rates']),
-                'tx-rates' => $this->ratesToApiFormat($ssidData['a_tx_rates']),
-            ],
+            'ssid' => $ssidName,
         ];
 
+        $gLegacyRates = $this->buildLegacyRates($ssidData['g_basic_rates'], $ssidData['g_tx_rates']);
+        if ($gLegacyRates !== null) {
+            $body['g-legacy-rates'] = $gLegacyRates;
+        }
+
+        $aLegacyRates = $this->buildLegacyRates($ssidData['a_basic_rates'], $ssidData['a_tx_rates']);
+        if ($aLegacyRates !== null) {
+            $body['a-legacy-rates'] = $aLegacyRates;
+        }
+
         return $body;
+    }
+
+    /**
+     * @param  array<int, string>  $basicRates
+     * @param  array<int, string>  $txRates
+     * @return array<string, array<int, string>>|null
+     */
+    private function buildLegacyRates(array $basicRates, array $txRates): ?array
+    {
+        $legacyRates = [];
+
+        $basic = $this->ratesToApiFormat($basicRates);
+        if ($basic !== []) {
+            $legacyRates['basic-rates'] = $basic;
+        }
+
+        $tx = $this->ratesToApiFormat($txRates);
+        if ($tx !== []) {
+            $legacyRates['tx-rates'] = $tx;
+        }
+
+        return $legacyRates === [] ? null : $legacyRates;
     }
 
     /**

@@ -67,28 +67,13 @@ test('migrations parse uploads config file and returns parsed controllers', func
 test('migrations deploy wlan posts profiles to central with scope query parameters', function () {
     Http::fake(['*' => Http::response(['ok' => true], 200)]);
 
-    $body = [
-        'essid' => ['name' => 'DAYKIT'],
-        'g-legacy-rates' => ['basic-rates' => [], 'tx-rates' => []],
-        'opmode' => 'WPA2_PERSONAL',
-        'personal-security' => [
-            'passphrase-format' => 'STRING',
-            'wpa-passphrase' => 'secret-passphrase',
-        ],
-        'type' => 'EMPLOYEE',
-        'internal-auth-server' => 'INTERNAL_SERVER',
-        'vlan-name' => 'WCD_KIT',
-        'vlan-selector' => 'NAMED_VLAN',
-        'enable' => true,
-        'ssid' => 'DAYKIT_ssid_prof',
-        'a-legacy-rates' => ['basic-rates' => ['RATE_12MB'], 'tx-rates' => ['RATE_12MB']],
-    ];
+    $body = migrationWlanProfilePayload();
 
     $this->post(route('migrations.deploy-wlan'), [
         'scope_id' => 'scope-site',
         'profiles' => [
             [
-                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'ssid_profile_name' => 'DAYKIT',
                 'body' => $body,
             ],
         ],
@@ -98,14 +83,14 @@ test('migrations deploy wlan posts profiles to central with scope query paramete
         ->assertInertia(fn (Assert $page) => $page
             ->component('Migration/Index')
             ->has('deploy_results', 1)
-            ->where('deploy_results.0.ssid', 'DAYKIT_ssid_prof')
+            ->where('deploy_results.0.ssid', 'DAYKIT')
             ->where('deploy_results.0.status', 'success'));
 
     Http::assertSent(function (Request $request) use ($body) {
         parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
 
         return $request->method() === 'POST'
-            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT_ssid_prof')
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT')
             && ($query['object-type'] ?? null) === 'LOCAL'
             && ($query['view-type'] ?? null) === 'LOCAL'
             && ($query['scope-id'] ?? null) === 'scope-site'
@@ -123,7 +108,7 @@ test('migrations deploy wlan posts subset of profiles when caller sends partial 
         'scope_id' => 'scope-site',
         'profiles' => [
             [
-                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'ssid_profile_name' => 'DAYKIT',
                 'body' => $body,
             ],
         ],
@@ -132,19 +117,19 @@ test('migrations deploy wlan posts subset of profiles when caller sends partial 
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->has('deploy_results', 1)
-            ->where('deploy_results.0.ssid', 'DAYKIT_ssid_prof')
+            ->where('deploy_results.0.ssid', 'DAYKIT')
             ->where('deploy_results.0.status', 'success'));
 
     Http::assertSentCount(1);
 
     Http::assertSent(function (Request $request) use ($body) {
         return $request->method() === 'POST'
-            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT_ssid_prof')
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT')
             && json_decode($request->body(), true) === $body;
     });
 
     Http::assertNotSent(function (Request $request) {
-        return str_contains($request->url(), 'wlan-ssids/DAYWCD_ssid_prof');
+        return str_contains($request->url(), 'wlan-ssids/DAYWCD');
     });
 });
 
@@ -187,18 +172,18 @@ function migrationWlanProfilePayload(): array
 {
     return [
         'essid' => ['name' => 'DAYKIT'],
-        'g-legacy-rates' => ['basic-rates' => [], 'tx-rates' => []],
         'opmode' => 'WPA2_PERSONAL',
         'personal-security' => [
             'passphrase-format' => 'STRING',
             'wpa-passphrase' => 'secret-passphrase',
         ],
         'type' => 'EMPLOYEE',
-        'internal-auth-server' => 'INTERNAL_SERVER',
+        'high-throughput' => ['enable' => true, 'very-high-throughput' => true],
+        'high-efficiency' => ['enable' => true],
         'vlan-name' => 'WCD_KIT',
         'vlan-selector' => 'NAMED_VLAN',
         'enable' => true,
-        'ssid' => 'DAYKIT_ssid_prof',
+        'ssid' => 'DAYKIT',
         'a-legacy-rates' => ['basic-rates' => ['RATE_12MB'], 'tx-rates' => ['RATE_12MB']],
     ];
 }
@@ -225,7 +210,7 @@ test('migrations deploy wlan triggers named vlan offset for freezer sites', func
         'scope_id' => 'scope-freezer',
         'profiles' => [
             [
-                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'ssid_profile_name' => 'DAYKIT',
                 'body' => migrationWlanProfilePayload(),
             ],
         ],
@@ -257,7 +242,7 @@ test('migrations deploy wlan skips named vlan offset for non-freezer sites', fun
         'scope_id' => 'scope-site',
         'profiles' => [
             [
-                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'ssid_profile_name' => 'DAYKIT',
                 'body' => migrationWlanProfilePayload(),
             ],
         ],
@@ -286,7 +271,7 @@ test('migrations deploy wlan skips named vlan offset for hub-freezer sites', fun
         'scope_id' => 'scope-hub-freezer',
         'profiles' => [
             [
-                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'ssid_profile_name' => 'DAYKIT',
                 'body' => migrationWlanProfilePayload(),
             ],
         ],
