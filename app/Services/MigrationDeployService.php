@@ -217,7 +217,7 @@ class MigrationDeployService
         int $step,
         array $responseContext,
     ): array {
-        $fetch = $this->migrationNamedVlanService->fetchNamedVlanProfiles($helper, $scopeId);
+        $fetch = $this->migrationNamedVlanService->fetchNamedVlanProfilesForFreezerSite($helper, $scopeId);
 
         if ($fetch['error'] !== null) {
             $responseContext['named_vlan_profiles'] = [];
@@ -248,10 +248,12 @@ class MigrationDeployService
             ];
         }
 
-        $responseContext['named_vlan_profiles'] = $fetch['profiles'];
-        $deployableCount = count(
-            $this->migrationNamedVlanService->deployableNamedVlanProfiles($fetch['profiles']),
+        $requiredVlanNames = MigrationNamedVlanService::vlanNamesFromWlanProfiles($profiles);
+        $responseContext['named_vlan_profiles'] = $this->migrationNamedVlanService->deployableNamedVlanProfiles(
+            $fetch['profiles'],
+            $requiredVlanNames,
         );
+        $deployableCount = count($responseContext['named_vlan_profiles']);
         $updatedTotal = $this->totalSteps($profiles, true, $responseContext['named_vlan_profiles']);
 
         if ($deployableCount === 0) {

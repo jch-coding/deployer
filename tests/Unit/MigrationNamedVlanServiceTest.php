@@ -29,23 +29,95 @@ it('preserves unparseable vlan id range entries', function () {
         ->toBe(['invalid']);
 });
 
-it('deploys offset named vlan profiles for each returned profile', function () {
-    Http::fake([
-        '*named-vlan/WCD_KIT*' => Http::response(['ok' => true], 200),
-        '*named-vlan/WCD_RF*' => Http::response(['ok' => true], 200),
-        '*named-vlan*' => Http::response([
-            'profile' => [
-                [
-                    'name' => 'WCD_KIT',
-                    'vlan' => ['vlan-id-ranges' => ['1', '20-30']],
-                ],
-                [
-                    'name' => 'WCD_RF',
-                    'vlan' => ['vlan-id-ranges' => ['4']],
+it('extracts unique vlan names from wlan profile bodies', function () {
+    $profiles = [
+        ['ssid_profile_name' => 'DAYKIT', 'body' => ['vlan-name' => 'WCD_KIT']],
+        ['ssid_profile_name' => 'DAYRF', 'body' => ['vlan-name' => 'WCD_RF']],
+        ['ssid_profile_name' => 'DAYKIT2', 'body' => ['vlan-name' => 'WCD_KIT']],
+    ];
+
+    expect(MigrationNamedVlanService::vlanNamesFromWlanProfiles($profiles))
+        ->toBe(['WCD_KIT', 'WCD_RF']);
+});
+
+/**
+ * @return array<string, mixed>
+ */
+function migrationHierarchyResponseFixture(string $siteScopeId, string $collectionScopeId): array
+{
+    return [
+        'items' => [
+            [
+                'id' => 'hierarchy0',
+                'type' => 'network-config/hierarchy',
+                'hierarchy' => [
+                    [
+                        'scopeName' => 'Daytona Freezer',
+                        'scopeType' => 'site',
+                        'childCount' => 1,
+                        'scopeId' => $siteScopeId,
+                        'hostName' => '',
+                    ],
+                    [
+                        'scopeName' => 'WCD',
+                        'scopeType' => 'site_collection',
+                        'childCount' => 10,
+                        'scopeId' => $collectionScopeId,
+                        'hostName' => '',
+                    ],
                 ],
             ],
-        ], 200),
-    ]);
+        ],
+    ];
+}
+
+/**
+ * @return array<int, array{ssid_profile_name: string, body: array<string, mixed>}>
+ */
+function migrationWlanProfilesForNamedVlanTests(): array
+{
+    return [
+        [
+            'ssid_profile_name' => 'DAYKIT',
+            'body' => ['vlan-name' => 'WCD_KIT'],
+        ],
+        [
+            'ssid_profile_name' => 'DAYRF',
+            'body' => ['vlan-name' => 'WCD_RF'],
+        ],
+    ];
+}
+
+it('deploys offset named vlan profiles referenced by wlan bodies', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'network-config/v1/hierarchy')) {
+            return Http::response(migrationHierarchyResponseFixture('scope-freezer', 'scope-collection'), 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+            $scopeId = $query['scope-id'] ?? null;
+
+            if ($scopeId === 'scope-collection') {
+                return Http::response([
+                    'profile' => [
+                        [
+                            'name' => 'WCD_KIT',
+                            'vlan' => ['vlan-id-ranges' => ['1', '20-30']],
+                        ],
+                        [
+                            'name' => 'WCD_RF',
+                            'vlan' => ['vlan-id-ranges' => ['4']],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['profile' => []], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
 
     $client = Client::factory()->create([
         'base_url' => BaseURL::US1,
@@ -54,7 +126,11 @@ it('deploys offset named vlan profiles for each returned profile', function () {
     ]);
 
     $helper = new CentralAPIHelper($client);
-    $results = app(MigrationNamedVlanService::class)->deployOffsetNamedVlans($helper, 'scope-freezer');
+    $results = app(MigrationNamedVlanService::class)->deployOffsetNamedVlans(
+        $helper,
+        'scope-freezer',
+        migrationWlanProfilesForNamedVlanTests(),
+    );
 
     expect($results)->toHaveCount(2)
         ->and($results[0])->toMatchArray([
@@ -65,6 +141,15 @@ it('deploys offset named vlan profiles for each returned profile', function () {
             'name' => 'WCD_RF',
             'status' => 'success',
         ]);
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'GET'
+            && str_contains($request->url(), 'network-config/v1/hierarchy')
+            && ($query['id'] ?? null) === 'scope-freezer'
+            && ($query['type'] ?? null) === 'site';
+    });
 
     Http::assertSent(function (Request $request) {
         parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
@@ -81,6 +166,16 @@ it('deploys offset named vlan profiles for each returned profile', function () {
     Http::assertSent(function (Request $request) {
         parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
 
+        return $request->method() === 'GET'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan')
+            && ! str_contains($request->url(), 'network-config/v1alpha1/named-vlan/')
+            && ($query['scope-id'] ?? null) === 'scope-collection'
+            && ($query['object-type'] ?? null) === 'SHARED';
+    });
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
         return $request->method() === 'POST'
             && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_KIT')
             && ($query['view-type'] ?? null) === 'LOCAL'
@@ -92,4 +187,173 @@ it('deploys offset named vlan profiles for each returned profile', function () {
                 'vlan' => ['vlan-id-ranges' => ['201', '220-230']],
             ];
     });
+});
+
+it('prefers site named vlan profiles over site collection profiles with the same name', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'network-config/v1/hierarchy')) {
+            return Http::response(migrationHierarchyResponseFixture('scope-freezer', 'scope-collection'), 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+            $scopeId = $query['scope-id'] ?? null;
+
+            if ($scopeId === 'scope-freezer') {
+                return Http::response([
+                    'profile' => [
+                        [
+                            'name' => 'WCD_KIT',
+                            'vlan' => ['vlan-id-ranges' => ['9']],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            if ($scopeId === 'scope-collection') {
+                return Http::response([
+                    'profile' => [
+                        [
+                            'name' => 'WCD_KIT',
+                            'vlan' => ['vlan-id-ranges' => ['1']],
+                        ],
+                    ],
+                ], 200);
+            }
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $results = app(MigrationNamedVlanService::class)->deployOffsetNamedVlans(
+        $helper,
+        'scope-freezer',
+        [
+            ['ssid_profile_name' => 'DAYKIT', 'body' => ['vlan-name' => 'WCD_KIT']],
+        ],
+    );
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['status'])->toBe('success');
+
+    Http::assertSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_KIT')
+            && json_decode($request->body(), true) === [
+                'name' => 'WCD_KIT',
+                'vlan' => ['vlan-id-ranges' => ['209']],
+            ];
+    });
+});
+
+it('only deploys named vlan profiles referenced in wlan bodies', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'network-config/v1/hierarchy')) {
+            return Http::response(migrationHierarchyResponseFixture('scope-freezer', 'scope-collection'), 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            return Http::response([
+                'profile' => [
+                    [
+                        'name' => 'WCD_KIT',
+                        'vlan' => ['vlan-id-ranges' => ['1']],
+                    ],
+                    [
+                        'name' => 'WCD_RF',
+                        'vlan' => ['vlan-id-ranges' => ['4']],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $results = app(MigrationNamedVlanService::class)->deployOffsetNamedVlans(
+        $helper,
+        'scope-freezer',
+        [
+            ['ssid_profile_name' => 'DAYKIT', 'body' => ['vlan-name' => 'WCD_KIT']],
+        ],
+    );
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['name'])->toBe('WCD_KIT');
+
+    Http::assertSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_KIT');
+    });
+
+    Http::assertNotSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_RF');
+    });
+});
+
+it('falls back to site named vlan fetch when hierarchy has no site collection', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'network-config/v1/hierarchy')) {
+            return Http::response([
+                'items' => [
+                    [
+                        'hierarchy' => [
+                            [
+                                'scopeName' => 'Daytona Freezer',
+                                'scopeType' => 'site',
+                                'scopeId' => 'scope-freezer',
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+            if (($query['scope-id'] ?? null) === 'scope-freezer') {
+                return Http::response([
+                    'profile' => [
+                        [
+                            'name' => 'WCD_KIT',
+                            'vlan' => ['vlan-id-ranges' => ['1']],
+                        ],
+                    ],
+                ], 200);
+            }
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $fetch = app(MigrationNamedVlanService::class)->fetchNamedVlanProfilesForFreezerSite($helper, 'scope-freezer');
+
+    expect($fetch['error'])->toBeNull()
+        ->and($fetch['profiles'])->toHaveCount(1)
+        ->and($fetch['profiles'][0]['name'])->toBe('WCD_KIT');
+
+    Http::assertSentCount(2);
 });

@@ -188,23 +188,64 @@ function migrationWlanProfilePayload(): array
     ];
 }
 
-test('migrations deploy wlan triggers named vlan offset for freezer sites', function () {
-    seedMigrationSiteCache($this->client, 'Daytona Freezer', 'scope-freezer');
-
-    Http::fake(function (Request $request) {
-        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+/**
+ * @param  array<int, array{name: string, vlan: array<string, mixed>}>  $namedVlanProfiles
+ */
+function fakeMigrationFreezerCentralApi(
+    string $siteScopeId = 'scope-freezer',
+    string $collectionScopeId = 'scope-collection',
+    array $namedVlanProfiles = [],
+): void {
+    Http::fake(function (Request $request) use ($siteScopeId, $collectionScopeId, $namedVlanProfiles) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'network-config/v1/hierarchy')) {
             return Http::response([
-                'profile' => [
+                'items' => [
                     [
-                        'name' => 'WCD_KIT',
-                        'vlan' => ['vlan-id-ranges' => ['1']],
+                        'hierarchy' => [
+                            [
+                                'scopeName' => 'Daytona Freezer',
+                                'scopeType' => 'site',
+                                'scopeId' => $siteScopeId,
+                            ],
+                            [
+                                'scopeName' => 'WCD',
+                                'scopeType' => 'site_collection',
+                                'scopeId' => $collectionScopeId,
+                            ],
+                        ],
                     ],
                 ],
             ], 200);
         }
 
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+            $scopeId = $query['scope-id'] ?? null;
+
+            if ($scopeId === $collectionScopeId && $namedVlanProfiles !== []) {
+                return Http::response(['profile' => $namedVlanProfiles], 200);
+            }
+
+            if ($scopeId === $siteScopeId && $namedVlanProfiles !== []) {
+                return Http::response(['profile' => $namedVlanProfiles], 200);
+            }
+
+            return Http::response(['profile' => []], 200);
+        }
+
         return Http::response(['ok' => true], 200);
     });
+}
+
+test('migrations deploy wlan triggers named vlan offset for freezer sites', function () {
+    seedMigrationSiteCache($this->client, 'Daytona Freezer', 'scope-freezer');
+
+    fakeMigrationFreezerCentralApi(namedVlanProfiles: [
+        [
+            'name' => 'WCD_KIT',
+            'vlan' => ['vlan-id-ranges' => ['1']],
+        ],
+    ]);
 
     $this->post(route('migrations.deploy-wlan'), [
         'scope_id' => 'scope-freezer',
@@ -225,6 +266,15 @@ test('migrations deploy wlan triggers named vlan offset for freezer sites', func
     Http::assertSent(function (Request $request) {
         parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
 
+        return $request->method() === 'GET'
+            && str_contains($request->url(), 'network-config/v1/hierarchy')
+            && ($query['id'] ?? null) === 'scope-freezer'
+            && ($query['type'] ?? null) === 'site';
+    });
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
         return $request->method() === 'POST'
             && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_KIT')
             && ($query['object-type'] ?? null) === 'LOCAL'
@@ -232,6 +282,47 @@ test('migrations deploy wlan triggers named vlan offset for freezer sites', func
                 'name' => 'WCD_KIT',
                 'vlan' => ['vlan-id-ranges' => ['201']],
             ];
+    });
+});
+
+test('migrations deploy wlan only offsets named vlans referenced by deployed wlan bodies', function () {
+    seedMigrationSiteCache($this->client, 'Daytona Freezer', 'scope-freezer');
+
+    fakeMigrationFreezerCentralApi(namedVlanProfiles: [
+        [
+            'name' => 'WCD_KIT',
+            'vlan' => ['vlan-id-ranges' => ['1']],
+        ],
+        [
+            'name' => 'WCD_RF',
+            'vlan' => ['vlan-id-ranges' => ['4']],
+        ],
+    ]);
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-freezer',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT',
+                'body' => migrationWlanProfilePayload(),
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('named_vlan_deploy_results', 1)
+            ->where('named_vlan_deploy_results.0.name', 'WCD_KIT')
+            ->where('named_vlan_deploy_results.0.status', 'success'));
+
+    Http::assertSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_KIT');
+    });
+
+    Http::assertNotSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_RF');
     });
 });
 
@@ -359,20 +450,12 @@ test('migrations deploy wlan step endpoint deploys multiple profiles across step
 test('migrations deploy wlan step fetch increases total for freezer sites', function () {
     seedMigrationSiteCache($this->client, 'Daytona Freezer', 'scope-freezer');
 
-    Http::fake(function (Request $request) {
-        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
-            return Http::response([
-                'profile' => [
-                    [
-                        'name' => 'WCD_KIT',
-                        'vlan' => ['vlan-id-ranges' => ['1']],
-                    ],
-                ],
-            ], 200);
-        }
-
-        return Http::response(['ok' => true], 200);
-    });
+    fakeMigrationFreezerCentralApi(namedVlanProfiles: [
+        [
+            'name' => 'WCD_KIT',
+            'vlan' => ['vlan-id-ranges' => ['1']],
+        ],
+    ]);
 
     $profiles = [
         [

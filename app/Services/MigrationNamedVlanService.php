@@ -24,15 +24,75 @@ class MigrationNamedVlanService
     }
 
     /**
+     * @param  array<int, array{ssid_profile_name: string, body: array<string, mixed>}>  $profiles
+     * @return array<int, string>
+     */
+    public static function vlanNamesFromWlanProfiles(array $profiles): array
+    {
+        $names = [];
+
+        foreach ($profiles as $profile) {
+            if (! is_array($profile)) {
+                continue;
+            }
+
+            $body = $profile['body'] ?? null;
+
+            if (! is_array($body)) {
+                continue;
+            }
+
+            $vlanName = trim((string) ($body['vlan-name'] ?? ''));
+
+            if ($vlanName !== '') {
+                $names[] = $vlanName;
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    public function resolveSiteCollectionScopeId(CentralAPIHelper $helper, string $siteScopeId): ?string
+    {
+        $hierarchy = $helper->get_hierarchy(['scope_id' => $siteScopeId], 'site');
+
+        if (array_key_exists('error', $hierarchy)) {
+            return null;
+        }
+
+        foreach ($hierarchy as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            if (($entry['scopeType'] ?? '') !== 'site_collection') {
+                continue;
+            }
+
+            $scopeId = trim((string) ($entry['scopeId'] ?? ''));
+
+            if ($scopeId !== '') {
+                return $scopeId;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @return array{profiles: array<int, array<string, mixed>>, error: string|null}
      */
-    public function fetchNamedVlanProfiles(CentralAPIHelper $helper, string $scopeId): array
+    public function fetchNamedVlanProfiles(CentralAPIHelper $helper, string $scopeId, bool $siteCollection = false): array
     {
         $getQueryParameters = [
             'view-type' => 'LOCAL',
             'scope-id' => $scopeId,
             'device-function' => 'CAMPUS_AP',
         ];
+
+        if ($siteCollection) {
+            $getQueryParameters['object-type'] = 'SHARED';
+        }
 
         $response = $helper->get_named_vlans($getQueryParameters);
 
@@ -61,6 +121,38 @@ class MigrationNamedVlanService
 
         return [
             'profiles' => $profiles,
+            'error' => null,
+        ];
+    }
+
+    /**
+     * @return array{profiles: array<int, array<string, mixed>>, error: string|null}
+     */
+    public function fetchNamedVlanProfilesForFreezerSite(CentralAPIHelper $helper, string $siteScopeId): array
+    {
+        $siteFetch = $this->fetchNamedVlanProfiles($helper, $siteScopeId);
+        $siteProfiles = $siteFetch['error'] === null ? $siteFetch['profiles'] : [];
+
+        $collectionScopeId = $this->resolveSiteCollectionScopeId($helper, $siteScopeId);
+        $collectionProfiles = [];
+
+        if ($collectionScopeId !== null) {
+            $collectionFetch = $this->fetchNamedVlanProfiles($helper, $collectionScopeId, true);
+
+            if ($collectionFetch['error'] === null) {
+                $collectionProfiles = $collectionFetch['profiles'];
+            }
+        }
+
+        if ($siteFetch['error'] !== null && $collectionProfiles === []) {
+            return [
+                'profiles' => [],
+                'error' => $siteFetch['error'],
+            ];
+        }
+
+        return [
+            'profiles' => $this->mergeNamedVlanProfiles($siteProfiles, $collectionProfiles),
             'error' => null,
         ];
     }
@@ -135,10 +227,17 @@ class MigrationNamedVlanService
 
     /**
      * @param  array<int, array<string, mixed>>  $profiles
+     * @param  array<int, string>|null  $requiredVlanNames
      * @return array<int, array<string, mixed>>
      */
-    public function deployableNamedVlanProfiles(array $profiles): array
+    public function deployableNamedVlanProfiles(array $profiles, ?array $requiredVlanNames = null): array
     {
+        $required = null;
+
+        if ($requiredVlanNames !== null) {
+            $required = array_fill_keys($requiredVlanNames, true);
+        }
+
         $deployable = [];
 
         foreach ($profiles as $profile) {
@@ -152,6 +251,10 @@ class MigrationNamedVlanService
                 continue;
             }
 
+            if ($required !== null && ! array_key_exists($profileName, $required)) {
+                continue;
+            }
+
             $deployable[] = $profile;
         }
 
@@ -159,11 +262,12 @@ class MigrationNamedVlanService
     }
 
     /**
+     * @param  array<int, array{ssid_profile_name: string, body: array<string, mixed>}>  $wlanProfiles
      * @return array<int, array{name: string, status: string, message: string}>
      */
-    public function deployOffsetNamedVlans(CentralAPIHelper $helper, string $scopeId): array
+    public function deployOffsetNamedVlans(CentralAPIHelper $helper, string $scopeId, array $wlanProfiles = []): array
     {
-        $fetch = $this->fetchNamedVlanProfiles($helper, $scopeId);
+        $fetch = $this->fetchNamedVlanProfilesForFreezerSite($helper, $scopeId);
 
         if ($fetch['error'] !== null) {
             return [[
@@ -173,7 +277,10 @@ class MigrationNamedVlanService
             ]];
         }
 
-        $profiles = $this->deployableNamedVlanProfiles($fetch['profiles']);
+        $profiles = $this->deployableNamedVlanProfiles(
+            $fetch['profiles'],
+            self::vlanNamesFromWlanProfiles($wlanProfiles),
+        );
 
         if ($profiles === []) {
             return [[
@@ -198,6 +305,46 @@ class MigrationNamedVlanService
         }
 
         return $results;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $siteProfiles
+     * @param  array<int, array<string, mixed>>  $collectionProfiles
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeNamedVlanProfiles(array $siteProfiles, array $collectionProfiles): array
+    {
+        $byName = [];
+
+        foreach ($collectionProfiles as $profile) {
+            if (! is_array($profile)) {
+                continue;
+            }
+
+            $profileName = trim((string) ($profile['name'] ?? ''));
+
+            if ($profileName === '') {
+                continue;
+            }
+
+            $byName[$profileName] = $profile;
+        }
+
+        foreach ($siteProfiles as $profile) {
+            if (! is_array($profile)) {
+                continue;
+            }
+
+            $profileName = trim((string) ($profile['name'] ?? ''));
+
+            if ($profileName === '') {
+                continue;
+            }
+
+            $byName[$profileName] = $profile;
+        }
+
+        return array_values($byName);
     }
 
     private static function offsetSingleVlanIdRange(string $range, int $offset): string
