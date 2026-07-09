@@ -114,6 +114,40 @@ test('migrations deploy wlan posts profiles to central with scope query paramete
     });
 });
 
+test('migrations deploy wlan posts subset of profiles when caller sends partial selection', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $body = migrationWlanProfilePayload();
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-site',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'body' => $body,
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('deploy_results', 1)
+            ->where('deploy_results.0.ssid', 'DAYKIT_ssid_prof')
+            ->where('deploy_results.0.status', 'success'));
+
+    Http::assertSentCount(1);
+
+    Http::assertSent(function (Request $request) use ($body) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT_ssid_prof')
+            && json_decode($request->body(), true) === $body;
+    });
+
+    Http::assertNotSent(function (Request $request) {
+        return str_contains($request->url(), 'wlan-ssids/DAYWCD_ssid_prof');
+    });
+});
+
 test('migrations deploy wlan skips profiles missing passphrase or vlan', function () {
     Http::fake();
 

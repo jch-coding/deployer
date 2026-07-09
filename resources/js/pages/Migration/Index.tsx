@@ -1,6 +1,6 @@
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { ChevronDown, ChevronRight, Download, FileUp, Loader2, Upload } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import CentralScopeRefreshButtons, {
     type CentralScopeCacheMeta,
@@ -9,6 +9,7 @@ import CentralScopeRefreshButtons, {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
     Select,
@@ -105,6 +106,9 @@ export default function Index() {
 
     const [scopeId, setScopeId] = useState(selected_scope_id ?? '');
     const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
+    const [selectedProfileNames, setSelectedProfileNames] = useState<Set<string>>(
+        () => new Set(),
+    );
     const [deploying, setDeploying] = useState(false);
 
     const parseForm = useForm<{ config_file: File | null }>({
@@ -150,6 +154,31 @@ export default function Index() {
         [parsed_controllers],
     );
 
+    useEffect(() => {
+        setSelectedProfileNames(
+            new Set(allWlanProfiles.map((profile) => profile.ssid_profile_name)),
+        );
+    }, [allWlanProfiles]);
+
+    const selectedWlanProfiles = useMemo(
+        () =>
+            allWlanProfiles.filter((profile) =>
+                selectedProfileNames.has(profile.ssid_profile_name),
+            ),
+        [allWlanProfiles, selectedProfileNames],
+    );
+
+    const allProfilesSelected =
+        allWlanProfiles.length > 0 &&
+        allWlanProfiles.every((profile) =>
+            selectedProfileNames.has(profile.ssid_profile_name),
+        );
+    const someProfilesSelected =
+        !allProfilesSelected &&
+        allWlanProfiles.some((profile) =>
+            selectedProfileNames.has(profile.ssid_profile_name),
+        );
+
     const selectedSiteName = useMemo(
         () => site_options.find((site) => site.siteId === scopeId)?.siteName ?? '',
         [site_options, scopeId],
@@ -186,11 +215,17 @@ export default function Index() {
             return;
         }
 
+        if (selectedWlanProfiles.length === 0) {
+            toast.error('Please select at least one WLAN profile to deploy');
+
+            return;
+        }
+
         router.post(
             deployWlan().url,
             {
                 scope_id: scopeId,
-                profiles: allWlanProfiles.map((profile) => ({
+                profiles: selectedWlanProfiles.map((profile) => ({
                     ssid_profile_name: profile.ssid_profile_name,
                     body: profile.body,
                 })),
@@ -210,6 +245,28 @@ export default function Index() {
             ...current,
             [profileName]: !current[profileName],
         }));
+    };
+
+    const toggleProfileSelected = (profileName: string, checked: boolean) => {
+        setSelectedProfileNames((current) => {
+            const next = new Set(current);
+
+            if (checked) {
+                next.add(profileName);
+            } else {
+                next.delete(profileName);
+            }
+
+            return next;
+        });
+    };
+
+    const toggleAllProfiles = (checked: boolean) => {
+        setSelectedProfileNames(
+            checked
+                ? new Set(allWlanProfiles.map((profile) => profile.ssid_profile_name))
+                : new Set(),
+        );
     };
 
     if (!current_client) {
@@ -451,6 +508,22 @@ export default function Index() {
                                     <table className="w-full text-sm">
                                         <thead>
                                             <tr className="border-b text-left">
+                                                <th className="px-2 py-2 font-medium">
+                                                    <Checkbox
+                                                        checked={
+                                                            allProfilesSelected
+                                                                ? true
+                                                                : someProfilesSelected
+                                                                  ? 'indeterminate'
+                                                                  : false
+                                                        }
+                                                        aria-label="Select all WLAN profiles for deployment"
+                                                        onCheckedChange={(checked) =>
+                                                            toggleAllProfiles(checked === true)
+                                                        }
+                                                        disabled={allWlanProfiles.length === 0}
+                                                    />
+                                                </th>
                                                 <th className="px-2 py-2 font-medium">Profile</th>
                                                 <th className="px-2 py-2 font-medium">ESSID</th>
                                                 <th className="px-2 py-2 font-medium">VLAN</th>
@@ -476,8 +549,28 @@ export default function Index() {
                                                         key={profile.ssid_profile_name}
                                                         className="border-b align-top"
                                                     >
+                                                        <td className="px-2 py-2">
+                                                            <Checkbox
+                                                                id={`deploy-profile-${profile.ssid_profile_name}`}
+                                                                checked={selectedProfileNames.has(
+                                                                    profile.ssid_profile_name,
+                                                                )}
+                                                                aria-label={`Deploy ${profile.ssid_profile_name}`}
+                                                                onCheckedChange={(checked) =>
+                                                                    toggleProfileSelected(
+                                                                        profile.ssid_profile_name,
+                                                                        checked === true,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </td>
                                                         <td className="px-2 py-2 font-mono text-xs">
-                                                            {profile.ssid_profile_name}
+                                                            <label
+                                                                htmlFor={`deploy-profile-${profile.ssid_profile_name}`}
+                                                                className="cursor-pointer"
+                                                            >
+                                                                {profile.ssid_profile_name}
+                                                            </label>
                                                         </td>
                                                         <td className="px-2 py-2">{essid || '—'}</td>
                                                         <td className="px-2 py-2">
@@ -538,12 +631,17 @@ export default function Index() {
                                 <Button
                                     type="button"
                                     onClick={handleDeploy}
-                                    disabled={deploying || scopeId.trim() === ''}
+                                    disabled={
+                                        deploying ||
+                                        scopeId.trim() === '' ||
+                                        selectedWlanProfiles.length === 0
+                                    }
                                 >
                                     {deploying ? (
                                         <Loader2 className="size-4 animate-spin" />
                                     ) : null}
-                                    Deploy WLAN profiles
+                                    Deploy {selectedWlanProfiles.length} WLAN profile
+                                    {selectedWlanProfiles.length === 1 ? '' : 's'}
                                 </Button>
 
                                 {deploy_results.length > 0 && (
