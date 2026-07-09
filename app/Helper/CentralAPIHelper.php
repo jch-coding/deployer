@@ -63,6 +63,7 @@ class CentralAPIHelper
 
     public array $vlans_and_networks = [
         'l2_vlans' => 'network-config/v1alpha1/layer2-vlan',
+        'named_vlan' => 'network-config/v1alpha1/named-vlan',
     ];
 
     public array $switchMonitoring = [
@@ -1316,6 +1317,91 @@ class CentralAPIHelper
                     'device-function' => $device->device_function,
                 ])
                 ->delete($this->client->base_url.$this->vlans_and_networks['l2_vlans'].'/'.$l2_vlan);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param  list<int|string>  $vlan_id_ranges
+     * @return array{name?: string, vlan?: array{vlan-id-ranges: list<string>}}
+     */
+    public static function build_named_vlan_profile_body(
+        ?string $named_vlan = null,
+        array $vlan_id_ranges = []
+    ): array {
+        $body = [];
+
+        if ($named_vlan !== null) {
+            $body['name'] = $named_vlan;
+        }
+
+        if ($vlan_id_ranges !== []) {
+            $body['vlan'] = [
+                'vlan-id-ranges' => array_map(static fn ($range) => (string) $range, $vlan_id_ranges),
+            ];
+        }
+
+        return $body;
+    }
+
+    public function get_named_vlans($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->vlans_and_networks['named_vlan']);
+
+            return $response;
+        }
+    }
+
+    public function get_named_vlan_profile(string $named_vlan_profile, $queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->vlans_and_networks['named_vlan'].'/'.$named_vlan_profile);
+
+            return $response;
+        }
+    }
+
+    public function post_named_vlan_profile(
+        string $named_vlan_profile,
+        array $queryParameters = [],
+        ?string $named_vlan = null,
+        array $vlan_id_ranges = []
+    ) {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $body = static::build_named_vlan_profile_body($named_vlan, $vlan_id_ranges);
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->vlans_and_networks['named_vlan'].'/'.$named_vlan_profile, $body);
+
+            return $response;
+        }
+    }
+
+    public function patch_named_vlan_profile(
+        string $named_vlan_profile,
+        array $queryParameters = [],
+        ?string $named_vlan = null,
+        array $vlan_id_ranges = []
+    ) {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $body = static::build_named_vlan_profile_body($named_vlan, $vlan_id_ranges);
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->patch($this->client->base_url.$this->vlans_and_networks['named_vlan'].'/'.$named_vlan_profile, $body);
 
             return $response;
         }

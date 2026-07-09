@@ -868,6 +868,95 @@ test('post_wlan_ssid_profile posts to wlan-ssids endpoint with query parameters 
     });
 });
 
+test('build_named_vlan_profile_body coerces numeric vlan id ranges to strings', function () {
+    expect(CentralAPIHelper::build_named_vlan_profile_body('CorpVLAN', [10, '20-30']))
+        ->toEqual([
+            'name' => 'CorpVLAN',
+            'vlan' => ['vlan-id-ranges' => ['10', '20-30']],
+        ]);
+});
+
+test('build_named_vlan_profile_body supports partial name-only and ranges-only bodies', function () {
+    expect(CentralAPIHelper::build_named_vlan_profile_body('CorpVLAN'))
+        ->toEqual(['name' => 'CorpVLAN']);
+
+    expect(CentralAPIHelper::build_named_vlan_profile_body(null, [100]))
+        ->toEqual(['vlan' => ['vlan-id-ranges' => ['100']]]);
+});
+
+test('get_named_vlans gets named-vlan endpoint with query parameters', function () {
+    Http::fake(['*' => Http::response(['items' => []], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $helper->get_named_vlans(['view-type' => 'LIBRARY']);
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'GET'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan')
+            && ! str_contains($request->url(), 'network-config/v1alpha1/named-vlan/')
+            && ($query['view-type'] ?? null) === 'LIBRARY';
+    });
+});
+
+test('get_named_vlan_profile gets named-vlan profile endpoint with query parameters', function () {
+    Http::fake(['*' => Http::response(['name' => 'my-profile'], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $helper->get_named_vlan_profile('my-profile', ['view-type' => 'LIBRARY']);
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'GET'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/my-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY';
+    });
+});
+
+test('post_named_vlan_profile posts to named-vlan endpoint with query parameters and body', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $expectedBody = [
+        'name' => 'CorpVLAN',
+        'vlan' => ['vlan-id-ranges' => ['10', '20-30']],
+    ];
+
+    $helper->post_named_vlan_profile('my-profile', ['view-type' => 'LIBRARY'], 'CorpVLAN', [10, '20-30']);
+
+    Http::assertSent(function (Request $request) use ($expectedBody) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/my-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY'
+            && json_decode($request->body(), true) === $expectedBody;
+    });
+});
+
+test('patch_named_vlan_profile patches named-vlan endpoint with query parameters and body', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $expectedBody = [
+        'name' => 'CorpVLAN',
+        'vlan' => ['vlan-id-ranges' => ['10', '20-30']],
+    ];
+
+    $helper->patch_named_vlan_profile('my-profile', ['view-type' => 'LIBRARY'], 'CorpVLAN', [10, '20-30']);
+
+    Http::assertSent(function (Request $request) use ($expectedBody) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'PATCH'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/my-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY'
+            && json_decode($request->body(), true) === $expectedBody;
+    });
+});
+
 test('post_interface_portchannel omits lacp in request body for TRUNK trunk type', function () {
     Http::fake(['*' => Http::response(['ok' => true], 200)]);
 
