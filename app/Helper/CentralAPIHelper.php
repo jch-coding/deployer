@@ -81,6 +81,7 @@ class CentralAPIHelper
 
     public array $wireless = [
         'wlan_ssids' => 'network-config/v1alpha1/wlan-ssids',
+        'radios' => 'network-config/v1alpha1/radios',
     ];
 
     public array $classic_monitoring = [
@@ -1951,6 +1952,19 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->post($this->client->base_url.$this->interfaces['mirrors'].'/'.$mirror['name'], $mirror);
+
+            return $response;
+        }
+    }
+
+    public function get_radio_profiles($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->wireless['radios']);
 
             return $response;
         }
