@@ -24,9 +24,9 @@ class MigrationNamedVlanService
     }
 
     /**
-     * @return array<int, array{name: string, status: string, message: string}>
+     * @return array{profiles: array<int, array<string, mixed>>, error: string|null}
      */
-    public function deployOffsetNamedVlans(CentralAPIHelper $helper, string $scopeId): array
+    public function fetchNamedVlanProfiles(CentralAPIHelper $helper, string $scopeId): array
     {
         $getQueryParameters = [
             'view-type' => 'LOCAL',
@@ -37,29 +37,57 @@ class MigrationNamedVlanService
         $response = $helper->get_named_vlans($getQueryParameters);
 
         if (is_array($response) && array_key_exists('error', $response)) {
-            return [[
-                'name' => '*',
-                'status' => 'error',
-                'message' => (string) $response['error'],
-            ]];
+            return [
+                'profiles' => [],
+                'error' => (string) $response['error'],
+            ];
         }
 
         if (! $response->successful()) {
-            return [[
-                'name' => '*',
-                'status' => 'error',
-                'message' => $response->body() ?: 'Failed to fetch named VLAN profiles with status '.$response->status(),
-            ]];
+            return [
+                'profiles' => [],
+                'error' => $response->body() ?: 'Failed to fetch named VLAN profiles with status '.$response->status(),
+            ];
         }
 
         $profiles = $response->json('profile', []);
 
-        if (! is_array($profiles) || $profiles === []) {
-            return [[
+        if (! is_array($profiles)) {
+            return [
+                'profiles' => [],
+                'error' => null,
+            ];
+        }
+
+        return [
+            'profiles' => $profiles,
+            'error' => null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array{name: string, status: string, message: string}
+     */
+    public function deploySingleOffsetNamedVlan(CentralAPIHelper $helper, string $scopeId, array $profile): array
+    {
+        $profileName = trim((string) ($profile['name'] ?? ''));
+        $vlanIdRanges = $profile['vlan']['vlan-id-ranges'] ?? null;
+
+        if ($profileName === '') {
+            return [
                 'name' => '*',
                 'status' => 'skipped',
-                'message' => 'No named VLAN profiles returned from Central',
-            ]];
+                'message' => 'Missing named VLAN profile name',
+            ];
+        }
+
+        if (! is_array($vlanIdRanges) || $vlanIdRanges === []) {
+            return [
+                'name' => $profileName,
+                'status' => 'skipped',
+                'message' => 'Missing vlan-id-ranges',
+            ];
         }
 
         $postQueryParameters = [
@@ -69,7 +97,49 @@ class MigrationNamedVlanService
             'device-function' => 'CAMPUS_AP',
         ];
 
-        $results = [];
+        $stringRanges = array_map(
+            fn ($range): string => (string) $range,
+            $vlanIdRanges,
+        );
+
+        $offsetRanges = self::offsetVlanIdRanges($stringRanges);
+        $postResponse = $helper->post_named_vlan_profile(
+            $profileName,
+            $postQueryParameters,
+            $profileName,
+            $offsetRanges,
+        );
+
+        if (is_array($postResponse) && array_key_exists('error', $postResponse)) {
+            return [
+                'name' => $profileName,
+                'status' => 'error',
+                'message' => (string) $postResponse['error'],
+            ];
+        }
+
+        if ($postResponse->successful()) {
+            return [
+                'name' => $profileName,
+                'status' => 'success',
+                'message' => 'Deployed successfully with offset vlan-id-ranges',
+            ];
+        }
+
+        return [
+            'name' => $profileName,
+            'status' => 'error',
+            'message' => $postResponse->body() ?: 'Request failed with status '.$postResponse->status(),
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $profiles
+     * @return array<int, array<string, mixed>>
+     */
+    public function deployableNamedVlanProfiles(array $profiles): array
+    {
+        $deployable = [];
 
         foreach ($profiles as $profile) {
             if (! is_array($profile)) {
@@ -77,58 +147,46 @@ class MigrationNamedVlanService
             }
 
             $profileName = trim((string) ($profile['name'] ?? ''));
-            $vlanIdRanges = $profile['vlan']['vlan-id-ranges'] ?? null;
 
             if ($profileName === '') {
                 continue;
             }
 
-            if (! is_array($vlanIdRanges) || $vlanIdRanges === []) {
-                $results[] = [
-                    'name' => $profileName,
-                    'status' => 'skipped',
-                    'message' => 'Missing vlan-id-ranges',
-                ];
+            $deployable[] = $profile;
+        }
 
-                continue;
-            }
+        return $deployable;
+    }
 
-            $stringRanges = array_map(
-                fn ($range): string => (string) $range,
-                $vlanIdRanges,
-            );
+    /**
+     * @return array<int, array{name: string, status: string, message: string}>
+     */
+    public function deployOffsetNamedVlans(CentralAPIHelper $helper, string $scopeId): array
+    {
+        $fetch = $this->fetchNamedVlanProfiles($helper, $scopeId);
 
-            $offsetRanges = self::offsetVlanIdRanges($stringRanges);
-            $postResponse = $helper->post_named_vlan_profile(
-                $profileName,
-                $postQueryParameters,
-                $profileName,
-                $offsetRanges,
-            );
+        if ($fetch['error'] !== null) {
+            return [[
+                'name' => '*',
+                'status' => 'error',
+                'message' => $fetch['error'],
+            ]];
+        }
 
-            if (is_array($postResponse) && array_key_exists('error', $postResponse)) {
-                $results[] = [
-                    'name' => $profileName,
-                    'status' => 'error',
-                    'message' => (string) $postResponse['error'],
-                ];
+        $profiles = $this->deployableNamedVlanProfiles($fetch['profiles']);
 
-                continue;
-            }
+        if ($profiles === []) {
+            return [[
+                'name' => '*',
+                'status' => 'skipped',
+                'message' => 'No named VLAN profiles returned from Central',
+            ]];
+        }
 
-            if ($postResponse->successful()) {
-                $results[] = [
-                    'name' => $profileName,
-                    'status' => 'success',
-                    'message' => 'Deployed successfully with offset vlan-id-ranges',
-                ];
-            } else {
-                $results[] = [
-                    'name' => $profileName,
-                    'status' => 'error',
-                    'message' => $postResponse->body() ?: 'Request failed with status '.$postResponse->status(),
-                ];
-            }
+        $results = [];
+
+        foreach ($profiles as $profile) {
+            $results[] = $this->deploySingleOffsetNamedVlan($helper, $scopeId, $profile);
         }
 
         if ($results === []) {

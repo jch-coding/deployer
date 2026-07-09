@@ -106,6 +106,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/migrations', 'index')->name('migrations.index');
         Route::post('/migrations/parse', 'parse')->name('migrations.parse');
         Route::post('/migrations/deploy-wlan', 'deployWlan')->name('migrations.deploy-wlan');
+        Route::post('/migrations/deploy-wlan/step/{step}', 'deployWlanStep')->name('migrations.deploy-wlan.step');
     });
 
     Route::controller(DispatchController::class)->group(function () {

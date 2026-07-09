@@ -1,5 +1,5 @@
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { ChevronDown, ChevronRight, Download, FileUp, Loader2, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Download, FileUp, Loader2, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import CentralScopeRefreshButtons, {
@@ -25,8 +25,10 @@ import {
     type MigrationDevice,
     type MigrationLldpNeighbor,
 } from '@/lib/migration-csv';
+import { csrfHeaders } from '@/lib/csrf';
+import { cn } from '@/lib/utils';
 import { index as clientsIndex } from '@/routes/clients';
-import { deployWlan, index as migrationsIndex, parse as migrationsParse } from '@/routes/migrations';
+import { index as migrationsIndex, parse as migrationsParse } from '@/routes/migrations';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 type SiteOption = {
@@ -61,6 +63,39 @@ type NamedVlanDeployResult = {
     message: string;
 };
 
+type DeployStepStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped';
+
+type DeployStep = {
+    key: string;
+    label: string;
+    status: DeployStepStatus;
+    message?: string;
+};
+
+type DeployProgress = {
+    current: number;
+    total: number;
+    percent: number;
+    message: string;
+};
+
+type DeployStepResponse = {
+    progress: DeployProgress;
+    step: {
+        key: string;
+        label: string;
+        status: 'success' | 'error' | 'skipped';
+        message: string;
+    };
+    partial: {
+        deploy_results: DeployResult[];
+        named_vlan_deploy_results: NamedVlanDeployResult[];
+    };
+    context: {
+        named_vlan_profiles: Array<Record<string, unknown>>;
+    };
+};
+
 type MigrationIndexProps = {
     site_options: SiteOption[];
     parsed_controllers: ParsedController[];
@@ -92,6 +127,39 @@ function isFreezerSite(siteName: string): boolean {
     return siteName.includes('Freezer') && !siteName.includes('Hub-Freezer');
 }
 
+function buildInitialDeploySteps(profiles: WlanProfile[], isFreezer: boolean): DeployStep[] {
+    const steps: DeployStep[] = profiles.map((profile) => ({
+        key: `wlan-${profile.ssid_profile_name}`,
+        label: `Deploy WLAN profile: ${profile.ssid_profile_name}`,
+        status: 'pending',
+    }));
+
+    if (isFreezer) {
+        steps.push({
+            key: 'named-vlan-fetch',
+            label: 'Fetch named VLAN profiles from Central',
+            status: 'pending',
+        });
+    }
+
+    return steps;
+}
+
+function deployStepIcon(status: DeployStepStatus) {
+    switch (status) {
+        case 'running':
+            return <Loader2 className="size-4 shrink-0 animate-spin text-primary" />;
+        case 'success':
+            return <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />;
+        case 'error':
+            return <AlertCircle className="size-4 shrink-0 text-destructive" />;
+        case 'skipped':
+            return <span className="bg-muted-foreground size-2 shrink-0 rounded-full" />;
+        default:
+            return <span className="bg-muted size-2 shrink-0 rounded-full" />;
+    }
+}
+
 export default function Index() {
     const {
         current_client,
@@ -110,6 +178,27 @@ export default function Index() {
         () => new Set(),
     );
     const [deploying, setDeploying] = useState(false);
+    const [deployStarted, setDeployStarted] = useState(false);
+    const [deploySteps, setDeploySteps] = useState<DeployStep[]>([]);
+    const [deployProgress, setDeployProgress] = useState<DeployProgress>({
+        current: 0,
+        total: 0,
+        percent: 0,
+        message: '',
+    });
+    const [deployError, setDeployError] = useState<string | null>(null);
+    const [liveDeployResults, setLiveDeployResults] = useState<DeployResult[]>(deploy_results);
+    const [liveNamedVlanDeployResults, setLiveNamedVlanDeployResults] = useState<
+        NamedVlanDeployResult[]
+    >(named_vlan_deploy_results);
+
+    useEffect(() => {
+        setLiveDeployResults(deploy_results);
+    }, [deploy_results]);
+
+    useEffect(() => {
+        setLiveNamedVlanDeployResults(named_vlan_deploy_results);
+    }, [named_vlan_deploy_results]);
 
     const parseForm = useForm<{ config_file: File | null }>({
         config_file: null,
@@ -202,7 +291,7 @@ export default function Index() {
         });
     };
 
-    const handleDeploy = () => {
+    const handleDeploy = async () => {
         if (scopeId.trim() === '') {
             toast.error('Please select a site before deploying WLAN profiles');
 
@@ -221,23 +310,138 @@ export default function Index() {
             return;
         }
 
-        router.post(
-            deployWlan().url,
-            {
-                scope_id: scopeId,
-                profiles: selectedWlanProfiles.map((profile) => ({
-                    ssid_profile_name: profile.ssid_profile_name,
-                    body: profile.body,
-                })),
-                parsed_controllers,
-            },
-            {
-                onStart: () => setDeploying(true),
-                onFinish: () => setDeploying(false),
-                onSuccess: () => toast.success('WLAN profile deployment finished'),
-                onError: () => toast.error('WLAN profile deployment failed'),
-            },
-        );
+        const profiles = selectedWlanProfiles.map((profile) => ({
+            ssid_profile_name: profile.ssid_profile_name,
+            body: profile.body,
+        }));
+
+        const initialSteps = buildInitialDeploySteps(selectedWlanProfiles, showFreezerHint);
+
+        setDeployStarted(true);
+        setDeploySteps(initialSteps);
+        setLiveDeployResults([]);
+        setLiveNamedVlanDeployResults([]);
+        setDeployError(null);
+        setDeploying(true);
+        setDeployProgress({
+            current: 0,
+            total: initialSteps.length,
+            percent: 0,
+            message: 'Starting deployment...',
+        });
+
+        let context: DeployStepResponse['context'] = { named_vlan_profiles: [] };
+        let total = initialSteps.length;
+        let step = 0;
+
+        try {
+            while (step < total) {
+                setDeploySteps((current) =>
+                    current.map((deployStep, index) =>
+                        index === step ? { ...deployStep, status: 'running' } : deployStep,
+                    ),
+                );
+
+                const response = await fetch(`/migrations/deploy-wlan/step/${step}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        ...csrfHeaders(),
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        scope_id: scopeId,
+                        profiles,
+                        context,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const body = (await response.json().catch(() => null)) as {
+                        message?: string;
+                    } | null;
+                    throw new Error(
+                        body?.message ?? `Deploy failed (HTTP ${response.status}).`,
+                    );
+                }
+
+                const data = (await response.json()) as DeployStepResponse;
+
+                setDeployProgress(data.progress);
+                total = data.progress.total;
+                context = data.context ?? context;
+
+                setDeploySteps((current) => {
+                    let next = current.map((deployStep, index) =>
+                        index === step
+                            ? {
+                                  ...deployStep,
+                                  status: data.step.status,
+                                  message: data.step.message,
+                              }
+                            : deployStep,
+                    );
+
+                    if (
+                        data.step.key === 'named-vlan-fetch' &&
+                        data.context.named_vlan_profiles.length > 0
+                    ) {
+                        const existingKeys = new Set(next.map((deployStep) => deployStep.key));
+
+                        for (const profile of data.context.named_vlan_profiles) {
+                            const name = String(profile.name ?? '').trim();
+
+                            if (name === '' || existingKeys.has(`named-vlan-${name}`)) {
+                                continue;
+                            }
+
+                            next.push({
+                                key: `named-vlan-${name}`,
+                                label: `Deploy named VLAN: ${name} (+200 offset)`,
+                                status: 'pending',
+                            });
+                            existingKeys.add(`named-vlan-${name}`);
+                        }
+                    }
+
+                    return next;
+                });
+
+                setLiveDeployResults((current) => [
+                    ...current,
+                    ...data.partial.deploy_results,
+                ]);
+                setLiveNamedVlanDeployResults((current) => [
+                    ...current,
+                    ...data.partial.named_vlan_deploy_results,
+                ]);
+
+                step += 1;
+            }
+
+            setDeployProgress((current) => ({
+                ...current,
+                percent: 100,
+                message: 'Deployment complete.',
+            }));
+            toast.success('WLAN profile deployment finished');
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : 'WLAN profile deployment failed';
+            setDeployError(message);
+            setDeploySteps((current) =>
+                current.map((deployStep, index) =>
+                    index === step && deployStep.status === 'running'
+                        ? { ...deployStep, status: 'error', message }
+                        : deployStep,
+                ),
+            );
+            toast.error('WLAN profile deployment failed');
+        } finally {
+            setDeploying(false);
+        }
     };
 
     const toggleProfileExpanded = (profileName: string) => {
@@ -630,7 +834,7 @@ export default function Index() {
 
                                 <Button
                                     type="button"
-                                    onClick={handleDeploy}
+                                    onClick={() => void handleDeploy()}
                                     disabled={
                                         deploying ||
                                         scopeId.trim() === '' ||
@@ -644,10 +848,77 @@ export default function Index() {
                                     {selectedWlanProfiles.length === 1 ? '' : 's'}
                                 </Button>
 
-                                {deploy_results.length > 0 && (
+                                {deployStarted && (
+                                    <Card>
+                                        <CardHeader className="pb-2">
+                                            <CardTitle className="text-base">
+                                                Deploy progress
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent className="space-y-4">
+                                            <div className="space-y-2">
+                                                <div
+                                                    className="bg-muted h-2 w-full overflow-hidden rounded-full"
+                                                    role="progressbar"
+                                                    aria-valuenow={deployProgress.percent}
+                                                    aria-valuemin={0}
+                                                    aria-valuemax={100}
+                                                >
+                                                    <div
+                                                        className="bg-primary h-full rounded-full transition-all duration-300"
+                                                        style={{
+                                                            width: `${deployProgress.percent}%`,
+                                                        }}
+                                                    />
+                                                </div>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Step {deployProgress.current} of{' '}
+                                                    {deployProgress.total}
+                                                    {deployProgress.percent > 0 &&
+                                                        ` (${deployProgress.percent}%)`}
+                                                </p>
+                                                <p className="text-sm font-medium">
+                                                    {deployProgress.message}
+                                                </p>
+                                                {deployError && (
+                                                    <p className="text-destructive text-sm">
+                                                        {deployError}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            <div className="max-h-64 space-y-2 overflow-y-auto">
+                                                {deploySteps.map((deployStep) => (
+                                                    <div
+                                                        key={deployStep.key}
+                                                        className={cn(
+                                                            'flex items-start gap-2 text-sm',
+                                                            deployStep.status === 'pending' &&
+                                                                'text-muted-foreground',
+                                                        )}
+                                                    >
+                                                        {deployStepIcon(deployStep.status)}
+                                                        <div>
+                                                            <span className="font-medium">
+                                                                {deployStep.label}
+                                                            </span>
+                                                            {deployStep.message ? (
+                                                                <p className="text-muted-foreground text-xs">
+                                                                    {deployStep.message}
+                                                                </p>
+                                                            ) : null}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                )}
+
+                                {liveDeployResults.length > 0 && (
                                     <div className="flex flex-col gap-2">
                                         <h3 className="text-sm font-medium">WLAN deployment results</h3>
-                                        {deploy_results.map((result) => (
+                                        {liveDeployResults.map((result) => (
                                             <div
                                                 key={result.ssid}
                                                 className="flex flex-wrap items-center gap-2 text-sm"
@@ -664,10 +935,10 @@ export default function Index() {
                                     </div>
                                 )}
 
-                                {named_vlan_deploy_results.length > 0 && (
+                                {liveNamedVlanDeployResults.length > 0 && (
                                     <div className="flex flex-col gap-2">
                                         <h3 className="text-sm font-medium">Named VLAN deployment results</h3>
-                                        {named_vlan_deploy_results.map((result) => (
+                                        {liveNamedVlanDeployResults.map((result) => (
                                             <div
                                                 key={result.name}
                                                 className="flex flex-wrap items-center gap-2 text-sm"

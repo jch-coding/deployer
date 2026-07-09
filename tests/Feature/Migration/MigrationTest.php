@@ -285,3 +285,133 @@ test('migrations deploy wlan skips named vlan offset for hub-freezer sites', fun
         return str_contains($request->url(), 'named-vlan');
     });
 });
+
+test('migrations deploy wlan step 0 returns json progress and partial deploy result', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $body = migrationWlanProfilePayload();
+
+    $this->postJson(route('migrations.deploy-wlan.step', ['step' => 0]), [
+        'scope_id' => 'scope-site',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT',
+                'body' => $body,
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('progress.current', 1)
+        ->assertJsonPath('progress.total', 1)
+        ->assertJsonPath('progress.percent', 100)
+        ->assertJsonPath('step.key', 'wlan-DAYKIT')
+        ->assertJsonPath('step.status', 'success')
+        ->assertJsonPath('partial.deploy_results.0.ssid', 'DAYKIT')
+        ->assertJsonPath('partial.deploy_results.0.status', 'success');
+
+    Http::assertSent(function (Request $request) use ($body) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT')
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
+test('migrations deploy wlan step endpoint deploys multiple profiles across steps', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $profiles = [
+        [
+            'ssid_profile_name' => 'DAYKIT',
+            'body' => migrationWlanProfilePayload(),
+        ],
+        [
+            'ssid_profile_name' => 'DAYRF',
+            'body' => array_merge(migrationWlanProfilePayload(), [
+                'essid' => ['name' => 'DAYRF'],
+                'ssid' => 'DAYRF',
+                'vlan-name' => 'WCD_RF',
+            ]),
+        ],
+    ];
+
+    $this->postJson(route('migrations.deploy-wlan.step', ['step' => 0]), [
+        'scope_id' => 'scope-site',
+        'profiles' => $profiles,
+    ])
+        ->assertOk()
+        ->assertJsonPath('progress.current', 1)
+        ->assertJsonPath('progress.total', 2)
+        ->assertJsonPath('partial.deploy_results.0.ssid', 'DAYKIT');
+
+    $this->postJson(route('migrations.deploy-wlan.step', ['step' => 1]), [
+        'scope_id' => 'scope-site',
+        'profiles' => $profiles,
+    ])
+        ->assertOk()
+        ->assertJsonPath('progress.current', 2)
+        ->assertJsonPath('progress.total', 2)
+        ->assertJsonPath('progress.percent', 100)
+        ->assertJsonPath('partial.deploy_results.0.ssid', 'DAYRF');
+
+    Http::assertSentCount(2);
+});
+
+test('migrations deploy wlan step fetch increases total for freezer sites', function () {
+    seedMigrationSiteCache($this->client, 'Daytona Freezer', 'scope-freezer');
+
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            return Http::response([
+                'profile' => [
+                    [
+                        'name' => 'WCD_KIT',
+                        'vlan' => ['vlan-id-ranges' => ['1']],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $profiles = [
+        [
+            'ssid_profile_name' => 'DAYKIT',
+            'body' => migrationWlanProfilePayload(),
+        ],
+    ];
+
+    $this->postJson(route('migrations.deploy-wlan.step', ['step' => 0]), [
+        'scope_id' => 'scope-freezer',
+        'profiles' => $profiles,
+    ])
+        ->assertOk()
+        ->assertJsonPath('progress.current', 1)
+        ->assertJsonPath('progress.total', 2);
+
+    $fetchResponse = $this->postJson(route('migrations.deploy-wlan.step', ['step' => 1]), [
+        'scope_id' => 'scope-freezer',
+        'profiles' => $profiles,
+        'context' => ['named_vlan_profiles' => []],
+    ])
+        ->assertOk()
+        ->assertJsonPath('step.key', 'named-vlan-fetch')
+        ->assertJsonPath('progress.total', 3)
+        ->assertJsonPath('context.named_vlan_profiles.0.name', 'WCD_KIT');
+
+    $this->postJson(route('migrations.deploy-wlan.step', ['step' => 2]), [
+        'scope_id' => 'scope-freezer',
+        'profiles' => $profiles,
+        'context' => $fetchResponse->json('context'),
+    ])
+        ->assertOk()
+        ->assertJsonPath('step.key', 'named-vlan-WCD_KIT')
+        ->assertJsonPath('partial.named_vlan_deploy_results.0.name', 'WCD_KIT')
+        ->assertJsonPath('partial.named_vlan_deploy_results.0.status', 'success')
+        ->assertJsonPath('progress.percent', 100);
+
+    Http::assertSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_KIT');
+    });
+});
