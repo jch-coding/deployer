@@ -35,22 +35,45 @@ function downloadCsv(filename: string, headers: string[], rows: string[][]): voi
     URL.revokeObjectURL(url);
 }
 
-export function downloadMigrationDevicesCsv(devices: MigrationDevice[]): void {
+function sanitizeControllerNameForFilename(controllerName: string): string {
+    const sanitized = controllerName.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+
+    return sanitized === '' ? 'controller' : sanitized;
+}
+
+function csvFilename(base: string, controllerName?: string): string {
+    if (controllerName === undefined || controllerName.trim() === '') {
+        return `${base}.csv`;
+    }
+
+    return `${base}-${sanitizeControllerNameForFilename(controllerName)}.csv`;
+}
+
+export function downloadMigrationDevicesCsv(
+    devices: MigrationDevice[],
+    controllerName?: string,
+): void {
+    const includeControllerColumn = devices.some((device) => device.controller !== undefined);
+
     downloadCsv(
-        'migration-devices.csv',
-        ['name', 'serial', 'mac', 'controller'],
-        devices.map((device) => [
-            device.name,
-            device.serial,
-            device.mac,
-            device.controller ?? '',
-        ]),
+        csvFilename('migration-devices', controllerName),
+        includeControllerColumn
+            ? ['name', 'serial', 'mac', 'controller']
+            : ['name', 'serial', 'mac'],
+        devices.map((device) =>
+            includeControllerColumn
+                ? [device.name, device.serial, device.mac, device.controller ?? '']
+                : [device.name, device.serial, device.mac],
+        ),
     );
 }
 
-export function downloadMigrationLldpCsv(neighbors: MigrationLldpNeighbor[]): void {
+export function downloadMigrationLldpCsv(
+    neighbors: MigrationLldpNeighbor[],
+    controllerName?: string,
+): void {
     downloadCsv(
-        'migration-lldp-neighbors.csv',
+        csvFilename('migration-lldp-neighbors', controllerName),
         ['switch', 'ports'],
         neighbors.map((neighbor) => [
             neighbor.switch,

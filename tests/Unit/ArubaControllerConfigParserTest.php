@@ -132,3 +132,70 @@ it('includes partial wlan profiles with warnings', function () {
     expect($tjs)->not->toBeNull()
         ->and($tjs['warnings'])->toContain('Missing wpa-passphrase');
 });
+
+it('parses multiple controller blocks with isolated data', function () {
+    $content = <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+
+(WLC-ONE) #show ap lldp neighbors
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+AP-ONE-001       bond0      0         SW-ONE.example.com            Te1/0/1   AP         10.1.1.10      B
+
+(WLC-ONE) #show running-config
+wlan ssid-profile "ONEKIT_ssid_prof"
+    essid "ONEKIT"
+    wpa-passphrase "one-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "ONEKIT"
+    vlan ONEKIT
+    ssid-profile "ONEKIT_ssid_prof"
+
+(WLC-TWO) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-TWO-001       default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERTWO001   N/A   N/A   N/A
+
+(WLC-TWO) #show ap lldp neighbors
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+AP-TWO-001       bond0      0         SW-TWO.example.com            Te2/0/2   AP         10.2.2.10      B
+
+(WLC-TWO) #show running-config
+wlan ssid-profile "TWOKIT_ssid_prof"
+    essid "TWOKIT"
+    wpa-passphrase "two-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "TWOKIT"
+    vlan TWOKIT
+    ssid-profile "TWOKIT_ssid_prof"
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $results = $parser->parse($content);
+
+    expect($results)->toHaveCount(2)
+        ->and($results[0]['controller_name'])->toBe('WLC-ONE')
+        ->and($results[1]['controller_name'])->toBe('WLC-TWO')
+        ->and($results[0]['devices'])->toHaveCount(1)
+        ->and($results[1]['devices'])->toHaveCount(1)
+        ->and($results[0]['devices'][0]['name'])->toBe('AP-ONE-001')
+        ->and($results[1]['devices'][0]['name'])->toBe('AP-TWO-001')
+        ->and($results[0]['lldp_neighbors'][0]['switch'])->toBe('SW-ONE.example.com')
+        ->and($results[1]['lldp_neighbors'][0]['switch'])->toBe('SW-TWO.example.com')
+        ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('ONEKIT')
+        ->and($results[1]['wlan_profiles'][0]['ssid_profile_name'])->toBe('TWOKIT');
+});

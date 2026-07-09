@@ -19,82 +19,29 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
+import ControllerMigrationSection from '@/pages/Migration/ControllerMigrationSection';
+import {
+    buildInitialDeploySteps,
+    deployStatusVariant,
+    isFreezerSite,
+    type DeployProgress,
+    type DeployResult,
+    type DeployStep,
+    type DeployStepResponse,
+    type DeployStepStatus,
+    type NamedVlanDeployResult,
+    type ParsedController,
+    type SiteOption,
+} from '@/pages/Migration/migration-types';
 import {
     downloadMigrationDevicesCsv,
     downloadMigrationLldpCsv,
-    type MigrationDevice,
-    type MigrationLldpNeighbor,
 } from '@/lib/migration-csv';
 import { csrfHeaders } from '@/lib/csrf';
 import { cn } from '@/lib/utils';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as migrationsIndex, parse as migrationsParse } from '@/routes/migrations';
 import type { BreadcrumbItem, SharedData } from '@/types';
-
-type SiteOption = {
-    siteId: string;
-    siteName: string;
-};
-
-type WlanProfile = {
-    ssid_profile_name: string;
-    raw_vlan: string | null;
-    vlan_name: string | null;
-    body: Record<string, unknown>;
-    warnings: string[];
-};
-
-type ParsedController = {
-    controller_name: string;
-    devices: MigrationDevice[];
-    lldp_neighbors: MigrationLldpNeighbor[];
-    wlan_profiles: WlanProfile[];
-};
-
-type DeployResult = {
-    ssid: string;
-    status: 'success' | 'error' | 'skipped';
-    message: string;
-};
-
-type NamedVlanDeployResult = {
-    name: string;
-    status: 'success' | 'error' | 'skipped';
-    message: string;
-};
-
-type DeployStepStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped';
-
-type DeployStep = {
-    key: string;
-    label: string;
-    status: DeployStepStatus;
-    message?: string;
-};
-
-type DeployProgress = {
-    current: number;
-    total: number;
-    percent: number;
-    message: string;
-};
-
-type DeployStepResponse = {
-    progress: DeployProgress;
-    step: {
-        key: string;
-        label: string;
-        status: 'success' | 'error' | 'skipped';
-        message: string;
-    };
-    partial: {
-        deploy_results: DeployResult[];
-        named_vlan_deploy_results: NamedVlanDeployResult[];
-    };
-    context: {
-        named_vlan_profiles: Array<Record<string, unknown>>;
-    };
-};
 
 type MigrationIndexProps = {
     site_options: SiteOption[];
@@ -109,41 +56,6 @@ type MigrationIndexProps = {
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Migrations', href: migrationsIndex().url },
 ];
-
-function deployStatusVariant(
-    status: DeployResult['status'] | NamedVlanDeployResult['status'],
-): 'default' | 'destructive' | 'secondary' {
-    switch (status) {
-        case 'success':
-            return 'default';
-        case 'error':
-            return 'destructive';
-        default:
-            return 'secondary';
-    }
-}
-
-function isFreezerSite(siteName: string): boolean {
-    return siteName.includes('Freezer') && !siteName.includes('Hub-Freezer');
-}
-
-function buildInitialDeploySteps(profiles: WlanProfile[], isFreezer: boolean): DeployStep[] {
-    const steps: DeployStep[] = profiles.map((profile) => ({
-        key: `wlan-${profile.ssid_profile_name}`,
-        label: `Deploy WLAN profile: ${profile.ssid_profile_name}`,
-        status: 'pending',
-    }));
-
-    if (isFreezer) {
-        steps.push({
-            key: 'named-vlan-fetch',
-            label: 'Fetch named VLAN profiles from Central',
-            status: 'pending',
-        });
-    }
-
-    return steps;
-}
 
 function deployStepIcon(status: DeployStepStatus) {
     switch (status) {
@@ -274,6 +186,7 @@ export default function Index() {
     );
 
     const showFreezerHint = isFreezerSite(selectedSiteName);
+    const isMultiController = parsed_controllers.length > 1;
 
     const handleParseSubmit = (event: React.FormEvent) => {
         event.preventDefault();
@@ -563,15 +476,25 @@ export default function Index() {
                     </CardContent>
                 </Card>
 
-                {parsed_controllers.length > 0 && (
+                {parsed_controllers.length > 0 && isMultiController && (
+                    <>
+                        {parsed_controllers.map((controller) => (
+                            <ControllerMigrationSection
+                                key={controller.controller_name}
+                                controller={controller}
+                                siteOptions={site_options}
+                            />
+                        ))}
+                    </>
+                )}
+
+                {parsed_controllers.length > 0 && !isMultiController && (
                     <>
                         <Card>
                             <CardHeader>
                                 <CardTitle>Controllers</CardTitle>
                                 <CardDescription>
-                                    {parsed_controllers.length} controller section
-                                    {parsed_controllers.length === 1 ? '' : 's'} found in the
-                                    uploaded file.
+                                    1 controller section found in the uploaded file.
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="flex flex-wrap gap-2">
