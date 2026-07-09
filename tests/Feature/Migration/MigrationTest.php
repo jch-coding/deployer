@@ -1,6 +1,7 @@
 <?php
 
 use App\BaseURL;
+use App\Models\CentralScopeCache;
 use App\Models\Client;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
@@ -35,6 +36,7 @@ test('migrations index renders with site options', function () {
             ->component('Migration/Index')
             ->where('parsed_controllers', [])
             ->where('deploy_results', [])
+            ->where('named_vlan_deploy_results', [])
             ->has('site_options', 1)
             ->where('site_options.0.siteId', 'scope-site')
             ->where('site_options.0.siteName', 'Central Site'));
@@ -133,4 +135,134 @@ test('migrations deploy wlan skips profiles missing passphrase or vlan', functio
             ->where('deploy_results.0.status', 'skipped'));
 
     Http::assertNothingSent();
+});
+
+function seedMigrationSiteCache(Client $client, string $scopeName, string $scopeId): void
+{
+    CentralScopeCache::query()
+        ->where('client_id', $client->id)
+        ->where('type', \App\CentralScopeCacheType::Sites)
+        ->update([
+            'items' => [
+                ['scopeName' => $scopeName, 'scopeId' => $scopeId],
+            ],
+        ]);
+}
+
+function migrationWlanProfilePayload(): array
+{
+    return [
+        'essid' => ['name' => 'DAYKIT'],
+        'g-legacy-rates' => ['basic-rates' => [], 'tx-rates' => []],
+        'opmode' => 'WPA2_PERSONAL',
+        'personal-security' => [
+            'passphrase-format' => 'STRING',
+            'wpa-passphrase' => 'secret-passphrase',
+        ],
+        'type' => 'EMPLOYEE',
+        'internal-auth-server' => 'INTERNAL_SERVER',
+        'vlan-name' => 'WCD_KIT',
+        'vlan-selector' => 'NAMED_VLAN',
+        'enable' => true,
+        'ssid' => 'DAYKIT_ssid_prof',
+        'a-legacy-rates' => ['basic-rates' => ['RATE_12MB'], 'tx-rates' => ['RATE_12MB']],
+    ];
+}
+
+test('migrations deploy wlan triggers named vlan offset for freezer sites', function () {
+    seedMigrationSiteCache($this->client, 'Daytona Freezer', 'scope-freezer');
+
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            return Http::response([
+                'profile' => [
+                    [
+                        'name' => 'WCD_KIT',
+                        'vlan' => ['vlan-id-ranges' => ['1']],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-freezer',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'body' => migrationWlanProfilePayload(),
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('named_vlan_deploy_results', 1)
+            ->where('named_vlan_deploy_results.0.name', 'WCD_KIT')
+            ->where('named_vlan_deploy_results.0.status', 'success'));
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_KIT')
+            && ($query['object-type'] ?? null) === 'LOCAL'
+            && json_decode($request->body(), true) === [
+                'name' => 'WCD_KIT',
+                'vlan' => ['vlan-id-ranges' => ['201']],
+            ];
+    });
+});
+
+test('migrations deploy wlan skips named vlan offset for non-freezer sites', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-site',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'body' => migrationWlanProfilePayload(),
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('named_vlan_deploy_results', []));
+
+    Http::assertSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'wlan-ssids/');
+    });
+
+    Http::assertNotSent(function (Request $request) {
+        return str_contains($request->url(), 'named-vlan');
+    });
+});
+
+test('migrations deploy wlan skips named vlan offset for hub-freezer sites', function () {
+    seedMigrationSiteCache($this->client, 'Hub-Freezer', 'scope-hub-freezer');
+
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-hub-freezer',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT_ssid_prof',
+                'body' => migrationWlanProfilePayload(),
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('named_vlan_deploy_results', []));
+
+    Http::assertNotSent(function (Request $request) {
+        return str_contains($request->url(), 'named-vlan');
+    });
 });

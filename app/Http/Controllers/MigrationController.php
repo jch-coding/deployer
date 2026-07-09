@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helper\CentralAPIHelper;
 use App\Services\ArubaControllerConfigParser;
 use App\Services\CentralScopeCacheService;
+use App\Services\MigrationNamedVlanService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -24,6 +25,7 @@ class MigrationController extends Controller
             'site_options' => $centralScopeCacheService->getSiteOptions($currentClient),
             'parsed_controllers' => [],
             'deploy_results' => [],
+            'named_vlan_deploy_results' => [],
             ...$centralScopeCacheService->getCacheMetadata($currentClient),
         ]);
     }
@@ -55,12 +57,16 @@ class MigrationController extends Controller
             'site_options' => $centralScopeCacheService->getSiteOptions($currentClient),
             'parsed_controllers' => $parsedControllers,
             'deploy_results' => [],
+            'named_vlan_deploy_results' => [],
             ...$centralScopeCacheService->getCacheMetadata($currentClient),
         ]);
     }
 
-    public function deployWlan(Request $request, CentralScopeCacheService $centralScopeCacheService)
-    {
+    public function deployWlan(
+        Request $request,
+        CentralScopeCacheService $centralScopeCacheService,
+        MigrationNamedVlanService $migrationNamedVlanService,
+    ) {
         $currentClient = $request->user()->currentClient();
 
         if (! $currentClient) {
@@ -139,12 +145,25 @@ class MigrationController extends Controller
             }
         }
 
+        $selectedSiteName = collect($siteOptions)
+            ->firstWhere('siteId', $validated['scope_id'])['siteName'] ?? '';
+
+        $namedVlanDeployResults = [];
+
+        if (MigrationNamedVlanService::isFreezerSite($selectedSiteName)) {
+            $namedVlanDeployResults = $migrationNamedVlanService->deployOffsetNamedVlans(
+                $helper,
+                $validated['scope_id'],
+            );
+        }
+
         $parsedControllers = $request->input('parsed_controllers', []);
 
         return Inertia::render('Migration/Index', [
             'site_options' => $siteOptions,
             'parsed_controllers' => is_array($parsedControllers) ? $parsedControllers : [],
             'deploy_results' => $deployResults,
+            'named_vlan_deploy_results' => $namedVlanDeployResults,
             'selected_scope_id' => $validated['scope_id'],
             ...$centralScopeCacheService->getCacheMetadata($currentClient),
         ]);

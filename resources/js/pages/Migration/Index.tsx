@@ -54,10 +54,17 @@ type DeployResult = {
     message: string;
 };
 
+type NamedVlanDeployResult = {
+    name: string;
+    status: 'success' | 'error' | 'skipped';
+    message: string;
+};
+
 type MigrationIndexProps = {
     site_options: SiteOption[];
     parsed_controllers: ParsedController[];
     deploy_results: DeployResult[];
+    named_vlan_deploy_results: NamedVlanDeployResult[];
     selected_scope_id?: string;
     central_sites_cache: CentralScopeCacheMeta;
     central_groups_cache: CentralScopeGroupsCacheMeta;
@@ -68,7 +75,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 function deployStatusVariant(
-    status: DeployResult['status'],
+    status: DeployResult['status'] | NamedVlanDeployResult['status'],
 ): 'default' | 'destructive' | 'secondary' {
     switch (status) {
         case 'success':
@@ -80,12 +87,17 @@ function deployStatusVariant(
     }
 }
 
+function isFreezerSite(siteName: string): boolean {
+    return siteName.includes('Freezer') && !siteName.includes('Hub-Freezer');
+}
+
 export default function Index() {
     const {
         current_client,
         site_options,
         parsed_controllers,
         deploy_results,
+        named_vlan_deploy_results,
         selected_scope_id,
         central_sites_cache,
         central_groups_cache,
@@ -137,6 +149,13 @@ export default function Index() {
         () => parsed_controllers.flatMap((controller) => controller.wlan_profiles),
         [parsed_controllers],
     );
+
+    const selectedSiteName = useMemo(
+        () => site_options.find((site) => site.siteId === scopeId)?.siteName ?? '',
+        [site_options, scopeId],
+    );
+
+    const showFreezerHint = isFreezerSite(selectedSiteName);
 
     const handleParseSubmit = (event: React.FormEvent) => {
         event.preventDefault();
@@ -420,6 +439,12 @@ export default function Index() {
                                             Select a site to deploy WLAN profiles.
                                         </p>
                                     )}
+                                    {showFreezerHint && (
+                                        <p className="text-muted-foreground text-sm">
+                                            Named VLAN profiles will be offset by +200 after WLAN
+                                            deploy for this Freezer site.
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="overflow-x-auto">
@@ -523,7 +548,7 @@ export default function Index() {
 
                                 {deploy_results.length > 0 && (
                                     <div className="flex flex-col gap-2">
-                                        <h3 className="text-sm font-medium">Deployment results</h3>
+                                        <h3 className="text-sm font-medium">WLAN deployment results</h3>
                                         {deploy_results.map((result) => (
                                             <div
                                                 key={result.ssid}
@@ -533,6 +558,26 @@ export default function Index() {
                                                     {result.status}
                                                 </Badge>
                                                 <span className="font-mono text-xs">{result.ssid}</span>
+                                                <span className="text-muted-foreground">
+                                                    {result.message}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {named_vlan_deploy_results.length > 0 && (
+                                    <div className="flex flex-col gap-2">
+                                        <h3 className="text-sm font-medium">Named VLAN deployment results</h3>
+                                        {named_vlan_deploy_results.map((result) => (
+                                            <div
+                                                key={result.name}
+                                                className="flex flex-wrap items-center gap-2 text-sm"
+                                            >
+                                                <Badge variant={deployStatusVariant(result.status)}>
+                                                    {result.status}
+                                                </Badge>
+                                                <span className="font-mono text-xs">{result.name}</span>
                                                 <span className="text-muted-foreground">
                                                     {result.message}
                                                 </span>
