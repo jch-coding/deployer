@@ -66,6 +66,8 @@ it('builds wlan profile body for DAYKIT with mapped vlan', function () {
         ->and($daykit['body']['high-efficiency'])->toBe(['enable' => true])
         ->and($daykit['body'])->not->toHaveKey('internal-auth-server')
         ->and($daykit['body'])->not->toHaveKey('g-legacy-rates')
+        ->and($daykit['body']['rf-band'])->toBe('5GHZ')
+        ->and($daykit['body']['advertise-apname'])->toBeTrue()
         ->and($daykit['body']['a-legacy-rates']['basic-rates'])->toBe(['RATE_12MB', 'RATE_24MB'])
         ->and($daykit['body']['a-legacy-rates']['tx-rates'])->toBe(['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB']);
 });
@@ -80,6 +82,8 @@ it('builds wlan profile body for DAYRF with both band legacy rates', function ()
     expect($dayrf)->not->toBeNull()
         ->and($dayrf['body'])->toHaveKey('g-legacy-rates')
         ->and($dayrf['body'])->toHaveKey('a-legacy-rates')
+        ->and($dayrf['body'])->not->toHaveKey('rf-band')
+        ->and($dayrf['body']['advertise-apname'])->toBeTrue()
         ->and($dayrf['body']['g-legacy-rates']['basic-rates'])->toBe(['RATE_12MB', 'RATE_24MB'])
         ->and($dayrf['body']['g-legacy-rates']['tx-rates'])->toBe(['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB']);
 });
@@ -198,4 +202,88 @@ CONFIG;
         ->and($results[1]['lldp_neighbors'][0]['switch'])->toBe('SW-TWO.example.com')
         ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('ONEKIT')
         ->and($results[1]['wlan_profiles'][0]['ssid_profile_name'])->toBe('TWOKIT');
+});
+
+it('builds wlan profile body for WCD_AGV with rf-band from allowed-band a', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    $wcdAgv = collect($profiles)->firstWhere('ssid_profile_name', 'WCD_AGV');
+
+    expect($wcdAgv)->not->toBeNull()
+        ->and($wcdAgv['body']['rf-band'])->toBe('5GHZ')
+        ->and($wcdAgv['body'])->not->toHaveKey('advertise-apname');
+});
+
+it('omits rf-band and advertise-apname when not present in config', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    $daytj = collect($profiles)->firstWhere('ssid_profile_name', 'DAYTJ');
+    $daywcd = collect($profiles)->firstWhere('ssid_profile_name', 'DAYWCD');
+
+    expect($daytj)->not->toBeNull()
+        ->and($daytj['body'])->not->toHaveKey('rf-band')
+        ->and($daytj['body'])->not->toHaveKey('advertise-apname')
+        ->and($daywcd)->not->toBeNull()
+        ->and($daywcd['body'])->not->toHaveKey('rf-band')
+        ->and($daywcd['body'])->not->toHaveKey('advertise-apname');
+});
+
+it('maps allowed-band g to rf-band 24GHZ', function () {
+    $content = <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+
+(WLC-ONE) #show running-config
+wlan ssid-profile "G24_ssid_prof"
+    essid "G24"
+    wpa-passphrase "g24-passphrase-12345"
+!
+wlan virtual-ap "G24"
+    vlan DAYG24
+    ssid-profile "G24_ssid_prof"
+    allowed-band g
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profile = $parser->parse($content)[0]['wlan_profiles'][0];
+
+    expect($profile['ssid_profile_name'])->toBe('G24')
+        ->and($profile['body']['rf-band'])->toBe('24GHZ');
+});
+
+it('omits rf-band for unknown allowed-band values', function () {
+    $content = <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+
+(WLC-ONE) #show running-config
+wlan ssid-profile "UNK_ssid_prof"
+    essid "UNK"
+    wpa-passphrase "unk-passphrase-12345"
+!
+wlan virtual-ap "UNK"
+    vlan DAYUNK
+    ssid-profile "UNK_ssid_prof"
+    allowed-band n
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profile = $parser->parse($content)[0]['wlan_profiles'][0];
+
+    expect($profile['ssid_profile_name'])->toBe('UNK')
+        ->and($profile['body'])->not->toHaveKey('rf-band');
 });

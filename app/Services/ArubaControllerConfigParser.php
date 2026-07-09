@@ -200,12 +200,14 @@ class ArubaControllerConfigParser
         }
 
         $ssidProfiles = $this->parseSsidProfileBlocks($section);
-        $vlanBySsidProfile = $this->parseVirtualApVlanMap($section);
+        $virtualApBySsidProfile = $this->parseVirtualApVlanMap($section);
 
         $profiles = [];
 
         foreach ($ssidProfiles as $profileName => $ssidData) {
-            $rawVlan = $vlanBySsidProfile[$profileName] ?? null;
+            $virtualApData = $virtualApBySsidProfile[$profileName] ?? null;
+            $rawVlan = $virtualApData['vlan'] ?? null;
+            $allowedBand = $virtualApData['allowed_band'] ?? null;
             $vlanName = $rawVlan !== null ? self::mapVlanName($rawVlan) : null;
             $warnings = $this->buildProfileWarnings($ssidData, $rawVlan, $vlanName);
             $deployName = ($ssidData['essid'] !== null && $ssidData['essid'] !== '')
@@ -215,7 +217,7 @@ class ArubaControllerConfigParser
                 'ssid_profile_name' => $deployName,
                 'raw_vlan' => $rawVlan,
                 'vlan_name' => $vlanName,
-                'body' => $this->buildWlanSsidProfileBody($deployName, $ssidData, $vlanName),
+                'body' => $this->buildWlanSsidProfileBody($deployName, $ssidData, $vlanName, $allowedBand),
                 'warnings' => $warnings,
             ];
         }
@@ -230,7 +232,8 @@ class ArubaControllerConfigParser
      *     a_basic_rates: array<int, string>,
      *     a_tx_rates: array<int, string>,
      *     g_basic_rates: array<int, string>,
-     *     g_tx_rates: array<int, string>
+     *     g_tx_rates: array<int, string>,
+     *     advertise_ap_name: bool
      * }>
      */
     private function parseSsidProfileBlocks(string $section): array
@@ -281,7 +284,8 @@ class ArubaControllerConfigParser
      *     a_basic_rates: array<int, string>,
      *     a_tx_rates: array<int, string>,
      *     g_basic_rates: array<int, string>,
-     *     g_tx_rates: array<int, string>
+     *     g_tx_rates: array<int, string>,
+     *     advertise_ap_name: bool
      * }
      */
     private function parseSsidProfileLines(array $lines): array
@@ -293,6 +297,7 @@ class ArubaControllerConfigParser
             'a_tx_rates' => [],
             'g_basic_rates' => [],
             'g_tx_rates' => [],
+            'advertise_ap_name' => false,
         ];
 
         foreach ($lines as $line) {
@@ -314,6 +319,8 @@ class ArubaControllerConfigParser
                 $data['g_basic_rates'] = $this->parseRates($match[1]);
             } elseif (preg_match('/^g-tx-rates (.+)$/', $line, $match)) {
                 $data['g_tx_rates'] = $this->parseRates($match[1]);
+            } elseif ($line === 'advertise-ap-name') {
+                $data['advertise_ap_name'] = true;
             }
         }
 
@@ -321,35 +328,44 @@ class ArubaControllerConfigParser
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, array{vlan: ?string, allowed_band: ?string}>
      */
     private function parseVirtualApVlanMap(string $section): array
     {
         $map = [];
         $currentSsidProfile = null;
         $currentVlan = null;
+        $currentAllowedBand = null;
 
         foreach (explode("\n", $section) as $line) {
             $trimmed = rtrim($line);
 
             if (preg_match('/^wlan virtual-ap "/', $trimmed)) {
                 if ($currentSsidProfile !== null && $currentVlan !== null) {
-                    $map[$currentSsidProfile] = $currentVlan;
+                    $map[$currentSsidProfile] = [
+                        'vlan' => $currentVlan,
+                        'allowed_band' => $currentAllowedBand,
+                    ];
                 }
 
                 $currentSsidProfile = null;
                 $currentVlan = null;
+                $currentAllowedBand = null;
 
                 continue;
             }
 
             if ($trimmed === '!' && $currentSsidProfile !== null) {
                 if ($currentVlan !== null) {
-                    $map[$currentSsidProfile] = $currentVlan;
+                    $map[$currentSsidProfile] = [
+                        'vlan' => $currentVlan,
+                        'allowed_band' => $currentAllowedBand,
+                    ];
                 }
 
                 $currentSsidProfile = null;
                 $currentVlan = null;
+                $currentAllowedBand = null;
 
                 continue;
             }
@@ -358,6 +374,8 @@ class ArubaControllerConfigParser
                 $currentSsidProfile = $match[1];
             } elseif (preg_match('/^\s+vlan (\S+)/', $trimmed, $match)) {
                 $currentVlan = $match[1];
+            } elseif (preg_match('/^\s+allowed-band (\S+)/', $trimmed, $match)) {
+                $currentAllowedBand = $match[1];
             }
         }
 
@@ -371,11 +389,12 @@ class ArubaControllerConfigParser
      *     a_basic_rates: array<int, string>,
      *     a_tx_rates: array<int, string>,
      *     g_basic_rates: array<int, string>,
-     *     g_tx_rates: array<int, string>
+     *     g_tx_rates: array<int, string>,
+     *     advertise_ap_name: bool
      * }  $ssidData
      * @return array<string, mixed>
      */
-    private function buildWlanSsidProfileBody(string $ssidName, array $ssidData, ?string $vlanName): array
+    private function buildWlanSsidProfileBody(string $ssidName, array $ssidData, ?string $vlanName, ?string $allowedBand = null): array
     {
         $body = [
             'essid' => ['name' => $ssidData['essid']],
@@ -403,7 +422,25 @@ class ArubaControllerConfigParser
             $body['a-legacy-rates'] = $aLegacyRates;
         }
 
+        $rfBand = self::mapAllowedBandToRfBand($allowedBand);
+        if ($rfBand !== null) {
+            $body['rf-band'] = $rfBand;
+        }
+
+        if ($ssidData['advertise_ap_name']) {
+            $body['advertise-apname'] = true;
+        }
+
         return $body;
+    }
+
+    private static function mapAllowedBandToRfBand(?string $band): ?string
+    {
+        return match ($band) {
+            'a' => '5GHZ',
+            'g' => '24GHZ',
+            default => null,
+        };
     }
 
     /**
@@ -435,7 +472,8 @@ class ArubaControllerConfigParser
      *     a_basic_rates: array<int, string>,
      *     a_tx_rates: array<int, string>,
      *     g_basic_rates: array<int, string>,
-     *     g_tx_rates: array<int, string>
+     *     g_tx_rates: array<int, string>,
+     *     advertise_ap_name: bool
      * }  $ssidData
      * @return array<int, string>
      */
