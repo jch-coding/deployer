@@ -29,7 +29,13 @@ class ArubaControllerConfigParser
             return 'WCD_PI';
         }
 
-        return 'WCD_'.substr($rawVlan, 3);
+        $remainder = substr($rawVlan, 3);
+
+        if ($remainder === 'WCD') {
+            return 'WCD_WLAN';
+        }
+
+        return 'WCD_'.$remainder;
     }
 
     /**

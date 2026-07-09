@@ -5,6 +5,7 @@ use App\Services\ArubaControllerConfigParser;
 it('maps vlan names by dropping first three characters and prefixing WCD_', function () {
     expect(ArubaControllerConfigParser::mapVlanName('DAYKIT'))->toBe('WCD_KIT')
         ->and(ArubaControllerConfigParser::mapVlanName('DAYAGV'))->toBe('WCD_AGV')
+        ->and(ArubaControllerConfigParser::mapVlanName('DAYWCD'))->toBe('WCD_WLAN')
         ->and(ArubaControllerConfigParser::mapVlanName('WCD_PI'))->toBe('WCD_PI');
 });
 
@@ -62,6 +63,19 @@ it('builds wlan profile body for DAYKIT_ssid_prof with mapped vlan', function ()
         ->and($daykit['body']['ssid'])->toBe('DAYKIT_ssid_prof')
         ->and($daykit['body']['a-legacy-rates']['basic-rates'])->toBe(['RATE_12MB', 'RATE_24MB'])
         ->and($daykit['body']['a-legacy-rates']['tx-rates'])->toBe(['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB']);
+});
+
+it('maps DAYWCD vlan to WCD_WLAN for DAYWCD_ssid_prof', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    $daywcd = collect($profiles)->firstWhere('ssid_profile_name', 'DAYWCD_ssid_prof');
+
+    expect($daywcd)->not->toBeNull()
+        ->and($daywcd['raw_vlan'])->toBe('DAYWCD')
+        ->and($daywcd['vlan_name'])->toBe('WCD_WLAN')
+        ->and($daywcd['body']['vlan-name'])->toBe('WCD_WLAN');
 });
 
 it('keeps WCD_PI vlan unchanged for WCD_PI_ssid_prof', function () {
