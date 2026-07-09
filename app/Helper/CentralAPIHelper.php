@@ -110,6 +110,8 @@ class CentralAPIHelper
         'firmware_compliance' => 'firmware/v1/upgrade/compliance_version',
     ];
 
+    private const HIERARCHY_SCOPE_TYPES = ['device', 'site', 'site_collection', 'device_group'];
+
     public function __construct(public Client $client) {}
 
     private function classicApiUrl(string $path): string
@@ -193,6 +195,72 @@ class CentralAPIHelper
 
             return array_filter($hierarchy, fn ($item) => $item['childCount'] === null && $item['scopeType'] === 'device');
         }
+    }
+
+    /**
+     * @param  object|array<string, mixed>  $object  Object with scope_id / scopeId
+     * @param  'device'|'site'|'site_collection'|'device_group'  $type
+     * @return array<int, array{scopeName: string, scopeType: string, childCount: int|null, scopeId: string, hostName: string}>|array{error: string}
+     */
+    public function get_hierarchy(object|array $object, string $type): array
+    {
+        if (! in_array($type, self::HIERARCHY_SCOPE_TYPES, true)) {
+            return ['error' => 'invalid hierarchy type.'];
+        }
+
+        $scopeId = $this->resolveScopeIdFromObject($object);
+        if ($scopeId === null) {
+            return ['error' => 'scope id is required.'];
+        }
+
+        return $this->fetchScopeHierarchy($scopeId, $type);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    private function fetchScopeHierarchy(string $id, string $type): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->withQueryParameters([
+                'id' => $id,
+                'type' => $type,
+            ])->get($this->client->base_url.$this->scopeManagement['hierarchy']['scope_hierarchy']);
+
+        if (! $response->ok()) {
+            return ['error' => 'failed to get hierarchy from central.'];
+        }
+
+        $items = $response->json('items');
+        if (! is_array($items) || ! isset($items[0]['hierarchy']) || ! is_array($items[0]['hierarchy']) || $items[0]['hierarchy'] === []) {
+            return ['error' => 'failed to get hierarchy from central.'];
+        }
+
+        return $items[0]['hierarchy'];
+    }
+
+    /**
+     * @param  object|array<string, mixed>  $object
+     */
+    private function resolveScopeIdFromObject(object|array $object): ?string
+    {
+        if (is_array($object)) {
+            $scopeId = $object['scope_id'] ?? $object['scopeId'] ?? null;
+        } elseif (isset($object->scope_id)) {
+            $scopeId = $object->scope_id;
+        } elseif (isset($object->scopeId)) {
+            $scopeId = $object->scopeId;
+        } else {
+            return null;
+        }
+
+        $scopeId = trim((string) $scopeId);
+
+        return $scopeId === '' ? null : $scopeId;
     }
 
     public static function getStackId(Device $device, array $switches)

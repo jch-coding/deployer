@@ -790,6 +790,129 @@ test('getScopeIdFromCentral resolves stack_id from a later switches page', funct
     });
 });
 
+/**
+ * @return array<string, mixed>
+ */
+function hierarchyResponseFixture(array $hierarchy): array
+{
+    return [
+        'items' => [
+            [
+                'id' => 'hierarchy0',
+                'type' => 'network-config/hierarchy',
+                'hierarchy' => $hierarchy,
+            ],
+        ],
+    ];
+}
+
+test('get_hierarchy returns site hierarchy with ancestors in order', function () {
+    $hierarchy = [
+        ['scopeName' => 'Store-42', 'scopeType' => 'site', 'childCount' => 3, 'scopeId' => 'scope-site', 'hostName' => ''],
+        ['scopeName' => 'US Retail', 'scopeType' => 'site_collection', 'childCount' => 10, 'scopeId' => 'scope-collection', 'hostName' => ''],
+        ['scopeName' => 'Org', 'scopeType' => 'org', 'childCount' => null, 'scopeId' => 'scope-org', 'hostName' => ''],
+    ];
+
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(hierarchyResponseFixture($hierarchy), 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_hierarchy(['scope_id' => 'scope-site'], 'site');
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(3)
+        ->and($result[0]['scopeName'])->toBe('Store-42')
+        ->and($result[1]['scopeType'])->toBe('site_collection')
+        ->and($result[2]['scopeType'])->toBe('org');
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return str_contains($request->url(), 'network-config/v1/hierarchy')
+            && ($query['id'] ?? '') === 'scope-site'
+            && ($query['type'] ?? '') === 'site';
+    });
+});
+
+test('get_hierarchy returns device_group hierarchy', function () {
+    $hierarchy = [
+        ['scopeName' => 'Edge Switches', 'scopeType' => 'device_group', 'childCount' => 5, 'scopeId' => 'scope-group', 'hostName' => ''],
+        ['scopeName' => 'Org', 'scopeType' => 'org', 'childCount' => null, 'scopeId' => 'scope-org', 'hostName' => ''],
+    ];
+
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(hierarchyResponseFixture($hierarchy), 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_hierarchy(['scopeId' => 'scope-group'], 'device_group');
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(2)
+        ->and($result[0]['scopeType'])->toBe('device_group');
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return ($query['id'] ?? '') === 'scope-group'
+            && ($query['type'] ?? '') === 'device_group';
+    });
+});
+
+test('get_hierarchy returns error for invalid type without calling central', function () {
+    Http::fake();
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'org'))->toBe(['error' => 'invalid hierarchy type.']);
+
+    Http::assertNothingSent();
+});
+
+test('get_hierarchy returns error when scope id is missing without calling central', function () {
+    Http::fake();
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_hierarchy(['scope_id' => ''], 'site'))->toBe(['error' => 'scope id is required.']);
+
+    Http::assertNothingSent();
+});
+
+test('get_hierarchy returns error when authentication fails', function () {
+    Http::fake();
+
+    $client = mock(Client::class)->makePartial();
+    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnFalse();
+
+    $helper = new CentralAPIHelper($client);
+
+    expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'site'))->toBe(['error' => 'failed to get access token from central.']);
+
+    Http::assertNothingSent();
+});
+
+test('get_hierarchy returns error when central API fails', function () {
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'site'))->toBe(['error' => 'failed to get hierarchy from central.']);
+});
+
+test('get_hierarchy returns error when central response has no hierarchy items', function () {
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(['items' => []], 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'site'))->toBe(['error' => 'failed to get hierarchy from central.']);
+});
+
 test('localDeviceInterfaceQueryParameters uses LOCAL scope and string device function', function () {
     $device = Device::factory()->create([
         'scope_id' => 'scope-abc',
