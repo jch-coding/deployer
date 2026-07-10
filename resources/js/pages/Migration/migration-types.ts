@@ -103,3 +103,22 @@ export function buildInitialDeploySteps(profiles: WlanProfile[], isFreezer: bool
 export function profileSelectionKey(controllerName: string, profileName: string): string {
     return `${controllerName}:${profileName}`;
 }
+
+export function buildDeployProfilePayload(
+    profile: WlanProfile,
+    vlanOverride?: string,
+): { ssid_profile_name: string; body: Record<string, unknown> } {
+    const trimmedOverride = vlanOverride?.trim() ?? '';
+    const resolvedVlanName =
+        trimmedOverride !== ''
+            ? trimmedOverride
+            : (profile.vlan_name ?? String(profile.body['vlan-name'] ?? '')).trim();
+
+    return {
+        ssid_profile_name: profile.ssid_profile_name,
+        body: {
+            ...profile.body,
+            'vlan-name': resolvedVlanName,
+        },
+    };
+}

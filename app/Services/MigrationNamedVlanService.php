@@ -194,17 +194,22 @@ class MigrationNamedVlanService
             $vlanIdRanges,
         );
 
+        $deployName = trim((string) ($profile['deploy_name'] ?? ''));
+        if ($deployName === '') {
+            $deployName = ArubaControllerConfigParser::mapVlanName($profileName);
+        }
+
         $offsetRanges = self::offsetVlanIdRanges($stringRanges);
         $postResponse = $helper->post_named_vlan_profile(
-            $profileName,
+            $deployName,
             $postQueryParameters,
-            $profileName,
+            $deployName,
             $offsetRanges,
         );
 
         if (is_array($postResponse) && array_key_exists('error', $postResponse)) {
             return [
-                'name' => $profileName,
+                'name' => $deployName,
                 'status' => 'error',
                 'message' => (string) $postResponse['error'],
             ];
@@ -212,14 +217,14 @@ class MigrationNamedVlanService
 
         if ($postResponse->successful()) {
             return [
-                'name' => $profileName,
+                'name' => $deployName,
                 'status' => 'success',
                 'message' => 'Deployed successfully with offset vlan-id-ranges',
             ];
         }
 
         return [
-            'name' => $profileName,
+            'name' => $deployName,
             'status' => 'error',
             'message' => $postResponse->body() ?: 'Request failed with status '.$postResponse->status(),
         ];
@@ -251,8 +256,22 @@ class MigrationNamedVlanService
                 continue;
             }
 
-            if ($required !== null && ! array_key_exists($profileName, $required)) {
-                continue;
+            $normalizedName = ArubaControllerConfigParser::mapVlanName($profileName);
+
+            if ($required !== null) {
+                $deployName = null;
+
+                if (array_key_exists($profileName, $required)) {
+                    $deployName = $profileName;
+                } elseif (array_key_exists($normalizedName, $required)) {
+                    $deployName = $normalizedName;
+                }
+
+                if ($deployName === null) {
+                    continue;
+                }
+
+                $profile['deploy_name'] = $deployName;
             }
 
             $deployable[] = $profile;

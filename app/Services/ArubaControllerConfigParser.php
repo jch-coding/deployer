@@ -45,7 +45,11 @@ class ArubaControllerConfigParser
             return 'WCD_PI';
         }
 
-        $remainder = substr($rawVlan, 3);
+        if (str_starts_with($rawVlan, 'WCD_')) {
+            return $rawVlan;
+        }
+
+        $remainder = str_replace('FZN', '', substr($rawVlan, 3));
 
         if ($remainder === 'WCD') {
             return 'WCD_WLAN';

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     Select,
@@ -21,6 +22,7 @@ import {
 import AppLayout from '@/layouts/app-layout';
 import ControllerMigrationSection from '@/pages/Migration/ControllerMigrationSection';
 import {
+    buildDeployProfilePayload,
     buildInitialDeploySteps,
     deployStatusVariant,
     isFreezerSite,
@@ -103,6 +105,7 @@ export default function Index() {
     const [liveNamedVlanDeployResults, setLiveNamedVlanDeployResults] = useState<
         NamedVlanDeployResult[]
     >(named_vlan_deploy_results);
+    const [vlanOverrides, setVlanOverrides] = useState<Record<string, string>>({});
 
     useEffect(() => {
         setLiveDeployResults(deploy_results);
@@ -223,10 +226,9 @@ export default function Index() {
             return;
         }
 
-        const profiles = selectedWlanProfiles.map((profile) => ({
-            ssid_profile_name: profile.ssid_profile_name,
-            body: profile.body,
-        }));
+        const profiles = selectedWlanProfiles.map((profile) =>
+            buildDeployProfilePayload(profile, vlanOverrides[profile.ssid_profile_name]),
+        );
 
         const initialSteps = buildInitialDeploySteps(selectedWlanProfiles, showFreezerHint);
 
@@ -701,9 +703,40 @@ export default function Index() {
                                                         </td>
                                                         <td className="px-2 py-2">{essid || '—'}</td>
                                                         <td className="px-2 py-2">
-                                                            {profile.raw_vlan
-                                                                ? `${profile.raw_vlan} → ${profile.vlan_name ?? '—'}`
-                                                                : '—'}
+                                                            {profile.raw_vlan ? (
+                                                                <span className="text-muted-foreground block text-xs">
+                                                                    {profile.raw_vlan} →{' '}
+                                                                    {profile.vlan_name ?? '—'}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-muted-foreground block text-xs">
+                                                                    —
+                                                                </span>
+                                                            )}
+                                                            <Input
+                                                                id={`vlan-override-${profile.ssid_profile_name}`}
+                                                                className="mt-1 h-8 font-mono text-xs"
+                                                                placeholder={
+                                                                    profile.vlan_name ??
+                                                                    String(
+                                                                        profile.body['vlan-name'] ??
+                                                                            '',
+                                                                    )
+                                                                }
+                                                                value={
+                                                                    vlanOverrides[
+                                                                        profile.ssid_profile_name
+                                                                    ] ?? ''
+                                                                }
+                                                                onChange={(event) =>
+                                                                    setVlanOverrides((current) => ({
+                                                                        ...current,
+                                                                        [profile.ssid_profile_name]:
+                                                                            event.target.value,
+                                                                    }))
+                                                                }
+                                                                aria-label={`Named VLAN override for ${profile.ssid_profile_name}`}
+                                                            />
                                                         </td>
                                                         <td className="px-2 py-2">
                                                             {passphrase ? 'Yes' : 'No'}

@@ -357,3 +357,126 @@ it('falls back to site named vlan fetch when hierarchy has no site collection', 
 
     Http::assertSentCount(2);
 });
+
+it('deploys named vlan profiles using normalized names when central returns MINFZN profiles', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'network-config/v1/hierarchy')) {
+            return Http::response(migrationHierarchyResponseFixture('scope-freezer', 'scope-collection'), 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            return Http::response([
+                'profile' => [
+                    [
+                        'name' => 'MINFZNWCD',
+                        'vlan' => ['vlan-id-ranges' => ['10']],
+                    ],
+                    [
+                        'name' => 'MINFZNTM',
+                        'vlan' => ['vlan-id-ranges' => ['20']],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $results = app(MigrationNamedVlanService::class)->deployOffsetNamedVlans(
+        $helper,
+        'scope-freezer',
+        [
+            ['ssid_profile_name' => 'MINWCD', 'body' => ['vlan-name' => 'WCD_WLAN']],
+            ['ssid_profile_name' => 'MINTM', 'body' => ['vlan-name' => 'WCD_TM']],
+        ],
+    );
+
+    expect($results)->toHaveCount(2)
+        ->and($results[0])->toMatchArray([
+            'name' => 'WCD_WLAN',
+            'status' => 'success',
+        ])
+        ->and($results[1])->toMatchArray([
+            'name' => 'WCD_TM',
+            'status' => 'success',
+        ]);
+
+    Http::assertSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_WLAN')
+            && json_decode($request->body(), true) === [
+                'name' => 'WCD_WLAN',
+                'vlan' => ['vlan-id-ranges' => ['210']],
+            ];
+    });
+
+    Http::assertSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_TM')
+            && json_decode($request->body(), true) === [
+                'name' => 'WCD_TM',
+                'vlan' => ['vlan-id-ranges' => ['220']],
+            ];
+    });
+});
+
+it('only deploys named vlan profiles matching user overridden wlan vlan names', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'GET' && str_contains($request->url(), 'network-config/v1/hierarchy')) {
+            return Http::response(migrationHierarchyResponseFixture('scope-freezer', 'scope-collection'), 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($request->url(), 'named-vlan') && ! str_contains($request->url(), 'named-vlan/')) {
+            return Http::response([
+                'profile' => [
+                    [
+                        'name' => 'WCD_KIT',
+                        'vlan' => ['vlan-id-ranges' => ['1']],
+                    ],
+                    [
+                        'name' => 'CUSTOM_VLAN',
+                        'vlan' => ['vlan-id-ranges' => ['5']],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $helper = new CentralAPIHelper($client);
+    $results = app(MigrationNamedVlanService::class)->deployOffsetNamedVlans(
+        $helper,
+        'scope-freezer',
+        [
+            ['ssid_profile_name' => 'DAYKIT', 'body' => ['vlan-name' => 'CUSTOM_VLAN']],
+        ],
+    );
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['name'])->toBe('CUSTOM_VLAN')
+        ->and($results[0]['status'])->toBe('success');
+
+    Http::assertSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/CUSTOM_VLAN');
+    });
+
+    Http::assertNotSent(function (Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/WCD_KIT');
+    });
+});

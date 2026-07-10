@@ -6,7 +6,11 @@ it('maps vlan names by dropping first three characters and prefixing WCD_', func
     expect(ArubaControllerConfigParser::mapVlanName('DAYKIT'))->toBe('WCD_KIT')
         ->and(ArubaControllerConfigParser::mapVlanName('DAYAGV'))->toBe('WCD_AGV')
         ->and(ArubaControllerConfigParser::mapVlanName('DAYWCD'))->toBe('WCD_WLAN')
-        ->and(ArubaControllerConfigParser::mapVlanName('WCD_PI'))->toBe('WCD_PI');
+        ->and(ArubaControllerConfigParser::mapVlanName('MINFZNWCD'))->toBe('WCD_WLAN')
+        ->and(ArubaControllerConfigParser::mapVlanName('MINFZNTM'))->toBe('WCD_TM')
+        ->and(ArubaControllerConfigParser::mapVlanName('WCD_PI'))->toBe('WCD_PI')
+        ->and(ArubaControllerConfigParser::mapVlanName('WCD_WLAN'))->toBe('WCD_WLAN')
+        ->and(ArubaControllerConfigParser::mapVlanName('WCD_KIT'))->toBe('WCD_KIT');
 });
 
 it('parses daytona config fixture with expected ap count', function () {
