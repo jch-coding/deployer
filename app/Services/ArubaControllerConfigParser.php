@@ -29,6 +29,10 @@ class ArubaControllerConfigParser
                     $parsedControllers[$pairedIndex]['lldp_neighbors'],
                     $this->parseLldpNeighbors($block['content']),
                 );
+                $parsedControllers[$pairedIndex]['wlan_profiles'] = $this->selectPreferredWlanProfiles(
+                    $parsedControllers[$pairedIndex]['wlan_profiles'],
+                    $this->parseWlanProfiles($block['content']),
+                );
 
                 continue;
             }
@@ -227,6 +231,58 @@ class ArubaControllerConfigParser
         usort($neighbors, fn (array $a, array $b): int => strcmp($a['switch'], $b['switch']));
 
         return $neighbors;
+    }
+
+    /**
+     * @param  array<int, array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>  $primaryProfiles
+     * @param  array<int, array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>  $partnerProfiles
+     * @return array<int, array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function selectPreferredWlanProfiles(array $primaryProfiles, array $partnerProfiles): array
+    {
+        $primaryMissingVlanCount = $this->countMissingVlanProfiles($primaryProfiles);
+        $partnerMissingVlanCount = $this->countMissingVlanProfiles($partnerProfiles);
+
+        if ($partnerMissingVlanCount < $primaryMissingVlanCount) {
+            return $partnerProfiles;
+        }
+
+        return $primaryProfiles;
+    }
+
+    /**
+     * @param  array<int, array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>  $profiles
+     */
+    private function countMissingVlanProfiles(array $profiles): int
+    {
+        return count(array_filter(
+            $profiles,
+            fn (array $profile): bool => in_array('Missing vlan from virtual-ap', $profile['warnings'], true),
+        ));
     }
 
     /**
