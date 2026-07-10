@@ -204,6 +204,50 @@ CONFIG;
         ->and($results[1]['wlan_profiles'][0]['ssid_profile_name'])->toBe('TWOKIT');
 });
 
+it('merges lldp neighbors for paired controllers into the first controller', function () {
+    $parser = new ArubaControllerConfigParser;
+    $results = $parser->parse(pairedControllerConfig('DAY-HUB-WLC1', 'DAY-HUB-WLC2'));
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['controller_name'])->toBe('DAY-HUB-WLC1')
+        ->and($results[0]['devices'])->toHaveCount(1)
+        ->and($results[0]['devices'][0]['name'])->toBe('AP-FIRST-001')
+        ->and($results[0]['wlan_profiles'])->toHaveCount(1)
+        ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('FIRST')
+        ->and($results[0]['lldp_neighbors'])->toBe([
+            [
+                'switch' => 'SW-A.example.com',
+                'ports' => ['Te1/0/1', 'Te1/0/2'],
+            ],
+            [
+                'switch' => 'SW-B.example.com',
+                'ports' => ['Te2/0/1'],
+            ],
+        ]);
+});
+
+it('uses the first controller as primary regardless of pair order', function () {
+    $parser = new ArubaControllerConfigParser;
+    $results = $parser->parse(pairedControllerConfig('DAY-HUB-WLC2', 'DAY-HUB-WLC1'));
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['controller_name'])->toBe('DAY-HUB-WLC2')
+        ->and($results[0]['devices'][0]['name'])->toBe('AP-FIRST-001')
+        ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('FIRST')
+        ->and($results[0]['lldp_neighbors'])->toHaveCount(2);
+});
+
+it('matches controller pairs case insensitively without pairing the same name', function () {
+    $parser = new ArubaControllerConfigParser;
+    $paired = $parser->parse(pairedControllerConfig('DAY-HUB-WLC1', 'day-hub-wlc2'));
+    $sameController = $parser->parse(pairedControllerConfig('DAY-HUB-WLC1', 'day-hub-wlc1'));
+
+    expect($paired)->toHaveCount(1)
+        ->and($paired[0]['controller_name'])->toBe('DAY-HUB-WLC1')
+        ->and($paired[0]['lldp_neighbors'])->toHaveCount(2)
+        ->and($sameController)->toHaveCount(2);
+});
+
 it('builds wlan profile body for WCD_AGV with rf-band from allowed-band a', function () {
     $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
     $parser = new ArubaControllerConfigParser;
@@ -287,3 +331,58 @@ CONFIG;
     expect($profile['ssid_profile_name'])->toBe('UNK')
         ->and($profile['body'])->not->toHaveKey('rf-band');
 });
+
+function pairedControllerConfig(string $firstName, string $secondName): string
+{
+    return <<<CONFIG
+({$firstName}) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-FIRST-001     default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERFIRST1   N/A   N/A   N/A
+
+({$firstName}) #show ap lldp neighbors
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+AP-FIRST-001     bond0      0         SW-A.example.com              Te1/0/1   AP         10.1.1.10      B
+
+({$firstName}) #show running-config
+wlan ssid-profile "FIRST_ssid_prof"
+    essid "FIRST"
+    wpa-passphrase "first-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "FIRST"
+    vlan FIRST
+    ssid-profile "FIRST_ssid_prof"
+
+({$secondName}) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-SECOND-001    default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERSECOND1  N/A   N/A   N/A
+
+({$secondName}) #show ap lldp neighbors
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+AP-SECOND-001    bond0      0         SW-A.example.com              Te1/0/2   AP         10.2.2.10      B
+AP-SECOND-002    bond0      0         SW-A.example.com              Te1/0/1   AP         10.2.2.10      B
+AP-SECOND-003    bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.11      B
+
+({$secondName}) #show running-config
+wlan ssid-profile "SECOND_ssid_prof"
+    essid "SECOND"
+    wpa-passphrase "second-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "SECOND"
+    vlan SECOND
+    ssid-profile "SECOND_ssid_prof"
+CONFIG;
+}

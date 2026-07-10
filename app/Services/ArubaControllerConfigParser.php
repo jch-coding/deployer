@@ -17,10 +17,26 @@ class ArubaControllerConfigParser
             return [];
         }
 
-        return array_map(
-            fn (array $block): array => $this->parseControllerBlock($block['name'], $block['content']),
-            $controllerBlocks,
-        );
+        $parsedControllers = [];
+
+        foreach ($controllerBlocks as $block) {
+            $parsedNames = array_column($parsedControllers, 'controller_name');
+            $pairedName = $this->findParsedPair($block['name'], $parsedNames);
+
+            if ($pairedName !== null) {
+                $pairedIndex = array_search($pairedName, $parsedNames, true);
+                $parsedControllers[$pairedIndex]['lldp_neighbors'] = $this->mergeLldpNeighbors(
+                    $parsedControllers[$pairedIndex]['lldp_neighbors'],
+                    $this->parseLldpNeighbors($block['content']),
+                );
+
+                continue;
+            }
+
+            $parsedControllers[] = $this->parseControllerBlock($block['name'], $block['content']);
+        }
+
+        return $parsedControllers;
     }
 
     public static function mapVlanName(string $rawVlan): string
@@ -36,6 +52,33 @@ class ArubaControllerConfigParser
         }
 
         return 'WCD_'.$remainder;
+    }
+
+    private function areControllerPair(string $first, string $second): bool
+    {
+        if (strcasecmp($first, $second) === 0) {
+            return false;
+        }
+
+        if (strlen($first) !== strlen($second) || strlen($first) < 2) {
+            return false;
+        }
+
+        return strcasecmp(substr($first, 0, -1), substr($second, 0, -1)) === 0;
+    }
+
+    /**
+     * @param  array<int, string>  $parsedNames
+     */
+    private function findParsedPair(string $name, array $parsedNames): ?string
+    {
+        foreach ($parsedNames as $parsedName) {
+            if ($this->areControllerPair($name, $parsedName)) {
+                return $parsedName;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -180,6 +223,38 @@ class ArubaControllerConfigParser
         usort($neighbors, fn (array $a, array $b): int => strcmp($a['switch'], $b['switch']));
 
         return $neighbors;
+    }
+
+    /**
+     * @param  array<int, array<int, array{switch: string, ports: array<int, string>}>>  $neighborLists
+     * @return array<int, array{switch: string, ports: array<int, string>}>
+     */
+    private function mergeLldpNeighbors(array ...$neighborLists): array
+    {
+        $bySwitch = [];
+
+        foreach ($neighborLists as $neighbors) {
+            foreach ($neighbors as $neighbor) {
+                foreach ($neighbor['ports'] as $port) {
+                    $bySwitch[$neighbor['switch']][$port] = true;
+                }
+            }
+        }
+
+        $merged = [];
+
+        foreach ($bySwitch as $switch => $ports) {
+            $portList = array_keys($ports);
+            sort($portList);
+            $merged[] = [
+                'switch' => $switch,
+                'ports' => $portList,
+            ];
+        }
+
+        usort($merged, fn (array $a, array $b): int => strcmp($a['switch'], $b['switch']));
+
+        return $merged;
     }
 
     /**
