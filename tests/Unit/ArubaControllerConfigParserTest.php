@@ -216,8 +216,7 @@ it('merges lldp neighbors for paired controllers into the first controller', fun
         ->and($results[0]['controller_name'])->toBe('DAY-HUB-WLC1')
         ->and($results[0]['devices'])->toHaveCount(1)
         ->and($results[0]['devices'][0]['name'])->toBe('AP-FIRST-001')
-        ->and($results[0]['wlan_profiles'])->toHaveCount(1)
-        ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('FIRST')
+        ->and(collect($results[0]['wlan_profiles'])->pluck('ssid_profile_name')->all())->toBe(['FIRST', 'SECOND'])
         ->and($results[0]['lldp_neighbors'])->toBe([
             [
                 'switch' => 'SW-A.example.com',
@@ -273,6 +272,50 @@ it('keeps wlan profiles from primary when partner is missing virtual-ap vlan', f
         ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('DAYKIT')
         ->and($results[0]['wlan_profiles'][0]['raw_vlan'])->toBe('DAYKIT')
         ->and($results[0]['wlan_profiles'][0]['warnings'])->not->toContain('Missing vlan from virtual-ap');
+});
+
+it('deduplicates identical wlan ssids when merging paired controllers', function () {
+    $parser = new ArubaControllerConfigParser;
+    $results = $parser->parse(pairedControllerConfigWithSharedSsid('DAY-HUB-WLC1', 'DAY-HUB-WLC2'));
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['wlan_profiles'])->toHaveCount(1)
+        ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('DAYKIT')
+        ->and($results[0]['wlan_profiles'][0]['raw_vlan'])->toBe('DAYKIT');
+});
+
+it('deduplicates wlan ssids from multiple ssid-profile blocks with the same essid', function () {
+    $content = <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+
+(WLC-ONE) #show running-config
+wlan ssid-profile "DAYKIT_legacy_prof"
+    essid "DAYKIT"
+    wpa-passphrase "legacy-passphrase-12345"
+!
+wlan ssid-profile "DAYKIT_ssid_prof"
+    essid "DAYKIT"
+    wpa-passphrase "daykit-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "DAYKIT"
+    vlan DAYKIT
+    ssid-profile "DAYKIT_ssid_prof"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    expect($profiles)->toHaveCount(1)
+        ->and($profiles[0]['ssid_profile_name'])->toBe('DAYKIT')
+        ->and($profiles[0]['raw_vlan'])->toBe('DAYKIT')
+        ->and($profiles[0]['warnings'])->not->toContain('Missing vlan from virtual-ap');
 });
 
 it('builds wlan profile body for WCD_AGV with rf-band from allowed-band a', function () {
@@ -436,6 +479,61 @@ wlan ssid-profile "DAYKIT_ssid_prof"
     essid "DAYKIT"
     wpa-passphrase "daykit-passphrase-12345"
     opmode wpa2-psk-aes
+!
+
+({$secondName}) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-SECOND-001    default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERSECOND1  N/A   N/A   N/A
+
+({$secondName}) #show ap lldp neighbors
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+AP-SECOND-001    bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.10      B
+
+({$secondName}) #show running-config
+wlan ssid-profile "DAYKIT_ssid_prof"
+    essid "DAYKIT"
+    wpa-passphrase "daykit-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "DAYKIT"
+    vlan DAYKIT
+    ssid-profile "DAYKIT_ssid_prof"
+!
+CONFIG;
+}
+
+function pairedControllerConfigWithSharedSsid(string $firstName, string $secondName): string
+{
+    return <<<CONFIG
+({$firstName}) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-FIRST-001     default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERFIRST1   N/A   N/A   N/A
+
+({$firstName}) #show ap lldp neighbors
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+AP-FIRST-001     bond0      0         SW-A.example.com              Te1/0/1   AP         10.1.1.10      B
+
+({$firstName}) #show running-config
+wlan ssid-profile "DAYKIT_ssid_prof"
+    essid "DAYKIT"
+    wpa-passphrase "daykit-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "DAYKIT"
+    vlan DAYKIT
+    ssid-profile "DAYKIT_ssid_prof"
 !
 
 ({$secondName}) #show ap database long

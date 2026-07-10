@@ -29,7 +29,7 @@ class ArubaControllerConfigParser
                     $parsedControllers[$pairedIndex]['lldp_neighbors'],
                     $this->parseLldpNeighbors($block['content']),
                 );
-                $parsedControllers[$pairedIndex]['wlan_profiles'] = $this->selectPreferredWlanProfiles(
+                $parsedControllers[$pairedIndex]['wlan_profiles'] = $this->mergeWlanProfiles(
                     $parsedControllers[$pairedIndex]['wlan_profiles'],
                     $this->parseWlanProfiles($block['content']),
                 );
@@ -133,7 +133,7 @@ class ArubaControllerConfigParser
             'controller_name' => $controllerName,
             'devices' => $this->parseApDatabase($content),
             'lldp_neighbors' => $this->parseLldpNeighbors($content),
-            'wlan_profiles' => $this->parseWlanProfiles($content),
+            'wlan_profiles' => $this->deduplicateWlanProfiles($this->parseWlanProfiles($content)),
         ];
     }
 
@@ -256,16 +256,9 @@ class ArubaControllerConfigParser
      *     warnings: array<int, string>
      * }>
      */
-    private function selectPreferredWlanProfiles(array $primaryProfiles, array $partnerProfiles): array
+    private function mergeWlanProfiles(array $primaryProfiles, array $partnerProfiles): array
     {
-        $primaryMissingVlanCount = $this->countMissingVlanProfiles($primaryProfiles);
-        $partnerMissingVlanCount = $this->countMissingVlanProfiles($partnerProfiles);
-
-        if ($partnerMissingVlanCount < $primaryMissingVlanCount) {
-            return $partnerProfiles;
-        }
-
-        return $primaryProfiles;
+        return $this->deduplicateWlanProfiles(array_merge($primaryProfiles, $partnerProfiles));
     }
 
     /**
@@ -276,13 +269,76 @@ class ArubaControllerConfigParser
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }>  $profiles
+     * @return array<int, array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>
      */
-    private function countMissingVlanProfiles(array $profiles): int
+    private function deduplicateWlanProfiles(array $profiles): array
     {
-        return count(array_filter(
-            $profiles,
-            fn (array $profile): bool => in_array('Missing vlan from virtual-ap', $profile['warnings'], true),
-        ));
+        $bySsid = [];
+
+        foreach ($profiles as $profile) {
+            $ssid = $profile['ssid_profile_name'];
+
+            if (! isset($bySsid[$ssid])) {
+                $bySsid[$ssid] = $profile;
+
+                continue;
+            }
+
+            $bySsid[$ssid] = $this->preferWlanProfile($bySsid[$ssid], $profile);
+        }
+
+        $deduplicated = array_values($bySsid);
+        usort(
+            $deduplicated,
+            fn (array $a, array $b): int => strcmp($a['ssid_profile_name'], $b['ssid_profile_name']),
+        );
+
+        return $deduplicated;
+    }
+
+    /**
+     * @param  array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }  $first
+     * @param  array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }  $second
+     * @return array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }
+     */
+    private function preferWlanProfile(array $first, array $second): array
+    {
+        $firstMissingVlan = in_array('Missing vlan from virtual-ap', $first['warnings'], true);
+        $secondMissingVlan = in_array('Missing vlan from virtual-ap', $second['warnings'], true);
+
+        if ($firstMissingVlan && ! $secondMissingVlan) {
+            return $second;
+        }
+
+        if ($secondMissingVlan && ! $firstMissingVlan) {
+            return $first;
+        }
+
+        return $first;
     }
 
     /**
