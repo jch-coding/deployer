@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\BaseURL;
-use App\ClassicBaseUrl;
 use App\Http\Resources\ClientResource;
 use App\Models\Client;
 use Illuminate\Http\Request;
@@ -93,20 +92,9 @@ class ClientController extends Controller
         }
     }
 
-    public function mapClassicBaseUrl(string $base_url)
+    public function mapClassicBaseUrl(string $base_url): ?string
     {
-        switch ($base_url) {
-            case BaseURL::US1->value:
-                return ClassicBaseUrl::US1->value;
-            case BaseURL::US2->value:
-                return ClassicBaseUrl::US2->value;
-            case BaseURL::US4->value:
-                return ClassicBaseUrl::US_WEST4->value;
-            case BaseURL::US5->value:
-                return ClassicBaseUrl::US_WEST5->value;
-            case BaseURL::CA1->value:
-                return ClassicBaseUrl::CANADA1->value;
-        }
+        return BaseURL::from($base_url)->toClassicBaseUrl()?->value;
     }
 
     /**
@@ -135,21 +123,38 @@ class ClientController extends Controller
             $validated = array_merge($validated, $request->validate(['base_url' => 'string']));
         }
 
-        if ($request->has('classic_refresh_token')) {
-            $classicRefreshToken = $request->validate([
-                'classic_refresh_token' => 'required|string|min:12|max:65535',
-            ])['classic_refresh_token'];
+        if ($request->has('classic_refresh_token') || $request->has('classic_access_token') || $request->has('classic_client_id')) {
+            $validated = $request->validate([
+                'classic_client_id' => 'sometimes|required|string|min:12|max:255',
+                'classic_refresh_token' => 'sometimes|required|string|min:12|max:65535',
+                'classic_access_token' => 'sometimes|required|string|min:12|max:65535',
+            ]);
 
-            if (! $client->updateClassicRefreshToken($classicRefreshToken)) {
+            $classicClientId = $validated['classic_client_id'] ?? null;
+            $classicRefreshToken = $validated['classic_refresh_token'] ?? null;
+            $classicAccessToken = $validated['classic_access_token'] ?? null;
+
+            if ($classicClientId !== null) {
+                $client->update(['classic_client_id' => $classicClientId]);
+            }
+
+            if ($classicRefreshToken !== null || $classicAccessToken !== null) {
+                if (! $client->updateClassicCentralTokens($classicRefreshToken, $classicAccessToken)) {
+                    return to_route('clients.index')->with(
+                        'error',
+                        'Failed to validate Classic Central tokens with Central.',
+                    );
+                }
+
                 return to_route('clients.index')->with(
-                    'error',
-                    'Failed to refresh Classic Central token with the provided refresh token.',
+                    'success',
+                    'Classic Central tokens saved and validated.',
                 );
             }
 
             return to_route('clients.index')->with(
                 'success',
-                'Classic refresh token saved and validated.',
+                'Classic client ID saved.',
             );
         }
 

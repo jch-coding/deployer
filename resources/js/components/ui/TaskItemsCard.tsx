@@ -13,7 +13,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_sites, force_update_site_scope_ids, store } from '@/routes/tasks';
+import { check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon, BoltIcon, CircleCheck, RefreshCw } from 'lucide-react';
@@ -85,7 +85,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
     }
 
     return (
-        <Card className="w-96">
+        <Card className="h-full w-96">
             <CardHeader className="relative pr-10">
                 <TaskRequiredColumnsInfo columns={required_columns} />
                 <CardTitle>{task_friendly_name}</CardTitle>
@@ -119,7 +119,7 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                     </div>
                 ) : null}
             </CardHeader>
-            <CardContent className="flex w-full flex-wrap items-center gap-2">
+            <CardContent className="mt-auto flex w-full flex-wrap items-center gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                 <TaskDurationDialog
                     deploymentTimeHours={deploymentTimeHours}
@@ -292,6 +292,62 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                                 <p>Force update site scope IDs</p>
                             </TooltipContent>
                         </Tooltip>
+                    </div>
+                )}
+                {(task === 'CONFIGURE_LAG_INTERFACE' ||
+                    task === 'CONFIGURE_VLAN_INTERFACE' ||
+                    task === 'CONFIGURE_ALL_INTERFACE') && (
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                        {(task === 'CONFIGURE_LAG_INTERFACE' ||
+                            task === 'CONFIGURE_ALL_INTERFACE') && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        className="rounded-full"
+                                        data-test="check-lag-port-lists"
+                                        aria-label="Verify LAG port lists"
+                                        onClick={() => {
+                                            router.post(check_lag_port_lists(deployment.id).url, {
+                                                task_type: task,
+                                            });
+                                        }}
+                                    >
+                                        <CircleCheck className="size-4" aria-hidden />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    <p>Verify LAG port lists</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+                        {(task === 'CONFIGURE_VLAN_INTERFACE' ||
+                            task === 'CONFIGURE_ALL_INTERFACE') && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        className="rounded-full"
+                                        data-test="check-vlan-ip-addresses"
+                                        aria-label="Verify VLAN IP addresses"
+                                        onClick={() => {
+                                            router.post(check_vlan_ip_addresses(deployment.id).url, {
+                                                task_type: task,
+                                            });
+                                        }}
+                                    >
+                                        <CircleCheck className="size-4" aria-hidden />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    <p>Verify VLAN IP addresses</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
                     </div>
                 )}
             </CardContent>

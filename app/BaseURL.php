@@ -23,4 +23,24 @@ enum BaseURL : string
     {
         return "https://{$this->value}.api.central.arubanetworks.com/";
     }
+
+    public function toClassicBaseUrl(): ?ClassicBaseUrl
+    {
+        return match ($this) {
+            self::US1 => ClassicBaseUrl::US1,
+            self::US2 => ClassicBaseUrl::US2,
+            self::US4 => ClassicBaseUrl::US_WEST4,
+            self::US5 => ClassicBaseUrl::US_WEST5,
+            self::US6 => ClassicBaseUrl::US_EAST1,
+            self::CA1 => ClassicBaseUrl::CANADA1,
+            self::DE1 => ClassicBaseUrl::EU1,
+            self::DE2 => ClassicBaseUrl::EU_CENTRAL2,
+            self::DE3 => ClassicBaseUrl::EU_CENTRAL3,
+            self::GB1 => ClassicBaseUrl::UK_WEST2,
+            self::IN => ClassicBaseUrl::APAC1,
+            self::JP1 => ClassicBaseUrl::APAC_EAST1,
+            self::AU1 => ClassicBaseUrl::APAC_SOUTH1,
+            self::AE1 => ClassicBaseUrl::UAE_NORTH1,
+        };
+    }
 }

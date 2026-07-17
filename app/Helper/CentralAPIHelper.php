@@ -63,6 +63,7 @@ class CentralAPIHelper
 
     public array $vlans_and_networks = [
         'l2_vlans' => 'network-config/v1alpha1/layer2-vlan',
+        'named_vlan' => 'network-config/v1alpha1/named-vlan',
     ];
 
     public array $switchMonitoring = [
@@ -76,6 +77,11 @@ class CentralAPIHelper
     public array $high_availability = [
         'switch_stack' => 'network-config/v1alpha1/stacks',
         'vsx' => 'network-config/v1alpha1/vsx-profiles',
+    ];
+
+    public array $wireless = [
+        'wlan_ssids' => 'network-config/v1alpha1/wlan-ssids',
+        'radios' => 'network-config/v1alpha1/radios',
     ];
 
     public array $classic_monitoring = [
@@ -102,8 +108,10 @@ class CentralAPIHelper
 
     public array $classic_firmware = [
         'firmware_versions' => 'firmware/v1/versions',
-        'firmware_compliance' => 'firmware/v1/upgrade/compliance_version'
+        'firmware_compliance' => 'firmware/v1/upgrade/compliance_version',
     ];
+
+    private const HIERARCHY_SCOPE_TYPES = ['device', 'site', 'site_collection', 'device_group'];
 
     public function __construct(public Client $client) {}
 
@@ -188,6 +196,72 @@ class CentralAPIHelper
 
             return array_filter($hierarchy, fn ($item) => $item['childCount'] === null && $item['scopeType'] === 'device');
         }
+    }
+
+    /**
+     * @param  object|array<string, mixed>  $object  Object with scope_id / scopeId
+     * @param  'device'|'site'|'site_collection'|'device_group'  $type
+     * @return array<int, array{scopeName: string, scopeType: string, childCount: int|null, scopeId: string, hostName: string}>|array{error: string}
+     */
+    public function get_hierarchy(object|array $object, string $type): array
+    {
+        if (! in_array($type, self::HIERARCHY_SCOPE_TYPES, true)) {
+            return ['error' => 'invalid hierarchy type.'];
+        }
+
+        $scopeId = $this->resolveScopeIdFromObject($object);
+        if ($scopeId === null) {
+            return ['error' => 'scope id is required.'];
+        }
+
+        return $this->fetchScopeHierarchy($scopeId, $type);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    private function fetchScopeHierarchy(string $id, string $type): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->withQueryParameters([
+                'id' => $id,
+                'type' => $type,
+            ])->get($this->client->base_url.$this->scopeManagement['hierarchy']['scope_hierarchy']);
+
+        if (! $response->ok()) {
+            return ['error' => 'failed to get hierarchy from central.'];
+        }
+
+        $items = $response->json('items');
+        if (! is_array($items) || ! isset($items[0]['hierarchy']) || ! is_array($items[0]['hierarchy']) || $items[0]['hierarchy'] === []) {
+            return ['error' => 'failed to get hierarchy from central.'];
+        }
+
+        return $items[0]['hierarchy'];
+    }
+
+    /**
+     * @param  object|array<string, mixed>  $object
+     */
+    private function resolveScopeIdFromObject(object|array $object): ?string
+    {
+        if (is_array($object)) {
+            $scopeId = $object['scope_id'] ?? $object['scopeId'] ?? null;
+        } elseif (isset($object->scope_id)) {
+            $scopeId = $object->scope_id;
+        } elseif (isset($object->scopeId)) {
+            $scopeId = $object->scopeId;
+        } else {
+            return null;
+        }
+
+        $scopeId = trim((string) $scopeId);
+
+        return $scopeId === '' ? null : $scopeId;
     }
 
     public static function getStackId(Device $device, array $switches)
@@ -283,6 +357,65 @@ class CentralAPIHelper
             return [
                 'sites' => [],
                 'error' => 'Could not load sites from Central.',
+            ];
+        }
+    }
+
+    /**
+     * @return array{site_collections: array<int, array{scopeName: string, scopeId: string}>, error: string|null}
+     */
+    public function collectScopeManagementSiteCollections(): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'site_collections' => [],
+                'error' => 'Could not authenticate with Central to load site collections.',
+            ];
+        }
+
+        try {
+            $raw_items = [];
+            $next = null;
+
+            while (true) {
+                $query = [];
+                if ($next !== null && $next !== '') {
+                    $query['next'] = $next;
+                }
+
+                $response = $this->get_site_collections($query);
+
+                if (is_array($response) && array_key_exists('error', $response)) {
+                    return [
+                        'site_collections' => [],
+                        'error' => 'Could not load site collections from Central.',
+                    ];
+                }
+
+                if (! $response->ok()) {
+                    return [
+                        'site_collections' => [],
+                        'error' => 'Could not load site collections from Central.',
+                    ];
+                }
+
+                $page_items = $response->json('items', []);
+                $raw_items = array_merge($raw_items, is_array($page_items) ? $page_items : []);
+
+                $next = $response->json('next');
+                if ($next === null || $next === '') {
+                    break;
+                }
+            }
+
+            return [
+                'site_collections' => $this->mapScopeManagementItems($raw_items),
+                'error' => null,
+            ];
+        } catch (RequestException|ConnectionException) {
+            return [
+                'site_collections' => [],
+                'error' => 'Could not load site collections from Central.',
             ];
         }
     }
@@ -1258,6 +1391,91 @@ class CentralAPIHelper
         }
     }
 
+    /**
+     * @param  list<int|string>  $vlan_id_ranges
+     * @return array{name?: string, vlan?: array{vlan-id-ranges: list<string>}}
+     */
+    public static function build_named_vlan_profile_body(
+        ?string $named_vlan = null,
+        array $vlan_id_ranges = []
+    ): array {
+        $body = [];
+
+        if ($named_vlan !== null) {
+            $body['name'] = $named_vlan;
+        }
+
+        if ($vlan_id_ranges !== []) {
+            $body['vlan'] = [
+                'vlan-id-ranges' => array_map(static fn ($range) => (string) $range, $vlan_id_ranges),
+            ];
+        }
+
+        return $body;
+    }
+
+    public function get_named_vlans($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->vlans_and_networks['named_vlan']);
+
+            return $response;
+        }
+    }
+
+    public function get_named_vlan_profile(string $named_vlan_profile, $queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->vlans_and_networks['named_vlan'].'/'.$named_vlan_profile);
+
+            return $response;
+        }
+    }
+
+    public function post_named_vlan_profile(
+        string $named_vlan_profile,
+        array $queryParameters = [],
+        ?string $named_vlan = null,
+        array $vlan_id_ranges = []
+    ) {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $body = static::build_named_vlan_profile_body($named_vlan, $vlan_id_ranges);
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->vlans_and_networks['named_vlan'].'/'.$named_vlan_profile, $body);
+
+            return $response;
+        }
+    }
+
+    public function patch_named_vlan_profile(
+        string $named_vlan_profile,
+        array $queryParameters = [],
+        ?string $named_vlan = null,
+        array $vlan_id_ranges = []
+    ) {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $body = static::build_named_vlan_profile_body($named_vlan, $vlan_id_ranges);
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->patch($this->client->base_url.$this->vlans_and_networks['named_vlan'].'/'.$named_vlan_profile, $body);
+
+            return $response;
+        }
+    }
+
     public function get_dns_profiles($queryParameters = ['view-type' => 'LIBRARY'])
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -1739,6 +1957,36 @@ class CentralAPIHelper
         }
     }
 
+    public function get_radio_profiles($queryParameters = ['view-type' => 'LIBRARY'])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->get($this->client->base_url.$this->wireless['radios']);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @param  array<string, mixed>  $body
+     */
+    public function post_wlan_ssid_profile(string $ssid_profile_name, array $queryParameters, array $body)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->wireless['wlan_ssids'].'/'.$ssid_profile_name, $body);
+
+            return $response;
+        }
+    }
+
     public function patch_mirror(array $mirror, array $queryParameters = [])
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -1805,12 +2053,13 @@ class CentralAPIHelper
         }
     }
 
-    public function get_site_collections()
+    public function get_site_collections(array $queryParameters = [])
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
         } else {
             $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
                 ->get($this->client->base_url.$this->scopeManagement['site_collections']['site_collections']);
 
             return $response;
@@ -2448,7 +2697,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @param array<string, mixed> $queryParameters [ 'limit' => int, 'offset' => int, 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'serial' => string ]
+     * @param  array<string, mixed>  $queryParameters  [ 'limit' => int, 'offset' => int, 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'serial' => string ]
      * @return [ [ 'create_date' => datetime, 'firmware_version' => string, 'release_status' => string ], ...]
      */
     public function classic_get_firmware_versions($queryParameters = [])
@@ -2498,7 +2747,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @param array<string, mixed> $body [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string, 'firmware_compliance_version' => string, 'reboot' => boolean, 'allow_unsupported_version' => boolean (optional)]
+     * @param  array<string, mixed>  $body  [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string, 'firmware_compliance_version' => string, 'reboot' => boolean, 'allow_unsupported_version' => boolean (optional)]
      */
     public function classic_post_firmware_compliance(array $body)
     {
@@ -2512,7 +2761,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @param array<string, mixed> $queryParameters [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string ]
+     * @param  array<string, mixed>  $queryParameters  [ 'device_type' => 'CX' | IAP | MAS | HP | CONTROLLER, 'group' => string ]
      * @return array [ 'firmware_compliance_version' => string]
      */
     public function classic_get_firmware_compliance($queryParameters = [])
@@ -2527,7 +2776,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, message: string}|array{error: string}
      */
     public function ensureVsxKeepAliveVrf(Device $device): array
     {
@@ -2561,7 +2810,10 @@ class CentralAPIHelper
         }
 
         if (static::vrfNameExists($vrfs, self::VSX_KEEPALIVE_VRF)) {
-            return ['ok' => true];
+            return [
+                'ok' => true,
+                'message' => self::VSX_KEEPALIVE_VRF.' VRF already exists at group scope for '.$device->name.' (group '.$device->group.').',
+            ];
         }
 
         $postResponse = $this->post_vrf(['name' => self::VSX_KEEPALIVE_VRF], $queryParams);
@@ -2578,7 +2830,10 @@ class CentralAPIHelper
             return ['error' => self::VSX_KEEPALIVE_VRF.' VRF creation failed at group level for '.$device->name.': '.($message !== '' ? $message : 'unknown error')];
         }
 
-        return ['ok' => true];
+        return [
+            'ok' => true,
+            'message' => 'Created '.self::VSX_KEEPALIVE_VRF.' VRF at group scope for '.$device->name.' (group '.$device->group.').',
+        ];
     }
 
     /**
@@ -3061,7 +3316,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, message: string}|array{error: string}
      */
     public function ensureVsxIslLag(Device $device, Device $peerDevice, array $portList): array
     {
@@ -3079,7 +3334,7 @@ class CentralAPIHelper
     }
 
     /**
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, message: string}|array{error: string}
      */
     public function ensureVsxKeepaliveLag(Device $device, Device $peerDevice, VsxRole $role, array $portList): array
     {
@@ -3098,7 +3353,7 @@ class CentralAPIHelper
 
     /**
      * @param  array<int, string>  $memberPortNames
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, message: string}|array{error: string}
      */
     public function ensureVsxPortchannelLag(
         Device $device,
@@ -3147,12 +3402,26 @@ class CentralAPIHelper
             }
         }
 
-        return $this->ensureVsxLagMemberPortDescriptions($device, $peerDevice, $memberPortNames, $portDescriptionSuffix, $failureLabel);
+        $descriptionResult = $this->ensureVsxLagMemberPortDescriptions($device, $peerDevice, $memberPortNames, $portDescriptionSuffix, $failureLabel);
+        if (array_key_exists('error', $descriptionResult)) {
+            return $descriptionResult;
+        }
+
+        $portList = implode(', ', $memberPortNames);
+        $action = $shouldCreateLag ? 'Created' : 'Verified';
+        $message = "{$action} {$failureLabel} on {$device->name} (ports: {$portList}).";
+
+        $descriptionsUpdated = (int) ($descriptionResult['descriptions_updated'] ?? 0);
+        if ($descriptionsUpdated > 0) {
+            $message .= " Updated {$descriptionsUpdated} member port description(s).";
+        }
+
+        return ['ok' => true, 'message' => $message];
     }
 
     /**
      * @param  array<int, string>  $portNames
-     * @return array{ok: true}|array{error: string}
+     * @return array{ok: true, descriptions_updated: int}|array{error: string}
      */
     public function ensureVsxLagMemberPortDescriptions(
         Device $device,
@@ -3161,6 +3430,8 @@ class CentralAPIHelper
         string $labelSuffix,
         string $failureLabel
     ): array {
+        $descriptionsUpdated = 0;
+
         foreach ($portNames as $portName) {
             $expectedDescription = static::buildVsxLagMemberPortDescription($peerDevice->name, $portName, $labelSuffix);
             $getResponse = $this->get_ethernet_interface_by_name($device, $portName);
@@ -3186,9 +3457,11 @@ class CentralAPIHelper
             if (! $this->isSuccessfulCentralResponse($patchResponse)) {
                 return ['error' => $failureLabel.' member port description failed on '.$device->name.' '.$portName.': '.$this->centralResponseErrorMessage($patchResponse)];
             }
+
+            $descriptionsUpdated++;
         }
 
-        return ['ok' => true];
+        return ['ok' => true, 'descriptions_updated' => $descriptionsUpdated];
     }
 
     public function get_interface_portchannel(Device $device, string $interfaceName): Response|array

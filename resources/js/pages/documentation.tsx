@@ -121,7 +121,7 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
         column: 'device_function',
         type: 'enum',
         accepted:
-            'CAMPUS_AP, CORE_SWITCH, AGG_SWITCH, BRANCH_GW, MOBILITY_GW, VPNC, MICROBRANCH_AP, ACCESS_SWITCH, AOSS_ACCESS_SWITCH, AOSS_CORE_SWITCH, AOSS_AGG_SWITCH, ALL.',
+            'CAMPUS_AP, CORE_SWITCH, AGG_SWITCH, BRANCH_GW, MOBILITY_GW, VPNC, MICROBRANCH_AP, ACCESS_SWITCH, AOSS_ACCESS_SWITCH, AOSS_CORE_SWITCH, AOSS_AGG_SWITCH, SERVICE_PERSONA, ALL.',
     },
     {
         column: 'interface',
@@ -857,7 +857,7 @@ export default function documentation() {
                                         device_function (
                                         <i>
                                             CAMPUS_AP, CORE_SWITCH, AGG_SWITCH, BRANCH_GW, MOBILITY_GW,
-                                            VPNC, MICROBRANCH_AP, ACCESS_SWITCH
+                                            VPNC, MICROBRANCH_AP, ACCESS_SWITCH, SERVICE_PERSONA
                                         </i>
                                         )
                                     </>,

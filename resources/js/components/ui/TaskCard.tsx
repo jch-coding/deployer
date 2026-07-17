@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Spinner } from '@/components/ui/spinner';
 import TaskDurationDialog from '@/components/ui/TaskDurationDialog';
 import {
     type AvailableSubscription,
@@ -24,7 +25,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_group, check_central_sites, force_update_site_scope_ids, store } from '@/routes/tasks';
+import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, RefreshCw } from 'lucide-react';
@@ -87,8 +88,7 @@ export default function TaskCard({
     central_firmware_error = null,
 }: TaskCardProps) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
-    const [completedDevices, setCompletedDevices] = useState<DeviceType[]>([])
-    const [statusMessage, setStatusMessage] = useState()
+    const [isLaunching, setIsLaunching] = useState(false)
     const [switchesOnly, setSwitchesOnly] = useState(false)
     const [apsOnly, setAPsOnly] = useState(false)
     const [deviceSearch, setDeviceSearch] = useState('')
@@ -377,6 +377,7 @@ export default function TaskCard({
         }
 
         setTaskDevices(devices_for_task);
+        setIsLaunching(true);
         const deploymentTimeTotalMinutes = deploymentTimeHours * 60 + deploymentTimeMinutes;
 
         const devicePayload = devices_for_task.map((device) => {
@@ -413,9 +414,12 @@ export default function TaskCard({
                           vlanPrefixTrimmed !== '' ? firmwareComplianceVersion.trim() : undefined,
                   }
                 : {}),
+        }, {
+            onError: () => setIsLaunching(false),
         });
     };
 
+<<<<<<< HEAD
     const handleSaveMacAndDeploy = async () => {
         const saved = await saveMacAddresses();
         if (!saved) {
@@ -444,8 +448,10 @@ export default function TaskCard({
 
     const resetCompletedDevices = () => setCompletedDevices([])
 
+=======
+>>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
     return (
-        <Card className="w-96">
+        <Card className="h-full w-96">
             <CardHeader className="relative pr-10">
                 <TaskRequiredColumnsInfo columns={required_columns} />
                 <CardTitle>{task_friendly_name}</CardTitle>
@@ -587,7 +593,7 @@ export default function TaskCard({
                     </div>
                 ) : null}
             </CardHeader>
-            <CardContent className="flex w-full flex-wrap items-center gap-2">
+            <CardContent className="mt-auto flex w-full flex-wrap items-center gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                 <TaskDurationDialog
                     deploymentTimeHours={deploymentTimeHours}
@@ -825,6 +831,7 @@ export default function TaskCard({
                         </DialogContent>
                     </Dialog>
                 ) : null}
+<<<<<<< HEAD
                 {isAddToGreenLakeInventory ? (
                     <Dialog open={macModalOpen} onOpenChange={setMacModalOpen}>
                         <Tooltip>
@@ -929,11 +936,15 @@ export default function TaskCard({
                     </Dialog>
                 ) : null}
                 <Dialog>
+=======
+                <Dialog open={isLaunching}>
+>>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                     {taskDevices.length > 0 &&
                     taskDevices.length < devices.length &&
                     !isAddVlansWithPrefix ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>
+<<<<<<< HEAD
                                     <DialogTrigger asChild>
                                         <Button
                                             type="button"
@@ -945,6 +956,17 @@ export default function TaskCard({
                                             <BoltIcon className="size-4" aria-hidden />
                                         </Button>
                                     </DialogTrigger>
+=======
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        className="rounded-full"
+                                        aria-label="Deploy selected devices"
+                                        onClick={() => dispatch_task_with_devices(task, devices)}
+                                    >
+                                        <BoltIcon className="size-4" aria-hidden />
+                                    </Button>
+>>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                     <p>Deploy selected</p>
@@ -953,6 +975,7 @@ export default function TaskCard({
                         ) : (
                             <Tooltip>
                                 <TooltipTrigger asChild>
+<<<<<<< HEAD
                                     <DialogTrigger asChild>
                                         <Button
                                             type="button"
@@ -964,6 +987,17 @@ export default function TaskCard({
                                             <BoltIcon className="size-4" aria-hidden />
                                         </Button>
                                     </DialogTrigger>
+=======
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        className="rounded-full"
+                                        aria-label="Deploy all devices"
+                                        onClick={() => dispatch_task_with_devices(task, devices, true)}
+                                    >
+                                        <BoltIcon className="size-4" aria-hidden />
+                                    </Button>
+>>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                     <p>
@@ -975,23 +1009,22 @@ export default function TaskCard({
                             </Tooltip>
                         )
                     }
-                    <DialogContent>
-                        <DialogTitle>{task} Progress</DialogTitle>
-                        <DialogDescription>
-                            {completedDevices.length} / {taskDevices.length} {statusMessage}
-                        </DialogDescription>
-                        <DialogClose asChild>
-                            <Button onClick={() => resetCompletedDevices()}>Close</Button>
-                        </DialogClose>
-                        <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4">
-                            <ul>
-                                {
-                                    completedDevices.length > 0 ?
-                                        completedDevices.map((device, index) =>
-                                            <li key={index} className='text-emerald-500'>{ device ? device.name : device }</li>
-                                        ) : <li>Deployment started</li>
-                                }
-                            </ul>
+                    <DialogContent
+                        className="sm:max-w-sm [&>button]:hidden"
+                        onInteractOutside={(event) => event.preventDefault()}
+                        onEscapeKeyDown={(event) => event.preventDefault()}
+                    >
+                        <DialogTitle className="sr-only">Launching task</DialogTitle>
+                        <div
+                            className="flex flex-col items-center gap-3 py-4"
+                            role="status"
+                            aria-live="polite"
+                            aria-busy="true"
+                        >
+                            <Spinner className="size-8" />
+                            <p className="text-sm font-medium">
+                                launching {task_friendly_name}
+                            </p>
                         </div>
                     </DialogContent>
                 </Dialog>
@@ -1074,6 +1107,62 @@ export default function TaskCard({
                                 <p>Force update site scope IDs</p>
                             </TooltipContent>
                         </Tooltip>
+                    </div>
+                )}
+                {(task === 'CONFIGURE_LAG_INTERFACE' ||
+                    task === 'CONFIGURE_VLAN_INTERFACE' ||
+                    task === 'CONFIGURE_ALL_INTERFACE') && (
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                        {(task === 'CONFIGURE_LAG_INTERFACE' ||
+                            task === 'CONFIGURE_ALL_INTERFACE') && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        className="rounded-full"
+                                        data-test="check-lag-port-lists"
+                                        aria-label="Verify LAG port lists"
+                                        onClick={() => {
+                                            router.post(check_lag_port_lists(deployment.id).url, {
+                                                task_type: task,
+                                            });
+                                        }}
+                                    >
+                                        <CircleCheck className="size-4" aria-hidden />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    <p>Verify LAG port lists</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+                        {(task === 'CONFIGURE_VLAN_INTERFACE' ||
+                            task === 'CONFIGURE_ALL_INTERFACE') && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        className="rounded-full"
+                                        data-test="check-vlan-ip-addresses"
+                                        aria-label="Verify VLAN IP addresses"
+                                        onClick={() => {
+                                            router.post(check_vlan_ip_addresses(deployment.id).url, {
+                                                task_type: task,
+                                            });
+                                        }}
+                                    >
+                                        <CircleCheck className="size-4" aria-hidden />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    <p>Verify VLAN IP addresses</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
                     </div>
                 )}
             </CardContent>

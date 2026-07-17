@@ -12,6 +12,7 @@ enum ClassicBaseUrl : string
     case EU1 = 'https://eu-apigw.central.arubanetworks.com/';
     case EU_CENTRAL2 = 'https://apigw-eucentral2.central.arubanetworks.com/';
     case EU_CENTRAL3 = 'https://apigw-eucentral3.central.arubanetworks.com/';
+    case UK_WEST2 = 'https://apigw-ukwest2.central.arubanetworks.com/';
     case CANADA1 = 'https://apigw-ca.central.arubanetworks.com/';
     case CHINA1 = 'https://apigw.central.arubanetworks.com.cn';
     case APAC1 = 'https://apigw-ap.central.arubanetworks.com/';

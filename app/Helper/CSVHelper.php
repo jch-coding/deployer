@@ -64,6 +64,12 @@ class CSVHelper
 
     private const LACP_RATES = ['FAST', 'SLOW'];
 
+    private const VSX_COLUMNS = [
+        'vsx_profile',
+        'vsx_role',
+        'vsx_system_mac',
+    ];
+
     private const BOOLEAN_KEYS = [
         'trunk_vlan_all',
         'admin_edge_port',
@@ -128,7 +134,7 @@ class CSVHelper
                 // First non-empty row is treated as headers.
                 if ($headers === null) {
                     $headers = array_values($row);
-                    $nameCol = array_search('name', $headers, true);
+                    $nameCol = self::findCsvHeaderIndex($headers, 'name');
                     $data[] = $row;
 
                     continue;
@@ -157,7 +163,10 @@ class CSVHelper
         }
 
         $headers = array_values($CSVData[0]);
-        $headerIndex = array_flip($headers);
+        $headerIndex = [];
+        foreach ($headers as $index => $header) {
+            $headerIndex[self::normalizeCsvHeader((string) $header)] = $index;
+        }
 
         foreach (['name', 'serial', 'device_function'] as $column) {
             if (! array_key_exists($column, $headerIndex)) {
@@ -265,13 +274,28 @@ class CSVHelper
 
     public static function normalizeCsvHeader(string $raw): string
     {
-        $normalized = strtolower(str_replace('-', '_', trim($raw)));
+        $raw = preg_replace('/^\xEF\xBB\xBF/', '', $raw) ?? $raw;
+        $normalized = strtolower(str_replace(['-', ' '], '_', trim($raw)));
 
         return match ($normalized) {
             'interface_description' => 'description',
             'lag_id' => 'lacp_port_id',
             default => $normalized,
         };
+    }
+
+    /**
+     * @param  list<string|int|float|null>  $headers
+     */
+    private static function findCsvHeaderIndex(array $headers, string $column): int|false
+    {
+        foreach ($headers as $index => $header) {
+            if (self::normalizeCsvHeader((string) $header) === $column) {
+                return $index;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -677,7 +701,50 @@ class CSVHelper
             }
         }
 
+        self::validateVsxRowFields($row, $csvRowNumber, $validationMessages);
+
         return $row;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  list<array{row: int, column: string, text: string}>  $validationMessages
+     */
+    private static function validateVsxRowFields(array $row, int $csvRowNumber, array &$validationMessages): void
+    {
+        $populated = array_values(array_filter(
+            self::VSX_COLUMNS,
+            fn (string $column) => self::isCsvCellPopulated($row[$column] ?? null)
+        ));
+
+        if ($populated === []) {
+            return;
+        }
+
+        $missing = array_values(array_filter(
+            self::VSX_COLUMNS,
+            fn (string $column) => ! self::isCsvCellPopulated($row[$column] ?? null)
+        ));
+
+        if ($missing !== []) {
+            self::addValidationMessage(
+                $validationMessages,
+                $csvRowNumber,
+                'vsx_profile',
+                $row,
+                'When any VSX profile column is set, all of '.implode(', ', self::VSX_COLUMNS).' are required on the same row. Missing: '.implode(', ', $missing).'.'
+            );
+        }
+
+        if (trim((string) ($row['serial'] ?? '')) === '') {
+            self::addValidationMessage(
+                $validationMessages,
+                $csvRowNumber,
+                'serial',
+                $row,
+                'serial is required when VSX profile columns are set.'
+            );
+        }
     }
 
     /**

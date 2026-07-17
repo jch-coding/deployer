@@ -1,6 +1,5 @@
 <?php
 
-use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
@@ -23,37 +22,20 @@ beforeEach(function () {
         'current' => true,
         'bearer_token' => 'test-bearer-token',
         'expires_at' => now()->addHour(),
+        'classic_base_url' => \App\ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
     ]);
 
-    fakeCentralScopeManagementApis();
+    seedCentralScopeCache($this->client);
 });
 
-function fakeCentralScopeManagementApis(): void
-{
-    Http::fake(function (HttpClientRequest $request) {
-        if (str_contains($request->url(), 'network-config/v1/sites')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'Central Site', 'scopeId' => 'scope-site'],
-                ],
-            ], 200);
-        }
-
-        if (str_contains($request->url(), 'device-groups')) {
-            return Http::response([
-                'items' => [
-                    ['scopeName' => 'Central Group', 'scopeId' => 'scope-group'],
-                ],
-            ], 200);
-        }
-
-        return Http::response([], 404);
-    });
-}
-
 it('shows a list of devices associated with the deployment', function () {
-    fakeCentralScopeManagementApis();
-
     $deployment = Deployment::factory()->for($this->client)->create();
     $devices = Device::factory(2)->for($deployment)->create();
     $this->actingAs($this->user);
@@ -61,14 +43,12 @@ it('shows a list of devices associated with the deployment', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/Show')
-            ->where('devices.data.0.name', $devices->first()->name)
-            ->where('devices.data.1.name', $devices->last()->name)
+            ->where('devices.0.name', $devices->first()->name)
+            ->where('devices.1.name', $devices->last()->name)
         );
 });
 
-it('includes site and group on paginated devices and central scope options', function () {
-    fakeCentralScopeManagementApis();
-
+it('includes site and group on devices and central scope options', function () {
     $deployment = Deployment::factory()->for($this->client)->create();
     $site = Site::factory()->for($this->client)->create(['name' => 'Warehouse']);
     $device = Device::factory()->for($deployment)->create([
@@ -83,42 +63,36 @@ it('includes site and group on paginated devices and central scope options', fun
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/Show')
-            ->where('devices.data.0.id', $device->id)
-            ->where('devices.data.0.site', 'Warehouse')
-            ->where('devices.data.0.group', 'Edge Switches')
+            ->where('devices.0.id', $device->id)
+            ->where('devices.0.site', 'Warehouse')
+            ->where('devices.0.group', 'Edge Switches')
             ->where('central_sites_error', null)
             ->where('central_device_groups_error', null)
             ->has('central_sites', 1)
             ->has('central_device_groups', 1)
+            ->has('device_group_options', 2)
             ->where('central_sites.0.scopeName', 'Central Site')
-            ->where('central_device_groups.0.scopeName', 'Central Group'));
+            ->where('central_device_groups.0.scopeName', 'Central Group')
+            ->where('device_group_options.0.scopeName', 'Central Group')
+            ->where('device_group_options.0.isClassic', false)
+            ->where('device_group_options.1.scopeName', 'Classic Only Group')
+            ->where('device_group_options.1.isClassic', true)
+            ->has('central_sites_cache.refreshed_at')
+            ->has('central_groups_cache.refreshed_at'));
 });
 
-it('filters devices by name, serial, or device function search', function () {
+it('returns all devices in a flat array', function () {
     $deployment = Deployment::factory()->for($this->client)->create();
-    Device::factory()->for($deployment)->create([
-        'name' => 'Alpha Switch',
-        'serial' => 'SERIAL-ALPHA-100',
-        'device_function' => DeviceFunction::CAMPUS_AP->name,
+    Device::factory(30)->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
     ]);
-    Device::factory()->for($deployment)->create([
-        'name' => 'Beta Switch',
-        'serial' => 'SERIAL-BETA-200',
-        'device_function' => DeviceFunction::ACCESS_SWITCH->name,
-    ]);
-    $this->actingAs($this->user);
 
-    $this->get(route('deployments.show', $deployment).'?search='.urlencode('Alpha'))
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment))
         ->assertOk()
-        ->assertSeeHtml('Alpha Switch');
-
-    $this->get(route('deployments.show', $deployment).'?search='.urlencode('SERIAL-BETA'))
-        ->assertOk()
-        ->assertSeeHtml('Beta Switch');
-
-    $this->get(route('deployments.show', $deployment).'?search='.urlencode('access_switch'))
-        ->assertOk()
-        ->assertSeeHtml('Beta Switch');
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('devices', 30));
 });
 
 it('still loads when a deployment has interface task history', function () {
@@ -198,7 +172,7 @@ it('has an upload devices button', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Deployment/Show')
-            ->has('devices.data', 0)
+            ->has('devices', 0)
         );
 });
 

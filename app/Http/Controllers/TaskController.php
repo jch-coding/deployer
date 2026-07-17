@@ -38,6 +38,7 @@ use App\Models\Task;
 use App\Services\DeploymentCriticalCheckService;
 use App\Services\DeviceCentralVerifier;
 use App\Services\EthernetInterfaceCentralVerifier;
+use App\Services\InterfaceConfigurationCheckService;
 use App\Services\LagInterfaceCentralVerifier;
 use App\Services\LicensingInventoryService;
 use App\Services\LicensingPoolResolver;
@@ -1510,6 +1511,54 @@ class TaskController extends Controller
         return back();
     }
 
+    public function checkLagPortLists(Request $request, Deployment $deployment)
+    {
+        $request->validate([
+            'task_type' => ['required', Rule::in(['CONFIGURE_LAG_INTERFACE', 'CONFIGURE_ALL_INTERFACE'])],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before checking LAG port lists.');
+
+            return back();
+        }
+
+        $result = (new InterfaceConfigurationCheckService)->checkLagPortListUniqueness($deployment);
+
+        if ($result['ok']) {
+            session()->flash('success', $result['message']);
+        } else {
+            session()->flash('error', $result['message']);
+        }
+
+        return back();
+    }
+
+    public function checkVlanIpAddresses(Request $request, Deployment $deployment)
+    {
+        $request->validate([
+            'task_type' => ['required', Rule::in(['CONFIGURE_VLAN_INTERFACE', 'CONFIGURE_ALL_INTERFACE'])],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before checking VLAN IP addresses.');
+
+            return back();
+        }
+
+        $result = (new InterfaceConfigurationCheckService)->checkVlanIpAddressUniqueness($deployment);
+
+        if ($result['ok']) {
+            session()->flash('success', $result['message']);
+        } else {
+            session()->flash('error', $result['message']);
+        }
+
+        return back();
+    }
+
     public function forceUpdateSiteScopeIds(Request $request, Deployment $deployment)
     {
         $request->validate([
@@ -1852,8 +1901,11 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $devices_by_group = $in_progress->groupBy('group');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
-                $devices_by_group_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, PreprovisionDevicesToGroupJob::class);
-                // One batch segment so all chunk jobs dispatch together (avoids Bus::chain of batches and preserves batch_id).
+                $devices_by_group_jobs = array_map(
+                    fn (array $chunks, string $group) => new PreprovisionDevicesToGroupJob($chunks, $group, $task, $centralAPIHelper),
+                    $chunked_devices_by_group_with_keys['chunked_devices_by_group'],
+                    $chunked_devices_by_group_with_keys['keys']
+                );
                 $jobs[] = $devices_by_group_jobs;
                 break;
             case 'MOVE_DEVICE_TO_GROUP':

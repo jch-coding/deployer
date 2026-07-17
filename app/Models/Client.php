@@ -40,6 +40,11 @@ class Client extends Model
         return $this->hasMany(Site::class);
     }
 
+    public function centralScopeCaches(): HasMany
+    {
+        return $this->hasMany(CentralScopeCache::class);
+    }
+
     public function clientSubscriptions(): HasMany
     {
         return $this->hasMany(ClientSubscription::class);
@@ -173,8 +178,28 @@ class Client extends Model
 
     public function updateClassicRefreshToken(string $refreshToken): bool
     {
-        $this->classic_refresh_token = $refreshToken;
-        $this->classic_access_token = null;
+        return $this->updateClassicCentralTokens($refreshToken, null);
+    }
+
+    public function updateClassicCentralTokens(?string $refreshToken, ?string $accessToken): bool
+    {
+        if ($refreshToken === null && $accessToken === null) {
+            return false;
+        }
+
+        if ($refreshToken !== null) {
+            $this->classic_refresh_token = $refreshToken;
+            $this->classic_access_token = null;
+        }
+
+        if ($accessToken !== null) {
+            $this->classic_access_token = $accessToken;
+        }
+
+        if ($this->classic_refresh_token === null) {
+            return false;
+        }
+
         $this->classic_expires_in = now()->subSecond();
         $this->save();
 

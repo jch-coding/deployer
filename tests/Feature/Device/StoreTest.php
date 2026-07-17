@@ -569,6 +569,34 @@ it('uploads devices with vsx profile columns', function () {
     ]);
 });
 
+it('uploads devices with vsx profile columns when the csv starts with a utf-8 bom', function () {
+    Storage::fake('devices');
+    $user = User::factory()
+        ->has(Client::factory())
+        ->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        "\xEF\xBB\xBFname,serial,device_function,group,site,vsx_profile,vsx_role,vsx_system_mac".PHP_EOL.
+        'Primary-SW,SN0000000001,ACCESS_SWITCH,WHSE-TEST,Site-A,vsx-pair-1,VSX_PRIMARY,2:0:0:0:0:1'.PHP_EOL.
+        'Secondary-SW,SN0000000002,ACCESS_SWITCH,WHSE-TEST,Site-A,vsx-pair-1,VSX_SECONDARY,2:0:0:0:0:1'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', [
+        'serial' => 'SN0000000001',
+        'vsx_profile' => 'vsx-pair-1',
+        'vsx_role' => 'VSX_PRIMARY',
+        'vsx_system_mac' => '02:00:00:00:00:01',
+    ]);
+});
+
 it('rejects a csv missing the serial header with a specific error', function () {
     $user = User::factory()->has(Client::factory())->create();
     $user->clients()->first()->update(['current' => true]);

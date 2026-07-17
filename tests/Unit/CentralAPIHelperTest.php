@@ -790,6 +790,129 @@ test('getScopeIdFromCentral resolves stack_id from a later switches page', funct
     });
 });
 
+/**
+ * @return array<string, mixed>
+ */
+function hierarchyResponseFixture(array $hierarchy): array
+{
+    return [
+        'items' => [
+            [
+                'id' => 'hierarchy0',
+                'type' => 'network-config/hierarchy',
+                'hierarchy' => $hierarchy,
+            ],
+        ],
+    ];
+}
+
+test('get_hierarchy returns site hierarchy with ancestors in order', function () {
+    $hierarchy = [
+        ['scopeName' => 'Store-42', 'scopeType' => 'site', 'childCount' => 3, 'scopeId' => 'scope-site', 'hostName' => ''],
+        ['scopeName' => 'US Retail', 'scopeType' => 'site_collection', 'childCount' => 10, 'scopeId' => 'scope-collection', 'hostName' => ''],
+        ['scopeName' => 'Org', 'scopeType' => 'org', 'childCount' => null, 'scopeId' => 'scope-org', 'hostName' => ''],
+    ];
+
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(hierarchyResponseFixture($hierarchy), 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_hierarchy(['scope_id' => 'scope-site'], 'site');
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(3)
+        ->and($result[0]['scopeName'])->toBe('Store-42')
+        ->and($result[1]['scopeType'])->toBe('site_collection')
+        ->and($result[2]['scopeType'])->toBe('org');
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return str_contains($request->url(), 'network-config/v1/hierarchy')
+            && ($query['id'] ?? '') === 'scope-site'
+            && ($query['type'] ?? '') === 'site';
+    });
+});
+
+test('get_hierarchy returns device_group hierarchy', function () {
+    $hierarchy = [
+        ['scopeName' => 'Edge Switches', 'scopeType' => 'device_group', 'childCount' => 5, 'scopeId' => 'scope-group', 'hostName' => ''],
+        ['scopeName' => 'Org', 'scopeType' => 'org', 'childCount' => null, 'scopeId' => 'scope-org', 'hostName' => ''],
+    ];
+
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(hierarchyResponseFixture($hierarchy), 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_hierarchy(['scopeId' => 'scope-group'], 'device_group');
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(2)
+        ->and($result[0]['scopeType'])->toBe('device_group');
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return ($query['id'] ?? '') === 'scope-group'
+            && ($query['type'] ?? '') === 'device_group';
+    });
+});
+
+test('get_hierarchy returns error for invalid type without calling central', function () {
+    Http::fake();
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'org'))->toBe(['error' => 'invalid hierarchy type.']);
+
+    Http::assertNothingSent();
+});
+
+test('get_hierarchy returns error when scope id is missing without calling central', function () {
+    Http::fake();
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_hierarchy(['scope_id' => ''], 'site'))->toBe(['error' => 'scope id is required.']);
+
+    Http::assertNothingSent();
+});
+
+test('get_hierarchy returns error when authentication fails', function () {
+    Http::fake();
+
+    $client = mock(Client::class)->makePartial();
+    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnFalse();
+
+    $helper = new CentralAPIHelper($client);
+
+    expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'site'))->toBe(['error' => 'failed to get access token from central.']);
+
+    Http::assertNothingSent();
+});
+
+test('get_hierarchy returns error when central API fails', function () {
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'site'))->toBe(['error' => 'failed to get hierarchy from central.']);
+});
+
+test('get_hierarchy returns error when central response has no hierarchy items', function () {
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(['items' => []], 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'site'))->toBe(['error' => 'failed to get hierarchy from central.']);
+});
+
 test('localDeviceInterfaceQueryParameters uses LOCAL scope and string device function', function () {
     $device = Device::factory()->create([
         'scope_id' => 'scope-abc',
@@ -847,6 +970,113 @@ test('get_all_interface_portchannels uses LOCAL device query parameters', functi
             && ($query['object-type'] ?? '') === 'LOCAL'
             && ($query['scope-id'] ?? '') === 'device-scope-456'
             && ($query['device-function'] ?? '') === 'ACCESS_SWITCH';
+    });
+});
+
+test('post_wlan_ssid_profile posts to wlan-ssids endpoint with query parameters and body', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $body = ['ssid' => 'CorpWiFi'];
+
+    $helper->post_wlan_ssid_profile('my-ssid-profile', ['view-type' => 'LIBRARY'], $body);
+
+    Http::assertSent(function (Request $request) use ($body) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/my-ssid-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY'
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
+test('build_named_vlan_profile_body coerces numeric vlan id ranges to strings', function () {
+    expect(CentralAPIHelper::build_named_vlan_profile_body('CorpVLAN', [10, '20-30']))
+        ->toEqual([
+            'name' => 'CorpVLAN',
+            'vlan' => ['vlan-id-ranges' => ['10', '20-30']],
+        ]);
+});
+
+test('build_named_vlan_profile_body supports partial name-only and ranges-only bodies', function () {
+    expect(CentralAPIHelper::build_named_vlan_profile_body('CorpVLAN'))
+        ->toEqual(['name' => 'CorpVLAN']);
+
+    expect(CentralAPIHelper::build_named_vlan_profile_body(null, [100]))
+        ->toEqual(['vlan' => ['vlan-id-ranges' => ['100']]]);
+});
+
+test('get_named_vlans gets named-vlan endpoint with query parameters', function () {
+    Http::fake(['*' => Http::response(['items' => []], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $helper->get_named_vlans(['view-type' => 'LIBRARY']);
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'GET'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan')
+            && ! str_contains($request->url(), 'network-config/v1alpha1/named-vlan/')
+            && ($query['view-type'] ?? null) === 'LIBRARY';
+    });
+});
+
+test('get_named_vlan_profile gets named-vlan profile endpoint with query parameters', function () {
+    Http::fake(['*' => Http::response(['name' => 'my-profile'], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $helper->get_named_vlan_profile('my-profile', ['view-type' => 'LIBRARY']);
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'GET'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/my-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY';
+    });
+});
+
+test('post_named_vlan_profile posts to named-vlan endpoint with query parameters and body', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $expectedBody = [
+        'name' => 'CorpVLAN',
+        'vlan' => ['vlan-id-ranges' => ['10', '20-30']],
+    ];
+
+    $helper->post_named_vlan_profile('my-profile', ['view-type' => 'LIBRARY'], 'CorpVLAN', [10, '20-30']);
+
+    Http::assertSent(function (Request $request) use ($expectedBody) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/my-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY'
+            && json_decode($request->body(), true) === $expectedBody;
+    });
+});
+
+test('patch_named_vlan_profile patches named-vlan endpoint with query parameters and body', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $expectedBody = [
+        'name' => 'CorpVLAN',
+        'vlan' => ['vlan-id-ranges' => ['10', '20-30']],
+    ];
+
+    $helper->patch_named_vlan_profile('my-profile', ['view-type' => 'LIBRARY'], 'CorpVLAN', [10, '20-30']);
+
+    Http::assertSent(function (Request $request) use ($expectedBody) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'PATCH'
+            && str_contains($request->url(), 'network-config/v1alpha1/named-vlan/my-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY'
+            && json_decode($request->body(), true) === $expectedBody;
     });
 });
 
@@ -1221,7 +1451,8 @@ test('ensureVsxIslLag creates lag when central returns null name', function () {
 
     $result = $helper->ensureVsxIslLag($device, $peer, ['1/1/21', '1/1/22']);
 
-    expect($result)->toBe(['ok' => true]);
+    expect($result)->toMatchArray(['ok' => true])
+        ->and($result['message'] ?? '')->toContain('Created LAG 256 inter-switch-link');
     Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/portchannels/256'));
 });
 
@@ -1343,7 +1574,8 @@ test('ensureVsxKeepAliveVrf skips post when vrf exists at group scope', function
 
     $result = $helper->ensureVsxKeepAliveVrf($device);
 
-    expect($result)->toBe(['ok' => true]);
+    expect($result)->toMatchArray(['ok' => true])
+        ->and($result['message'] ?? '')->toContain('already exists');
     Http::assertNotSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/vrfs/'));
 });
 
@@ -1377,10 +1609,8 @@ test('ensureVsxKeepAliveVrf posts vrf at group scope when missing', function () 
 
     $result = $helper->ensureVsxKeepAliveVrf($device);
 
-    expect($result)->toBe(['ok' => true]);
-});
-
-test('ensureVsxKeepAliveVrf returns error when vrf post fails', function () {
+    expect($result)->toMatchArray(['ok' => true])
+        ->and($result['message'] ?? '')->toContain('Created');
     Http::fake(function (Request $request) {
         if (str_contains($request->url(), 'device-groups')) {
             return Http::response(['items' => [['scopeName' => 'MyGroup', 'scopeId' => 'group-scope-1']]], 200);
@@ -1777,4 +2007,29 @@ test('resolveCxFirmwareVersionOptions extracts unique sorted firmware_version va
 
     expect($result['error'])->toBeNull()
         ->and($result['versions'])->toBe(['FL.10.14.1000', 'FL.10.15.1010']);
+});
+
+test('collectScopeManagementSiteCollections maps site collections from Central', function () {
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope'],
+                ['scopeName' => 'Regional', 'scopeId' => 'regional-scope'],
+            ],
+        ], 200),
+    ]);
+
+    $result = (new CentralAPIHelper($client))->collectScopeManagementSiteCollections();
+
+    expect($result['error'])->toBeNull()
+        ->and($result['site_collections'])->toBe([
+            ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope'],
+            ['scopeName' => 'Regional', 'scopeId' => 'regional-scope'],
+        ]);
 });

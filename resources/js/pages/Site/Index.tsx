@@ -6,6 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
+import CentralScopeRefreshButtons, {
+    type CentralScopeCacheMeta,
+    type CentralScopeGroupsCacheMeta,
+} from '@/components/central/CentralScopeRefreshButtons';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as sitesIndex } from '@/routes/sites';
@@ -48,6 +52,8 @@ type SiteIndexProps = {
     device_type_options: string[];
     status_options: string[];
     deployment_options: string[];
+    central_sites_cache: CentralScopeCacheMeta;
+    central_groups_cache: CentralScopeGroupsCacheMeta;
 } & SharedData;
 
 function statusBadgeClass(status: string): string {
@@ -118,6 +124,8 @@ export default function Index() {
         device_type_options,
         status_options,
         deployment_options,
+        central_sites_cache,
+        central_groups_cache,
     } = usePage<SiteIndexProps>().props;
 
     const [localFilters, setLocalFilters] = useState<SiteFilters>(filters);
@@ -238,6 +246,19 @@ export default function Index() {
                 <p className="mt-2 text-center text-sm text-muted-foreground">
                     Filter Central devices by site and device attributes. Add at least one filter to search.
                 </p>
+
+                <div className="mt-4 flex justify-center">
+                    <CentralScopeRefreshButtons
+                        centralSitesCache={central_sites_cache}
+                        centralGroupsCache={central_groups_cache}
+                        reloadOnly={[
+                            'central_sites_cache',
+                            'central_groups_cache',
+                            'site_options',
+                            'central_error',
+                        ]}
+                    />
+                </div>
 
                 {central_error && (
                     <div

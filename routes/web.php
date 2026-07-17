@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Controllers\CentralApiExplorerController;
+use App\Http\Controllers\CentralScopeCacheController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DispatchController;
 use App\Http\Controllers\LicensingController;
+use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\ProvisioningWorkflowController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\TaskController;
@@ -66,6 +68,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(DeviceController::class)->group(function () {
         Route::post('/deployments/{deployment}/refresh-scope-ids', 'refreshScopeIds')->name('deployments.refresh-scope-ids');
+        Route::post('/deployments/{deployment}/bulk-update-metadata', 'bulkUpdateMetadata')->name('deployments.bulk-update-metadata');
         Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::get('/devices/{device}', 'show')->name('devices.show');
@@ -81,6 +84,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/sites', 'index')->name('sites.index');
     });
 
+    Route::controller(CentralScopeCacheController::class)->group(function () {
+        Route::post('/central-scope-cache/sites/refresh', 'refreshSites')->name('central-scope-cache.sites.refresh');
+        Route::post('/central-scope-cache/groups/refresh', 'refreshGroups')->name('central-scope-cache.groups.refresh');
+    });
+
     Route::controller(LicensingController::class)->group(function () {
         Route::get('/licensing', 'index')->name('licensing.index');
         Route::post('/licensing/renew', 'renew')->name('licensing.renew');
@@ -92,6 +100,13 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(CentralApiExplorerController::class)->group(function () {
         Route::get('/central-api', 'index')->name('central-api.index');
         Route::post('/central-api/execute', 'execute')->name('central-api.execute');
+    });
+
+    Route::controller(MigrationController::class)->group(function () {
+        Route::get('/migrations', 'index')->name('migrations.index');
+        Route::post('/migrations/parse', 'parse')->name('migrations.parse');
+        Route::post('/migrations/deploy-wlan', 'deployWlan')->name('migrations.deploy-wlan');
+        Route::post('/migrations/deploy-wlan/step/{step}', 'deployWlanStep')->name('migrations.deploy-wlan.step');
     });
 
     Route::controller(DispatchController::class)->group(function () {
@@ -106,6 +121,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/tasks/{task}/remediation-check/step/{step}', 'remediationCheckStep')->name('tasks.remediation_check.step');
         Route::post('/tasks/deployment/{deployment}/check-central-group', 'checkCentralGroup')->name('tasks.check_central_group');
         Route::post('/tasks/deployment/{deployment}/check-central-sites', 'checkCentralSites')->name('tasks.check_central_sites');
+        Route::post('/tasks/deployment/{deployment}/check-lag-port-lists', 'checkLagPortLists')->name('tasks.check_lag_port_lists');
+        Route::post('/tasks/deployment/{deployment}/check-vlan-ip-addresses', 'checkVlanIpAddresses')->name('tasks.check_vlan_ip_addresses');
         Route::post('/tasks/deployment/{deployment}/force-update-site-scope-ids', 'forceUpdateSiteScopeIds')->name('tasks.force_update_site_scope_ids');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
         Route::post('/tasks/force_restart/{task}', 'force_restart')->name('tasks.force_restart');

@@ -569,6 +569,62 @@ it('accepts mixed-case vsx column headers and role values', function () {
     ]);
 });
 
+it('accepts vsx profile creation columns when the first header has a utf-8 bom', function () {
+    $path = tempnam(sys_get_temp_dir(), 'csv_helper_vsx_bom_');
+    file_put_contents(
+        $path,
+        "\xEF\xBB\xBFname,serial,device_function,group,site,vsx_profile,vsx_role,vsx_system_mac\n".
+        "Primary-SW,SN0000000001,ACCESS_SWITCH,WHSE-TEST,Site-A,vsx-pair-1,VSX_PRIMARY,2:0:0:0:0:1\n"
+    );
+
+    try {
+        $csvData = CSVHelper::processCSVFile($path);
+        $deviceArrays = CSVHelper::createDeviceArrays($csvData);
+    } finally {
+        unlink($path);
+    }
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0]['vsx_profile'])->toBe('vsx-pair-1')
+        ->and($deviceArrays[0]['vsx_system_mac'])->toBe('02:00:00:00:00:01');
+});
+
+it('accepts vsx profile creation columns when the first header has a utf-8 bom in array input', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ["\xEF\xBB\xBFname", 'serial', 'device_function', 'group', 'site', 'vsx_profile', 'vsx_role', 'vsx_system_mac'],
+        ['Primary-SW', 'SN0000000001', 'ACCESS_SWITCH', 'WHSE-TEST', 'Site-A', 'vsx-pair-1', 'VSX_PRIMARY', '2:0:0:0:0:1'],
+        ['Secondary-SW', 'SN0000000002', 'ACCESS_SWITCH', 'WHSE-TEST', 'Site-A', 'vsx-pair-1', 'VSX_SECONDARY', '2:0:0:0:0:1'],
+    ]);
+
+    expect($deviceArrays)->toHaveCount(2)
+        ->and($deviceArrays[0])->toMatchArray([
+            'vsx_profile' => 'vsx-pair-1',
+            'vsx_role' => 'VSX_PRIMARY',
+            'vsx_system_mac' => '02:00:00:00:00:01',
+        ])
+        ->and($deviceArrays[1]['vsx_role'])->toBe('VSX_SECONDARY');
+});
+
+it('accepts vsx column headers with spaces', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'VSX Profile', 'VSX Role', 'VSX System Mac'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'pair-1', 'VSX_PRIMARY', '02:00:00:00:00:01'],
+    ]);
+
+    expect($deviceArrays[0])->toMatchArray([
+        'vsx_profile' => 'pair-1',
+        'vsx_role' => 'VSX_PRIMARY',
+        'vsx_system_mac' => '02:00:00:00:00:01',
+    ]);
+});
+
+it('rejects partial vsx profile column values on a row', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'vsx_profile', 'vsx_role', 'vsx_system_mac'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'pair-1', 'VSX_PRIMARY', ''],
+    ]))->toThrow(ValidationException::class);
+});
+
 it('normalizes and validates vsx lag port override columns', function () {
     $deviceArrays = CSVHelper::createDeviceArrays([
         ['name', 'serial', 'device_function', 'vsx_isl_ports', 'vsx_keepalive_ports'],

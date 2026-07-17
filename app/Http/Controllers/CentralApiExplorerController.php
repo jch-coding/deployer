@@ -2,17 +2,23 @@
 
 namespace App\Http\Controllers;
 
+use App\DeviceFunction;
+use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Services\CentralApiProxyService;
 use App\Services\CentralOpenApiRegistry;
+use App\Services\CentralScopeCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class CentralApiExplorerController extends Controller
 {
-    public function index(Request $request, CentralOpenApiRegistry $registry)
-    {
+    public function index(
+        Request $request,
+        CentralOpenApiRegistry $registry,
+        CentralScopeCacheService $centralScopeCacheService,
+    ) {
         $currentClient = $request->user()->currentClient();
 
         if (! $currentClient) {
@@ -46,10 +52,28 @@ class CentralApiExplorerController extends Controller
             ->values()
             ->all();
 
+        $sitesPayload = $centralScopeCacheService->getSites($currentClient);
+        $groupsPayload = $centralScopeCacheService->getGroups($currentClient);
+        $siteCollectionsPayload = (new CentralAPIHelper($currentClient))
+            ->collectScopeManagementSiteCollections();
+        $cacheMetadata = $centralScopeCacheService->getCacheMetadata($currentClient);
+
         return Inertia::render('CentralApi/Explorer', [
             'tags' => $registry->tags(),
             'operations_by_tag' => $operationsByTag,
             'device_options' => $deviceOptions,
+            'scope_sites' => $sitesPayload['sites'],
+            'scope_groups' => $groupsPayload['central_device_groups'],
+            'scope_site_collections' => $siteCollectionsPayload['site_collections'],
+            'scope_sites_error' => $sitesPayload['error'],
+            'scope_groups_error' => $groupsPayload['error'],
+            'scope_site_collections_error' => $siteCollectionsPayload['error'],
+            'central_sites_cache' => $cacheMetadata['central_sites_cache'],
+            'central_groups_cache' => $cacheMetadata['central_groups_cache'],
+            'device_function_options' => array_map(
+                fn (DeviceFunction $deviceFunction): string => $deviceFunction->name,
+                DeviceFunction::cases(),
+            ),
             'base_url_display' => $currentClient->base_url,
             'docs_url' => 'https://developer.arubanetworks.com/new-central-config/reference/getactiveissues',
         ]);

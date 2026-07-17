@@ -163,7 +163,7 @@ test('a user can save a classic refresh token and refresh classic central creden
     $this->actingAs($user)
         ->put(route('clients.edit', $client), ['classic_refresh_token' => 'new-classic-refresh-token-input'])
         ->assertRedirect(route('clients.index'))
-        ->assertSessionHas('success', 'Classic refresh token saved and validated.');
+        ->assertSessionHas('success', 'Classic Central tokens saved and validated.');
 
     $client->refresh();
     expect($client->classic_refresh_token)->toBe('new-classic-refresh-token')
@@ -182,7 +182,7 @@ test('a user sees an error when classic refresh token validation fails but the t
     $this->actingAs($user)
         ->put(route('clients.edit', $client), ['classic_refresh_token' => 'saved-but-invalid-refresh-token'])
         ->assertRedirect(route('clients.index'))
-        ->assertSessionHas('error', 'Failed to refresh Classic Central token with the provided refresh token.');
+        ->assertSessionHas('error', 'Failed to validate Classic Central tokens with Central.');
 
     expect($client->fresh()->classic_refresh_token)->toBe('saved-but-invalid-refresh-token');
 });
@@ -197,6 +197,108 @@ test('a user cannot save an invalid classic refresh token', function (string $va
         ->assertSessionHasErrors(['classic_refresh_token']);
 
     expect($client->fresh()->classic_refresh_token)->toBe($originalToken);
+})->with([
+    '',
+    'short',
+]);
+
+test('a user can save a classic access token and validate classic central credentials', function () {
+    $user = User::factory()->create();
+    $client = classicClientForRefreshToken($user);
+
+    Http::fake([
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::response([
+            'access_token' => 'refreshed-classic-access-token',
+            'refresh_token' => 'refreshed-classic-refresh-token',
+            'expires_in' => 3600,
+        ], 200),
+    ]);
+
+    $this->actingAs($user)
+        ->put(route('clients.edit', $client), ['classic_access_token' => 'new-classic-access-token-input'])
+        ->assertRedirect(route('clients.index'))
+        ->assertSessionHas('success', 'Classic Central tokens saved and validated.');
+
+    $client->refresh();
+    expect($client->classic_access_token)->toBe('refreshed-classic-access-token')
+        ->and($client->classic_refresh_token)->toBe('refreshed-classic-refresh-token')
+        ->and($client->classic_expires_in)->toBeGreaterThan(now());
+});
+
+test('a user can save classic refresh and access tokens together', function () {
+    $user = User::factory()->create();
+    $client = classicClientForRefreshToken($user);
+
+    Http::fake([
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::response([
+            'access_token' => 'validated-classic-access-token',
+            'refresh_token' => 'validated-classic-refresh-token',
+            'expires_in' => 3600,
+        ], 200),
+    ]);
+
+    $this->actingAs($user)
+        ->put(route('clients.edit', $client), [
+            'classic_refresh_token' => 'new-classic-refresh-token-input',
+            'classic_access_token' => 'new-classic-access-token-input',
+        ])
+        ->assertRedirect(route('clients.index'))
+        ->assertSessionHas('success', 'Classic Central tokens saved and validated.');
+
+    $client->refresh();
+    expect($client->classic_access_token)->toBe('validated-classic-access-token')
+        ->and($client->classic_refresh_token)->toBe('validated-classic-refresh-token');
+});
+
+test('a user cannot save an invalid classic access token', function (string $value) {
+    $user = User::factory()->create();
+    $client = classicClientForRefreshToken($user);
+    $originalToken = $client->classic_access_token;
+
+    $this->actingAs($user)
+        ->put(route('clients.edit', $client), ['classic_access_token' => $value])
+        ->assertSessionHasErrors(['classic_access_token']);
+
+    expect($client->fresh()->classic_access_token)->toBe($originalToken);
+})->with([
+    '',
+    'short',
+]);
+
+test('a user cannot save classic tokens without providing refresh or access token values', function () {
+    $user = User::factory()->create();
+    $client = classicClientForRefreshToken($user);
+
+    $this->actingAs($user)
+        ->put(route('clients.edit', $client), [
+            'classic_refresh_token' => '',
+            'classic_access_token' => '',
+        ])
+        ->assertSessionHasErrors(['classic_refresh_token', 'classic_access_token']);
+});
+
+test('a user can save a classic client id from the classic central tokens form', function () {
+    $user = User::factory()->create();
+    $client = classicClientForRefreshToken($user);
+
+    $this->actingAs($user)
+        ->put(route('clients.edit', $client), ['classic_client_id' => 'updated-classic-client-id'])
+        ->assertRedirect(route('clients.index'))
+        ->assertSessionHas('success', 'Classic client ID saved.');
+
+    expect($client->fresh()->classic_client_id)->toBe('updated-classic-client-id');
+});
+
+test('a user cannot save an invalid classic client id', function (string $value) {
+    $user = User::factory()->create();
+    $client = classicClientForRefreshToken($user);
+    $originalClientId = $client->classic_client_id;
+
+    $this->actingAs($user)
+        ->put(route('clients.edit', $client), ['classic_client_id' => $value])
+        ->assertSessionHasErrors(['classic_client_id']);
+
+    expect($client->fresh()->classic_client_id)->toBe($originalClientId);
 })->with([
     '',
     'short',

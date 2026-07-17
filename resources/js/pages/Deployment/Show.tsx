@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import type { LicenseTypeOption } from '@/lib/license-types';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -28,10 +29,30 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import LaravelPaginator from '@/components/ui/LaravelPaginator';
+import {
+    Pagination,
+    PaginationContent,
+    PaginationEllipsis,
+    PaginationItem,
+    PaginationLink,
+    PaginationNext,
+    PaginationPrevious,
+} from '@/components/ui/pagination';
 import type { AvailableSubscription } from '@/components/licensing/LicenseSelect';
+import { Spinner } from '@/components/ui/spinner';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
+import CentralScopeRefreshButtons, {
+    type CentralScopeCacheMeta,
+    type CentralScopeGroupsCacheMeta,
+} from '@/components/central/CentralScopeRefreshButtons';
 import {
     Tooltip,
     TooltipContent,
@@ -40,6 +61,7 @@ import {
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import {
+    bulkUpdateMetadata,
     critical_check as criticalCheckDeployment,
     index as deploymentsIndex,
     provision as provisionDeployment,
@@ -55,12 +77,12 @@ import {
     type TaskLaunchSearchable,
 } from '@/lib/task-launch-categories';
 import type { BreadcrumbItem, SharedData } from '@/types';
-import type { Paginator } from '@/types/deployer';
 
-/** Matches deployment payload from DeploymentController::show (devices used by task cards). */
+/** Matches deployment payload from DeploymentController::show. */
 type DeploymentSummary = {
     id: number;
     name: string;
+<<<<<<< HEAD
     devices: Array<{
         id: number;
         name: string;
@@ -68,6 +90,8 @@ type DeploymentSummary = {
         device_function?: string;
         mac_address?: string | null;
     }>;
+=======
+>>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
 };
 
 type Task = {
@@ -127,11 +151,76 @@ function groupCsvUploadErrors(
 type CentralScopeOption = {
     scopeName: string;
     scopeId: string;
+    isClassic?: boolean;
 };
 
+const BULK_NO_CHANGE = '__no_change__';
+const BULK_NONE = '__none__';
+
+const selectClassName =
+    'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
+
+type PaginationPageItem = number | 'ellipsis';
+
+function getVisiblePageNumbers(
+    currentPageIndex: number,
+    totalPages: number,
+): PaginationPageItem[] {
+    if (totalPages <= 1) {
+        return totalPages === 1 ? [1] : [];
+    }
+
+    const currentPage = currentPageIndex + 1;
+    const delta = 2;
+    const range: number[] = [];
+    const rangeWithDots: PaginationPageItem[] = [];
+    let previousPage: number | undefined;
+
+    for (let page = 1; page <= totalPages; page++) {
+        if (
+            page === 1 ||
+            page === totalPages ||
+            (page >= currentPage - delta && page <= currentPage + delta)
+        ) {
+            range.push(page);
+        }
+    }
+
+    for (const page of range) {
+        if (previousPage !== undefined) {
+            if (page - previousPage === 2) {
+                rangeWithDots.push(previousPage + 1);
+            } else if (page - previousPage !== 1) {
+                rangeWithDots.push('ellipsis');
+            }
+        }
+
+        rangeWithDots.push(page);
+        previousPage = page;
+    }
+
+    return rangeWithDots;
+}
+
+function filterDeploymentDevices(
+    devices: DeviceDef[],
+    search: string,
+): DeviceDef[] {
+    const q = search.trim().toLowerCase();
+    if (!q) {
+        return devices;
+    }
+
+    return devices.filter(
+        (d) =>
+            String(d.name).toLowerCase().includes(q) ||
+            String(d.serial).toLowerCase().includes(q) ||
+            String(d.device_function).toLowerCase().includes(q),
+    );
+}
+
 type DeploymentPageProps = {
-    devices: Paginator<DeviceDef>;
-    device_search?: string;
+    devices: DeviceDef[];
     base_urls: string[];
     deployment: DeploymentSummary;
     tasks: LaunchTask[];
@@ -148,31 +237,39 @@ type DeploymentPageProps = {
     central_sites_error: string | null;
     central_device_groups: CentralScopeOption[];
     central_device_groups_error: string | null;
+    device_group_options: CentralScopeOption[];
+    classic_device_groups_error: string | null;
+    central_sites_cache: CentralScopeCacheMeta;
+    central_groups_cache: CentralScopeGroupsCacheMeta;
 } & SharedData;
 export default function Show() {
     const {
         deployment,
+        devices,
         current_client,
         flash,
-        device_search = '',
     } = usePage<DeploymentPageProps>().props;
-    const devicesPaginator = usePage<DeploymentPageProps>().props.devices;
-    const devicesFromServer = devicesPaginator.data;
     const deploymentId = Number(deployment.id);
 
-    const [deviceTableSearch, setDeviceTableSearch] = useState(device_search);
+    const [deviceTableSearch, setDeviceTableSearch] = useState('');
+    const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
+    const [pageIndex, setPageIndex] = useState(0);
     const [taskSearch, setTaskSearch] = useState('');
     const [selectedTaskCategoryId, setSelectedTaskCategoryId] =
         useState<TaskLaunchCategoryId | null>(null);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [allFilteredSelected, setAllFilteredSelected] = useState(false);
     const [syncingScopeIds, setSyncingScopeIds] = useState(false);
+    const [bulkSite, setBulkSite] = useState(BULK_NO_CHANGE);
+    const [bulkGroup, setBulkGroup] = useState(BULK_NO_CHANGE);
+    const [applyingMetadata, setApplyingMetadata] = useState(false);
+    const applyingMetadataRef = useRef(false);
     const previousDeploymentIdRef = useRef(deploymentId);
-    const previousDeviceSearchRef = useRef(device_search.trim());
+    const previousDeviceSearchRef = useRef('');
 
     const devicesForTasks = useMemo(
         () =>
-            (deployment.devices ?? []).map((d) => ({
+            devices.map((d) => ({
                 id: d.id,
                 name: d.name,
                 completed: false,
@@ -180,7 +277,7 @@ export default function Show() {
                 serial: d.serial,
                 mac_address: d.mac_address ?? null,
             })),
-        [deployment.devices ?? []],
+        [devices],
     );
     const { setData, post, progress, errors } = useForm<{
         devices: File | null;
@@ -201,21 +298,23 @@ export default function Show() {
         central_firmware_error = null,
         central_sites = [],
         central_sites_error = null,
-        central_device_groups = [],
         central_device_groups_error = null,
+        device_group_options = [],
+        central_sites_cache,
+        central_groups_cache,
     } = usePage<DeploymentPageProps>().props;
 
     const deviceTableColumns = useMemo(
         () =>
             createDeploymentShowColumns({
                 centralSites: central_sites,
-                centralDeviceGroups: central_device_groups,
+                deviceGroupOptions: device_group_options,
                 centralSitesError: central_sites_error,
                 centralDeviceGroupsError: central_device_groups_error,
             }),
         [
             central_sites,
-            central_device_groups,
+            device_group_options,
             central_sites_error,
             central_device_groups_error,
         ],
@@ -241,22 +340,80 @@ export default function Show() {
     }, [flash?.success, flash?.error]);
 
     useEffect(() => {
+        applyingMetadataRef.current = applyingMetadata;
+    }, [applyingMetadata]);
+
+    useEffect(() => {
+        const stopBulkMetadataLoading = () => {
+            if (!applyingMetadataRef.current) {
+                return;
+            }
+
+            applyingMetadataRef.current = false;
+            setApplyingMetadata(false);
+        };
+
+        const removeFinishListener = router.on('finish', stopBulkMetadataLoading);
+        const removeCancelListener = router.on('cancel', stopBulkMetadataLoading);
+        const removeErrorListener = router.on('error', stopBulkMetadataLoading);
+        const removeExceptionListener = router.on(
+            'exception',
+            stopBulkMetadataLoading,
+        );
+
+        return () => {
+            removeFinishListener();
+            removeCancelListener();
+            removeErrorListener();
+            removeExceptionListener();
+        };
+    }, []);
+
+    useEffect(() => {
         if (previousDeploymentIdRef.current !== deploymentId) {
             previousDeploymentIdRef.current = deploymentId;
-            setDeviceTableSearch(device_search);
+            setDeviceTableSearch('');
+            setPageIndex(0);
             setRowSelection({});
             setAllFilteredSelected(false);
         }
-    }, [deploymentId, device_search]);
+    }, [deploymentId]);
 
     useEffect(() => {
         const trimmed = deviceTableSearch.trim();
         if (previousDeviceSearchRef.current !== trimmed) {
             previousDeviceSearchRef.current = trimmed;
+            setPageIndex(0);
             setRowSelection({});
             setAllFilteredSelected(false);
         }
     }, [deviceTableSearch]);
+
+    useEffect(() => {
+        setPageIndex(0);
+    }, [pageSize]);
+
+    const filteredDevices = useMemo(
+        () => filterDeploymentDevices(devices, deviceTableSearch),
+        [devices, deviceTableSearch],
+    );
+
+    const totalPages = Math.max(
+        1,
+        Math.ceil(filteredDevices.length / pageSize),
+    );
+    const safePageIndex = Math.min(pageIndex, totalPages - 1);
+
+    const paginatedDevices = useMemo(() => {
+        const start = safePageIndex * pageSize;
+
+        return filteredDevices.slice(start, start + pageSize);
+    }, [filteredDevices, pageSize, safePageIndex]);
+
+    const visiblePageNumbers = useMemo(
+        () => getVisiblePageNumbers(safePageIndex, totalPages),
+        [safePageIndex, totalPages],
+    );
 
     const selectedIds = useMemo(
         () =>
@@ -267,21 +424,21 @@ export default function Show() {
     );
 
     const selectedCount = allFilteredSelected
-        ? devicesPaginator.total
+        ? filteredDevices.length
         : selectedIds.length;
 
     const isAllFilteredSelected =
         allFilteredSelected ||
-        (selectedCount > 0 && selectedCount === devicesPaginator.total);
+        (selectedCount > 0 && selectedCount === filteredDevices.length);
 
     const allPageRowsSelected =
-        devicesFromServer.length > 0 &&
-        devicesFromServer.every((device) => rowSelection[String(device.id)]);
+        paginatedDevices.length > 0 &&
+        paginatedDevices.every((device) => rowSelection[String(device.id)]);
 
     const showSelectAllFilteredBanner =
         allPageRowsSelected &&
         !allFilteredSelected &&
-        devicesPaginator.total > devicesFromServer.length;
+        filteredDevices.length > paginatedDevices.length;
 
     const handleForceSyncScopeIds = useCallback(() => {
         setSyncingScopeIds(true);
@@ -307,30 +464,64 @@ export default function Show() {
         selectedIds,
     ]);
 
-    useEffect(() => {
-        const trimmed = deviceTableSearch.trim();
-        const trimmedServer = device_search.trim();
-        if (trimmed === trimmedServer) {
+    const canApplyBulkMetadata =
+        bulkSite !== BULK_NO_CHANGE || bulkGroup !== BULK_NO_CHANGE;
+
+    const stopBulkMetadataLoading = useCallback(() => {
+        applyingMetadataRef.current = false;
+        setApplyingMetadata(false);
+    }, []);
+
+    const handleBulkUpdateMetadata = useCallback(() => {
+        if (!canApplyBulkMetadata) {
             return;
         }
-        const handle = window.setTimeout(() => {
-            router.get(
-                showDeployment.url(deploymentId, {
-                    query: {
-                        ...(trimmed !== '' ? { search: trimmed } : {}),
-                    },
-                }),
-                {},
-                {
-                    preserveState: true,
-                    preserveScroll: true,
-                    replace: true,
-                    only: ['devices', 'device_search', 'latest_tasks'],
-                },
-            );
-        }, 350);
-        return () => window.clearTimeout(handle);
-    }, [deploymentId, deviceTableSearch, device_search]);
+
+        const payload: {
+            sync_all?: boolean;
+            search?: string;
+            device_ids?: number[];
+            site?: string | null;
+            group?: string | null;
+        } = isAllFilteredSelected
+            ? {
+                  sync_all: true,
+                  ...(deviceTableSearch.trim() !== ''
+                      ? { search: deviceTableSearch.trim() }
+                      : {}),
+              }
+            : { device_ids: selectedIds };
+
+        if (bulkSite !== BULK_NO_CHANGE) {
+            payload.site = bulkSite === BULK_NONE ? null : bulkSite;
+        }
+        if (bulkGroup !== BULK_NO_CHANGE) {
+            payload.group = bulkGroup === BULK_NONE ? null : bulkGroup;
+        }
+
+        applyingMetadataRef.current = true;
+        setApplyingMetadata(true);
+        router.post(bulkUpdateMetadata.url(deploymentId), payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setBulkSite(BULK_NO_CHANGE);
+                setBulkGroup(BULK_NO_CHANGE);
+                setRowSelection({});
+                setAllFilteredSelected(false);
+            },
+            onError: stopBulkMetadataLoading,
+            onFinish: stopBulkMetadataLoading,
+        });
+    }, [
+        bulkGroup,
+        bulkSite,
+        canApplyBulkMetadata,
+        deploymentId,
+        deviceTableSearch,
+        isAllFilteredSelected,
+        selectedIds,
+        stopBulkMetadataLoading,
+    ]);
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -458,6 +649,70 @@ export default function Show() {
         e.preventDefault();
         post(storeMany(deployment.id).url);
     }
+
+    const scopeCacheReloadOnly = [
+        'central_sites_cache',
+        'central_groups_cache',
+        'central_sites',
+        'central_sites_error',
+        'central_device_groups',
+        'central_device_groups_error',
+        'device_group_options',
+        'classic_device_groups_error',
+    ] as const;
+
+    const deviceTableSearchInput = (
+        <div className="relative w-full max-w-sm shrink-0 sm:ml-auto">
+            <Search
+                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+            />
+            <Input
+                type="search"
+                value={deviceTableSearch}
+                onChange={(e) => setDeviceTableSearch(e.target.value)}
+                placeholder="Search name, serial, or function…"
+                className="pl-9"
+                data-test="devices-search"
+                aria-label="Search devices by name, serial, or device function"
+            />
+        </div>
+    );
+
+    const deviceTableToolbar = (
+        <div className="mb-1 flex flex-wrap items-end justify-end gap-2">
+            <CentralScopeRefreshButtons
+                centralSitesCache={central_sites_cache}
+                centralGroupsCache={central_groups_cache}
+                reloadOnly={[...scopeCacheReloadOnly]}
+            />
+            {deviceTableSearchInput}
+        </div>
+    );
+
+    const deviceTableToolbarWithSync = (
+        <div className="mb-1 flex flex-wrap items-end gap-2">
+            <Button
+                type="button"
+                variant="outline"
+                className="shrink-0"
+                disabled={selectedCount === 0 || syncingScopeIds}
+                data-test="force-sync-device-scope-ids"
+                onClick={handleForceSyncScopeIds}
+            >
+                {isAllFilteredSelected
+                    ? 'force sync scope-id for all devices'
+                    : 'force sync scope-id for selected'}
+            </Button>
+            <CentralScopeRefreshButtons
+                layout="compact"
+                centralSitesCache={central_sites_cache}
+                centralGroupsCache={central_groups_cache}
+                reloadOnly={[...scopeCacheReloadOnly]}
+            />
+            {deviceTableSearchInput}
+        </div>
+    );
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -704,49 +959,157 @@ export default function Show() {
                 </section>
 
                 <section className="w-full">
-                    <h2 className="text-xl font-semibold">Devices</h2>
-                    {devicesFromServer.length > 0 ||
+                    <h2 className="text-xl font-semibold">
+                        Devices{' '}
+                        <span
+                            className="text-base font-normal text-muted-foreground"
+                            data-test="devices-total-count"
+                        >
+                            ({filteredDevices.length})
+                        </span>
+                    </h2>
+                    {devices.length > 0 ||
                     deviceTableSearch.trim() !== '' ? (
                         <>
-                            <div className="mt-2 mb-2 flex flex-wrap items-center justify-between gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    disabled={
-                                        selectedCount === 0 || syncingScopeIds
-                                    }
-                                    data-test="force-sync-device-scope-ids"
-                                    onClick={handleForceSyncScopeIds}
-                                >
-                                    {isAllFilteredSelected
-                                        ? 'force sync scope-id for all devices'
-                                        : 'force sync scope-id for selected'}
-                                </Button>
-                                <div className="relative w-full max-w-sm sm:ml-auto">
-                                    <Search
-                                        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                                        aria-hidden
-                                    />
-                                    <Input
-                                        type="search"
-                                        value={deviceTableSearch}
-                                        onChange={(e) =>
-                                            setDeviceTableSearch(e.target.value)
-                                        }
-                                        placeholder="Search name, serial, or function…"
-                                        className="pl-9"
-                                        data-test="devices-search"
-                                        aria-label="Search devices by name, serial, or device function"
-                                    />
+                            {selectedCount > 0 ? (
+                                <div className="mt-2 mb-2 flex flex-wrap items-center gap-2">
+                                    <Select
+                                                value={
+                                                    bulkSite === BULK_NO_CHANGE
+                                                        ? undefined
+                                                        : bulkSite
+                                                }
+                                                onValueChange={setBulkSite}
+                                                disabled={
+                                                    central_sites_error !==
+                                                        null ||
+                                                    applyingMetadata
+                                                }
+                                            >
+                                                <SelectTrigger
+                                                    className="h-9 w-36"
+                                                    aria-label="Bulk assign site"
+                                                    data-test="bulk-site-select"
+                                                >
+                                                    <SelectValue placeholder="Select site" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem
+                                                        value={BULK_NO_CHANGE}
+                                                    >
+                                                        No change
+                                                    </SelectItem>
+                                                    <SelectItem
+                                                        value={BULK_NONE}
+                                                    >
+                                                        None
+                                                    </SelectItem>
+                                                    {central_sites.map(
+                                                        (site) => (
+                                                            <SelectItem
+                                                                key={
+                                                                    site.scopeName
+                                                                }
+                                                                value={
+                                                                    site.scopeName
+                                                                }
+                                                            >
+                                                                {
+                                                                    site.scopeName
+                                                                }
+                                                            </SelectItem>
+                                                        ),
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                            <Select
+                                                value={
+                                                    bulkGroup === BULK_NO_CHANGE
+                                                        ? undefined
+                                                        : bulkGroup
+                                                }
+                                                onValueChange={setBulkGroup}
+                                                disabled={
+                                                    (central_device_groups_error !==
+                                                        null &&
+                                                        device_group_options.length ===
+                                                            0) ||
+                                                    applyingMetadata
+                                                }
+                                            >
+                                                <SelectTrigger
+                                                    className="h-9 w-44"
+                                                    aria-label="Bulk assign group"
+                                                    data-test="bulk-group-select"
+                                                >
+                                                    <SelectValue placeholder="Select group" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem
+                                                        value={BULK_NO_CHANGE}
+                                                    >
+                                                        No change
+                                                    </SelectItem>
+                                                    <SelectItem
+                                                        value={BULK_NONE}
+                                                    >
+                                                        None
+                                                    </SelectItem>
+                                                    {device_group_options.map(
+                                                        (option) => (
+                                                            <SelectItem
+                                                                key={
+                                                                    option.scopeName
+                                                                }
+                                                                value={
+                                                                    option.scopeName
+                                                                }
+                                                            >
+                                                                {option.isClassic ? (
+                                                                    <span className="flex items-center gap-2">
+                                                                        {
+                                                                            option.scopeName
+                                                                        }
+                                                                        <Badge
+                                                                            variant="outline"
+                                                                            className="text-xs font-normal"
+                                                                        >
+                                                                            classic
+                                                                        </Badge>
+                                                                    </span>
+                                                                ) : (
+                                                                    option.scopeName
+                                                                )}
+                                                            </SelectItem>
+                                                        ),
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                disabled={
+                                                    !canApplyBulkMetadata ||
+                                                    applyingMetadata
+                                                }
+                                                data-test="bulk-update-device-metadata"
+                                                onClick={
+                                                    handleBulkUpdateMetadata
+                                                }
+                                            >
+                                                {isAllFilteredSelected
+                                                    ? 'Apply to all matching'
+                                                    : `Apply to selected (${selectedCount})`}
+                                            </Button>
                                 </div>
-                            </div>
+                            ) : null}
                             {showSelectAllFilteredBanner ? (
                                 <div
                                     className="mb-2 flex flex-wrap items-center gap-4"
                                     data-test="select-all-filtered-devices-banner"
                                 >
                                     <p className="text-sm text-muted-foreground">
-                                        All {devicesFromServer.length} devices on
+                                        All {paginatedDevices.length} devices on
                                         this page are selected.
                                     </p>
                                     <Button
@@ -760,13 +1123,14 @@ export default function Show() {
                                             setRowSelection({});
                                         }}
                                     >
-                                        Select all {devicesPaginator.total}{' '}
+                                        Select all {filteredDevices.length}{' '}
                                         devices matching this search
                                     </Button>
                                 </div>
                             ) : null}
+                            {deviceTableToolbarWithSync}
                             <DataTable<DeviceDef, unknown>
-                                data={devicesFromServer}
+                                data={paginatedDevices}
                                 columns={deviceTableColumns}
                                 getRowId={(row) => String(row.id)}
                                 enableRowSelection
@@ -776,15 +1140,110 @@ export default function Show() {
                                     setRowSelection(updater);
                                 }}
                             />
-                            {devicesPaginator.total >
-                                devicesPaginator.per_page && (
-                                <LaravelPaginator
-                                    TPaginator={devicesPaginator}
-                                />
-                            )}
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-muted-foreground">
+                                        Per page
+                                    </span>
+                                    <select
+                                        value={pageSize}
+                                        onChange={(e) => {
+                                            const next = Number(e.target.value);
+                                            if (
+                                                next === 10 ||
+                                                next === 25 ||
+                                                next === 50 ||
+                                                next === 100
+                                            ) {
+                                                setPageSize(next);
+                                            }
+                                        }}
+                                        className={selectClassName}
+                                        data-test="devices-page-size"
+                                        aria-label="Devices per page"
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={25}>25</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                    </select>
+                                </div>
+                                {filteredDevices.length > pageSize && (
+                                    <Pagination>
+                                        <PaginationContent>
+                                            {safePageIndex > 0 && (
+                                                <PaginationItem>
+                                                    <PaginationPrevious
+                                                        href="#"
+                                                        onClick={(event) => {
+                                                            event.preventDefault();
+                                                            setPageIndex((p) =>
+                                                                Math.max(0, p - 1),
+                                                            );
+                                                        }}
+                                                    />
+                                                </PaginationItem>
+                                            )}
+                                            {visiblePageNumbers.map(
+                                                (item, index) => (
+                                                    <PaginationItem
+                                                        key={
+                                                            item === 'ellipsis'
+                                                                ? `ellipsis-${index}`
+                                                                : `page-${item}`
+                                                        }
+                                                    >
+                                                        {item === 'ellipsis' ? (
+                                                            <PaginationEllipsis />
+                                                        ) : (
+                                                            <PaginationLink
+                                                                href="#"
+                                                                isActive={
+                                                                    safePageIndex ===
+                                                                    item - 1
+                                                                }
+                                                                onClick={(
+                                                                    event,
+                                                                ) => {
+                                                                    event.preventDefault();
+                                                                    setPageIndex(
+                                                                        item - 1,
+                                                                    );
+                                                                }}
+                                                            >
+                                                                {item}
+                                                            </PaginationLink>
+                                                        )}
+                                                    </PaginationItem>
+                                                ),
+                                            )}
+                                            {safePageIndex <
+                                                totalPages - 1 && (
+                                                <PaginationItem>
+                                                    <PaginationNext
+                                                        href="#"
+                                                        onClick={(event) => {
+                                                            event.preventDefault();
+                                                            setPageIndex((p) =>
+                                                                Math.min(
+                                                                    totalPages - 1,
+                                                                    p + 1,
+                                                                ),
+                                                            );
+                                                        }}
+                                                    />
+                                                </PaginationItem>
+                                            )}
+                                        </PaginationContent>
+                                    </Pagination>
+                                )}
+                            </div>
                         </>
                     ) : (
-                        <p className="mt-2">No devices assigned to this deployment</p>
+                        <>
+                            <div className="mt-2">{deviceTableToolbar}</div>
+                            <p>No devices assigned to this deployment</p>
+                        </>
                     )}
                 </section>
 
@@ -843,7 +1302,7 @@ export default function Show() {
                                 Select a task group above.
                             </p>
                         ) : (
-                            <div className="flex flex-wrap justify-start gap-2">
+                            <div className="flex flex-wrap items-stretch justify-start gap-2">
                                 {selectedCategoryTasks.map((task) =>
                                     renderTaskCard(task),
                                 )}
@@ -853,6 +1312,22 @@ export default function Show() {
                 </section>
                 </div>
             </div>
+            {applyingMetadata ? (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+                    role="status"
+                    aria-live="polite"
+                    aria-busy="true"
+                    data-test="bulk-metadata-loading"
+                >
+                    <div className="flex flex-col items-center gap-3 rounded-lg border bg-card px-8 py-6 shadow-lg">
+                        <Spinner className="size-8" />
+                        <p className="text-sm font-medium">
+                            Applying settings to device(s)
+                        </p>
+                    </div>
+                </div>
+            ) : null}
         </AppLayout>
     );
 }

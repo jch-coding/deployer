@@ -27,7 +27,7 @@ beforeEach(function () {
     $this->actingAs($this->user);
 });
 
-test('PREPROVISION_DEVICE_TO_GROUP dispatches a single batch containing every chunk job', function () {
+test('PREPROVISION_DEVICE_TO_GROUP dispatches a single batch containing one job per group', function () {
     Bus::fake();
 
     $devices = Device::factory(26)->create([
@@ -50,11 +50,14 @@ test('PREPROVISION_DEVICE_TO_GROUP dispatches a single batch containing every ch
 
     Bus::assertBatchCount(1);
     Bus::assertBatched(function ($batch): bool {
-        if ($batch->jobs->count() !== 2) {
+        if ($batch->jobs->count() !== 1) {
             return false;
         }
 
-        return $batch->jobs->every(fn ($job) => $job instanceof PreprovisionDevicesToGroupJob);
+        $job = $batch->jobs->first();
+
+        return $job instanceof PreprovisionDevicesToGroupJob
+            && count($job->device_chunks) === 2;
     });
 });
 

@@ -15,5 +15,6 @@ enum DeviceFunction
     case AOSS_ACCESS_SWITCH;
     case AOSS_CORE_SWITCH;
     case AOSS_AGG_SWITCH;
+    case SERVICE_PERSONA;
     case ALL;
 }

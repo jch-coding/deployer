@@ -2,6 +2,7 @@ import { Link, router } from '@inertiajs/react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Eye, MoreHorizontal, Pencil, RefreshCw, TrashIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -34,6 +35,7 @@ import {
 type CentralScopeOption = {
     scopeName: string;
     scopeId: string;
+    isClassic?: boolean;
 };
 
 export type DeviceDef = {
@@ -55,7 +57,7 @@ export type DeviceDef = {
 
 type DeploymentShowColumnOptions = {
     centralSites: CentralScopeOption[];
-    centralDeviceGroups: CentralScopeOption[];
+    deviceGroupOptions: CentralScopeOption[];
     centralSitesError: string | null;
     centralDeviceGroupsError: string | null;
 };
@@ -152,12 +154,14 @@ function DeviceMetadataSelectCell({
     value,
     options,
     centralError,
+    showClassicTag = false,
 }: {
     deviceId: number;
     field: 'site' | 'group';
     value: string | null;
     options: CentralScopeOption[];
     centralError: string | null;
+    showClassicTag?: boolean;
 }) {
     const [saving, setSaving] = useState(false);
     const mergedOptions = useMemo(() => {
@@ -191,7 +195,7 @@ function DeviceMetadataSelectCell({
         );
     };
 
-    if (centralError) {
+    if (centralError && options.length === 0) {
         return (
             <span
                 className="text-muted-foreground text-xs"
@@ -222,7 +226,19 @@ function DeviceMetadataSelectCell({
                         key={option.scopeName}
                         value={option.scopeName}
                     >
-                        {option.scopeName}
+                        {showClassicTag && option.isClassic ? (
+                            <span className="flex items-center gap-2">
+                                {option.scopeName}
+                                <Badge
+                                    variant="outline"
+                                    className="text-xs font-normal"
+                                >
+                                    classic
+                                </Badge>
+                            </span>
+                        ) : (
+                            option.scopeName
+                        )}
                     </SelectItem>
                 ))}
             </SelectContent>
@@ -418,8 +434,9 @@ export function createDeploymentShowColumns(
                     deviceId={row.original.id}
                     field="group"
                     value={row.original.group ?? null}
-                    options={options.centralDeviceGroups}
+                    options={options.deviceGroupOptions}
                     centralError={options.centralDeviceGroupsError}
+                    showClassicTag
                 />
             ),
         },

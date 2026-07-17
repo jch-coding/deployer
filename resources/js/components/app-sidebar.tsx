@@ -3,6 +3,7 @@ import {
     BookOpen,
     Braces,
     BuildingIcon,
+    FileUp,
     ListTodoIcon,
     MapPin,
     ScrollText,
@@ -24,6 +25,7 @@ import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
 import { index as sites_index } from '@/routes/sites'
 import { index as central_api_index } from '@/routes/central-api';
+import { index as migrations_index } from '@/routes/migrations';
 import { index as task_index } from '@/routes/tasks'
 import type { NavItem } from '@/types';
 
@@ -52,6 +54,11 @@ const mainNavItems: NavItem[] = [
         title: 'Central API',
         href: central_api_index(),
         icon: Braces,
+    },
+    {
+        title: 'Migrations',
+        href: migrations_index(),
+        icon: FileUp,
     },
 ];
 

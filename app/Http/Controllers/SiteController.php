@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
+use App\Services\CentralScopeCacheService;
 use App\Services\DeviceCentralFilterBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -16,7 +17,7 @@ class SiteController extends Controller
 
     private const DEPLOYMENTS = ['Standalone', 'Cluster', 'Stack'];
 
-    public function index(Request $request, DeviceCentralFilterBuilder $filterBuilder)
+    public function index(Request $request, DeviceCentralFilterBuilder $filterBuilder, CentralScopeCacheService $centralScopeCacheService)
     {
         $currentClient = $request->user()->currentClient();
 
@@ -54,17 +55,17 @@ class SiteController extends Controller
         $submitted = (bool) ($validated['submitted'] ?? false);
 
         $helper = new CentralAPIHelper($currentClient);
-        $sitesResult = $helper->collectScopeManagementSites();
+        $sitesPayload = $centralScopeCacheService->getSites($currentClient);
 
         $siteOptions = array_map(
             fn (array $site): array => [
                 'siteId' => $site['scopeId'],
                 'siteName' => $site['scopeName'],
             ],
-            $sitesResult['sites'] ?? [],
+            $sitesPayload['sites'],
         );
 
-        $centralError = $sitesResult['error'] ?? null;
+        $centralError = $sitesPayload['error'];
         $devices = [];
         $hasActiveFilters = $this->hasActiveFilters($filters);
 
@@ -113,6 +114,7 @@ class SiteController extends Controller
             'device_type_options' => self::DEVICE_TYPES,
             'status_options' => self::STATUSES,
             'deployment_options' => self::DEPLOYMENTS,
+            ...$centralScopeCacheService->getCacheMetadata($currentClient),
         ]);
     }
 
