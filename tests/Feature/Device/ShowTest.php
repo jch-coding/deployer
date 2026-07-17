@@ -215,6 +215,41 @@ it('updates device site and group via metadata patch', function () {
         ->and($device->site->scope_id)->toBe('scope-site');
 });
 
+it('updates device mac_address via metadata patch', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => null,
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('devices.show', $device))
+        ->patch(route('devices.update-metadata', $device), [
+            'mac_address' => 'AA-BB-CC-DD-EE-FF',
+        ])
+        ->assertRedirect(route('devices.show', $device));
+
+    expect($device->fresh()->mac_address)->toBe('aa:bb:cc:dd:ee:ff');
+});
+
+it('rejects invalid mac_address via metadata patch', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('devices.show', $device))
+        ->patch(route('devices.update-metadata', $device), [
+            'mac_address' => 'not-a-mac',
+        ])
+        ->assertSessionHasErrors('mac_address');
+});
+
 it('clears device site via metadata patch', function () {
     fakeCentralScopeManagementApis();
 

@@ -23,6 +23,7 @@ use App\Models\StpProfile;
 use App\Models\SwitchPort;
 use App\Services\DeviceInterfaceUpdateResolver;
 use App\Support\CsvImportMergeHelper;
+use App\Support\MacAddress;
 use App\Support\TrunkVlanRanges;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -56,6 +57,7 @@ class DeviceController extends Controller
         'mirror_name',
         'license_tag',
         'license_type',
+        'mac_address',
     ];
 
     /**
@@ -165,6 +167,7 @@ class DeviceController extends Controller
                     'mirror_dst_ports' => ($arr['mirror_dst_ports'] ?? '') === '' ? null : $arr['mirror_dst_ports'],
                     'mirror_vlans' => ($arr['mirror_vlans'] ?? '') === '' ? null : $arr['mirror_vlans'],
                     'mirror_name' => ($arr['mirror_name'] ?? '') === '' ? null : $arr['mirror_name'],
+                    'mac_address' => ($arr['mac_address'] ?? '') === '' ? null : $arr['mac_address'],
                 ];
 
                 if ($hasLicenseColumns && $csvHasLicenseTag) {
@@ -272,6 +275,7 @@ class DeviceController extends Controller
                 'mirror_name' => '',
                 'license_tag' => '',
                 'license_type' => '',
+                'mac_address' => '',
             ];
             foreach ($device as $device_info) {
                 foreach (array_keys($empty) as $key) {
@@ -981,6 +985,16 @@ class DeviceController extends Controller
             $device->update([
                 'group' => $group === null || $group === '' ? null : $group,
             ]);
+        }
+
+        if (array_key_exists('mac_address', $validated)) {
+            $mac = $validated['mac_address'];
+            if ($mac === null || $mac === '') {
+                $device->update(['mac_address' => null]);
+            } else {
+                $normalized = MacAddress::normalize((string) $mac);
+                $device->update(['mac_address' => $normalized]);
+            }
         }
 
         return back()->with('success', 'Device updated successfully.');

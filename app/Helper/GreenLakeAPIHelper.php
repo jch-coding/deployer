@@ -478,7 +478,263 @@ class GreenLakeAPIHelper
         }
 
         return Http::withToken($this->client->bearer_token)
+            ->acceptJson()
+            ->asJson()
             ->post($this->apiUrl($this->devices['create']), $payload);
+    }
+
+    /**
+     * Add network devices to GreenLake inventory and wait for the async operation.
+     *
+     * @param  array<int, array{serial: string, mac_address: string}>  $devices
+     * @return array{
+     *     success: bool,
+     *     error: string|null,
+     *     results: array<string, bool>,
+     *     transaction_id: string|null,
+     *     status: string|null
+     * }
+     */
+    public function addNetworkDevices(array $devices, bool $sleepBetweenPolls = true): array
+    {
+        $network = [];
+        foreach ($devices as $device) {
+            $serial = trim((string) ($device['serial'] ?? ''));
+            $mac = trim((string) ($device['mac_address'] ?? ''));
+            if ($serial === '' || $mac === '') {
+                continue;
+            }
+            $network[] = [
+                'serialNumber' => $serial,
+                'macAddress' => $mac,
+            ];
+        }
+
+        if ($network === []) {
+            return [
+                'success' => false,
+                'error' => 'No network devices with serial and mac_address to add.',
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        $response = $this->addDevices([
+            'network' => $network,
+            'compute' => [],
+            'storage' => [],
+        ]);
+
+        if (is_array($response)) {
+            return [
+                'success' => false,
+                'error' => (string) ($response['error'] ?? 'failed to add devices to GreenLake.'),
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        if ($response->status() !== 202) {
+            return [
+                'success' => false,
+                'error' => $this->extractErrorMessage($response),
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        $transactionId = (string) ($response->json('transactionId') ?? '');
+        if ($transactionId === '') {
+            $location = (string) ($response->header('Location') ?? '');
+            if (preg_match('#/async-operations/([^/?]+)#', $location, $matches) === 1) {
+                $transactionId = $matches[1];
+            }
+        }
+
+        if ($transactionId === '') {
+            return [
+                'success' => false,
+                'error' => 'GreenLake accepted the request but did not return an async operation id.',
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        return $this->waitForDeviceAsyncOperation(
+            $transactionId,
+            array_column($network, 'serialNumber'),
+            $sleepBetweenPolls,
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $expectedSerials
+     * @return array{
+     *     success: bool,
+     *     error: string|null,
+     *     results: array<string, bool>,
+     *     transaction_id: string|null,
+     *     status: string|null
+     * }
+     */
+    public function waitForDeviceAsyncOperation(
+        string $operationId,
+        array $expectedSerials = [],
+        bool $sleepBetweenPolls = true,
+        int $maxAttempts = 60,
+    ): array {
+        $status = null;
+        $results = [];
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $response = $this->getDeviceAsyncOperation($operationId);
+
+            if (is_array($response)) {
+                return [
+                    'success' => false,
+                    'error' => (string) ($response['error'] ?? 'failed to poll GreenLake async operation.'),
+                    'results' => $results,
+                    'transaction_id' => $operationId,
+                    'status' => $status,
+                ];
+            }
+
+            if (! $response->successful()) {
+                return [
+                    'success' => false,
+                    'error' => $this->extractErrorMessage($response),
+                    'results' => $results,
+                    'transaction_id' => $operationId,
+                    'status' => $status,
+                ];
+            }
+
+            $body = $response->json();
+            if (! is_array($body)) {
+                return [
+                    'success' => false,
+                    'error' => 'GreenLake async operation response was invalid.',
+                    'results' => $results,
+                    'transaction_id' => $operationId,
+                    'status' => $status,
+                ];
+            }
+
+            $status = strtoupper((string) ($body['status'] ?? ''));
+            $results = $this->parseAsyncOperationDeviceResults($body, $expectedSerials);
+
+            if (in_array($status, ['SUCCEEDED', 'FAILED', 'TIMEOUT'], true)) {
+                $success = $status === 'SUCCEEDED';
+                $error = null;
+                if (! $success) {
+                    $error = 'GreenLake device add operation '.$status.'.';
+                    if ($results !== []) {
+                        $failed = array_keys(array_filter($results, fn (bool $ok) => ! $ok));
+                        if ($failed !== []) {
+                            $error .= ' Failed serials: '.implode(', ', $failed).'.';
+                        }
+                    }
+                } elseif ($results !== [] && in_array(false, $results, true)) {
+                    $success = false;
+                    $failed = array_keys(array_filter($results, fn (bool $ok) => ! $ok));
+                    $error = 'GreenLake device add partially failed. Failed serials: '.implode(', ', $failed).'.';
+                }
+
+                return [
+                    'success' => $success,
+                    'error' => $error,
+                    'results' => $results,
+                    'transaction_id' => $operationId,
+                    'status' => $status,
+                ];
+            }
+
+            $interval = (int) ($body['suggestedPollingIntervalSeconds'] ?? 2);
+            if ($sleepBetweenPolls && $interval > 0) {
+                sleep(min($interval, 10));
+            }
+        }
+
+        return [
+            'success' => false,
+            'error' => 'Timed out waiting for GreenLake device add operation.',
+            'results' => $results,
+            'transaction_id' => $operationId,
+            'status' => $status,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     * @param  array<int, string>  $expectedSerials
+     * @return array<string, bool>
+     */
+    public function parseAsyncOperationDeviceResults(array $body, array $expectedSerials = []): array
+    {
+        $results = [];
+        foreach ($expectedSerials as $serial) {
+            $serial = trim($serial);
+            if ($serial !== '') {
+                $results[$serial] = true;
+            }
+        }
+
+        $status = strtoupper((string) ($body['status'] ?? ''));
+        if ($status === 'FAILED' || $status === 'TIMEOUT') {
+            foreach (array_keys($results) as $serial) {
+                $results[$serial] = false;
+            }
+        }
+
+        $resultPayload = $body['result'] ?? null;
+        if (! is_array($resultPayload)) {
+            return $results;
+        }
+
+        $succeeded = $resultPayload['succeeded'] ?? $resultPayload['successful'] ?? $resultPayload['success'] ?? null;
+        $failed = $resultPayload['failed'] ?? $resultPayload['failures'] ?? $resultPayload['unsuccessful'] ?? null;
+
+        foreach ($this->extractSerialsFromAsyncResultList($succeeded) as $serial) {
+            $results[$serial] = true;
+        }
+        foreach ($this->extractSerialsFromAsyncResultList($failed) as $serial) {
+            $results[$serial] = false;
+        }
+
+        return $results;
+    }
+
+    /**
+     * @param  mixed  $list
+     * @return array<int, string>
+     */
+    private function extractSerialsFromAsyncResultList(mixed $list): array
+    {
+        if (! is_array($list)) {
+            return [];
+        }
+
+        $serials = [];
+        foreach ($list as $item) {
+            if (is_string($item) && trim($item) !== '') {
+                $serials[] = trim($item);
+
+                continue;
+            }
+            if (! is_array($item)) {
+                continue;
+            }
+            $serial = trim((string) ($item['serialNumber'] ?? $item['serial'] ?? ''));
+            if ($serial !== '') {
+                $serials[] = $serial;
+            }
+        }
+
+        return $serials;
     }
 
     /**

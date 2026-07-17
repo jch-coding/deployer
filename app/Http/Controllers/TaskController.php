@@ -6,6 +6,7 @@ use App\Helper\CentralAPIHelper;
 use App\Helper\GreenLakeAPIHelper;
 use App\InterfaceKind;
 use App\JobQueueShard;
+use App\Jobs\AddDevicesToGreenLakeInventoryJob;
 use App\Jobs\AddVlansToDeviceGroup;
 use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssignSubscriptionJob;
@@ -1084,6 +1085,43 @@ class TaskController extends Controller
             if ($batchId !== null) {
                 $task->forceFill(['batch_id' => $batchId])->save();
             }
+        } elseif ($validated['task_type'] === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY') {
+            $selectedDeviceIds = Collection::make($validated['devices'])
+                ->pluck('id')
+                ->filter(fn ($id) => $id !== null)
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $selectedDevices = Device::query()
+                ->where('deployment_id', $deployment->id)
+                ->whereIn('id', $selectedDeviceIds)
+                ->get();
+
+            $missingMac = $selectedDevices->filter(
+                fn (Device $device) => trim((string) ($device->mac_address ?? '')) === ''
+            );
+
+            if ($missingMac->isNotEmpty()) {
+                $serials = $missingMac->pluck('serial')->filter()->values()->all();
+
+                return back()->withErrors([
+                    'devices' => 'The following devices are missing mac_address: '.implode(', ', $serials).'.',
+                ]);
+            }
+
+            $task = $deployment->tasks()->create([
+                'task_type' => $validated['task_type'],
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+                'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+            ]);
+
+            $task->devices()->attach($selectedDevices->pluck('id')->all());
+            $batchId = $this->dispatchJob($task);
+            if ($batchId !== null) {
+                $task->forceFill(['batch_id' => $batchId])->save();
+            }
         } else {
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
@@ -2011,6 +2049,25 @@ class TaskController extends Controller
                     if ($subscriptionJobs !== []) {
                         $jobs[] = $subscriptionJobs;
                     }
+                }
+                break;
+            case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
+                $greenLakeAPIHelper = new GreenLakeAPIHelper($task->deployment->client);
+                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+                $addJobs = [];
+                foreach ($in_progress->chunk(5) as $deviceChunk) {
+                    $addJobs[] = new AddDevicesToGreenLakeInventoryJob(
+                        $deviceChunk->map(fn ($device) => [
+                            'id' => $device->id,
+                            'serial' => $device->serial,
+                            'mac_address' => (string) ($device->mac_address ?? ''),
+                        ])->all(),
+                        $task,
+                        $greenLakeAPIHelper,
+                    );
+                }
+                if ($addJobs !== []) {
+                    $jobs[] = $addJobs;
                 }
                 break;
         }

@@ -3,6 +3,7 @@
 namespace App\Helper;
 
 use App\DeviceFunction;
+use App\Support\MacAddress;
 use App\Support\TrunkVlanRanges;
 use App\SwitchSKU;
 use App\VsxRole;
@@ -50,6 +51,7 @@ class CSVHelper
         'lacp_port_id',
         'license_tag',
         'license_type',
+        'mac_address',
     ];
 
     private const MAX_ROW_ERRORS = 50;
@@ -461,6 +463,27 @@ class CSVHelper
                     );
                 } else {
                     $row['vsx_system_mac'] = $normalizedMac;
+                }
+            }
+        }
+
+        if (array_key_exists('mac_address', $row)) {
+            $raw = $row['mac_address'];
+            if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+                $row['mac_address'] = is_string($raw) ? $raw : ($raw ?? '');
+            } else {
+                $trimmed = trim((string) $raw);
+                $normalizedMac = MacAddress::normalize($trimmed);
+                if ($normalizedMac === null) {
+                    self::addValidationMessage(
+                        $validationMessages,
+                        $csvRowNumber,
+                        'mac_address',
+                        $row,
+                        "mac_address \"{$trimmed}\" must be a valid MAC address (e.g. aa:bb:cc:dd:ee:ff)."
+                    );
+                } else {
+                    $row['mac_address'] = $normalizedMac;
                 }
             }
         }

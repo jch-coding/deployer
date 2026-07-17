@@ -66,6 +66,7 @@ type DeploymentSummary = {
         name: string;
         serial?: string | number;
         device_function?: string;
+        mac_address?: string | null;
     }>;
 };
 
@@ -177,6 +178,7 @@ export default function Show() {
                 completed: false,
                 device_function: d.device_function ?? '',
                 serial: d.serial,
+                mac_address: d.mac_address ?? null,
             })),
         [deployment.devices ?? []],
     );
@@ -357,6 +359,7 @@ export default function Show() {
         'ADD_VLANS_TO_DEVICE_GROUP',
         'ASSIGN_SUBSCRIPTION',
         'UNASSIGN_SUBSCRIPTION',
+        'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
     ]);
 
     const isDeviceBasedTask = (task_type: string) =>

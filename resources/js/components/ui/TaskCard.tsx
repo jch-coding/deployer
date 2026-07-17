@@ -18,6 +18,7 @@ import {
     filterLicenseTypesByDeviceCategory,
 } from '@/lib/license-types';
 import { collectLicenseTags, poolAvailableSeats } from '@/lib/licensing-pool';
+import { isValidMacAddress, normalizeMacAddress } from '@/lib/mac-address';
 import {
     Tooltip,
     TooltipContent,
@@ -26,7 +27,7 @@ import {
 import { check_central_group, check_central_sites, force_update_site_scope_ids, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
-import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, RefreshCw } from 'lucide-react';
+import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, RefreshCw } from 'lucide-react';
 
 type DeviceType = {
     id: number;
@@ -34,6 +35,7 @@ type DeviceType = {
     completed: boolean;
     device_function: string;
     serial?: string | number;
+    mac_address?: string | null;
 };
 
 function deviceFilterLabel(device: DeviceType): string {
@@ -93,7 +95,7 @@ export default function TaskCard({
 
     const filteredDevices = useMemo(() => {
         const q = deviceSearch.trim().toLowerCase();
-        return devices.filter((device) => {
+        return devicesWithMac.filter((device) => {
             const typeOk = switchesOnly
                 ? device.device_function === 'ACCESS_SWITCH'
                 : apsOnly
@@ -104,7 +106,7 @@ export default function TaskCard({
             const serial = String(device.serial ?? '').toLowerCase();
             return device.name.toLowerCase().includes(q) || serial.includes(q);
         });
-    }, [devices, switchesOnly, apsOnly, deviceSearch]);
+    }, [devicesWithMac, switchesOnly, apsOnly, deviceSearch]);
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
@@ -115,10 +117,27 @@ export default function TaskCard({
     const [perDeviceLicenseSelections, setPerDeviceLicenseSelections] = useState<
         Record<number, PerDeviceLicenseSelection>
     >({});
+    const [macModalOpen, setMacModalOpen] = useState(false);
+    const [macDrafts, setMacDrafts] = useState<Record<number, string>>({});
+    const [macModalDevices, setMacModalDevices] = useState<DeviceType[]>([]);
+    const [macSaving, setMacSaving] = useState(false);
+    const [deviceMacOverrides, setDeviceMacOverrides] = useState<Record<number, string>>({});
+    const [pendingDeployAllDevices, setPendingDeployAllDevices] = useState(false);
 
     const isAssignSubscription = task === 'ASSIGN_SUBSCRIPTION';
     const isUnassignSubscription = task === 'UNASSIGN_SUBSCRIPTION';
     const isLicensingTask = isAssignSubscription || isUnassignSubscription;
+    const isAddToGreenLakeInventory = task === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY';
+
+    const devicesWithMac = useMemo(
+        () =>
+            devices.map((device) => ({
+                ...device,
+                mac_address:
+                    deviceMacOverrides[device.id] ?? device.mac_address ?? null,
+            })),
+        [devices, deviceMacOverrides],
+    );
 
     const filteredSubscriptions = useMemo(
         () => filterSubscriptionsByDeviceCategory(available_subscriptions, switchesOnly, apsOnly),
@@ -175,7 +194,7 @@ export default function TaskCard({
         task === 'ADD_VLANS_TO_DEVICE_GROUP' && vlanPrefixTrimmed !== ''
 
     const handleCheckboxChange = (deviceId : number, checked : boolean) => {
-        const newDevice = devices.find(device => device.id === deviceId)
+        const newDevice = devicesWithMac.find(device => device.id === deviceId)
         if (checked && newDevice) {
             setTaskDevices([...taskDevices, { ...newDevice, completed: false }])
         } else {
@@ -184,6 +203,71 @@ export default function TaskCard({
             }
         }
     }
+
+    const openMacModalForDevices = (devicesList: DeviceType[]) => {
+        const drafts: Record<number, string> = {};
+        for (const device of devicesList) {
+            drafts[device.id] = String(device.mac_address ?? '');
+        }
+        setMacModalDevices(devicesList);
+        setMacDrafts(drafts);
+        setMacModalOpen(true);
+    };
+
+    const devicesMissingMac = (devicesList: DeviceType[]) =>
+        devicesList.filter((device) => !normalizeMacAddress(String(device.mac_address ?? '')));
+
+    const saveMacAddresses = async (): Promise<boolean> => {
+        const invalid = macModalDevices.some((device) => {
+            const draft = macDrafts[device.id] ?? '';
+            return !isValidMacAddress(draft);
+        });
+        if (invalid) {
+            toast.error('Enter a valid MAC address for each device (e.g. aa:bb:cc:dd:ee:ff).');
+
+            return false;
+        }
+
+        setMacSaving(true);
+        try {
+            for (const device of macModalDevices) {
+                const normalized = normalizeMacAddress(macDrafts[device.id] ?? '');
+                if (!normalized) {
+                    toast.error('Enter a valid MAC address for each device (e.g. aa:bb:cc:dd:ee:ff).');
+
+                    return false;
+                }
+
+                await new Promise<void>((resolve, reject) => {
+                    router.patch(
+                        `/devices/${device.id}`,
+                        { mac_address: normalized },
+                        {
+                            preserveScroll: true,
+                            onSuccess: () => {
+                                setDeviceMacOverrides((prev) => ({
+                                    ...prev,
+                                    [device.id]: normalized,
+                                }));
+                                resolve();
+                            },
+                            onError: () => reject(new Error('Failed to save MAC')),
+                        },
+                    );
+                });
+            }
+
+            toast.success('MAC addresses saved.');
+
+            return true;
+        } catch {
+            toast.error('Failed to save one or more MAC addresses.');
+
+            return false;
+        } finally {
+            setMacSaving(false);
+        }
+    };
 
     const resolveDevicesForDispatch = (devicesList: DeviceType[], allDevices: boolean) => {
         const vlanPrefixMode = task === 'ADD_VLANS_TO_DEVICE_GROUP' && vlanPrefixTrimmed !== '';
@@ -206,6 +290,7 @@ export default function TaskCard({
         devicesList: DeviceType[],
         allDevices = false,
         licensingMode: 'uniform' | 'per_device' = 'uniform',
+        skipMacGate = false,
     ) => {
         const devices_for_task = resolveDevicesForDispatch(devicesList, allDevices);
 
@@ -219,6 +304,20 @@ export default function TaskCard({
             toast.error('Select a CX firmware compliance version.');
 
             return;
+        }
+
+        if (taskStr === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY' && !skipMacGate) {
+            const missing = devicesMissingMac(devices_for_task);
+            if (missing.length > 0) {
+                const serials = missing
+                    .map((device) => String(device.serial ?? device.name))
+                    .join(', ');
+                toast.error(`The following devices are missing mac_address: ${serials}.`);
+                setPendingDeployAllDevices(allDevices);
+                openMacModalForDevices(missing);
+
+                return;
+            }
         }
 
         if (taskStr === 'ASSIGN_SUBSCRIPTION') {
@@ -315,6 +414,32 @@ export default function TaskCard({
                   }
                 : {}),
         });
+    };
+
+    const handleSaveMacAndDeploy = async () => {
+        const saved = await saveMacAddresses();
+        if (!saved) {
+            return;
+        }
+
+        setMacModalOpen(false);
+        const updatedDevices = devicesWithMac.map((device) => {
+            const draft = macDrafts[device.id];
+            if (!draft) {
+                return device;
+            }
+            const normalized = normalizeMacAddress(draft);
+
+            return normalized ? { ...device, mac_address: normalized } : device;
+        });
+
+        dispatch_task_with_devices(
+            task,
+            updatedDevices,
+            pendingDeployAllDevices,
+            'uniform',
+            true,
+        );
     };
 
     const resetCompletedDevices = () => setCompletedDevices([])
@@ -700,6 +825,109 @@ export default function TaskCard({
                         </DialogContent>
                     </Dialog>
                 ) : null}
+                {isAddToGreenLakeInventory ? (
+                    <Dialog open={macModalOpen} onOpenChange={setMacModalOpen}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="edit-mac-addresses"
+                                    aria-label="Edit MAC addresses"
+                                    onClick={() => {
+                                        const hasSelection = taskDevices.length > 0;
+                                        const selected = hasSelection
+                                            ? devicesWithMac.filter((device) =>
+                                                  taskDevices.some((d) => d.id === device.id),
+                                              )
+                                            : devicesWithMac;
+                                        if (selected.length === 0) {
+                                            toast.error('Select at least one device.');
+
+                                            return;
+                                        }
+                                        setPendingDeployAllDevices(!hasSelection);
+                                        openMacModalForDevices(selected);
+                                    }}
+                                >
+                                    <NetworkIcon className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Edit MAC addresses</p>
+                            </TooltipContent>
+                        </Tooltip>
+                        <DialogContent className="max-w-lg">
+                            <DialogTitle>Device MAC addresses</DialogTitle>
+                            <DialogDescription>
+                                Enter a MAC address for each device before adding them to GreenLake
+                                inventory.
+                            </DialogDescription>
+                            <div className="-mx-4 no-scrollbar max-h-[50vh] space-y-3 overflow-y-auto px-4">
+                                {macModalDevices.map((device) => {
+                                    const draft = macDrafts[device.id] ?? '';
+                                    const valid =
+                                        draft.trim() === '' || isValidMacAddress(draft);
+
+                                    return (
+                                        <div
+                                            key={device.id}
+                                            className="flex flex-col gap-1 border-b pb-3 last:border-0"
+                                        >
+                                            <p className="text-sm font-medium">{device.name}</p>
+                                            <p className="text-muted-foreground text-xs">
+                                                Serial: {String(device.serial ?? '')}
+                                            </p>
+                                            <Input
+                                                value={draft}
+                                                placeholder="aa:bb:cc:dd:ee:ff"
+                                                data-test={`mac-address-input-${device.id}`}
+                                                aria-invalid={!valid}
+                                                className={!valid ? 'border-destructive' : undefined}
+                                                onChange={(e) =>
+                                                    setMacDrafts((prev) => ({
+                                                        ...prev,
+                                                        [device.id]: e.target.value,
+                                                    }))
+                                                }
+                                            />
+                                            {!valid ? (
+                                                <p className="text-destructive text-xs">
+                                                    Enter a valid MAC address (e.g. aa:bb:cc:dd:ee:ff).
+                                                </p>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <DialogFooter className="gap-2 sm:justify-end">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={macSaving}
+                                    onClick={async () => {
+                                        const saved = await saveMacAddresses();
+                                        if (saved) {
+                                            setMacModalOpen(false);
+                                        }
+                                    }}
+                                >
+                                    Save
+                                </Button>
+                                <Button
+                                    type="button"
+                                    disabled={macSaving}
+                                    data-test="save-mac-and-deploy"
+                                    onClick={() => void handleSaveMacAndDeploy()}
+                                >
+                                    {macSaving ? 'Saving…' : 'Save & Deploy'}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                ) : null}
                 <Dialog>
                     {taskDevices.length > 0 &&
                     taskDevices.length < devices.length &&
@@ -712,7 +940,7 @@ export default function TaskCard({
                                             size="icon"
                                             className="rounded-full"
                                             aria-label="Deploy selected devices"
-                                            onClick={() => dispatch_task_with_devices(task, devices)}
+                                            onClick={() => dispatch_task_with_devices(task, devicesWithMac)}
                                         >
                                             <BoltIcon className="size-4" aria-hidden />
                                         </Button>
@@ -731,7 +959,7 @@ export default function TaskCard({
                                             size="icon"
                                             className="rounded-full"
                                             aria-label="Deploy all devices"
-                                            onClick={() => dispatch_task_with_devices(task, devices, true)}
+                                            onClick={() => dispatch_task_with_devices(task, devicesWithMac, true)}
                                         >
                                             <BoltIcon className="size-4" aria-hidden />
                                         </Button>

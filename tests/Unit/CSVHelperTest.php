@@ -529,6 +529,33 @@ it('normalizes vsx_system_mac with missing leading zeros and dashes', function (
         ->and($deviceArrays[1]['vsx_system_mac'])->toBe('02:00:00:00:00:02');
 });
 
+it('normalizes optional mac_address column', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'mac_address'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'AA-BB-CC-DD-EE-FF'],
+        ['SW-2', 'SN0000000002', 'ACCESS_SWITCH', 'aabbccddeeff'],
+    ]);
+
+    expect($deviceArrays[0]['mac_address'])->toBe('aa:bb:cc:dd:ee:ff')
+        ->and($deviceArrays[1]['mac_address'])->toBe('aa:bb:cc:dd:ee:ff');
+});
+
+it('rejects invalid mac_address values', function () {
+    expect(fn () => CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function', 'mac_address'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH', 'not-a-mac'],
+    ]))->toThrow(ValidationException::class);
+});
+
+it('keeps missing optional mac_address column absent', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ['name', 'serial', 'device_function'],
+        ['SW-1', 'SN0000000001', 'ACCESS_SWITCH'],
+    ]);
+
+    expect($deviceArrays[0])->not()->toHaveKey('mac_address');
+});
+
 it('accepts mixed-case vsx column headers and role values', function () {
     $deviceArrays = CSVHelper::createDeviceArrays([
         ['Name', 'Serial', 'Device_Function', 'VSX_Profile', 'VSX_Role', 'VSX_System_Mac'],

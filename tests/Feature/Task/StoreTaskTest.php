@@ -2,6 +2,7 @@
 
 use App\ClassicBaseUrl;
 use App\InterfaceKind;
+use App\Jobs\AddDevicesToGreenLakeInventoryJob;
 use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssignSubscriptionJob;
 use App\Jobs\MoveDevicesToGroupJob;
@@ -557,4 +558,62 @@ test('UNASSIGN_SUBSCRIPTION rejects device not linked in GreenLake', function ()
     $response->assertSessionHasErrors('devices');
     expect($this->deployment->refresh()->tasks)->toHaveCount(0);
     Bus::assertNothingBatched();
+});
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY rejects devices missing mac_address', function () {
+    Bus::fake();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => null,
+        'serial' => 'MISSINGMAC001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+    ]);
+
+    $response->assertSessionHasErrors('devices');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY stores and dispatches chunked jobs', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $devices = Device::factory(6)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('ADD_DEVICES_TO_GREENLAKE_INVENTORY')
+        ->and($task->devices)->toHaveCount(6)
+        ->and($task->batch_id)->not()->toBeNull();
+
+    Bus::assertBatchCount(1);
+    Bus::assertBatched(function ($batch): bool {
+        return $batch->jobs->count() === 2
+            && $batch->jobs->every(fn ($job) => $job instanceof AddDevicesToGreenLakeInventoryJob);
+    });
 });

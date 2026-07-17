@@ -125,6 +125,13 @@ const deploymentTasks = [
         requiresClassicCentral: true,
         requiresLicensing: true,
     },
+    {
+        title: 'Add Devices to GreenLake Inventory',
+        description:
+            'Add selected network devices to the HPE GreenLake workspace inventory using serial and MAC address. The mac_address CSV column is optional on import but required when launching this task; missing MACs can be entered in the task card modal.',
+        requiresClassicCentral: false,
+        requiresLicensing: true,
+    },
 ] as const;
 
 function scrollToSection(id: string) {
@@ -553,9 +560,11 @@ export default function Usage() {
                             </p>
                             <p className="mt-2">
                                 Tasks marked <strong>GreenLake licensing</strong> also require valid GreenLake
-                                API credentials on the client and a recent licensing inventory sync (use{' '}
-                                <strong>Renew licensing</strong> on the Licensing page or deployment licensing
-                                controls).
+                                API credentials on the client. Assign/unassign need a recent licensing inventory
+                                sync (use <strong>Renew licensing</strong> on the Licensing page or deployment
+                                licensing controls). Add Devices to GreenLake Inventory requires each device&apos;s{' '}
+                                <code>mac_address</code> (optional CSV column, or enter it in the task-card MAC
+                                modal).
                             </p>
                         </div>
                         <ul className={cn(body, 'mt-6 list-disc space-y-3 pl-5')}>

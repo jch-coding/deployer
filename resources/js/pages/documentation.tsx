@@ -252,6 +252,17 @@ const CSV_COLUMN_DETAILS: CsvColumnDetail[] = [
         ),
     },
     {
+        column: 'mac_address',
+        type: 'string',
+        accepted: (
+            <>
+                Optional device MAC for GreenLake inventory onboarding. Normalized to{' '}
+                <code>aa:bb:cc:dd:ee:ff</code>. Colons, dashes, or bare hex are accepted. Required
+                when launching Add Devices to GreenLake Inventory.
+            </>
+        ),
+    },
+    {
         column: 'vsx_isl_ports',
         type: 'string (range expression)',
         accepted: (
@@ -989,6 +1000,30 @@ export default function documentation() {
                             </p>
                             <ColumnPair
                                 required={['name', 'serial', 'device_function']}
+                                optional={[]}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard
+                        title="Add Devices to GreenLake Inventory"
+                        badge={
+                            <Badge variant="outline" className="w-fit shrink-0 font-normal">
+                                GreenLake API
+                            </Badge>
+                        }
+                        defaultOpen
+                    >
+                        <div className="space-y-4">
+                            <p>
+                                Adds selected network devices to the HPE GreenLake workspace inventory
+                                via serial number and MAC address. The <code>mac_address</code> CSV
+                                column is optional on import; it becomes required when launching this
+                                task. If devices are missing a MAC, the task card shows an error and
+                                opens a modal to enter and save addresses before deploy.
+                            </p>
+                            <ColumnPair
+                                required={['name', 'serial', 'device_function', 'mac_address']}
                                 optional={[]}
                             />
                         </div>

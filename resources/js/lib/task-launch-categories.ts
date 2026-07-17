@@ -30,6 +30,7 @@ export const TASK_LAUNCH_CATEGORIES: TaskLaunchCategory[] = [
 const TASK_TYPE_TO_CATEGORY: Record<string, TaskLaunchCategoryId> = {
     ASSIGN_SUBSCRIPTION: 'licensing',
     UNASSIGN_SUBSCRIPTION: 'licensing',
+    ADD_DEVICES_TO_GREENLAKE_INVENTORY: 'licensing',
     PREPROVISION_DEVICE_TO_GROUP: 'preprovisioning',
     ASSIGN_DEVICE_FUNCTION: 'preprovisioning',
     CONFIGURE_ALL_INTERFACE: 'interfaces',
@@ -51,6 +52,13 @@ const TASK_TYPE_TO_CATEGORY: Record<string, TaskLaunchCategoryId> = {
 const TASK_SEARCH_ALIASES: Record<string, string[]> = {
     ASSIGN_SUBSCRIPTION: ['license', 'subscription', 'greenlake'],
     UNASSIGN_SUBSCRIPTION: ['license', 'subscription', 'greenlake', 'remove'],
+    ADD_DEVICES_TO_GREENLAKE_INVENTORY: [
+        'inventory',
+        'greenlake',
+        'add devices',
+        'mac',
+        'onboard',
+    ],
     PREPROVISION_DEVICE_TO_GROUP: ['preprovision', 'group'],
     ASSIGN_DEVICE_FUNCTION: ['function', 'persona'],
     CONFIGURE_ALL_INTERFACE: ['lag', 'ethernet', 'vlan', 'svi', 'interface'],

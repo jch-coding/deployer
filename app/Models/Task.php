@@ -130,6 +130,7 @@ class Task extends Model
             'REMOVE_LOCAL_OVERRIDE_LOCAL_MANAGEMENT_PROFILE',
             'ASSIGN_SUBSCRIPTION',
             'UNASSIGN_SUBSCRIPTION',
+            'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
             'ADD_VLANS_FOR_DEVICE_GROUP',
             'CREATE_NEW_CENTRAL_CX_GROUP',
             'CONFIGURE_MIRROR_SESSION',
@@ -194,6 +195,8 @@ class Task extends Model
                 return 'Assign Subscription';
             case 'UNASSIGN_SUBSCRIPTION':
                 return 'Unassign Subscription';
+            case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
+                return 'Add Devices to GreenLake Inventory';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Add VLANs to device group (single group)';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -252,6 +255,8 @@ class Task extends Model
                 return 'Assign licenses from a tag and license type pool to selected devices.';
             case 'UNASSIGN_SUBSCRIPTION':
                 return 'Remove assigned licenses from selected devices.';
+            case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
+                return 'Add selected network devices to the HPE GreenLake workspace inventory using serial and MAC address.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Adds VLAN definitions to one Central device group.';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -301,6 +306,8 @@ class Task extends Model
             case 'ASSIGN_SUBSCRIPTION':
             case 'UNASSIGN_SUBSCRIPTION':
                 return ['name', 'serial', 'device_function'];
+            case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
+                return ['name', 'serial', 'device_function', 'mac_address'];
             default:
                 return [];
         }
