@@ -82,16 +82,6 @@ import type { BreadcrumbItem, SharedData } from '@/types';
 type DeploymentSummary = {
     id: number;
     name: string;
-<<<<<<< HEAD
-    devices: Array<{
-        id: number;
-        name: string;
-        serial?: string | number;
-        device_function?: string;
-        mac_address?: string | null;
-    }>;
-=======
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
 };
 
 type Task = {

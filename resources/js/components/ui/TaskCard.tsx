@@ -419,7 +419,6 @@ export default function TaskCard({
         });
     };
 
-<<<<<<< HEAD
     const handleSaveMacAndDeploy = async () => {
         const saved = await saveMacAddresses();
         if (!saved) {
@@ -446,10 +445,6 @@ export default function TaskCard({
         );
     };
 
-    const resetCompletedDevices = () => setCompletedDevices([])
-
-=======
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
     return (
         <Card className="h-full w-96">
             <CardHeader className="relative pr-10">
@@ -831,7 +826,6 @@ export default function TaskCard({
                         </DialogContent>
                     </Dialog>
                 ) : null}
-<<<<<<< HEAD
                 {isAddToGreenLakeInventory ? (
                     <Dialog open={macModalOpen} onOpenChange={setMacModalOpen}>
                         <Tooltip>
@@ -935,38 +929,21 @@ export default function TaskCard({
                         </DialogContent>
                     </Dialog>
                 ) : null}
-                <Dialog>
-=======
                 <Dialog open={isLaunching}>
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                     {taskDevices.length > 0 &&
                     taskDevices.length < devices.length &&
                     !isAddVlansWithPrefix ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-<<<<<<< HEAD
-                                    <DialogTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            size="icon"
-                                            className="rounded-full"
-                                            aria-label="Deploy selected devices"
-                                            onClick={() => dispatch_task_with_devices(task, devicesWithMac)}
-                                        >
-                                            <BoltIcon className="size-4" aria-hidden />
-                                        </Button>
-                                    </DialogTrigger>
-=======
                                     <Button
                                         type="button"
                                         size="icon"
                                         className="rounded-full"
                                         aria-label="Deploy selected devices"
-                                        onClick={() => dispatch_task_with_devices(task, devices)}
+                                        onClick={() => dispatch_task_with_devices(task, devicesWithMac)}
                                     >
                                         <BoltIcon className="size-4" aria-hidden />
                                     </Button>
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                     <p>Deploy selected</p>
@@ -975,29 +952,15 @@ export default function TaskCard({
                         ) : (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-<<<<<<< HEAD
-                                    <DialogTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            size="icon"
-                                            className="rounded-full"
-                                            aria-label="Deploy all devices"
-                                            onClick={() => dispatch_task_with_devices(task, devicesWithMac, true)}
-                                        >
-                                            <BoltIcon className="size-4" aria-hidden />
-                                        </Button>
-                                    </DialogTrigger>
-=======
                                     <Button
                                         type="button"
                                         size="icon"
                                         className="rounded-full"
                                         aria-label="Deploy all devices"
-                                        onClick={() => dispatch_task_with_devices(task, devices, true)}
+                                        onClick={() => dispatch_task_with_devices(task, devicesWithMac, true)}
                                     >
                                         <BoltIcon className="size-4" aria-hidden />
                                     </Button>
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                     <p>
