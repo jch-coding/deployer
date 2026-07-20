@@ -96,6 +96,7 @@ class DeploymentController extends Controller
                 'name' => $device->name,
                 'serial' => $device->serial,
                 'device_function' => $device->device_function,
+                'mac_address' => $device->mac_address,
                 'site' => $device->site?->name,
                 'group' => $device->group,
             ])

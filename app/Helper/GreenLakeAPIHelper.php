@@ -546,15 +546,8 @@ class GreenLakeAPIHelper
             ];
         }
 
-        $transactionId = (string) ($response->json('transactionId') ?? '');
-        if ($transactionId === '') {
-            $location = (string) ($response->header('Location') ?? '');
-            if (preg_match('#/async-operations/([^/?]+)#', $location, $matches) === 1) {
-                $transactionId = $matches[1];
-            }
-        }
-
-        if ($transactionId === '') {
+        $operationId = $this->extractAsyncOperationId($response);
+        if ($operationId === '') {
             return [
                 'success' => false,
                 'error' => 'GreenLake accepted the request but did not return an async operation id.',
@@ -565,10 +558,23 @@ class GreenLakeAPIHelper
         }
 
         return $this->waitForDeviceAsyncOperation(
-            $transactionId,
+            $operationId,
             array_column($network, 'serialNumber'),
             $sleepBetweenPolls,
         );
+    }
+
+    /**
+     * Prefer the Location header (HPE/Aruba docs) over body transactionId.
+     */
+    private function extractAsyncOperationId(Response $response): string
+    {
+        $location = (string) ($response->header('Location') ?? '');
+        if ($location !== '' && preg_match('#/async-operations/([^/?]+)#', $location, $matches) === 1) {
+            return trim($matches[1]);
+        }
+
+        return trim((string) ($response->json('transactionId') ?? ''));
     }
 
     /**
@@ -604,9 +610,23 @@ class GreenLakeAPIHelper
             }
 
             if (! $response->successful()) {
+                $error = $this->extractErrorMessage($response);
+                // Async ops can briefly 404 right after accept; retry those.
+                if (
+                    $response->status() === 404
+                    && $attempt < $maxAttempts - 1
+                    && str_contains(strtolower($error), 'not found')
+                ) {
+                    if ($sleepBetweenPolls) {
+                        sleep(2);
+                    }
+
+                    continue;
+                }
+
                 return [
                     'success' => false,
-                    'error' => $this->extractErrorMessage($response),
+                    'error' => $error,
                     'results' => $results,
                     'transaction_id' => $operationId,
                     'status' => $status,
@@ -627,21 +647,14 @@ class GreenLakeAPIHelper
             $status = strtoupper((string) ($body['status'] ?? ''));
             $results = $this->parseAsyncOperationDeviceResults($body, $expectedSerials);
 
-            if (in_array($status, ['SUCCEEDED', 'FAILED', 'TIMEOUT'], true)) {
-                $success = $status === 'SUCCEEDED';
+            if ($this->isTerminalAsyncStatus($status)) {
+                $success = $this->isSuccessfulAsyncStatus($status);
                 $error = null;
                 if (! $success) {
-                    $error = 'GreenLake device add operation '.$status.'.';
-                    if ($results !== []) {
-                        $failed = array_keys(array_filter($results, fn (bool $ok) => ! $ok));
-                        if ($failed !== []) {
-                            $error .= ' Failed serials: '.implode(', ', $failed).'.';
-                        }
-                    }
+                    $error = $this->extractAsyncOperationError($body, $status, $results);
                 } elseif ($results !== [] && in_array(false, $results, true)) {
                     $success = false;
-                    $failed = array_keys(array_filter($results, fn (bool $ok) => ! $ok));
-                    $error = 'GreenLake device add partially failed. Failed serials: '.implode(', ', $failed).'.';
+                    $error = $this->extractAsyncOperationError($body, $status, $results);
                 }
 
                 return [
@@ -668,6 +681,62 @@ class GreenLakeAPIHelper
         ];
     }
 
+    private function isTerminalAsyncStatus(string $status): bool
+    {
+        return in_array($status, [
+            'SUCCEEDED',
+            'COMPLETED',
+            'FAILED',
+            'TIMEOUT',
+            'TIMEDOUT',
+            'TIMED_OUT',
+        ], true);
+    }
+
+    private function isSuccessfulAsyncStatus(string $status): bool
+    {
+        return in_array($status, ['SUCCEEDED', 'COMPLETED'], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     * @param  array<string, bool>  $results
+     */
+    private function extractAsyncOperationError(array $body, string $status, array $results): string
+    {
+        $resultPayload = $body['result'] ?? null;
+        if (is_array($resultPayload)) {
+            $failed = $resultPayload['failed'] ?? $resultPayload['failures'] ?? $resultPayload['unsuccessful'] ?? null;
+            if (is_array($failed)) {
+                $messages = [];
+                foreach ($failed as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+                    $serial = trim((string) ($item['serialNumber'] ?? $item['serial'] ?? ''));
+                    $message = trim((string) ($item['message'] ?? $item['error'] ?? $item['description'] ?? ''));
+                    if ($serial !== '' && $message !== '') {
+                        $messages[] = "{$serial}: {$message}";
+                    } elseif ($message !== '') {
+                        $messages[] = $message;
+                    }
+                }
+                if ($messages !== []) {
+                    return implode(' ', $messages);
+                }
+            }
+        }
+
+        if ($results !== []) {
+            $failedSerials = array_keys(array_filter($results, fn (bool $ok) => ! $ok));
+            if ($failedSerials !== []) {
+                return 'GreenLake device add operation '.$status.'. Failed serials: '.implode(', ', $failedSerials).'.';
+            }
+        }
+
+        return 'GreenLake device add operation '.$status.'.';
+    }
+
     /**
      * @param  array<string, mixed>  $body
      * @param  array<int, string>  $expectedSerials
@@ -684,7 +753,7 @@ class GreenLakeAPIHelper
         }
 
         $status = strtoupper((string) ($body['status'] ?? ''));
-        if ($status === 'FAILED' || $status === 'TIMEOUT') {
+        if (! $this->isSuccessfulAsyncStatus($status) && $this->isTerminalAsyncStatus($status)) {
             foreach (array_keys($results) as $serial) {
                 $results[$serial] = false;
             }

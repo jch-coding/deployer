@@ -43,6 +43,7 @@ export type DeviceDef = {
     name: string;
     serial: string | number;
     device_function: string;
+    mac_address?: string | null;
     site?: string | null;
     group?: string | null;
     interfaces?: {

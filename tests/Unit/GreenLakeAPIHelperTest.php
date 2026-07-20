@@ -358,6 +358,78 @@ test('normalizeGreenLakeDevice maps serial and subscription from device payload'
         ->and($normalized['assigned_services'])->toContain('advanced_switch');
 });
 
+test('addNetworkDevices polls Location header when it differs from transactionId', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/devices' => Http::response([
+            'code' => 202,
+            'status' => '202 ACCEPTED',
+            'transactionId' => 'body-transaction-id',
+        ], 202, [
+            'Location' => '/devices/v1/async-operations/location-async-op',
+        ]),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/location-async-op' => Http::response([
+            'id' => 'location-async-op',
+            'type' => 'devices/asyncOperation',
+            'status' => 'SUCCEEDED',
+            'progressPercent' => 100,
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeeded' => [['serialNumber' => 'SN-LOC']],
+            ],
+        ], 200),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/body-transaction-id' => Http::response([
+            'message' => 'Identifier [body-transaction-id] not found',
+        ], 404),
+    ]);
+
+    $result = $helper->addNetworkDevices([
+        ['serial' => 'SN-LOC', 'mac_address' => 'aa:bb:cc:dd:ee:ff'],
+    ], sleepBetweenPolls: false);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['transaction_id'])->toBe('location-async-op')
+        ->and($result['results']['SN-LOC'])->toBeTrue();
+
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'body-transaction-id'));
+});
+
+test('addNetworkDevices treats COMPLETED async status as success', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/devices' => Http::response([
+            'transactionId' => 'async-completed',
+        ], 202, [
+            'Location' => '/devices/v1/async-operations/async-completed',
+        ]),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-completed' => Http::response([
+            'id' => 'async-completed',
+            'status' => 'COMPLETED',
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeeded' => [['serialNumber' => 'SN-DONE']],
+            ],
+        ], 200),
+    ]);
+
+    $result = $helper->addNetworkDevices([
+        ['serial' => 'SN-DONE', 'mac_address' => '11:22:33:44:55:66'],
+    ], sleepBetweenPolls: false);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['status'])->toBe('COMPLETED');
+});
+
 test('addNetworkDevices posts network payload and polls async operation until succeeded', function () {
     $client = Client::factory()->create([
         'bearer_token' => 'test-token',
