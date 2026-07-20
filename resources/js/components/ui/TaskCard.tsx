@@ -92,21 +92,6 @@ export default function TaskCard({
     const [switchesOnly, setSwitchesOnly] = useState(false)
     const [apsOnly, setAPsOnly] = useState(false)
     const [deviceSearch, setDeviceSearch] = useState('')
-
-    const filteredDevices = useMemo(() => {
-        const q = deviceSearch.trim().toLowerCase();
-        return devicesWithMac.filter((device) => {
-            const typeOk = switchesOnly
-                ? device.device_function === 'ACCESS_SWITCH'
-                : apsOnly
-                  ? device.device_function === 'CAMPUS_AP'
-                  : true;
-            if (!typeOk) return false;
-            if (!q) return true;
-            const serial = String(device.serial ?? '').toLowerCase();
-            return device.name.toLowerCase().includes(q) || serial.includes(q);
-        });
-    }, [devicesWithMac, switchesOnly, apsOnly, deviceSearch]);
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0)
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10)
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
@@ -138,6 +123,21 @@ export default function TaskCard({
             })),
         [devices, deviceMacOverrides],
     );
+
+    const filteredDevices = useMemo(() => {
+        const q = deviceSearch.trim().toLowerCase();
+        return devicesWithMac.filter((device) => {
+            const typeOk = switchesOnly
+                ? device.device_function === 'ACCESS_SWITCH'
+                : apsOnly
+                  ? device.device_function === 'CAMPUS_AP'
+                  : true;
+            if (!typeOk) return false;
+            if (!q) return true;
+            const serial = String(device.serial ?? '').toLowerCase();
+            return device.name.toLowerCase().includes(q) || serial.includes(q);
+        });
+    }, [devicesWithMac, switchesOnly, apsOnly, deviceSearch]);
 
     const filteredSubscriptions = useMemo(
         () => filterSubscriptionsByDeviceCategory(available_subscriptions, switchesOnly, apsOnly),
