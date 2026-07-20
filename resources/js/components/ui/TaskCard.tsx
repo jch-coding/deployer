@@ -25,7 +25,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
+import { check_central_group, check_central_sites, check_greenlake_inventory, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, RefreshCw } from 'lucide-react';
@@ -419,7 +419,6 @@ export default function TaskCard({
         });
     };
 
-<<<<<<< HEAD
     const handleSaveMacAndDeploy = async () => {
         const saved = await saveMacAddresses();
         if (!saved) {
@@ -446,10 +445,6 @@ export default function TaskCard({
         );
     };
 
-    const resetCompletedDevices = () => setCompletedDevices([])
-
-=======
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
     return (
         <Card className="h-full w-96">
             <CardHeader className="relative pr-10">
@@ -831,7 +826,6 @@ export default function TaskCard({
                         </DialogContent>
                     </Dialog>
                 ) : null}
-<<<<<<< HEAD
                 {isAddToGreenLakeInventory ? (
                     <Dialog open={macModalOpen} onOpenChange={setMacModalOpen}>
                         <Tooltip>
@@ -935,38 +929,21 @@ export default function TaskCard({
                         </DialogContent>
                     </Dialog>
                 ) : null}
-                <Dialog>
-=======
                 <Dialog open={isLaunching}>
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                     {taskDevices.length > 0 &&
                     taskDevices.length < devices.length &&
                     !isAddVlansWithPrefix ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-<<<<<<< HEAD
-                                    <DialogTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            size="icon"
-                                            className="rounded-full"
-                                            aria-label="Deploy selected devices"
-                                            onClick={() => dispatch_task_with_devices(task, devicesWithMac)}
-                                        >
-                                            <BoltIcon className="size-4" aria-hidden />
-                                        </Button>
-                                    </DialogTrigger>
-=======
                                     <Button
                                         type="button"
                                         size="icon"
                                         className="rounded-full"
                                         aria-label="Deploy selected devices"
-                                        onClick={() => dispatch_task_with_devices(task, devices)}
+                                        onClick={() => dispatch_task_with_devices(task, devicesWithMac)}
                                     >
                                         <BoltIcon className="size-4" aria-hidden />
                                     </Button>
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                     <p>Deploy selected</p>
@@ -975,29 +952,15 @@ export default function TaskCard({
                         ) : (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-<<<<<<< HEAD
-                                    <DialogTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            size="icon"
-                                            className="rounded-full"
-                                            aria-label="Deploy all devices"
-                                            onClick={() => dispatch_task_with_devices(task, devicesWithMac, true)}
-                                        >
-                                            <BoltIcon className="size-4" aria-hidden />
-                                        </Button>
-                                    </DialogTrigger>
-=======
                                     <Button
                                         type="button"
                                         size="icon"
                                         className="rounded-full"
                                         aria-label="Deploy all devices"
-                                        onClick={() => dispatch_task_with_devices(task, devices, true)}
+                                        onClick={() => dispatch_task_with_devices(task, devicesWithMac, true)}
                                     >
                                         <BoltIcon className="size-4" aria-hidden />
                                     </Button>
->>>>>>> bb9e67765d1175793ce6d2d78ab256c7693b1375
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                     <p>
@@ -1029,6 +992,32 @@ export default function TaskCard({
                     </DialogContent>
                 </Dialog>
                 </div>
+                {isAddToGreenLakeInventory && (
+                    <div className="ml-auto flex shrink-0 items-center">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="check-greenlake-inventory"
+                                    aria-label="Verify devices in GreenLake inventory"
+                                    onClick={() => {
+                                        router.post(check_greenlake_inventory(deployment.id).url, {
+                                            task_type: task,
+                                        });
+                                    }}
+                                >
+                                    <CircleCheck className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Verify devices in GreenLake inventory</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </div>
+                )}
                 {(task === 'PREPROVISION_DEVICE_TO_GROUP' ||
                     task === 'MOVE_DEVICE_TO_GROUP' ||
                     task === 'ADD_VLANS_TO_DEVICE_GROUP') && (
