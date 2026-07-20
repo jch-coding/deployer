@@ -158,6 +158,37 @@ class ClientController extends Controller
             );
         }
 
+        if ($request->has('classic_webhook_secret') || $request->has('classic_webhook_wid') || $request->boolean('clear_classic_webhook_secret')) {
+            $validated = $request->validate([
+                'classic_webhook_secret' => 'sometimes|nullable|string|max:65535',
+                'classic_webhook_wid' => 'sometimes|nullable|string|max:255',
+                'clear_classic_webhook_secret' => 'sometimes|boolean',
+            ]);
+
+            $updates = [];
+
+            if ($request->boolean('clear_classic_webhook_secret')) {
+                $updates['classic_webhook_secret'] = null;
+            } elseif (array_key_exists('classic_webhook_secret', $validated)) {
+                $secret = trim((string) ($validated['classic_webhook_secret'] ?? ''));
+                $updates['classic_webhook_secret'] = $secret !== '' ? $secret : null;
+            }
+
+            if (array_key_exists('classic_webhook_wid', $validated)) {
+                $wid = trim((string) ($validated['classic_webhook_wid'] ?? ''));
+                $updates['classic_webhook_wid'] = $wid !== '' ? $wid : null;
+            }
+
+            if ($updates !== []) {
+                $client->update($updates);
+            }
+
+            return to_route('clients.index')->with(
+                'success',
+                'Classic Central webhook settings saved.',
+            );
+        }
+
         $client->update($validated);
         session()->flash('success', 'Client updated successfully.');
 

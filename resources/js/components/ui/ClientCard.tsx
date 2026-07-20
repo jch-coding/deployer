@@ -19,16 +19,25 @@ import { type Client } from '@/types/clients/client';
 
 export default function ClientCard({ client, errors, base_urls, isCurrentClient } : { client: Client, errors: Record<string, string>, base_urls: string[], isCurrentClient: boolean }) {
     const [tokensOpen, setTokensOpen] = useState(false);
+    const [webhookOpen, setWebhookOpen] = useState(false);
     const [classicClientId, setClassicClientId] = useState(client.classic_client_id ?? '');
     const [classicRefreshToken, setClassicRefreshToken] = useState('');
     const [classicAccessToken, setClassicAccessToken] = useState('');
+    const [webhookSecret, setWebhookSecret] = useState('');
+    const [webhookWid, setWebhookWid] = useState(client.classic_webhook_wid ?? '');
     const [savingTokens, setSavingTokens] = useState(false);
+    const [savingWebhook, setSavingWebhook] = useState(false);
 
     useEffect(() => {
         setClassicClientId(client.classic_client_id ?? '');
     }, [client.classic_client_id]);
 
+    useEffect(() => {
+        setWebhookWid(client.classic_webhook_wid ?? '');
+    }, [client.classic_webhook_wid]);
+
     const classicClientIdChanged = classicClientId.trim() !== (client.classic_client_id ?? '');
+    const webhookWidChanged = webhookWid.trim() !== (client.classic_webhook_wid ?? '');
 
     const saveClassicTokens = () => {
         const clientId = classicClientId.trim();
@@ -58,9 +67,35 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
         );
     };
 
+    const saveWebhookSettings = (clearSecret = false) => {
+        const secret = webhookSecret.trim();
+        if (!clearSecret && !secret && !webhookWidChanged) {
+            return;
+        }
+
+        setSavingWebhook(true);
+        router.put(
+            update(client.id).url,
+            {
+                ...(clearSecret ? { clear_classic_webhook_secret: true } : {}),
+                ...(!clearSecret && secret ? { classic_webhook_secret: secret } : {}),
+                ...(webhookWidChanged ? { classic_webhook_wid: webhookWid.trim() } : {}),
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setSavingWebhook(false);
+                    setWebhookSecret('');
+                },
+            },
+        );
+    };
+
     const canSaveTokens = classicClientIdChanged
         || classicRefreshToken.trim().length > 0
         || classicAccessToken.trim().length > 0;
+
+    const canSaveWebhook = webhookSecret.trim().length > 0 || webhookWidChanged;
 
     return (
         <Card key={client.client_id} className={isCurrentClient ? "border-2 border-orange-400 shadow-slate-400" : ""}>
@@ -181,6 +216,94 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                             >
                                 Save
                             </Button>
+                        </CollapsibleContent>
+                    </Collapsible>
+                    <Collapsible open={webhookOpen} onOpenChange={setWebhookOpen}>
+                        <CollapsibleTrigger asChild>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full justify-between"
+                                aria-expanded={webhookOpen}
+                            >
+                                <span>Classic Central webhook</span>
+                                <ChevronDown
+                                    className={cn(
+                                        'size-4 shrink-0 transition-transform',
+                                        webhookOpen && 'rotate-180',
+                                    )}
+                                    aria-hidden
+                                />
+                            </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-3 space-y-3">
+                            <p className="text-muted-foreground text-xs">
+                                In Central, create a webhook pointing at this URL and enable New AP Detected and New Switch Connected with webhook notification.
+                            </p>
+                            <div className="w-full space-y-1">
+                                <label htmlFor={`classic-webhook-url-${client.id}`} className="text-sm font-medium">
+                                    Webhook URL
+                                </label>
+                                <Input
+                                    id={`classic-webhook-url-${client.id}`}
+                                    type="text"
+                                    readOnly
+                                    value={client.classic_webhook_url ?? ''}
+                                    onFocus={(e) => e.currentTarget.select()}
+                                />
+                            </div>
+                            <div className="w-full space-y-1">
+                                <label htmlFor={`classic-webhook-secret-${client.id}`} className="text-sm font-medium">
+                                    Shared secret / token
+                                </label>
+                                <Input
+                                    id={`classic-webhook-secret-${client.id}`}
+                                    type="password"
+                                    autoComplete="off"
+                                    placeholder={client.has_classic_webhook_secret ? '••••••••' : ''}
+                                    value={webhookSecret}
+                                    onChange={(e) => setWebhookSecret(e.target.value)}
+                                />
+                                {errors.classic_webhook_secret && (
+                                    <p className="text-red-500 text-xs">{errors.classic_webhook_secret}</p>
+                                )}
+                            </div>
+                            <div className="w-full space-y-1">
+                                <label htmlFor={`classic-webhook-wid-${client.id}`} className="text-sm font-medium">
+                                    Webhook ID (optional)
+                                </label>
+                                <Input
+                                    id={`classic-webhook-wid-${client.id}`}
+                                    type="text"
+                                    autoComplete="off"
+                                    value={webhookWid}
+                                    onChange={(e) => setWebhookWid(e.target.value)}
+                                />
+                                {errors.classic_webhook_wid && (
+                                    <p className="text-red-500 text-xs">{errors.classic_webhook_wid}</p>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    className="flex-1"
+                                    disabled={savingWebhook || !canSaveWebhook}
+                                    onClick={() => saveWebhookSettings(false)}
+                                >
+                                    Save
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1"
+                                    disabled={savingWebhook || !client.has_classic_webhook_secret}
+                                    onClick={() => saveWebhookSettings(true)}
+                                >
+                                    Clear secret
+                                </Button>
+                            </div>
                         </CollapsibleContent>
                     </Collapsible>
                     <div className="flex w-full justify-between gap-2">

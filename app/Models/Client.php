@@ -70,7 +70,13 @@ class Client extends Model
             'classic_access_token' => 'encrypted',
             'classic_refresh_token' => 'encrypted',
             'classic_expires_in' => 'datetime',
+            'classic_webhook_secret' => 'encrypted',
         ];
+    }
+
+    public function classicWebhookUrl(): string
+    {
+        return url('/webhooks/central/'.$this->getKey());
     }
 
     protected function baseURL(): Attribute

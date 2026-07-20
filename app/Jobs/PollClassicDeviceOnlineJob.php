@@ -7,8 +7,7 @@ use App\Helper\CentralAPIHelper;
 use App\Models\ProvisioningWorkflow;
 use App\Models\ProvisioningWorkflowDevice;
 use App\Services\Provisioning\ClassicDeviceOnlineService;
-use App\Services\Provisioning\ProvisioningStepResult;
-use App\Services\Provisioning\ProvisioningWorkflowOrchestrator;
+use App\Services\Provisioning\MarkDeviceOnlineIfWaiting;
 use DateTime;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -25,7 +24,7 @@ class PollClassicDeviceOnlineJob implements ShouldQueue
 
     public function handle(
         ClassicDeviceOnlineService $classicDeviceOnlineService,
-        ProvisioningWorkflowOrchestrator $orchestrator,
+        MarkDeviceOnlineIfWaiting $markDeviceOnlineIfWaiting,
     ): void {
         $workflow = ProvisioningWorkflow::query()
             ->with(['deployment.client', 'workflowDevices.device', 'workflowDevices.steps'])
@@ -40,7 +39,7 @@ class PollClassicDeviceOnlineJob implements ShouldQueue
             ->whereHas('steps', fn ($query) => $query
                 ->where('step_key', ProvisioningStep::WaitForOnline->value)
                 ->where('status', 'in_progress'))
-            ->with(['device', 'steps'])
+            ->with(['device', 'steps', 'workflow'])
             ->get();
 
         if ($waitingDevices->isEmpty()) {
@@ -61,24 +60,19 @@ class PollClassicDeviceOnlineJob implements ShouldQueue
 
         /** @var ProvisioningWorkflowDevice $workflowDevice */
         foreach ($waitingDevices as $workflowDevice) {
-            if ($classicDeviceOnlineService->isDeviceUp($workflowDevice->device, $switchStatuses, $apStatuses)) {
-                $orchestrator->processStepResult(
-                    $workflowDevice,
-                    ProvisioningStep::WaitForOnline,
-                    ProvisioningStepResult::completed('Device is online (Up).'),
-                );
-                $orchestrator->advanceToNextStep($workflowDevice, ProvisioningStep::WaitForOnline);
-            } else {
-                $anyWaiting = true;
-                $status = $classicDeviceOnlineService->currentStatus(
-                    $workflowDevice->device,
-                    $switchStatuses,
-                    $apStatuses,
-                );
-                $workflowDevice->update([
-                    'status_message' => "Waiting for device to come online (status: {$status}).",
-                ]);
+            if ($markDeviceOnlineIfWaiting($workflowDevice, $switchStatuses, $apStatuses)) {
+                continue;
             }
+
+            $anyWaiting = true;
+            $status = $classicDeviceOnlineService->currentStatus(
+                $workflowDevice->device,
+                $switchStatuses,
+                $apStatuses,
+            );
+            $workflowDevice->update([
+                'status_message' => "Waiting for device to come online (status: {$status}).",
+            ]);
         }
 
         if ($anyWaiting && ! $workflow->isTerminal()) {

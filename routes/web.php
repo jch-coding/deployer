@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CentralApiExplorerController;
 use App\Http\Controllers\CentralScopeCacheController;
+use App\Http\Controllers\CentralWebhookController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
@@ -29,6 +30,9 @@ Route::get('/documentation', function () {
 Route::get('/usage', function () {
     return Inertia::render('Usage');
 })->name('usage');
+
+Route::post('/webhooks/central/{client}', CentralWebhookController::class)
+    ->name('webhooks.central');
 
 Route::get('dashboard', function () {
     $clients = auth()->user()->clients()->withCount(['deployments', 'devices'])->get();
