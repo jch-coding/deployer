@@ -6,8 +6,8 @@ use App\Jobs\AddDevicesToGreenLakeInventoryJob;
 use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssignSubscriptionJob;
 use App\Jobs\MoveDevicesToGroupJob;
-use App\Jobs\UnassignSubscriptionJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
+use App\Jobs\UnassignSubscriptionJob;
 use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
@@ -589,9 +589,19 @@ test('ADD_DEVICES_TO_GREENLAKE_INVENTORY stores and dispatches chunked jobs', fu
     Bus::fake();
 
     $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
         'bearer_token' => 'greenlake-token',
         'expires_at' => now()->addHour(),
     ]);
+
+    fakeLicensingCentralApis();
 
     $devices = Device::factory(6)->create([
         'deployment_id' => $this->deployment->id,
@@ -619,4 +629,110 @@ test('ADD_DEVICES_TO_GREENLAKE_INVENTORY stores and dispatches chunked jobs', fu
         return $batch->jobs->count() === 2
             && $batch->jobs->every(fn ($job) => $job instanceof AddDevicesToGreenLakeInventoryJob);
     });
+});
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY excludes devices already in inventory', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $alreadyInInventory = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:01',
+        'serial' => 'SN-ALREADY-001',
+    ]);
+    $needsAdd = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:02',
+        'serial' => 'SN-NEEDS-ADD-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-ALREADY-001',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'name' => 'Already there',
+            'licensed' => false,
+        ]],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [
+            ['id' => $alreadyInInventory->id],
+            ['id' => $needsAdd->id],
+        ],
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->devices)->toHaveCount(1)
+        ->and($task->devices->first()->id)->toBe($needsAdd->id);
+
+    Bus::assertBatchCount(1);
+});
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY rejects when all selected devices are already in inventory', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'serial' => 'SN-PRESENT-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-PRESENT-001',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+        ]],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+    ]);
+
+    $response->assertSessionHasErrors('devices');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
 });

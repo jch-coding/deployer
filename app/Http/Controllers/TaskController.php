@@ -33,6 +33,7 @@ use App\LicenseType;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\LicensingInventoryDevice;
 use App\Models\Site;
 use App\Models\Task;
 use App\Services\DeploymentCriticalCheckService;
@@ -42,6 +43,8 @@ use App\Services\InterfaceConfigurationCheckService;
 use App\Services\LagInterfaceCentralVerifier;
 use App\Services\LicensingInventoryService;
 use App\Services\LicensingPoolResolver;
+use App\Services\LicensingSyncException;
+use App\Services\LicensingSyncService;
 use App\Services\RelaunchFailedCriticalConfigService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
@@ -772,6 +775,7 @@ class TaskController extends Controller
         Request $request,
         Deployment $deployment,
         LicensingInventoryService $licensingInventoryService,
+        LicensingSyncService $licensingSyncService,
     ) {
         $validated = $request->validate([
             'task_type' => ['required', Rule::in(array_map(fn ($task) => $task->name, TaskType::cases()))],
@@ -1110,6 +1114,45 @@ class TaskController extends Controller
                 ]);
             }
 
+            $currentClient = $request->user()->currentClient();
+            if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+                return back()->withErrors([
+                    'devices' => 'Please set current client to match this deployment before adding devices to GreenLake inventory.',
+                ]);
+            }
+
+            try {
+                $licensingSyncService->syncFromCentral(
+                    $currentClient,
+                    new CentralAPIHelper($currentClient),
+                    new GreenLakeAPIHelper($currentClient),
+                );
+            } catch (LicensingSyncException $e) {
+                return back()->withErrors([
+                    'devices' => $e->getMessage(),
+                ]);
+            }
+
+            $inventorySerials = LicensingInventoryDevice::query()
+                ->where('client_id', $currentClient->id)
+                ->pluck('serial')
+                ->map(fn ($serial) => trim((string) $serial))
+                ->filter(fn (string $serial): bool => $serial !== '')
+                ->unique()
+                ->flip();
+
+            $devicesToAdd = $selectedDevices->filter(function (Device $device) use ($inventorySerials): bool {
+                $serial = trim((string) ($device->serial ?? ''));
+
+                return $serial !== '' && ! $inventorySerials->has($serial);
+            })->values();
+
+            if ($devicesToAdd->isEmpty()) {
+                return back()->withErrors([
+                    'devices' => 'All selected devices are already in GreenLake inventory.',
+                ]);
+            }
+
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
                 'name' => 'task_for_'.$deployment->name.now(),
@@ -1118,7 +1161,7 @@ class TaskController extends Controller
                 'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
             ]);
 
-            $task->devices()->attach($selectedDevices->pluck('id')->all());
+            $task->devices()->attach($devicesToAdd->pluck('id')->all());
             $batchId = $this->dispatchJob($task);
             if ($batchId !== null) {
                 $task->forceFill(['batch_id' => $batchId])->save();
@@ -1506,6 +1549,89 @@ class TaskController extends Controller
             session()->flash('success', 'All site names exist in Central.');
         } else {
             session()->flash('error', 'These sites were not found in Central: '.implode(', ', $missing).'.');
+        }
+
+        return back();
+    }
+
+    public function checkGreenLakeInventory(
+        Request $request,
+        Deployment $deployment,
+        LicensingSyncService $licensingSyncService,
+    ) {
+        $request->validate([
+            'task_type' => ['required', Rule::in(['ADD_DEVICES_TO_GREENLAKE_INVENTORY'])],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before checking GreenLake inventory.');
+
+            return back();
+        }
+
+        $devices = Device::query()
+            ->where('deployment_id', $deployment->id)
+            ->get();
+
+        if ($devices->isEmpty()) {
+            session()->flash('error', 'No devices are in this deployment.');
+
+            return back();
+        }
+
+        try {
+            $licensingSyncService->syncFromCentral(
+                $currentClient,
+                new CentralAPIHelper($currentClient),
+                new GreenLakeAPIHelper($currentClient),
+            );
+        } catch (LicensingSyncException $e) {
+            session()->flash('error', $e->getMessage());
+
+            return back();
+        }
+
+        $inventorySerials = LicensingInventoryDevice::query()
+            ->where('client_id', $currentClient->id)
+            ->pluck('serial')
+            ->map(fn ($serial) => trim((string) $serial))
+            ->filter(fn (string $serial): bool => $serial !== '')
+            ->unique()
+            ->flip();
+
+        $missingFromInventory = $devices
+            ->filter(function (Device $device) use ($inventorySerials): bool {
+                $serial = trim((string) ($device->serial ?? ''));
+
+                return $serial === '' || ! $inventorySerials->has($serial);
+            })
+            ->map(fn (Device $device): string => trim((string) ($device->serial ?? $device->name)))
+            ->filter(fn (string $serial): bool => $serial !== '')
+            ->values()
+            ->all();
+
+        $missingMac = $devices
+            ->filter(fn (Device $device): bool => trim((string) ($device->mac_address ?? '')) === '')
+            ->map(fn (Device $device): string => trim((string) ($device->serial ?? $device->name)))
+            ->filter(fn (string $serial): bool => $serial !== '')
+            ->values()
+            ->all();
+
+        if ($missingFromInventory === []) {
+            $message = 'All deployment devices are present in GreenLake inventory.';
+            if ($missingMac !== []) {
+                $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
+            }
+            session()->flash('success', $message);
+            session()->flash('missing_greenlake_inventory', []);
+        } else {
+            $message = 'These devices were not found in GreenLake inventory: '.implode(', ', $missingFromInventory).'.';
+            if ($missingMac !== []) {
+                $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
+            }
+            session()->flash('error', $message);
+            session()->flash('missing_greenlake_inventory', $missingFromInventory);
         }
 
         return back();

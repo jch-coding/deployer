@@ -25,7 +25,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
+import { check_central_group, check_central_sites, check_greenlake_inventory, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, RefreshCw } from 'lucide-react';
@@ -992,6 +992,32 @@ export default function TaskCard({
                     </DialogContent>
                 </Dialog>
                 </div>
+                {isAddToGreenLakeInventory && (
+                    <div className="ml-auto flex shrink-0 items-center">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="check-greenlake-inventory"
+                                    aria-label="Verify devices in GreenLake inventory"
+                                    onClick={() => {
+                                        router.post(check_greenlake_inventory(deployment.id).url, {
+                                            task_type: task,
+                                        });
+                                    }}
+                                >
+                                    <CircleCheck className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Verify devices in GreenLake inventory</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </div>
+                )}
                 {(task === 'PREPROVISION_DEVICE_TO_GROUP' ||
                     task === 'MOVE_DEVICE_TO_GROUP' ||
                     task === 'ADD_VLANS_TO_DEVICE_GROUP') && (
