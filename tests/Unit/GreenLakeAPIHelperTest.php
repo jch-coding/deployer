@@ -475,8 +475,60 @@ test('addNetworkDevices posts network payload and polls async operation until su
 
         return ($body['network'][0]['serialNumber'] ?? null) === 'SN001'
             && ($body['network'][0]['macAddress'] ?? null) === 'aa:bb:cc:dd:ee:ff'
+            && ! array_key_exists('tags', $body['network'][0] ?? [])
             && ($body['compute'] ?? null) === []
             && ($body['storage'] ?? null) === [];
+    });
+});
+
+test('addNetworkDevices includes tags when provided and omits them when empty', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/devices' => Http::response([
+            'transactionId' => 'async-op-tags',
+        ], 202, [
+            'Location' => '/devices/v1/async-operations/async-op-tags',
+        ]),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-op-tags' => Http::response([
+            'id' => 'async-op-tags',
+            'status' => 'SUCCEEDED',
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeeded' => [['serialNumber' => 'SN-TAGS']],
+            ],
+        ], 200),
+    ]);
+
+    $result = $helper->addNetworkDevices([
+        [
+            'serial' => 'SN-TAGS',
+            'mac_address' => 'aa:bb:cc:dd:ee:ff',
+            'tags' => [
+                'Environment' => 'prod',
+                'Site' => '',
+            ],
+        ],
+    ], sleepBetweenPolls: false);
+
+    expect($result['success'])->toBeTrue();
+
+    Http::assertSent(function (Request $request) {
+        if ($request->method() !== 'POST' || ! str_contains($request->url(), '/devices/v1/devices')) {
+            return false;
+        }
+
+        $body = $request->data();
+        $network = $body['network'][0] ?? [];
+
+        return ($network['serialNumber'] ?? null) === 'SN-TAGS'
+            && ($network['tags']['Environment'] ?? null) === 'prod'
+            && array_key_exists('Site', $network['tags'] ?? [])
+            && ($network['tags']['Site'] ?? null) === '';
     });
 });
 
@@ -508,4 +560,118 @@ test('addNetworkDevices marks failed async operation as unsuccessful', function 
     expect($result['success'])->toBeFalse()
         ->and($result['results']['SN002'])->toBeFalse()
         ->and($result['error'])->toContain('FAILED');
+});
+
+test('collectLocations returns sorted id and name pairs', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/locations/v1/locations*' => Http::response([
+            'items' => [
+                ['id' => 'loc-2', 'name' => 'Zebra Site'],
+                ['id' => 'loc-1', 'name' => 'Alpha Site'],
+            ],
+            'total' => 2,
+        ], 200),
+    ]);
+
+    $locations = $helper->collectLocations();
+
+    expect($locations)->toBe([
+        ['id' => 'loc-1', 'name' => 'Alpha Site'],
+        ['id' => 'loc-2', 'name' => 'Zebra Site'],
+    ]);
+});
+
+test('assignLocationToDevices patches v2beta1 with location id and polls async operation', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
+            'transactionId' => 'async-loc',
+        ], 202, [
+            'Location' => '/devices/v2beta1/async-operations/async-loc',
+        ]),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-loc' => Http::response([
+            'id' => 'async-loc',
+            'status' => 'SUCCEEDED',
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeeded' => [['id' => 'dev-1']],
+            ],
+        ], 200),
+    ]);
+
+    $result = $helper->assignLocationToDevices(
+        ['dev-1'],
+        'loc-warehouse',
+        sleepBetweenPolls: false,
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['transaction_id'])->toBe('async-loc');
+
+    Http::assertSent(function (Request $request) {
+        if ($request->method() !== 'PATCH' || ! str_contains($request->url(), '/devices/v2beta1/devices')) {
+            return false;
+        }
+
+        $body = $request->data();
+
+        return ($body['location']['id'] ?? null) === 'loc-warehouse'
+            && str_contains($request->url(), 'id=dev-1');
+    });
+});
+
+test('assignTagsToDevices patches v2beta1 with tags and polls async operation', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
+            'transactionId' => 'async-tags',
+        ], 202, [
+            'Location' => '/devices/v2beta1/async-operations/async-tags',
+        ]),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-tags' => Http::response([
+            'id' => 'async-tags',
+            'status' => 'SUCCEEDED',
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeeded' => [['id' => 'dev-1']],
+            ],
+        ], 200),
+    ]);
+
+    $result = $helper->assignTagsToDevices(
+        ['dev-1'],
+        ['Environment' => 'prod', 'Site' => ''],
+        sleepBetweenPolls: false,
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['transaction_id'])->toBe('async-tags');
+
+    Http::assertSent(function (Request $request) {
+        if ($request->method() !== 'PATCH' || ! str_contains($request->url(), '/devices/v2beta1/devices')) {
+            return false;
+        }
+
+        $body = $request->data();
+
+        return ($body['tags']['Environment'] ?? null) === 'prod'
+            && ($body['tags']['Site'] ?? null) === ''
+            && str_contains($request->url(), 'id=dev-1');
+    });
 });

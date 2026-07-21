@@ -104,6 +104,7 @@ class DeploymentController extends Controller
                 'name' => $device->name,
                 'serial' => $device->serial,
                 'model' => $inventoryModelsBySerial[$device->serial] ?? null,
+                'in_greenlake_inventory' => $inventoryModelsBySerial->has($device->serial),
                 'device_function' => $device->device_function,
                 'mac_address' => $device->mac_address,
                 'site' => $device->site?->name,

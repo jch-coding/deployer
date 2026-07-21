@@ -269,6 +269,7 @@ export default function Show() {
                 device_function: d.device_function ?? '',
                 serial: d.serial,
                 mac_address: d.mac_address ?? null,
+                in_greenlake_inventory: Boolean(d.in_greenlake_inventory),
             })),
         [devices],
     );
@@ -544,6 +545,7 @@ export default function Show() {
         'ASSIGN_SUBSCRIPTION',
         'UNASSIGN_SUBSCRIPTION',
         'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'ADD_TAGS_TO_GREENLAKE_DEVICES',
     ]);
 
     const isDeviceBasedTask = (task_type: string) =>

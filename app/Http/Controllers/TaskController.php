@@ -7,6 +7,7 @@ use App\Helper\GreenLakeAPIHelper;
 use App\InterfaceKind;
 use App\JobQueueShard;
 use App\Jobs\AddDevicesToGreenLakeInventoryJob;
+use App\Jobs\AddTagsToGreenLakeDevicesJob;
 use App\Jobs\AddVlansToDeviceGroup;
 use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssignSubscriptionJob;
@@ -792,6 +793,10 @@ class TaskController extends Controller
             'devices.*.license_tag' => ['sometimes', 'string', 'max:255'],
             'devices.*.license_type' => ['sometimes', 'string', 'max:255'],
             'service_name' => ['nullable', 'string', 'max:255'],
+            'tags' => ['nullable', 'array'],
+            'tags.*.key' => ['nullable', 'string', 'max:255'],
+            'tags.*.value' => ['nullable', 'string', 'max:255'],
+            'greenlake_location_id' => ['nullable', 'string', 'max:255'],
         ]);
 
         $isAddVlans = $validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP';
@@ -1153,15 +1158,114 @@ class TaskController extends Controller
                 ]);
             }
 
+            $greenlakeTags = $this->normalizeGreenLakeDeviceTags($validated['tags'] ?? []);
+
+            $greenlakeLocationId = trim((string) ($validated['greenlake_location_id'] ?? ''));
+            $greenlakeLocationName = null;
+            if ($greenlakeLocationId !== '') {
+                $locations = (new GreenLakeAPIHelper($currentClient))->collectLocations();
+                if (GreenLakeAPIHelper::isCollectError($locations)) {
+                    return back()->withErrors([
+                        'greenlake_location_id' => (string) ($locations['error'] ?? 'Failed to load GreenLake locations.'),
+                    ]);
+                }
+
+                $match = collect($locations)->first(
+                    fn (array $location): bool => ($location['id'] ?? '') === $greenlakeLocationId
+                );
+                if ($match === null) {
+                    return back()->withErrors([
+                        'greenlake_location_id' => 'Selected GreenLake location was not found in this workspace.',
+                    ]);
+                }
+                $greenlakeLocationName = (string) ($match['name'] ?? $greenlakeLocationId);
+            }
+
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
                 'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+                'greenlake_tags' => $greenlakeTags,
+                'greenlake_location_id' => $greenlakeLocationId !== '' ? $greenlakeLocationId : null,
+                'greenlake_location_name' => $greenlakeLocationName,
             ]);
 
             $task->devices()->attach($devicesToAdd->pluck('id')->all());
+            $batchId = $this->dispatchJob($task);
+            if ($batchId !== null) {
+                $task->forceFill(['batch_id' => $batchId])->save();
+            }
+        } elseif ($validated['task_type'] === 'ADD_TAGS_TO_GREENLAKE_DEVICES') {
+            $selectedDeviceIds = Collection::make($validated['devices'])
+                ->pluck('id')
+                ->filter(fn ($id) => $id !== null)
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $selectedDevices = Device::query()
+                ->where('deployment_id', $deployment->id)
+                ->whereIn('id', $selectedDeviceIds)
+                ->get();
+
+            $currentClient = $request->user()->currentClient();
+            if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+                return back()->withErrors([
+                    'devices' => 'Please set current client to match this deployment before adding GreenLake device tags.',
+                ]);
+            }
+
+            $greenlakeTags = $this->normalizeGreenLakeDeviceTags($validated['tags'] ?? []);
+            if ($greenlakeTags === null || $greenlakeTags === []) {
+                return back()->withErrors([
+                    'tags' => 'Add at least one GreenLake tag key before launching this task.',
+                ]);
+            }
+
+            try {
+                $licensingSyncService->syncFromCentral(
+                    $currentClient,
+                    new CentralAPIHelper($currentClient),
+                    new GreenLakeAPIHelper($currentClient),
+                );
+            } catch (LicensingSyncException $e) {
+                return back()->withErrors([
+                    'devices' => $e->getMessage(),
+                ]);
+            }
+
+            $inventoryBySerial = LicensingInventoryDevice::query()
+                ->where('client_id', $currentClient->id)
+                ->whereIn('serial', $selectedDevices->pluck('serial')->filter()->all())
+                ->get()
+                ->keyBy(fn (LicensingInventoryDevice $row) => trim((string) $row->serial));
+
+            $devicesToTag = $selectedDevices->filter(function (Device $device) use ($inventoryBySerial): bool {
+                $serial = trim((string) ($device->serial ?? ''));
+                if ($serial === '' || ! $inventoryBySerial->has($serial)) {
+                    return false;
+                }
+
+                return trim((string) ($inventoryBySerial->get($serial)->greenlake_device_id ?? '')) !== '';
+            })->values();
+
+            if ($devicesToTag->isEmpty()) {
+                return back()->withErrors([
+                    'devices' => 'None of the selected devices are in GreenLake inventory with a resolvable device id.',
+                ]);
+            }
+
+            $task = $deployment->tasks()->create([
+                'task_type' => $validated['task_type'],
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+                'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+                'greenlake_tags' => $greenlakeTags,
+            ]);
+
+            $task->devices()->attach($devicesToTag->pluck('id')->all());
             $batchId = $this->dispatchJob($task);
             if ($batchId !== null) {
                 $task->forceFill(['batch_id' => $batchId])->save();
@@ -1554,6 +1658,27 @@ class TaskController extends Controller
         return back();
     }
 
+    public function greenlakeLocations(Request $request, Deployment $deployment)
+    {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            return response()->json([
+                'message' => 'Please set current client to match this deployment before loading GreenLake locations.',
+            ], 403);
+        }
+
+        $locations = (new GreenLakeAPIHelper($currentClient))->collectLocations();
+        if (GreenLakeAPIHelper::isCollectError($locations)) {
+            return response()->json([
+                'message' => (string) ($locations['error'] ?? 'Failed to load GreenLake locations.'),
+            ], 422);
+        }
+
+        return response()->json([
+            'locations' => $locations,
+        ]);
+    }
+
     public function checkGreenLakeInventoryStep(
         Request $request,
         Deployment $deployment,
@@ -1833,6 +1958,39 @@ class TaskController extends Controller
         session()->flash('success', $this->formatSiteScopeIdUpdateFlashMessage($sitesToSync));
 
         return back();
+    }
+
+    /**
+     * Normalize GreenLake device tag rows into an associative map.
+     * Empty keys are dropped; missing values become empty strings. Duplicate keys are rejected.
+     *
+     * @param  array<int, mixed>  $rows
+     * @return array<string, string>|null
+     */
+    protected function normalizeGreenLakeDeviceTags(array $rows): ?array
+    {
+        $tags = [];
+
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $key = trim((string) ($row['key'] ?? ''));
+            if ($key === '') {
+                continue;
+            }
+
+            if (array_key_exists($key, $tags)) {
+                throw ValidationException::withMessages([
+                    "tags.{$index}.key" => "Duplicate tag key \"{$key}\".",
+                ]);
+            }
+
+            $tags[$key] = trim((string) ($row['value'] ?? ''));
+        }
+
+        return $tags === [] ? null : $tags;
     }
 
     private function formatSiteScopeIdUpdateFlashMessage(Collection $sites): string
@@ -2344,6 +2502,24 @@ class TaskController extends Controller
                 }
                 if ($addJobs !== []) {
                     $jobs[] = $addJobs;
+                }
+                break;
+            case 'ADD_TAGS_TO_GREENLAKE_DEVICES':
+                $greenLakeAPIHelper = new GreenLakeAPIHelper($task->deployment->client);
+                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+                $tagJobs = [];
+                foreach ($in_progress->chunk(25) as $deviceChunk) {
+                    $tagJobs[] = new AddTagsToGreenLakeDevicesJob(
+                        $deviceChunk->map(fn ($device) => [
+                            'id' => $device->id,
+                            'serial' => $device->serial,
+                        ])->all(),
+                        $task,
+                        $greenLakeAPIHelper,
+                    );
+                }
+                if ($tagJobs !== []) {
+                    $jobs[] = $tagJobs;
                 }
                 break;
         }

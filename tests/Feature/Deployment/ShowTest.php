@@ -109,8 +109,10 @@ it('includes greenlake inventory model when present and blank when missing', fun
             ->component('Deployment/Show')
             ->where('devices.0.id', $inInventory->id)
             ->where('devices.0.model', '6300M')
+            ->where('devices.0.in_greenlake_inventory', true)
             ->where('devices.1.id', $notInInventory->id)
-            ->where('devices.1.model', null));
+            ->where('devices.1.model', null)
+            ->where('devices.1.in_greenlake_inventory', false));
 });
 
 it('returns all devices in a flat array', function () {

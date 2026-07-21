@@ -43,6 +43,7 @@ export type DeviceDef = {
     name: string;
     serial: string | number;
     model?: string | null;
+    in_greenlake_inventory?: boolean;
     device_function: string;
     mac_address?: string | null;
     site?: string | null;

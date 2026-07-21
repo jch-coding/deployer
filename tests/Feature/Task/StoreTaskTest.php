@@ -736,3 +736,334 @@ test('ADD_DEVICES_TO_GREENLAKE_INVENTORY rejects when all selected devices are a
     expect($this->deployment->refresh()->tasks)->toHaveCount(0);
     Bus::assertNothingBatched();
 });
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY stores normalized greenlake_tags', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'serial' => 'SN-TAGS-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'tags' => [
+            ['key' => 'Environment', 'value' => 'prod'],
+            ['key' => 'Site', 'value' => ''],
+            ['key' => '  ', 'value' => 'ignored'],
+            ['key' => 'Owner'],
+        ],
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->greenlake_tags)->toBe([
+            'Environment' => 'prod',
+            'Site' => '',
+            'Owner' => '',
+        ]);
+});
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY rejects duplicate tag keys', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'serial' => 'SN-DUP-TAG-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'tags' => [
+            ['key' => 'Environment', 'value' => 'prod'],
+            ['key' => 'Environment', 'value' => 'dev'],
+        ],
+    ]);
+
+    $response->assertSessionHasErrors('tags.1.key');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY stores greenlake location id and name', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis(
+        locations: [
+            ['id' => 'loc-nyc', 'name' => 'Warehouse NYC'],
+        ],
+    );
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'serial' => 'SN-LOC-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'greenlake_location_id' => 'loc-nyc',
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->greenlake_location_id)->toBe('loc-nyc')
+        ->and($task->greenlake_location_name)->toBe('Warehouse NYC');
+});
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY rejects unknown greenlake location id', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis(
+        locations: [
+            ['id' => 'loc-nyc', 'name' => 'Warehouse NYC'],
+        ],
+    );
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'serial' => 'SN-LOC-UNKNOWN',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'greenlake_location_id' => 'loc-missing',
+    ]);
+
+    $response->assertSessionHasErrors('greenlake_location_id');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ADD_TAGS_TO_GREENLAKE_DEVICES stores tags and attaches inventory devices', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $inInventory = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-TAG-IN-001',
+    ]);
+    $notInInventory = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-TAG-OUT-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-TAG-IN-001',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+            'greenlake_device_id' => 'gl-tag-dev-1',
+        ]],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_TAGS_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [
+            ['id' => $inInventory->id],
+            ['id' => $notInInventory->id],
+        ],
+        'tags' => [
+            ['key' => 'Environment', 'value' => 'prod'],
+            ['key' => 'Owner', 'value' => ''],
+        ],
+    ]);
+
+    $response->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('ADD_TAGS_TO_GREENLAKE_DEVICES')
+        ->and($task->greenlake_tags)->toBe([
+            'Environment' => 'prod',
+            'Owner' => '',
+        ])
+        ->and($task->devices)->toHaveCount(1)
+        ->and($task->devices->first()->id)->toBe($inInventory->id);
+
+    Bus::assertBatchCount(1);
+});
+
+test('ADD_TAGS_TO_GREENLAKE_DEVICES rejects when no tags are provided', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-TAG-NONE-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-TAG-NONE-001',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+        ]],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_TAGS_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'tags' => [],
+    ]);
+
+    $response->assertSessionHasErrors('tags');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ADD_TAGS_TO_GREENLAKE_DEVICES rejects when none of the selected devices are in inventory', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-TAG-MISSING-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_TAGS_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'tags' => [
+            ['key' => 'Environment', 'value' => 'prod'],
+        ],
+    ]);
+
+    $response->assertSessionHasErrors('devices');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});

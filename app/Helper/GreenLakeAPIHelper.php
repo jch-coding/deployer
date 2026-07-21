@@ -26,6 +26,15 @@ class GreenLakeAPIHelper
         'async_operation' => '/devices/v1/async-operations/{id}',
     ];
 
+    public array $devicesV2 = [
+        'update' => '/devices/v2beta1/devices',
+        'async_operation' => '/devices/v2beta1/async-operations/{id}',
+    ];
+
+    public array $locations = [
+        'list' => '/locations/v1/locations',
+    ];
+
     public function __construct(public Client $client) {}
 
     private function apiUrl(string $path): string
@@ -455,6 +464,386 @@ class GreenLakeAPIHelper
     /**
      * @return Response|array{error: string}
      */
+    public function getLocations(array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token for GreenLake.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->acceptJson()
+            ->withQueryParameters($queryParameters)
+            ->get($this->apiUrl($this->locations['list']));
+    }
+
+    /**
+     * @return array<int, array{id: string, name: string}>|array{error: string}
+     */
+    public function collectLocations(int $limit = 50): array
+    {
+        $allLocations = [];
+        $offset = 0;
+
+        while (true) {
+            $response = $this->getLocations([
+                'limit' => $limit,
+                'offset' => $offset,
+            ]);
+
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch locations from GreenLake.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get locations from GreenLake.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            foreach ($pageItems as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $id = trim((string) ($item['id'] ?? ''));
+                $name = trim((string) ($item['name'] ?? ''));
+                if ($id === '') {
+                    continue;
+                }
+                $allLocations[] = [
+                    'id' => $id,
+                    'name' => $name !== '' ? $name : $id,
+                ];
+            }
+
+            $total = $response->json('total') ?? $response->json('count');
+            if (is_numeric($total) && count($allLocations) >= (int) $total) {
+                break;
+            }
+
+            if (count($pageItems) < $limit) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        usort(
+            $allLocations,
+            fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']),
+        );
+
+        return $allLocations;
+    }
+
+    /**
+     * Map serial numbers to GreenLake device resource IDs.
+     *
+     * @param  array<int, string>  $serials
+     * @return array<string, string>|array{error: string}
+     */
+    public function deviceIdsBySerial(array $serials): array
+    {
+        $wanted = [];
+        foreach ($serials as $serial) {
+            $serial = trim((string) $serial);
+            if ($serial !== '') {
+                $wanted[strtoupper($serial)] = $serial;
+            }
+        }
+
+        if ($wanted === []) {
+            return [];
+        }
+
+        $devices = $this->collectDevices();
+        if (self::isCollectError($devices)) {
+            return ['error' => (string) ($devices['error'] ?? 'failed to get devices from GreenLake.')];
+        }
+
+        $map = [];
+        foreach ($devices as $device) {
+            if (! is_array($device)) {
+                continue;
+            }
+            $serial = trim((string) ($device['serialNumber'] ?? ''));
+            $id = trim((string) ($device['id'] ?? ''));
+            if ($serial === '' || $id === '') {
+                continue;
+            }
+            $key = strtoupper($serial);
+            if (isset($wanted[$key])) {
+                $map[$wanted[$key]] = $id;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Assign a GreenLake location to devices (v2beta1) and wait for async completion.
+     *
+     * @param  array<int, string>  $deviceIds
+     * @return array{
+     *     success: bool,
+     *     error: string|null,
+     *     results: array<string, bool>,
+     *     transaction_id: string|null,
+     *     status: string|null
+     * }
+     */
+    public function assignLocationToDevices(
+        array $deviceIds,
+        string $locationId,
+        bool $sleepBetweenPolls = true,
+    ): array {
+        $locationId = trim($locationId);
+        $ids = [];
+        foreach ($deviceIds as $deviceId) {
+            $deviceId = trim((string) $deviceId);
+            if ($deviceId !== '') {
+                $ids[] = $deviceId;
+            }
+        }
+        $ids = array_values(array_unique($ids));
+
+        if ($locationId === '' || $ids === []) {
+            return [
+                'success' => false,
+                'error' => 'Location id and at least one device id are required.',
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'success' => false,
+                'error' => 'failed to get access token for GreenLake.',
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        $aggregateResults = [];
+        $lastStatus = null;
+        $lastTransactionId = null;
+
+        foreach (array_chunk($ids, 25) as $chunk) {
+            $query = collect($chunk)
+                ->map(fn (string $id): string => 'id='.rawurlencode($id))
+                ->implode('&');
+
+            $response = Http::withToken($this->client->bearer_token)
+                ->acceptJson()
+                ->asJson()
+                ->patch($this->apiUrl($this->devicesV2['update']).'?'.$query, [
+                    'location' => ['id' => $locationId],
+                ]);
+
+            if ($response->status() !== 202) {
+                return [
+                    'success' => false,
+                    'error' => $this->extractErrorMessage($response),
+                    'results' => $aggregateResults,
+                    'transaction_id' => $lastTransactionId,
+                    'status' => $lastStatus,
+                ];
+            }
+
+            $operationId = $this->extractAsyncOperationId($response);
+            if ($operationId === '') {
+                return [
+                    'success' => false,
+                    'error' => 'GreenLake accepted the location assignment but did not return an async operation id.',
+                    'results' => $aggregateResults,
+                    'transaction_id' => null,
+                    'status' => null,
+                ];
+            }
+
+            $result = $this->waitForDeviceAsyncOperation(
+                $operationId,
+                $chunk,
+                $sleepBetweenPolls,
+                asyncOperationPath: $this->devicesV2['async_operation'],
+            );
+
+            $lastStatus = $result['status'];
+            $lastTransactionId = $result['transaction_id'];
+            foreach ($result['results'] as $deviceId => $ok) {
+                $aggregateResults[$deviceId] = $ok;
+            }
+
+            if ($result['success'] !== true) {
+                return [
+                    'success' => false,
+                    'error' => $result['error'] ?? 'GreenLake location assignment failed.',
+                    'results' => $aggregateResults,
+                    'transaction_id' => $lastTransactionId,
+                    'status' => $lastStatus,
+                ];
+            }
+        }
+
+        foreach ($ids as $id) {
+            if (! array_key_exists($id, $aggregateResults)) {
+                $aggregateResults[$id] = true;
+            }
+        }
+
+        return [
+            'success' => true,
+            'error' => null,
+            'results' => $aggregateResults,
+            'transaction_id' => $lastTransactionId,
+            'status' => $lastStatus,
+        ];
+    }
+
+    /**
+     * Upsert GreenLake device tags (v2beta1) and wait for async completion.
+     *
+     * @param  array<int, string>  $deviceIds
+     * @param  array<string, string>  $tags
+     * @return array{
+     *     success: bool,
+     *     error: string|null,
+     *     results: array<string, bool>,
+     *     transaction_id: string|null,
+     *     status: string|null
+     * }
+     */
+    public function assignTagsToDevices(
+        array $deviceIds,
+        array $tags,
+        bool $sleepBetweenPolls = true,
+    ): array {
+        $ids = [];
+        foreach ($deviceIds as $deviceId) {
+            $deviceId = trim((string) $deviceId);
+            if ($deviceId !== '') {
+                $ids[] = $deviceId;
+            }
+        }
+        $ids = array_values(array_unique($ids));
+
+        $normalizedTags = [];
+        foreach ($tags as $key => $value) {
+            $key = trim((string) $key);
+            if ($key === '') {
+                continue;
+            }
+            $normalizedTags[$key] = trim((string) $value);
+        }
+
+        if ($normalizedTags === [] || $ids === []) {
+            return [
+                'success' => false,
+                'error' => 'At least one tag and one device id are required.',
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'success' => false,
+                'error' => 'failed to get access token for GreenLake.',
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        $aggregateResults = [];
+        $lastStatus = null;
+        $lastTransactionId = null;
+
+        foreach (array_chunk($ids, 25) as $chunk) {
+            $query = collect($chunk)
+                ->map(fn (string $id): string => 'id='.rawurlencode($id))
+                ->implode('&');
+
+            $response = Http::withToken($this->client->bearer_token)
+                ->acceptJson()
+                ->asJson()
+                ->patch($this->apiUrl($this->devicesV2['update']).'?'.$query, [
+                    'tags' => $normalizedTags,
+                ]);
+
+            if ($response->status() !== 202) {
+                return [
+                    'success' => false,
+                    'error' => $this->extractErrorMessage($response),
+                    'results' => $aggregateResults,
+                    'transaction_id' => $lastTransactionId,
+                    'status' => $lastStatus,
+                ];
+            }
+
+            $operationId = $this->extractAsyncOperationId($response);
+            if ($operationId === '') {
+                return [
+                    'success' => false,
+                    'error' => 'GreenLake accepted the tag update but did not return an async operation id.',
+                    'results' => $aggregateResults,
+                    'transaction_id' => null,
+                    'status' => null,
+                ];
+            }
+
+            $result = $this->waitForDeviceAsyncOperation(
+                $operationId,
+                $chunk,
+                $sleepBetweenPolls,
+                asyncOperationPath: $this->devicesV2['async_operation'],
+            );
+
+            $lastStatus = $result['status'];
+            $lastTransactionId = $result['transaction_id'];
+            foreach ($result['results'] as $deviceId => $ok) {
+                $aggregateResults[$deviceId] = $ok;
+            }
+
+            if ($result['success'] !== true) {
+                return [
+                    'success' => false,
+                    'error' => $result['error'] ?? 'GreenLake tag update failed.',
+                    'results' => $aggregateResults,
+                    'transaction_id' => $lastTransactionId,
+                    'status' => $lastStatus,
+                ];
+            }
+        }
+
+        foreach ($ids as $id) {
+            if (! array_key_exists($id, $aggregateResults)) {
+                $aggregateResults[$id] = true;
+            }
+        }
+
+        return [
+            'success' => true,
+            'error' => null,
+            'results' => $aggregateResults,
+            'transaction_id' => $lastTransactionId,
+            'status' => $lastStatus,
+        ];
+    }
+
+    /**
+     * @return Response|array{error: string}
+     */
     public function getDevice(string $id)
     {
         if (! $this->client->handleBearerTokenAuth()) {
@@ -486,7 +875,7 @@ class GreenLakeAPIHelper
     /**
      * Add network devices to GreenLake inventory and wait for the async operation.
      *
-     * @param  array<int, array{serial: string, mac_address: string}>  $devices
+     * @param  array<int, array{serial: string, mac_address: string, tags?: array<string, string>|null}>  $devices
      * @return array{
      *     success: bool,
      *     error: string|null,
@@ -504,10 +893,15 @@ class GreenLakeAPIHelper
             if ($serial === '' || $mac === '') {
                 continue;
             }
-            $network[] = [
+            $item = [
                 'serialNumber' => $serial,
                 'macAddress' => $mac,
             ];
+            $tags = $device['tags'] ?? null;
+            if (is_array($tags) && $tags !== []) {
+                $item['tags'] = $tags;
+            }
+            $network[] = $item;
         }
 
         if ($network === []) {
@@ -592,12 +986,13 @@ class GreenLakeAPIHelper
         array $expectedSerials = [],
         bool $sleepBetweenPolls = true,
         int $maxAttempts = 60,
+        ?string $asyncOperationPath = null,
     ): array {
         $status = null;
         $results = [];
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-            $response = $this->getDeviceAsyncOperation($operationId);
+            $response = $this->getDeviceAsyncOperation($operationId, $asyncOperationPath);
 
             if (is_array($response)) {
                 return [
@@ -993,13 +1388,14 @@ class GreenLakeAPIHelper
     /**
      * @return Response|array{error: string}
      */
-    public function getDeviceAsyncOperation(string $id)
+    public function getDeviceAsyncOperation(string $id, ?string $asyncOperationPath = null)
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token for GreenLake.'];
         }
 
-        $path = str_replace('{id}', $id, $this->devices['async_operation']);
+        $pathTemplate = $asyncOperationPath ?? $this->devices['async_operation'];
+        $path = str_replace('{id}', $id, $pathTemplate);
 
         return Http::withToken($this->client->bearer_token)
             ->get($this->apiUrl($path));

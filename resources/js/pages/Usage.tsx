@@ -128,7 +128,14 @@ const deploymentTasks = [
     {
         title: 'Add Devices to GreenLake Inventory',
         description:
-            'Add selected network devices to the HPE GreenLake workspace inventory using serial and MAC address. The mac_address CSV column is optional on import but required when launching this task; missing MACs can be entered in the task card modal.',
+            'Add selected network devices to the HPE GreenLake workspace inventory using serial and MAC address. The mac_address CSV column is optional on import but required when launching this task; missing MACs can be entered in the task card modal. Optionally attach the same GreenLake key–value tags to every selected device (blank values are sent as empty strings), and optionally assign an existing GreenLake location to all selected devices.',
+        requiresClassicCentral: false,
+        requiresLicensing: true,
+    },
+    {
+        title: 'Add Tags to GreenLake Devices',
+        description:
+            'Add or update the same key–value tags on selected devices that are already in the HPE GreenLake workspace inventory. At least one tag key is required; blank values are sent as empty strings.',
         requiresClassicCentral: false,
         requiresLicensing: true,
     },
@@ -564,7 +571,10 @@ export default function Usage() {
                                 sync (use <strong>Renew licensing</strong> on the Licensing page or deployment
                                 licensing controls). Add Devices to GreenLake Inventory requires each device&apos;s{' '}
                                 <code>mac_address</code> (optional CSV column, or enter it in the task-card MAC
-                                modal).
+                                modal). You can also optionally attach the same GreenLake key–value tags to all
+                                selected devices when launching the task, and optionally assign an existing
+                                GreenLake location to those devices. Add Tags to GreenLake Devices applies
+                                key–value tags to devices already in inventory (at least one tag key required).
                             </p>
                         </div>
                         <ul className={cn(body, 'mt-6 list-disc space-y-3 pl-5')}>

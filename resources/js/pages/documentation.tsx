@@ -1020,10 +1020,39 @@ export default function documentation() {
                                 via serial number and MAC address. The <code>mac_address</code> CSV
                                 column is optional on import; it becomes required when launching this
                                 task. If devices are missing a MAC, the task card shows an error and
-                                opens a modal to enter and save addresses before deploy.
+                                opens a modal to enter and save addresses before deploy. Optionally
+                                enter GreenLake key–value tags on the task card; the same tags are
+                                applied to every selected device. A key without a value is sent with
+                                an empty string. Optionally select an existing GreenLake location to
+                                assign to every selected device after inventory add (locations are not
+                                created from Deployer).
                             </p>
                             <ColumnPair
                                 required={['name', 'serial', 'device_function', 'mac_address']}
+                                optional={[]}
+                            />
+                        </div>
+                    </DocCard>
+
+                    <DocCard
+                        title="Add Tags to GreenLake Devices"
+                        badge={
+                            <Badge variant="outline" className="w-fit shrink-0 font-normal">
+                                GreenLake API
+                            </Badge>
+                        }
+                        defaultOpen
+                    >
+                        <div className="space-y-4">
+                            <p>
+                                Adds or updates key–value tags on selected devices that are already in the
+                                HPE GreenLake workspace inventory. Enter tags on the task card; the same
+                                tags are applied to every selected device. At least one tag key is
+                                required. A key without a value is sent with an empty string. Devices not
+                                yet in inventory are skipped.
+                            </p>
+                            <ColumnPair
+                                required={['name', 'serial', 'device_function']}
                                 optional={[]}
                             />
                         </div>

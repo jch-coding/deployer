@@ -54,6 +54,7 @@ use Illuminate\Support\Facades\Http;
  * @param  array<int, array<string, mixed>>  $centralSubscriptions  Central classic subscription rows
  * @param  array<int, array<string, mixed>>  $centralInventoryDevices  Classic device inventory rows (serial, name, …)
  * @param  array<int, array<string, mixed>>  $newCentralDevices  New Central network-monitoring device rows (serialNumber, deviceName, …)
+ * @param  array<int, array{id?: string, name?: string}>  $greenLakeLocations  Raw GreenLake location items
  */
 function fakeLicensingApis(
     array $greenLakeDevices = [],
@@ -61,6 +62,7 @@ function fakeLicensingApis(
     array $centralSubscriptions = [],
     array $centralInventoryDevices = [],
     array $newCentralDevices = [],
+    array $greenLakeLocations = [],
 ): void {
     Http::fake(function (Request $request) use (
         $greenLakeDevices,
@@ -68,8 +70,21 @@ function fakeLicensingApis(
         $centralSubscriptions,
         $centralInventoryDevices,
         $newCentralDevices,
+        $greenLakeLocations,
     ) {
         if (str_contains($request->url(), GreenLakeAPIHelper::BASE_URL)) {
+            if (str_contains($request->url(), '/locations/v1/locations') && $request->method() === 'GET') {
+                parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+                $offset = (int) ($query['offset'] ?? 0);
+                $limit = (int) ($query['limit'] ?? 50);
+                $page = array_slice($greenLakeLocations, $offset, $limit);
+
+                return Http::response([
+                    'items' => $page,
+                    'total' => count($greenLakeLocations),
+                ], 200);
+            }
+
             if (str_contains($request->url(), '/subscriptions/v1/subscriptions') && $request->method() === 'GET') {
                 parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
                 $offset = (int) ($query['offset'] ?? 0);
@@ -144,12 +159,14 @@ function fakeLicensingApis(
 /**
  * @param  array<int, array<string, mixed>>  $centralInventoryDevices
  * @param  array<int, array<string, mixed>>  $newCentralDevices
+ * @param  array<int, array{id?: string, name?: string}>  $locations
  */
 function fakeLicensingCentralApis(
     array $devices = [],
     array $subscriptions = [],
     array $centralInventoryDevices = [],
     array $newCentralDevices = [],
+    array $locations = [],
 ): void {
     $greenLakeDevices = array_map(function (array $device): array {
         $subscriptionKey = (string) ($device['subscription_key'] ?? '');
@@ -191,6 +208,7 @@ function fakeLicensingCentralApis(
         $subscriptions,
         $centralInventoryDevices,
         $newCentralDevices,
+        $locations,
     );
 }
 

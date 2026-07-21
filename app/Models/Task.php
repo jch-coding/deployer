@@ -19,6 +19,7 @@ class Task extends Model
 
     protected $casts = [
         'remediation_context' => 'array',
+        'greenlake_tags' => 'array',
         'mirror_fallback_mode' => 'boolean',
     ];
 
@@ -131,6 +132,7 @@ class Task extends Model
             'ASSIGN_SUBSCRIPTION',
             'UNASSIGN_SUBSCRIPTION',
             'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+            'ADD_TAGS_TO_GREENLAKE_DEVICES',
             'ADD_VLANS_FOR_DEVICE_GROUP',
             'CREATE_NEW_CENTRAL_CX_GROUP',
             'CONFIGURE_MIRROR_SESSION',
@@ -197,6 +199,8 @@ class Task extends Model
                 return 'Unassign Subscription';
             case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
                 return 'Add Devices to GreenLake Inventory';
+            case 'ADD_TAGS_TO_GREENLAKE_DEVICES':
+                return 'Add Tags to GreenLake Devices';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Add VLANs to device group (single group)';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -256,7 +260,9 @@ class Task extends Model
             case 'UNASSIGN_SUBSCRIPTION':
                 return 'Remove assigned licenses from selected devices.';
             case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
-                return 'Add selected network devices to the HPE GreenLake workspace inventory using serial and MAC address.';
+                return 'Add selected network devices to the HPE GreenLake workspace inventory using serial and MAC address. Optionally apply the same key–value tags and assign an existing GreenLake location to every selected device.';
+            case 'ADD_TAGS_TO_GREENLAKE_DEVICES':
+                return 'Add or update the same key–value tags on selected devices that are already in the HPE GreenLake workspace inventory.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Adds VLAN definitions to one Central device group.';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -308,6 +314,8 @@ class Task extends Model
                 return ['name', 'serial', 'device_function'];
             case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
                 return ['name', 'serial', 'device_function', 'mac_address'];
+            case 'ADD_TAGS_TO_GREENLAKE_DEVICES':
+                return ['name', 'serial', 'device_function'];
             default:
                 return [];
         }

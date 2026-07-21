@@ -25,11 +25,11 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
+import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, greenlake_locations, store } from '@/routes/tasks';
 import check_greenlake_inventory from '@/routes/tasks/check_greenlake_inventory';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
-import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, RefreshCw } from 'lucide-react';
+import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, PlusIcon, RefreshCw, Trash2Icon } from 'lucide-react';
 
 type DeviceType = {
     id: number;
@@ -38,6 +38,7 @@ type DeviceType = {
     device_function: string;
     serial?: string | number;
     mac_address?: string | null;
+    in_greenlake_inventory?: boolean;
 };
 
 function deviceFilterLabel(device: DeviceType): string {
@@ -52,6 +53,16 @@ type DeploymentType = {
 type PerDeviceLicenseSelection = {
     license_tag: string;
     license_type: LicenseTypeOption | '';
+};
+
+type GreenLakeTagRow = {
+    key: string;
+    value: string;
+};
+
+type GreenLakeLocationOption = {
+    id: string;
+    name: string;
 };
 
 type TaskCardProps = {
@@ -110,6 +121,11 @@ export default function TaskCard({
     const [deviceMacOverrides, setDeviceMacOverrides] = useState<Record<number, string>>({});
     const [pendingDeployAllDevices, setPendingDeployAllDevices] = useState(false);
     const [isCheckingGreenLake, setIsCheckingGreenLake] = useState(false);
+    const [greenLakeTags, setGreenLakeTags] = useState<GreenLakeTagRow[]>([]);
+    const [greenLakeLocations, setGreenLakeLocations] = useState<GreenLakeLocationOption[]>([]);
+    const [greenLakeLocationId, setGreenLakeLocationId] = useState('');
+    const [greenLakeLocationsLoading, setGreenLakeLocationsLoading] = useState(false);
+    const [greenLakeLocationsError, setGreenLakeLocationsError] = useState<string | null>(null);
     const [greenLakeProgress, setGreenLakeProgress] = useState<{
         current: number;
         total: number;
@@ -126,6 +142,7 @@ export default function TaskCard({
     const isUnassignSubscription = task === 'UNASSIGN_SUBSCRIPTION';
     const isLicensingTask = isAssignSubscription || isUnassignSubscription;
     const isAddToGreenLakeInventory = task === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY';
+    const isAddTagsToGreenLake = task === 'ADD_TAGS_TO_GREENLAKE_DEVICES';
 
     const devicesWithMac = useMemo(
         () =>
@@ -201,6 +218,63 @@ export default function TaskCard({
             setBulkLicenseType(filteredLicenseTypes[0]);
         }
     }, [filteredLicenseTypes, bulkLicenseType]);
+
+    useEffect(() => {
+        if (!isAddToGreenLakeInventory) {
+            return;
+        }
+
+        let cancelled = false;
+        setGreenLakeLocationsLoading(true);
+        setGreenLakeLocationsError(null);
+
+        fetch(greenlake_locations.url(deployment.id), {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        })
+            .then(async (response) => {
+                const data = (await response.json().catch(() => ({}))) as {
+                    locations?: GreenLakeLocationOption[];
+                    message?: string;
+                };
+                if (!response.ok) {
+                    throw new Error(
+                        data.message ?? 'Failed to load GreenLake locations.',
+                    );
+                }
+
+                return data.locations ?? [];
+            })
+            .then((locations) => {
+                if (cancelled) {
+                    return;
+                }
+                setGreenLakeLocations(locations);
+            })
+            .catch((error: unknown) => {
+                if (cancelled) {
+                    return;
+                }
+                setGreenLakeLocations([]);
+                setGreenLakeLocationsError(
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to load GreenLake locations.',
+                );
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setGreenLakeLocationsLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isAddToGreenLakeInventory, deployment.id]);
 
     const vlanPrefixTrimmed = vlanSitePrefix.trim()
     const isAddVlansWithPrefix =
@@ -421,6 +495,33 @@ export default function TaskCard({
             }
         }
 
+        if (taskStr === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY') {
+            const notInInventory = devices_for_task.filter(
+                (device) => !device.in_greenlake_inventory,
+            );
+            if (notInInventory.length === 0) {
+                toast.error('All selected devices are already in GreenLake inventory.');
+
+                return;
+            }
+        }
+
+        if (taskStr === 'ADD_TAGS_TO_GREENLAKE_DEVICES') {
+            const inInventory = devices_for_task.filter((device) => device.in_greenlake_inventory);
+            if (inInventory.length === 0) {
+                toast.error('None of the selected devices are in GreenLake inventory.');
+
+                return;
+            }
+
+            const hasTagKey = greenLakeTags.some((row) => row.key.trim() !== '');
+            if (!hasTagKey) {
+                toast.error('Add at least one GreenLake tag key before launching this task.');
+
+                return;
+            }
+        }
+
         if (taskStr === 'ASSIGN_SUBSCRIPTION') {
             if (licensingMode === 'uniform') {
                 if (!bulkLicenseTag) {
@@ -508,6 +609,27 @@ export default function TaskCard({
                 taskStr === 'ASSIGN_SUBSCRIPTION' && licensingMode === 'uniform'
                     ? bulkLicenseType
                     : undefined,
+            ...(taskStr === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY'
+                ? {
+                      tags: greenLakeTags
+                          .map((row) => ({
+                              key: row.key.trim(),
+                              value: row.value.trim(),
+                          }))
+                          .filter((row) => row.key !== ''),
+                      greenlake_location_id: greenLakeLocationId || undefined,
+                  }
+                : {}),
+            ...(taskStr === 'ADD_TAGS_TO_GREENLAKE_DEVICES'
+                ? {
+                      tags: greenLakeTags
+                          .map((row) => ({
+                              key: row.key.trim(),
+                              value: row.value.trim(),
+                          }))
+                          .filter((row) => row.key !== ''),
+                  }
+                : {}),
             ...(taskStr === 'ADD_VLANS_TO_DEVICE_GROUP'
                 ? {
                       vlan_site_prefix: vlanPrefixTrimmed,
@@ -516,7 +638,15 @@ export default function TaskCard({
                   }
                 : {}),
         }, {
-            onError: () => setIsLaunching(false),
+            onError: (errors) => {
+                setIsLaunching(false);
+                const message = Object.values(errors)
+                    .flat()
+                    .find((value) => typeof value === 'string' && value.trim() !== '');
+                if (message) {
+                    toast.error(message);
+                }
+            },
         });
     };
 
@@ -614,6 +744,141 @@ export default function TaskCard({
                                 ) : null}
                             </div>
                         ) : null}
+                    </div>
+                ) : null}
+                {isAddToGreenLakeInventory || isAddTagsToGreenLake ? (
+                    <div className="mt-3 space-y-2">
+                        {isAddToGreenLakeInventory ? (
+                            <div className="space-y-1">
+                                <label
+                                    htmlFor={`greenlake-location-${task}`}
+                                    className="text-sm font-medium"
+                                >
+                                    Location (optional)
+                                </label>
+                                <select
+                                    id={`greenlake-location-${task}`}
+                                    value={greenLakeLocationId}
+                                    onChange={(e) => setGreenLakeLocationId(e.target.value)}
+                                    className={selectClassName}
+                                    data-test="greenlake-location-select"
+                                    disabled={greenLakeLocationsLoading}
+                                >
+                                    <option value="">
+                                        {greenLakeLocationsLoading
+                                            ? 'Loading locations...'
+                                            : greenLakeLocationsError
+                                              ? 'Could not load locations'
+                                              : greenLakeLocations.length === 0
+                                                ? 'No locations available'
+                                                : 'No location'}
+                                    </option>
+                                    {greenLakeLocations.map((location) => (
+                                        <option key={location.id} value={location.id}>
+                                            {location.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                {greenLakeLocationsError ? (
+                                    <p className="text-destructive text-xs">{greenLakeLocationsError}</p>
+                                ) : (
+                                    <p className="text-muted-foreground text-xs">
+                                        Must already exist in GreenLake. Applied to all selected devices.
+                                    </p>
+                                )}
+                            </div>
+                        ) : null}
+                        <div className="flex items-center justify-between gap-2">
+                            <label className="text-sm font-medium">
+                                {isAddTagsToGreenLake
+                                    ? 'GreenLake tags'
+                                    : 'GreenLake tags (optional)'}
+                            </label>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                data-test="add-greenlake-tag"
+                                onClick={() =>
+                                    setGreenLakeTags((prev) => [...prev, { key: '', value: '' }])
+                                }
+                            >
+                                <PlusIcon className="size-3.5" aria-hidden />
+                                Add tag
+                            </Button>
+                        </div>
+                        {greenLakeTags.length === 0 ? (
+                            <p className="text-muted-foreground text-xs">
+                                {isAddTagsToGreenLake
+                                    ? 'Add at least one key–value tag to apply to all selected devices.'
+                                    : 'No tags. Add key–value pairs to apply to all selected devices.'}
+                            </p>
+                        ) : (
+                            <div className="space-y-2">
+                                {greenLakeTags.map((row, index) => (
+                                    <div
+                                        key={index}
+                                        className="flex flex-wrap items-center gap-2"
+                                        data-test="greenlake-tag-row"
+                                    >
+                                        <Input
+                                            type="text"
+                                            placeholder="Key"
+                                            value={row.key}
+                                            onChange={(e) =>
+                                                setGreenLakeTags((prev) =>
+                                                    prev.map((item, i) =>
+                                                        i === index
+                                                            ? { ...item, key: e.target.value }
+                                                            : item,
+                                                    ),
+                                                )
+                                            }
+                                            className="min-w-[7rem] flex-1"
+                                            autoComplete="off"
+                                            aria-label={`Tag key ${index + 1}`}
+                                            data-test="greenlake-tag-key"
+                                        />
+                                        <Input
+                                            type="text"
+                                            placeholder="Value (optional)"
+                                            value={row.value}
+                                            onChange={(e) =>
+                                                setGreenLakeTags((prev) =>
+                                                    prev.map((item, i) =>
+                                                        i === index
+                                                            ? { ...item, value: e.target.value }
+                                                            : item,
+                                                    ),
+                                                )
+                                            }
+                                            className="min-w-[7rem] flex-1"
+                                            autoComplete="off"
+                                            aria-label={`Tag value ${index + 1}`}
+                                            data-test="greenlake-tag-value"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="shrink-0"
+                                            aria-label={`Remove tag ${index + 1}`}
+                                            data-test="remove-greenlake-tag"
+                                            onClick={() =>
+                                                setGreenLakeTags((prev) =>
+                                                    prev.filter((_, i) => i !== index),
+                                                )
+                                            }
+                                        >
+                                            <Trash2Icon className="size-4" aria-hidden />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <p className="text-muted-foreground text-xs">
+                            Applied to all selected devices. Value may be left blank.
+                        </p>
                     </div>
                 ) : null}
                 {isAssignSubscription ? (
