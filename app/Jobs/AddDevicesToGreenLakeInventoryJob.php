@@ -101,8 +101,8 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             $locationName = $locationId;
         }
 
-        if ($locationId !== '' && $succeededDevices !== []) {
-            $this->assignLocationToSucceededDevices($succeededDevices, $locationId, $locationName);
+        if ($succeededDevices !== [] && ($tags !== null || $locationId !== '')) {
+            $this->applyPostAddMetadata($succeededDevices, $tags, $locationId, $locationName);
         } else {
             foreach ($succeededDevices as $device) {
                 $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
@@ -119,13 +119,100 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
     }
 
     /**
+     * Apply tags and/or location via v2beta1 after a successful inventory add.
+     * Create-time tags are not reliably persisted by GreenLake, so tags are patched after add.
+     *
      * @param  array<int, array{id: int|string, serial: string, mac_address: string}>  $succeededDevices
+     * @param  array<string, string>|null  $tags
      */
-    private function assignLocationToSucceededDevices(
+    private function applyPostAddMetadata(
         array $succeededDevices,
+        ?array $tags,
         string $locationId,
         string $locationName,
     ): void {
+        $resolved = $this->resolveGreenLakeIds($succeededDevices, $tags !== null ? 'tag update' : 'location assignment');
+        if ($resolved === null) {
+            return;
+        }
+
+        ['deviceIds' => $deviceIds, 'localIdByGreenLakeId' => $localIdByGreenLakeId] = $resolved;
+
+        if ($tags !== null) {
+            $assignResult = $this->greenLakeAPIHelper->assignTagsToDevices($deviceIds, $tags);
+            $perDevice = $assignResult['results'] ?? [];
+            $stillOk = [];
+
+            foreach ($localIdByGreenLakeId as $greenlakeId => $device) {
+                $ok = $assignResult['success'] === true;
+                if (array_key_exists($greenlakeId, $perDevice)) {
+                    $ok = $perDevice[$greenlakeId] === true;
+                }
+
+                if ($ok) {
+                    $stillOk[$greenlakeId] = $device;
+                    $this->task->processTaskStatusLog(
+                        "\nApplied GreenLake tags to device {$device['serial']}."
+                    );
+                } else {
+                    $this->markDeviceFailed($device['id']);
+                    $detail = $assignResult['error'] ?? 'GreenLake tag update failed.';
+                    $this->task->processTaskStatusLog(
+                        "\nDevice {$device['serial']} was added to inventory, but tag update failed: {$detail}"
+                    );
+                }
+            }
+
+            if ($assignResult['success'] !== true && ($assignResult['error'] ?? null) !== null) {
+                Log::error('Failed to assign GreenLake tags after inventory add: '.$assignResult['error']);
+            }
+
+            $localIdByGreenLakeId = $stillOk;
+            $deviceIds = array_keys($stillOk);
+        }
+
+        if ($locationId !== '' && $deviceIds !== []) {
+            $assignResult = $this->greenLakeAPIHelper->assignLocationToDevices($deviceIds, $locationId);
+            $perDevice = $assignResult['results'] ?? [];
+
+            foreach ($localIdByGreenLakeId as $greenlakeId => $device) {
+                $ok = $assignResult['success'] === true;
+                if (array_key_exists($greenlakeId, $perDevice)) {
+                    $ok = $perDevice[$greenlakeId] === true;
+                }
+
+                if ($ok) {
+                    $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
+                    $this->task->processTaskStatusLog(
+                        "\nAssigned location \"{$locationName}\" to device {$device['serial']}."
+                    );
+                } else {
+                    $this->markDeviceFailed($device['id']);
+                    $detail = $assignResult['error'] ?? 'GreenLake location assignment failed.';
+                    $this->task->processTaskStatusLog(
+                        "\nDevice {$device['serial']} was added to inventory, but location assignment failed: {$detail}"
+                    );
+                }
+            }
+
+            if ($assignResult['success'] !== true && ($assignResult['error'] ?? null) !== null) {
+                Log::error('Failed to assign GreenLake location: '.$assignResult['error']);
+            }
+
+            return;
+        }
+
+        foreach ($localIdByGreenLakeId as $device) {
+            $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
+        }
+    }
+
+    /**
+     * @param  array<int, array{id: int|string, serial: string, mac_address: string}>  $succeededDevices
+     * @return array{deviceIds: array<int, string>, localIdByGreenLakeId: array<string, array{id: int|string, serial: string, mac_address: string}>}|null
+     */
+    private function resolveGreenLakeIds(array $succeededDevices, string $purpose): ?array
+    {
         $serials = array_map(fn (array $device): string => $device['serial'], $succeededDevices);
         $idsBySerial = $this->greenLakeAPIHelper->deviceIdsBySerial($serials);
 
@@ -134,11 +221,11 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             foreach ($succeededDevices as $device) {
                 $this->markDeviceFailed($device['id']);
                 $this->task->processTaskStatusLog(
-                    "\nDevice {$device['serial']} was added to inventory, but location assignment failed: {$error}"
+                    "\nDevice {$device['serial']} was added to inventory, but {$purpose} failed: {$error}"
                 );
             }
 
-            return;
+            return null;
         }
 
         $deviceIds = [];
@@ -148,7 +235,7 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             if ($greenlakeId === null || $greenlakeId === '') {
                 $this->markDeviceFailed($device['id']);
                 $this->task->processTaskStatusLog(
-                    "\nDevice {$device['serial']} was added to inventory, but its GreenLake device id could not be resolved for location assignment."
+                    "\nDevice {$device['serial']} was added to inventory, but its GreenLake device id could not be resolved for {$purpose}."
                 );
 
                 continue;
@@ -158,35 +245,13 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
         }
 
         if ($deviceIds === []) {
-            return;
+            return null;
         }
 
-        $assignResult = $this->greenLakeAPIHelper->assignLocationToDevices($deviceIds, $locationId);
-        $perDevice = $assignResult['results'] ?? [];
-
-        foreach ($localIdByGreenLakeId as $greenlakeId => $device) {
-            $ok = $assignResult['success'] === true;
-            if (array_key_exists($greenlakeId, $perDevice)) {
-                $ok = $perDevice[$greenlakeId] === true;
-            }
-
-            if ($ok) {
-                $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
-                $this->task->processTaskStatusLog(
-                    "\nAssigned location \"{$locationName}\" to device {$device['serial']}."
-                );
-            } else {
-                $this->markDeviceFailed($device['id']);
-                $detail = $assignResult['error'] ?? 'GreenLake location assignment failed.';
-                $this->task->processTaskStatusLog(
-                    "\nDevice {$device['serial']} was added to inventory, but location assignment failed: {$detail}"
-                );
-            }
-        }
-
-        if ($assignResult['success'] !== true && ($assignResult['error'] ?? null) !== null) {
-            Log::error('Failed to assign GreenLake location: '.$assignResult['error']);
-        }
+        return [
+            'deviceIds' => $deviceIds,
+            'localIdByGreenLakeId' => $localIdByGreenLakeId,
+        ];
     }
 
     public function failed(?Throwable $exception): void

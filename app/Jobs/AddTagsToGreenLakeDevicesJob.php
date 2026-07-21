@@ -54,7 +54,7 @@ class AddTagsToGreenLakeDevicesJob extends BaseTaskJob
 
             $inventory = LicensingInventoryDevice::query()
                 ->where('client_id', $clientId)
-                ->where('serial', $serial)
+                ->whereRaw('UPPER(TRIM(serial)) = ?', [strtoupper($serial)])
                 ->first();
 
             $greenlakeDeviceId = trim((string) ($inventory?->greenlake_device_id ?? ''));

@@ -132,15 +132,41 @@ it('forwards task greenlake_tags into the GreenLake create payload', function ()
     $task->devices()->attach($device->id, ['status' => 'PENDING']);
 
     Http::fake([
-        GreenLakeAPIHelper::BASE_URL.'/devices/v1/devices' => Http::response([
-            'transactionId' => 'async-tags',
-        ], 202),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/devices*' => function ($request) {
+            if ($request->method() === 'POST') {
+                return Http::response(['transactionId' => 'async-tags'], 202, [
+                    'Location' => '/devices/v1/async-operations/async-tags',
+                ]);
+            }
+
+            return Http::response([
+                'items' => [[
+                    'id' => 'gl-dev-tags',
+                    'serialNumber' => 'ADDSN-TAGS',
+                    'macAddress' => 'aa:bb:cc:dd:ee:03',
+                ]],
+                'total' => 1,
+            ], 200);
+        },
         GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-tags' => Http::response([
             'id' => 'async-tags',
             'status' => 'SUCCEEDED',
             'suggestedPollingIntervalSeconds' => 0,
             'result' => [
                 'succeeded' => [['serialNumber' => 'ADDSN-TAGS']],
+            ],
+        ], 200),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
+            'transactionId' => 'async-patch-tags',
+        ], 202, [
+            'Location' => '/devices/v2beta1/async-operations/async-patch-tags',
+        ]),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-patch-tags' => Http::response([
+            'id' => 'async-patch-tags',
+            'status' => 'SUCCEEDED',
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeeded' => [['id' => 'gl-dev-tags']],
             ],
         ], 200),
     ]);
@@ -171,7 +197,21 @@ it('forwards task greenlake_tags into the GreenLake create payload', function ()
             && ($network['tags']['Site'] ?? null) === '';
     });
 
-    expect($task->fresh()->status)->toBe('COMPLETED');
+    Http::assertSent(function ($request) {
+        if ($request->method() !== 'PATCH' || ! str_contains($request->url(), '/devices/v2beta1/devices')) {
+            return false;
+        }
+
+        $body = $request->data();
+
+        return ($body['tags']['Environment'] ?? null) === 'prod'
+            && array_key_exists('Site', $body['tags'] ?? [])
+            && ($body['tags']['Site'] ?? null) === ''
+            && str_contains($request->url(), 'id=gl-dev-tags');
+    });
+
+    expect($task->fresh()->status)->toBe('COMPLETED')
+        ->and($task->devices()->where('devices.id', $device->id)->first()->pivot->status)->toBe('COMPLETED');
 });
 
 it('assigns greenlake location after a successful inventory add', function () {

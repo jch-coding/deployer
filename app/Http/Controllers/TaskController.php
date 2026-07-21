@@ -56,6 +56,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -1235,14 +1236,55 @@ class TaskController extends Controller
                 ]);
             }
 
+            $selectedSerials = $selectedDevices
+                ->map(fn (Device $device) => trim((string) ($device->serial ?? '')))
+                ->filter(fn (string $serial): bool => $serial !== '')
+                ->values();
+
+            if ($selectedSerials->isEmpty()) {
+                return back()->withErrors([
+                    'devices' => 'None of the selected devices have a serial number.',
+                ]);
+            }
+
+            $upperSerials = $selectedSerials
+                ->map(fn (string $serial): string => strtoupper($serial))
+                ->unique()
+                ->values()
+                ->all();
+
             $inventoryBySerial = LicensingInventoryDevice::query()
                 ->where('client_id', $currentClient->id)
-                ->whereIn('serial', $selectedDevices->pluck('serial')->filter()->all())
+                ->whereIn(DB::raw('UPPER(TRIM(serial))'), $upperSerials)
                 ->get()
-                ->keyBy(fn (LicensingInventoryDevice $row) => trim((string) $row->serial));
+                ->keyBy(fn (LicensingInventoryDevice $row) => strtoupper(trim((string) $row->serial)));
+
+            $needsIdResolution = $inventoryBySerial
+                ->filter(fn (LicensingInventoryDevice $row): bool => trim((string) ($row->greenlake_device_id ?? '')) === '')
+                ->map(fn (LicensingInventoryDevice $row): string => trim((string) $row->serial))
+                ->values()
+                ->all();
+
+            if ($needsIdResolution !== []) {
+                $idsBySerial = (new GreenLakeAPIHelper($currentClient))->deviceIdsBySerial($needsIdResolution);
+
+                if (! GreenLakeAPIHelper::isCollectError($idsBySerial)) {
+                    foreach ($inventoryBySerial as $serialKey => $row) {
+                        if (trim((string) ($row->greenlake_device_id ?? '')) !== '') {
+                            continue;
+                        }
+                        $resolvedId = trim((string) ($idsBySerial[trim((string) $row->serial)] ?? ''));
+                        if ($resolvedId === '') {
+                            continue;
+                        }
+                        $row->forceFill(['greenlake_device_id' => $resolvedId])->save();
+                        $inventoryBySerial[$serialKey] = $row;
+                    }
+                }
+            }
 
             $devicesToTag = $selectedDevices->filter(function (Device $device) use ($inventoryBySerial): bool {
-                $serial = trim((string) ($device->serial ?? ''));
+                $serial = strtoupper(trim((string) ($device->serial ?? '')));
                 if ($serial === '' || ! $inventoryBySerial->has($serial)) {
                     return false;
                 }

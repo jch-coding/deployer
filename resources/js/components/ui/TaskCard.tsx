@@ -507,13 +507,6 @@ export default function TaskCard({
         }
 
         if (taskStr === 'ADD_TAGS_TO_GREENLAKE_DEVICES') {
-            const inInventory = devices_for_task.filter((device) => device.in_greenlake_inventory);
-            if (inInventory.length === 0) {
-                toast.error('None of the selected devices are in GreenLake inventory.');
-
-                return;
-            }
-
             const hasTagKey = greenLakeTags.some((row) => row.key.trim() !== '');
             if (!hasTagKey) {
                 toast.error('Add at least one GreenLake tag key before launching this task.');
