@@ -1,0 +1,32 @@
+syntax = "proto2";
+
+// Minimal Monitoring topic subset for device online (STATE_AP / STATE_SWITCH).
+// Field numbers match Classic Central monitoring.proto documentation.
+package aruba.central.monitoring;
+
+enum Status {
+  UP = 1;
+  DOWN = 2;
+}
+
+enum DataElement {
+  STATE_SWITCH = 2;
+  STATE_AP = 4;
+}
+
+message Ap {
+  optional string serial = 2;
+  optional Status status = 6 [default = UP];
+}
+
+message Switch {
+  optional string serial = 2;
+  optional Status status = 6 [default = UP];
+}
+
+message MonitoringInformation {
+  optional string customer_id = 1;
+  repeated DataElement data_elements = 2;
+  repeated Ap aps = 4;
+  repeated Switch switches = 11;
+}

@@ -37,7 +37,7 @@ class CentralWebhookController extends Controller
             return response()->json(['message' => 'Ignored'], 200);
         }
 
-        HandleCentralDeviceOnlineWakeJob::dispatch($client->id, $serial)
+        HandleCentralDeviceOnlineWakeJob::dispatch($client->id, $serial, 'webhook')
             ->onQueue(JobQueueShard::resolve(null));
 
         return response()->json(['message' => 'Accepted'], 200);

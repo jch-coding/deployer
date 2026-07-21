@@ -37,10 +37,13 @@ class FailWaitForOnlineOnTimeoutJob implements ShouldQueue
             return;
         }
 
+        $mode = $workflow->onlineDetectionMode();
+        $via = $mode->usesStreaming() ? 'streaming' : ($mode->usesWebhook() ? 'webhook' : 'online detection');
+
         $orchestrator->processStepResult(
             $workflowDevice,
             ProvisioningStep::WaitForOnline,
-            ProvisioningStepResult::failed('Timed out waiting for device to come online via webhook.'),
+            ProvisioningStepResult::failed("Timed out waiting for device to come online via {$via}."),
         );
     }
 }

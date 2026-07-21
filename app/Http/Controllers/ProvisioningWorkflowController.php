@@ -58,6 +58,7 @@ class ProvisioningWorkflowController extends Controller
             'licensing_synced_at' => $licensingOptions['licensing_synced_at'] ?? null,
             'licensing_error' => $licensingOptions['central_error'] ?? null,
             'has_classic_webhook_secret' => filled($client?->classic_webhook_secret),
+            'has_classic_streaming_credentials' => (bool) $client?->hasClassicStreamingCredentials(),
         ]);
     }
 
@@ -87,11 +88,20 @@ class ProvisioningWorkflowController extends Controller
         $mode = OnlineDetectionMode::tryFrom((string) ($validated['online_detection_mode'] ?? ''))
             ?? OnlineDetectionMode::Poll;
 
+        $deployment->loadMissing('client');
+
         if ($mode === OnlineDetectionMode::Webhook) {
-            $deployment->loadMissing('client');
             if (! filled($deployment->client?->classic_webhook_secret)) {
                 throw ValidationException::withMessages([
                     'online_detection_mode' => 'Webhook online detection requires a Classic Central webhook secret on this client.',
+                ]);
+            }
+        }
+
+        if ($mode === OnlineDetectionMode::Stream) {
+            if (! $deployment->client?->hasClassicStreamingCredentials()) {
+                throw ValidationException::withMessages([
+                    'online_detection_mode' => 'Streaming online detection requires Classic Central streaming hostname, username, and key on this client.',
                 ]);
             }
         }

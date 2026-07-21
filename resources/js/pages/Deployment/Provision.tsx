@@ -71,7 +71,7 @@ type WorkflowPayload = {
     status: string;
     deployment_time: number;
     wait_time: number;
-    online_detection_mode: 'poll' | 'webhook';
+    online_detection_mode: 'poll' | 'webhook' | 'stream';
     started_at: string | null;
     completed_at: string | null;
     summary: { in_progress: number; completed: number; failed: number };
@@ -99,6 +99,7 @@ type ProvisionPageProps = SharedData & {
     licensing_error: string | null;
     selected_device_ids?: number[];
     has_classic_webhook_secret?: boolean;
+    has_classic_streaming_credentials?: boolean;
 };
 
 const selectClassName =
@@ -130,6 +131,7 @@ export default function Provision() {
         flash,
         selected_device_ids: selectedDeviceIdsProp = [],
         has_classic_webhook_secret: hasClassicWebhookSecret = false,
+        has_classic_streaming_credentials: hasClassicStreamingCredentials = false,
     } = usePage<ProvisionPageProps>().props;
 
     const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>(
@@ -140,7 +142,7 @@ export default function Provision() {
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0);
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10);
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(1);
-    const [onlineDetectionMode, setOnlineDetectionMode] = useState<'poll' | 'webhook'>('poll');
+    const [onlineDetectionMode, setOnlineDetectionMode] = useState<'poll' | 'webhook' | 'stream'>('poll');
     const [licensingMode, setLicensingMode] = useState<'uniform' | 'per_device'>('uniform');
     const [uniformLicenseTag, setUniformLicenseTag] = useState('');
     const [uniformLicenseType, setUniformLicenseType] = useState<LicenseTypeOption | ''>('');
@@ -296,11 +298,31 @@ export default function Provision() {
                                                 />
                                                 Webhook
                                             </label>
+                                            <label
+                                                className={cn(
+                                                    'flex items-center gap-2',
+                                                    !hasClassicStreamingCredentials && 'opacity-50',
+                                                )}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    checked={onlineDetectionMode === 'stream'}
+                                                    disabled={!hasClassicStreamingCredentials}
+                                                    onChange={() => setOnlineDetectionMode('stream')}
+                                                />
+                                                Streaming API
+                                            </label>
                                         </div>
                                         {!hasClassicWebhookSecret ? (
                                             <p className="text-xs text-muted-foreground">
                                                 Configure a Classic Central webhook secret on the client to enable
                                                 webhook detection.
+                                            </p>
+                                        ) : null}
+                                        {!hasClassicStreamingCredentials ? (
+                                            <p className="text-xs text-muted-foreground">
+                                                Configure Classic Central streaming hostname, username, and key on the
+                                                client to enable streaming detection.
                                             </p>
                                         ) : null}
                                     </div>
@@ -531,7 +553,9 @@ export default function Provision() {
                                 <span className="font-medium text-foreground">
                                     {workflow.online_detection_mode === 'webhook'
                                         ? 'Webhook'
-                                        : 'Poll Central'}
+                                        : workflow.online_detection_mode === 'stream'
+                                          ? 'Streaming API'
+                                          : 'Poll Central'}
                                 </span>
                             </span>
                         </div>

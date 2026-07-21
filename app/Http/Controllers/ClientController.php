@@ -189,6 +189,48 @@ class ClientController extends Controller
             );
         }
 
+        if (
+            $request->has('classic_streaming_hostname')
+            || $request->has('classic_streaming_username')
+            || $request->has('classic_streaming_key')
+            || $request->boolean('clear_classic_streaming_key')
+        ) {
+            $validated = $request->validate([
+                'classic_streaming_hostname' => 'sometimes|nullable|string|max:255',
+                'classic_streaming_username' => 'sometimes|nullable|string|max:255',
+                'classic_streaming_key' => 'sometimes|nullable|string|max:65535',
+                'clear_classic_streaming_key' => 'sometimes|boolean',
+            ]);
+
+            $updates = [];
+
+            if (array_key_exists('classic_streaming_hostname', $validated)) {
+                $hostname = trim((string) ($validated['classic_streaming_hostname'] ?? ''));
+                $updates['classic_streaming_hostname'] = $hostname !== '' ? $hostname : null;
+            }
+
+            if (array_key_exists('classic_streaming_username', $validated)) {
+                $username = trim((string) ($validated['classic_streaming_username'] ?? ''));
+                $updates['classic_streaming_username'] = $username !== '' ? $username : null;
+            }
+
+            if ($request->boolean('clear_classic_streaming_key')) {
+                $updates['classic_streaming_key'] = null;
+            } elseif (array_key_exists('classic_streaming_key', $validated)) {
+                $key = trim((string) ($validated['classic_streaming_key'] ?? ''));
+                $updates['classic_streaming_key'] = $key !== '' ? $key : null;
+            }
+
+            if ($updates !== []) {
+                $client->update($updates);
+            }
+
+            return to_route('clients.index')->with(
+                'success',
+                'Classic Central streaming settings saved.',
+            );
+        }
+
         $client->update($validated);
         session()->flash('success', 'Client updated successfully.');
 

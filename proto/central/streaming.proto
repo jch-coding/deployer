@@ -1,0 +1,13 @@
+syntax = "proto2";
+
+// Minimal Classic Central Streaming envelope (field numbers from Aruba docs).
+// Full official protos can replace these; Deployer only needs MsgProto + monitoring state.
+package aruba.central.streaming;
+
+message MsgProto {
+  optional string subject = 2;
+  optional bytes data = 3;
+  optional int64 timestamp = 4;
+  optional string customer_id = 5;
+  optional string msp_id = 6;
+}

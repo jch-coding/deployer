@@ -71,12 +71,20 @@ class Client extends Model
             'classic_refresh_token' => 'encrypted',
             'classic_expires_in' => 'datetime',
             'classic_webhook_secret' => 'encrypted',
+            'classic_streaming_key' => 'encrypted',
         ];
     }
 
     public function classicWebhookUrl(): string
     {
         return url('/webhooks/central/'.$this->getKey());
+    }
+
+    public function hasClassicStreamingCredentials(): bool
+    {
+        return filled($this->classic_streaming_hostname)
+            && filled($this->classic_streaming_key)
+            && filled($this->classic_streaming_username);
     }
 
     protected function baseURL(): Attribute

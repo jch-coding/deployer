@@ -49,7 +49,7 @@ class ProvisioningWorkflowOrchestrator
             $stepRow->markInProgress($result->message);
 
             if ($step === ProvisioningStep::WaitForOnline
-                && $workflowDevice->workflow->onlineDetectionMode()->usesWebhook()) {
+                && $workflowDevice->workflow->onlineDetectionMode()->waitsForExternalWake()) {
                 $this->scheduleWaitForOnlineTimeout($workflowDevice);
             }
 

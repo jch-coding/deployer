@@ -15,6 +15,10 @@ type Client = {
     classic_webhook_url?: string;
     has_classic_webhook_secret?: boolean;
     classic_webhook_wid?: string | null;
+    classic_streaming_hostname?: string | null;
+    classic_streaming_username?: string | null;
+    has_classic_streaming_key?: boolean;
+    has_classic_streaming_credentials?: boolean;
 }
 
 const base_urls = ["ae1", "au1", "ca1", "de1", "de2", "de3", "gb1", "in", "jp1", "us1", "us2", "us4", "us5", "us6"] as const

@@ -47,7 +47,7 @@ class MarkDeviceOnlineIfWaiting
         return true;
     }
 
-    public function forSerial(int $clientId, string $serial): void
+    public function forSerial(int $clientId, string $serial, OnlineDetectionMode $mode): void
     {
         $waitingDevices = ProvisioningWorkflowDevice::query()
             ->where('overall_status', 'in_progress')
@@ -59,7 +59,7 @@ class MarkDeviceOnlineIfWaiting
                 ->where('client_id', $clientId))
             ->whereHas('workflow', fn ($query) => $query
                 ->whereNotIn('status', ['completed', 'cancelled'])
-                ->where('online_detection_mode', OnlineDetectionMode::Webhook->value))
+                ->where('online_detection_mode', $mode->value))
             ->with(['device', 'steps', 'workflow.deployment.client'])
             ->get();
 

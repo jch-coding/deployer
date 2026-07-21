@@ -135,7 +135,8 @@ it('dispatches a wake job for new ap detected alerts', function () {
 
     Queue::assertPushed(HandleCentralDeviceOnlineWakeJob::class, function (HandleCentralDeviceOnlineWakeJob $job) use ($ctx) {
         return $job->clientId === $ctx['client']->id
-            && $job->serial === $ctx['device']->serial;
+            && $job->serial === $ctx['device']->serial
+            && $job->mode === 'webhook';
     });
 });
 

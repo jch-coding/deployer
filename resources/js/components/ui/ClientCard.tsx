@@ -20,13 +20,18 @@ import { type Client } from '@/types/clients/client';
 export default function ClientCard({ client, errors, base_urls, isCurrentClient } : { client: Client, errors: Record<string, string>, base_urls: string[], isCurrentClient: boolean }) {
     const [tokensOpen, setTokensOpen] = useState(false);
     const [webhookOpen, setWebhookOpen] = useState(false);
+    const [streamingOpen, setStreamingOpen] = useState(false);
     const [classicClientId, setClassicClientId] = useState(client.classic_client_id ?? '');
     const [classicRefreshToken, setClassicRefreshToken] = useState('');
     const [classicAccessToken, setClassicAccessToken] = useState('');
     const [webhookSecret, setWebhookSecret] = useState('');
     const [webhookWid, setWebhookWid] = useState(client.classic_webhook_wid ?? '');
+    const [streamingHostname, setStreamingHostname] = useState(client.classic_streaming_hostname ?? '');
+    const [streamingUsername, setStreamingUsername] = useState(client.classic_streaming_username ?? '');
+    const [streamingKey, setStreamingKey] = useState('');
     const [savingTokens, setSavingTokens] = useState(false);
     const [savingWebhook, setSavingWebhook] = useState(false);
+    const [savingStreaming, setSavingStreaming] = useState(false);
 
     useEffect(() => {
         setClassicClientId(client.classic_client_id ?? '');
@@ -36,8 +41,15 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
         setWebhookWid(client.classic_webhook_wid ?? '');
     }, [client.classic_webhook_wid]);
 
+    useEffect(() => {
+        setStreamingHostname(client.classic_streaming_hostname ?? '');
+        setStreamingUsername(client.classic_streaming_username ?? '');
+    }, [client.classic_streaming_hostname, client.classic_streaming_username]);
+
     const classicClientIdChanged = classicClientId.trim() !== (client.classic_client_id ?? '');
     const webhookWidChanged = webhookWid.trim() !== (client.classic_webhook_wid ?? '');
+    const streamingHostnameChanged = streamingHostname.trim() !== (client.classic_streaming_hostname ?? '');
+    const streamingUsernameChanged = streamingUsername.trim() !== (client.classic_streaming_username ?? '');
 
     const saveClassicTokens = () => {
         const clientId = classicClientId.trim();
@@ -96,6 +108,35 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
         || classicAccessToken.trim().length > 0;
 
     const canSaveWebhook = webhookSecret.trim().length > 0 || webhookWidChanged;
+
+    const saveStreamingSettings = (clearKey = false) => {
+        const key = streamingKey.trim();
+        if (!clearKey && !key && !streamingHostnameChanged && !streamingUsernameChanged) {
+            return;
+        }
+
+        setSavingStreaming(true);
+        router.put(
+            update(client.id).url,
+            {
+                ...(streamingHostnameChanged ? { classic_streaming_hostname: streamingHostname.trim() } : {}),
+                ...(streamingUsernameChanged ? { classic_streaming_username: streamingUsername.trim() } : {}),
+                ...(clearKey ? { clear_classic_streaming_key: true } : {}),
+                ...(!clearKey && key ? { classic_streaming_key: key } : {}),
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setSavingStreaming(false);
+                    setStreamingKey('');
+                },
+            },
+        );
+    };
+
+    const canSaveStreaming = streamingHostnameChanged
+        || streamingUsernameChanged
+        || streamingKey.trim().length > 0;
 
     return (
         <Card key={client.client_id} className={isCurrentClient ? "border-2 border-orange-400 shadow-slate-400" : ""}>
@@ -302,6 +343,90 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                                     onClick={() => saveWebhookSettings(true)}
                                 >
                                     Clear secret
+                                </Button>
+                            </div>
+                        </CollapsibleContent>
+                    </Collapsible>
+                    <Collapsible open={streamingOpen} onOpenChange={setStreamingOpen}>
+                        <CollapsibleTrigger asChild>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full justify-between"
+                                aria-expanded={streamingOpen}
+                            >
+                                <span>Classic Central streaming</span>
+                                <ChevronDown
+                                    className={cn(
+                                        'size-4 shrink-0 transition-transform',
+                                        streamingOpen && 'rotate-180',
+                                    )}
+                                    aria-hidden
+                                />
+                            </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-3 space-y-3">
+                            <p className="text-muted-foreground text-xs">
+                                From Account Home → Webhooks → Streaming, copy the endpoint host and key, subscribe to
+                                Monitoring, and use your Central user email as the username.
+                            </p>
+                            <div className="w-full space-y-1">
+                                <label htmlFor={`classic-streaming-hostname-${client.id}`} className="text-sm font-medium">
+                                    Hostname
+                                </label>
+                                <Input
+                                    id={`classic-streaming-hostname-${client.id}`}
+                                    type="text"
+                                    autoComplete="off"
+                                    placeholder="internal-ui.central.arubanetworks.com"
+                                    value={streamingHostname}
+                                    onChange={(e) => setStreamingHostname(e.target.value)}
+                                />
+                            </div>
+                            <div className="w-full space-y-1">
+                                <label htmlFor={`classic-streaming-username-${client.id}`} className="text-sm font-medium">
+                                    Username (email)
+                                </label>
+                                <Input
+                                    id={`classic-streaming-username-${client.id}`}
+                                    type="email"
+                                    autoComplete="off"
+                                    value={streamingUsername}
+                                    onChange={(e) => setStreamingUsername(e.target.value)}
+                                />
+                            </div>
+                            <div className="w-full space-y-1">
+                                <label htmlFor={`classic-streaming-key-${client.id}`} className="text-sm font-medium">
+                                    Streaming key
+                                </label>
+                                <Input
+                                    id={`classic-streaming-key-${client.id}`}
+                                    type="password"
+                                    autoComplete="off"
+                                    placeholder={client.has_classic_streaming_key ? '••••••••' : ''}
+                                    value={streamingKey}
+                                    onChange={(e) => setStreamingKey(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    className="flex-1"
+                                    disabled={savingStreaming || !canSaveStreaming}
+                                    onClick={() => saveStreamingSettings(false)}
+                                >
+                                    Save
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1"
+                                    disabled={savingStreaming || !client.has_classic_streaming_key}
+                                    onClick={() => saveStreamingSettings(true)}
+                                >
+                                    Clear key
                                 </Button>
                             </div>
                         </CollapsibleContent>
