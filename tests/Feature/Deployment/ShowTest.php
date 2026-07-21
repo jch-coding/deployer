@@ -4,6 +4,7 @@ use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\LicensingInventoryDevice;
 use App\Models\Site;
 use App\Models\Task;
 use App\Models\User;
@@ -81,6 +82,35 @@ it('includes site and group on devices and central scope options', function () {
             ->where('device_group_options.1.isClassic', true)
             ->has('central_sites_cache.refreshed_at')
             ->has('central_groups_cache.refreshed_at'));
+});
+
+it('includes greenlake inventory model when present and blank when missing', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $inInventory = Device::factory()->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-IN-INV',
+    ]);
+    $notInInventory = Device::factory()->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-NOT-IN-INV',
+    ]);
+
+    LicensingInventoryDevice::factory()->for($this->client)->create([
+        'serial' => $inInventory->serial,
+        'model' => '6300M',
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Show')
+            ->where('devices.0.id', $inInventory->id)
+            ->where('devices.0.model', '6300M')
+            ->where('devices.1.id', $notInInventory->id)
+            ->where('devices.1.model', null));
 });
 
 it('returns all devices in a flat array', function () {

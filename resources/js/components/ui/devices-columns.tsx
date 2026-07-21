@@ -42,6 +42,7 @@ export type DeviceDef = {
     id: number;
     name: string;
     serial: string | number;
+    model?: string | null;
     device_function: string;
     mac_address?: string | null;
     site?: string | null;
@@ -413,7 +414,13 @@ export function createDeploymentShowColumns(
 ): ColumnDef<DeviceDef>[] {
     return [
         deploymentShowSelectColumn,
-        ...sharedDeviceColumns,
+        ...sharedDeviceColumns.slice(0, 2),
+        {
+            accessorKey: 'model',
+            header: 'Model',
+            cell: ({ row }) => row.original.model ?? '',
+        },
+        ...sharedDeviceColumns.slice(2),
         {
             accessorKey: 'site',
             header: 'Site',

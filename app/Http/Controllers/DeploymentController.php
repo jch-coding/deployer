@@ -8,6 +8,7 @@ use App\LicenseType;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\LicensingInventoryDevice;
 use App\Models\Task;
 use App\Services\CentralScopeCacheService;
 use App\Services\DeploymentCriticalCheckService;
@@ -88,13 +89,21 @@ class DeploymentController extends Controller
             }
         )->values()->all());
 
-        $devices = $deployment->devices()
+        $deploymentDevices = $deployment->devices()
             ->with('site')
-            ->get()
+            ->get();
+
+        $inventoryModelsBySerial = LicensingInventoryDevice::query()
+            ->where('client_id', $deployment->client_id)
+            ->whereIn('serial', $deploymentDevices->pluck('serial')->filter()->all())
+            ->pluck('model', 'serial');
+
+        $devices = $deploymentDevices
             ->map(fn (Device $device) => [
                 'id' => $device->id,
                 'name' => $device->name,
                 'serial' => $device->serial,
+                'model' => $inventoryModelsBySerial[$device->serial] ?? null,
                 'device_function' => $device->device_function,
                 'mac_address' => $device->mac_address,
                 'site' => $device->site?->name,

@@ -205,6 +205,9 @@ function filterDeploymentDevices(
         (d) =>
             String(d.name).toLowerCase().includes(q) ||
             String(d.serial).toLowerCase().includes(q) ||
+            String(d.model ?? '')
+                .toLowerCase()
+                .includes(q) ||
             String(d.device_function).toLowerCase().includes(q),
     );
 }
@@ -661,10 +664,10 @@ export default function Show() {
                 type="search"
                 value={deviceTableSearch}
                 onChange={(e) => setDeviceTableSearch(e.target.value)}
-                placeholder="Search name, serial, or function…"
+                placeholder="Search name, serial, model, or function…"
                 className="pl-9"
                 data-test="devices-search"
-                aria-label="Search devices by name, serial, or device function"
+                aria-label="Search devices by name, serial, model, or device function"
             />
         </div>
     );
