@@ -675,7 +675,10 @@ class GreenLakeAPIHelper
                 $operationId,
                 $chunk,
                 $sleepBetweenPolls,
-                asyncOperationPath: $this->devicesV2['async_operation'],
+                asyncOperationPath: $this->extractAsyncOperationPath(
+                    $response,
+                    $this->devicesV2['async_operation'],
+                ),
             );
 
             $lastStatus = $result['status'];
@@ -808,7 +811,10 @@ class GreenLakeAPIHelper
                 $operationId,
                 $chunk,
                 $sleepBetweenPolls,
-                asyncOperationPath: $this->devicesV2['async_operation'],
+                asyncOperationPath: $this->extractAsyncOperationPath(
+                    $response,
+                    $this->devicesV2['async_operation'],
+                ),
             );
 
             $lastStatus = $result['status'];
@@ -971,6 +977,23 @@ class GreenLakeAPIHelper
         }
 
         return trim((string) ($response->json('transactionId') ?? ''));
+    }
+
+    /**
+     * Resolve the async-operations path template from the Location header when present.
+     * GreenLake v2beta1 device patches often return a v1 Location.
+     */
+    private function extractAsyncOperationPath(Response $response, string $fallbackPath): string
+    {
+        $location = (string) ($response->header('Location') ?? '');
+        if (
+            $location !== ''
+            && preg_match('#(?P<path>/devices/[^/]+/async-operations)/[^/?]+#', $location, $matches) === 1
+        ) {
+            return $matches['path'].'/{id}';
+        }
+
+        return $fallbackPath;
     }
 
     /**
@@ -1161,8 +1184,16 @@ class GreenLakeAPIHelper
             return $results;
         }
 
-        $succeeded = $resultPayload['succeeded'] ?? $resultPayload['successful'] ?? $resultPayload['success'] ?? null;
-        $failed = $resultPayload['failed'] ?? $resultPayload['failures'] ?? $resultPayload['unsuccessful'] ?? null;
+        $succeeded = $resultPayload['succeeded']
+            ?? $resultPayload['succeededDevices']
+            ?? $resultPayload['successful']
+            ?? $resultPayload['success']
+            ?? null;
+        $failed = $resultPayload['failed']
+            ?? $resultPayload['failedDevices']
+            ?? $resultPayload['failures']
+            ?? $resultPayload['unsuccessful']
+            ?? null;
 
         foreach ($this->extractSerialsFromAsyncResultList($succeeded) as $serial) {
             $results[$serial] = true;
@@ -1194,7 +1225,7 @@ class GreenLakeAPIHelper
             if (! is_array($item)) {
                 continue;
             }
-            $serial = trim((string) ($item['serialNumber'] ?? $item['serial'] ?? ''));
+            $serial = trim((string) ($item['serialNumber'] ?? $item['serial'] ?? $item['id'] ?? ''));
             if ($serial !== '') {
                 $serials[] = $serial;
             }

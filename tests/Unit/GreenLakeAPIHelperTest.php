@@ -598,14 +598,14 @@ test('assignLocationToDevices patches v2beta1 with location id and polls async o
         GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
             'transactionId' => 'async-loc',
         ], 202, [
-            'Location' => '/devices/v2beta1/async-operations/async-loc',
+            'Location' => '/devices/v1/async-operations/async-loc',
         ]),
-        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-loc' => Http::response([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-loc' => Http::response([
             'id' => 'async-loc',
             'status' => 'SUCCEEDED',
             'suggestedPollingIntervalSeconds' => 0,
             'result' => [
-                'succeeded' => [['id' => 'dev-1']],
+                'succeededDevices' => [['id' => 'dev-1']],
             ],
         ], 200),
     ]);
@@ -646,14 +646,14 @@ test('assignTagsToDevices patches v2beta1 with tags and polls async operation', 
         GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
             'transactionId' => 'async-tags',
         ], 202, [
-            'Location' => '/devices/v2beta1/async-operations/async-tags',
+            'Location' => '/devices/v1/async-operations/async-tags',
         ]),
-        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-tags' => Http::response([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-tags' => Http::response([
             'id' => 'async-tags',
             'status' => 'SUCCEEDED',
             'suggestedPollingIntervalSeconds' => 0,
             'result' => [
-                'succeeded' => [['id' => 'dev-1']],
+                'succeededDevices' => [['id' => 'dev-1']],
             ],
         ], 200),
     ]);

@@ -159,14 +159,14 @@ it('forwards task greenlake_tags into the GreenLake create payload', function ()
         GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
             'transactionId' => 'async-patch-tags',
         ], 202, [
-            'Location' => '/devices/v2beta1/async-operations/async-patch-tags',
+            'Location' => '/devices/v1/async-operations/async-patch-tags',
         ]),
-        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-patch-tags' => Http::response([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-patch-tags' => Http::response([
             'id' => 'async-patch-tags',
             'status' => 'SUCCEEDED',
             'suggestedPollingIntervalSeconds' => 0,
             'result' => [
-                'succeeded' => [['id' => 'gl-dev-tags']],
+                'succeededDevices' => [['id' => 'gl-dev-tags']],
             ],
         ], 200),
     ]);
@@ -260,14 +260,14 @@ it('assigns greenlake location after a successful inventory add', function () {
         GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
             'transactionId' => 'async-assign-loc',
         ], 202, [
-            'Location' => '/devices/v2beta1/async-operations/async-assign-loc',
+            'Location' => '/devices/v1/async-operations/async-assign-loc',
         ]),
-        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-assign-loc' => Http::response([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-assign-loc' => Http::response([
             'id' => 'async-assign-loc',
             'status' => 'SUCCEEDED',
             'suggestedPollingIntervalSeconds' => 0,
             'result' => [
-                'succeeded' => [['id' => 'gl-dev-loc']],
+                'succeededDevices' => [['id' => 'gl-dev-loc']],
             ],
         ], 200),
     ]);

@@ -50,14 +50,14 @@ it('forwards task greenlake_tags into the GreenLake v2beta1 patch payload', func
         GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
             'transactionId' => 'async-tags-ok',
         ], 202, [
-            'Location' => '/devices/v2beta1/async-operations/async-tags-ok',
+            'Location' => '/devices/v1/async-operations/async-tags-ok',
         ]),
-        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-tags-ok' => Http::response([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-tags-ok' => Http::response([
             'id' => 'async-tags-ok',
             'status' => 'SUCCEEDED',
             'suggestedPollingIntervalSeconds' => 0,
             'result' => [
-                'succeeded' => [['id' => 'gl-tag-1']],
+                'succeededDevices' => [['id' => 'gl-tag-1']],
             ],
         ], 200),
     ]);
@@ -115,14 +115,14 @@ it('marks devices failed when GreenLake tag update fails', function () {
         GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
             'transactionId' => 'async-tags-fail',
         ], 202, [
-            'Location' => '/devices/v2beta1/async-operations/async-tags-fail',
+            'Location' => '/devices/v1/async-operations/async-tags-fail',
         ]),
-        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/async-operations/async-tags-fail' => Http::response([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-tags-fail' => Http::response([
             'id' => 'async-tags-fail',
             'status' => 'FAILED',
             'suggestedPollingIntervalSeconds' => 0,
             'result' => [
-                'failed' => [['id' => 'gl-tag-2']],
+                'failedDevices' => [['id' => 'gl-tag-2']],
             ],
         ], 200),
     ]);
