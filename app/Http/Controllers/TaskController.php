@@ -1554,87 +1554,185 @@ class TaskController extends Controller
         return back();
     }
 
-    public function checkGreenLakeInventory(
+    public function checkGreenLakeInventoryStep(
         Request $request,
         Deployment $deployment,
+        int $step,
         LicensingSyncService $licensingSyncService,
     ) {
-        $request->validate([
-            'task_type' => ['required', Rule::in(['ADD_DEVICES_TO_GREENLAKE_INVENTORY'])],
-        ]);
-
         $currentClient = $request->user()->currentClient();
         if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
-            session()->flash('error', 'Please set current client to match this deployment before checking GreenLake inventory.');
-
-            return back();
+            return response()->json([
+                'message' => 'Please set current client to match this deployment before checking GreenLake inventory.',
+            ], 403);
         }
 
         $devices = Device::query()
             ->where('deployment_id', $deployment->id)
+            ->orderBy('id')
             ->get();
 
         if ($devices->isEmpty()) {
-            session()->flash('error', 'No devices are in this deployment.');
-
-            return back();
+            return response()->json(['message' => 'No devices are in this deployment.'], 422);
         }
 
-        try {
-            $licensingSyncService->syncFromCentral(
-                $currentClient,
-                new CentralAPIHelper($currentClient),
-                new GreenLakeAPIHelper($currentClient),
+        $total = 1 + $devices->count();
+
+        if ($step < 0 || $step >= $total) {
+            abort(404);
+        }
+
+        $current = min($step + 1, $total);
+        $percent = $total > 0 ? (int) round(($current / $total) * 100) : 100;
+        $done = $current >= $total;
+
+        if ($step === 0) {
+            try {
+                $licensingSyncService->syncFromCentral(
+                    $currentClient,
+                    new CentralAPIHelper($currentClient),
+                    new GreenLakeAPIHelper($currentClient),
+                );
+            } catch (LicensingSyncException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return response()->json([
+                'progress' => [
+                    'current' => $current,
+                    'total' => $total,
+                    'percent' => $percent,
+                    'message' => 'Syncing GreenLake inventory...',
+                ],
+                'partial' => [
+                    'missing_from_inventory' => [],
+                    'missing_mac' => [],
+                ],
+                'done' => false,
+            ]);
+        }
+
+        /** @var Device $device */
+        $device = $devices[$step - 1];
+        $inventorySerials = $this->greenLakeInventorySerials((int) $currentClient->id);
+        [$missingFromInventory, $missingMac] = $this->greenLakeDeviceCheckPartials($device, $inventorySerials);
+
+        $payload = [
+            'progress' => [
+                'current' => $current,
+                'total' => $total,
+                'percent' => $percent,
+                'message' => $this->greenLakeDeviceCheckMessage($device),
+            ],
+            'partial' => [
+                'missing_from_inventory' => $missingFromInventory,
+                'missing_mac' => $missingMac,
+            ],
+            'done' => $done,
+        ];
+
+        if ($done) {
+            $allMissingFromInventory = [];
+            $allMissingMac = [];
+            foreach ($devices as $deploymentDevice) {
+                [$deviceMissingInventory, $deviceMissingMac] = $this->greenLakeDeviceCheckPartials(
+                    $deploymentDevice,
+                    $inventorySerials,
+                );
+                array_push($allMissingFromInventory, ...$deviceMissingInventory);
+                array_push($allMissingMac, ...$deviceMissingMac);
+            }
+
+            $payload['summary'] = $this->buildGreenLakeInventorySummary(
+                $allMissingFromInventory,
+                $allMissingMac,
             );
-        } catch (LicensingSyncException $e) {
-            session()->flash('error', $e->getMessage());
-
-            return back();
         }
 
-        $inventorySerials = LicensingInventoryDevice::query()
-            ->where('client_id', $currentClient->id)
+        return response()->json($payload);
+    }
+
+    /**
+     * @return Collection<string, int>
+     */
+    protected function greenLakeInventorySerials(int $clientId): Collection
+    {
+        return LicensingInventoryDevice::query()
+            ->where('client_id', $clientId)
             ->pluck('serial')
             ->map(fn ($serial) => trim((string) $serial))
             ->filter(fn (string $serial): bool => $serial !== '')
             ->unique()
             ->flip();
+    }
 
-        $missingFromInventory = $devices
-            ->filter(function (Device $device) use ($inventorySerials): bool {
-                $serial = trim((string) ($device->serial ?? ''));
+    protected function greenLakeDeviceLabel(Device $device): string
+    {
+        return trim((string) ($device->serial ?? $device->name));
+    }
 
-                return $serial === '' || ! $inventorySerials->has($serial);
-            })
-            ->map(fn (Device $device): string => trim((string) ($device->serial ?? $device->name)))
-            ->filter(fn (string $serial): bool => $serial !== '')
-            ->values()
-            ->all();
+    protected function greenLakeDeviceCheckMessage(Device $device): string
+    {
+        $name = trim((string) ($device->name ?? ''));
+        $serial = trim((string) ($device->serial ?? ''));
 
-        $missingMac = $devices
-            ->filter(fn (Device $device): bool => trim((string) ($device->mac_address ?? '')) === '')
-            ->map(fn (Device $device): string => trim((string) ($device->serial ?? $device->name)))
-            ->filter(fn (string $serial): bool => $serial !== '')
-            ->values()
-            ->all();
+        if ($name !== '' && $serial !== '') {
+            return "Checking {$name} ({$serial})...";
+        }
 
+        $label = $name !== '' ? $name : $serial;
+
+        return $label !== '' ? "Checking {$label}..." : 'Checking device...';
+    }
+
+    /**
+     * @param  Collection<string, int>  $inventorySerials
+     * @return array{0: list<string>, 1: list<string>}
+     */
+    protected function greenLakeDeviceCheckPartials(Device $device, Collection $inventorySerials): array
+    {
+        $label = $this->greenLakeDeviceLabel($device);
+        $missingFromInventory = [];
+        $missingMac = [];
+
+        $serial = trim((string) ($device->serial ?? ''));
+        if ($serial === '' || ! $inventorySerials->has($serial)) {
+            if ($label !== '') {
+                $missingFromInventory[] = $label;
+            }
+        }
+
+        if (trim((string) ($device->mac_address ?? '')) === '') {
+            if ($label !== '') {
+                $missingMac[] = $label;
+            }
+        }
+
+        return [$missingFromInventory, $missingMac];
+    }
+
+    /**
+     * @param  list<string>  $missingFromInventory
+     * @param  list<string>  $missingMac
+     * @return array{ok: bool, message: string}
+     */
+    protected function buildGreenLakeInventorySummary(array $missingFromInventory, array $missingMac): array
+    {
         if ($missingFromInventory === []) {
             $message = 'All deployment devices are present in GreenLake inventory.';
             if ($missingMac !== []) {
                 $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
             }
-            session()->flash('success', $message);
-            session()->flash('missing_greenlake_inventory', []);
-        } else {
-            $message = 'These devices were not found in GreenLake inventory: '.implode(', ', $missingFromInventory).'.';
-            if ($missingMac !== []) {
-                $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
-            }
-            session()->flash('error', $message);
-            session()->flash('missing_greenlake_inventory', $missingFromInventory);
+
+            return ['ok' => true, 'message' => $message];
         }
 
-        return back();
+        $message = 'These devices were not found in GreenLake inventory: '.implode(', ', $missingFromInventory).'.';
+        if ($missingMac !== []) {
+            $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
+        }
+
+        return ['ok' => false, 'message' => $message];
     }
 
     public function checkLagPortLists(Request $request, Deployment $deployment)

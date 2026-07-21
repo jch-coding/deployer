@@ -26,7 +26,7 @@ beforeEach(function () {
     $this->actingAs($this->user);
 });
 
-test('check greenlake inventory flashes success when all devices are present', function () {
+test('check greenlake inventory step 0 syncs and reports progress', function () {
     Device::factory()->create([
         'client_id' => $this->client->id,
         'user_id' => $this->user->id,
@@ -45,26 +45,68 @@ test('check greenlake inventory flashes success when all devices are present', f
         ]],
     );
 
-    $this->post(route('tasks.check_greenlake_inventory', $this->deployment), [
-        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
-    ])
-        ->assertRedirect()
-        ->assertSessionHas('success', 'All deployment devices are present in GreenLake inventory.')
-        ->assertSessionHas('missing_greenlake_inventory', []);
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 0]))
+        ->assertOk()
+        ->assertJsonPath('progress.current', 1)
+        ->assertJsonPath('progress.total', 2)
+        ->assertJsonPath('progress.message', 'Syncing GreenLake inventory...')
+        ->assertJsonPath('done', false)
+        ->assertJsonPath('partial.missing_from_inventory', [])
+        ->assertJsonPath('partial.missing_mac', []);
 });
 
-test('check greenlake inventory flashes error listing devices missing from inventory', function () {
+test('check greenlake inventory steps succeed when all devices are present', function () {
+    $device = Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'name' => 'AP-One',
+        'serial' => 'SN-IN-GL-001',
+        'mac_address' => 'aa:bb:cc:dd:ee:01',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-IN-GL-001',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+        ]],
+    );
+
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 0]))
+        ->assertOk();
+
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 1]))
+        ->assertOk()
+        ->assertJsonPath('progress.current', 2)
+        ->assertJsonPath('progress.total', 2)
+        ->assertJsonPath('progress.message', "Checking {$device->name} ({$device->serial})...")
+        ->assertJsonPath('done', true)
+        ->assertJsonPath('partial.missing_from_inventory', [])
+        ->assertJsonPath('partial.missing_mac', [])
+        ->assertJsonPath('summary.ok', true)
+        ->assertJsonPath(
+            'summary.message',
+            'All deployment devices are present in GreenLake inventory.',
+        );
+});
+
+test('check greenlake inventory steps report devices missing from inventory', function () {
     Device::factory()->create([
         'client_id' => $this->client->id,
         'user_id' => $this->user->id,
         'deployment_id' => $this->deployment->id,
+        'name' => 'Missing-AP',
         'serial' => 'SN-MISSING-001',
         'mac_address' => 'aa:bb:cc:dd:ee:02',
     ]);
-    Device::factory()->create([
+    $present = Device::factory()->create([
         'client_id' => $this->client->id,
         'user_id' => $this->user->id,
         'deployment_id' => $this->deployment->id,
+        'name' => 'Present-AP',
         'serial' => 'SN-PRESENT-001',
         'mac_address' => 'aa:bb:cc:dd:ee:03',
     ]);
@@ -79,12 +121,24 @@ test('check greenlake inventory flashes error listing devices missing from inven
         ]],
     );
 
-    $this->post(route('tasks.check_greenlake_inventory', $this->deployment), [
-        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
-    ])
-        ->assertRedirect()
-        ->assertSessionHas('error', 'These devices were not found in GreenLake inventory: SN-MISSING-001.')
-        ->assertSessionHas('missing_greenlake_inventory', ['SN-MISSING-001']);
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 0]))
+        ->assertOk();
+
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 1]))
+        ->assertOk()
+        ->assertJsonPath('partial.missing_from_inventory', ['SN-MISSING-001'])
+        ->assertJsonPath('done', false);
+
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 2]))
+        ->assertOk()
+        ->assertJsonPath('progress.message', "Checking {$present->name} ({$present->serial})...")
+        ->assertJsonPath('partial.missing_from_inventory', [])
+        ->assertJsonPath('done', true)
+        ->assertJsonPath('summary.ok', false)
+        ->assertJsonPath(
+            'summary.message',
+            'These devices were not found in GreenLake inventory: SN-MISSING-001.',
+        );
 });
 
 test('check greenlake inventory notes devices missing mac_address', function () {
@@ -106,17 +160,21 @@ test('check greenlake inventory notes devices missing mac_address', function () 
         ]],
     );
 
-    $this->post(route('tasks.check_greenlake_inventory', $this->deployment), [
-        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
-    ])
-        ->assertRedirect()
-        ->assertSessionHas(
-            'success',
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 0]))
+        ->assertOk();
+
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 1]))
+        ->assertOk()
+        ->assertJsonPath('done', true)
+        ->assertJsonPath('partial.missing_mac', ['SN-NO-MAC-001'])
+        ->assertJsonPath('summary.ok', true)
+        ->assertJsonPath(
+            'summary.message',
             'All deployment devices are present in GreenLake inventory. Devices missing mac_address: SN-NO-MAC-001.',
         );
 });
 
-test('check greenlake inventory flashes error when sync fails', function () {
+test('check greenlake inventory step 0 returns error when sync fails', function () {
     Device::factory()->create([
         'client_id' => $this->client->id,
         'user_id' => $this->user->id,
@@ -129,11 +187,9 @@ test('check greenlake inventory flashes error when sync fails', function () {
         '*' => Http::response(['detail' => 'unavailable'], 500),
     ]);
 
-    $this->post(route('tasks.check_greenlake_inventory', $this->deployment), [
-        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
-    ])
-        ->assertRedirect()
-        ->assertSessionHas('error');
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 0]))
+        ->assertStatus(422)
+        ->assertJsonStructure(['message']);
 });
 
 test('check greenlake inventory requires matching current client', function () {
@@ -160,14 +216,18 @@ test('check greenlake inventory requires matching current client', function () {
         'mac_address' => 'aa:bb:cc:dd:ee:06',
     ]);
 
-    $this->post(route('tasks.check_greenlake_inventory', $otherDeployment), [
-        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
-    ])
-        ->assertRedirect()
-        ->assertSessionHas(
-            'error',
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$otherDeployment, 0]))
+        ->assertForbidden()
+        ->assertJsonPath(
+            'message',
             'Please set current client to match this deployment before checking GreenLake inventory.',
         );
 
     Http::assertNothingSent();
+});
+
+test('check greenlake inventory returns 422 when deployment has no devices', function () {
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 0]))
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'No devices are in this deployment.');
 });

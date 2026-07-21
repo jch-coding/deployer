@@ -25,7 +25,8 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_group, check_central_sites, check_greenlake_inventory, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
+import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, store } from '@/routes/tasks';
+import check_greenlake_inventory from '@/routes/tasks/check_greenlake_inventory';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, RefreshCw } from 'lucide-react';
@@ -108,6 +109,18 @@ export default function TaskCard({
     const [macSaving, setMacSaving] = useState(false);
     const [deviceMacOverrides, setDeviceMacOverrides] = useState<Record<number, string>>({});
     const [pendingDeployAllDevices, setPendingDeployAllDevices] = useState(false);
+    const [isCheckingGreenLake, setIsCheckingGreenLake] = useState(false);
+    const [greenLakeProgress, setGreenLakeProgress] = useState<{
+        current: number;
+        total: number;
+        percent: number;
+        message: string;
+    }>({
+        current: 0,
+        total: 0,
+        percent: 0,
+        message: 'Starting GreenLake inventory check...',
+    });
 
     const isAssignSubscription = task === 'ASSIGN_SUBSCRIPTION';
     const isUnassignSubscription = task === 'UNASSIGN_SUBSCRIPTION';
@@ -216,6 +229,94 @@ export default function TaskCard({
 
     const devicesMissingMac = (devicesList: DeviceType[]) =>
         devicesList.filter((device) => !normalizeMacAddress(String(device.mac_address ?? '')));
+
+    const checkGreenLakeInventory = async () => {
+        if (isCheckingGreenLake) {
+            return;
+        }
+
+        type StepResponse = {
+            progress: {
+                current: number;
+                total: number;
+                percent: number;
+                message: string;
+            };
+            partial: {
+                missing_from_inventory: string[];
+                missing_mac: string[];
+            };
+            done: boolean;
+            summary?: {
+                ok: boolean;
+                message: string;
+            };
+        };
+
+        setIsCheckingGreenLake(true);
+        setGreenLakeProgress({
+            current: 0,
+            total: 0,
+            percent: 0,
+            message: 'Starting GreenLake inventory check...',
+        });
+
+        try {
+            let step = 0;
+            let total = 1;
+            let summary: StepResponse['summary'];
+
+            while (step < total) {
+                const response = await fetch(
+                    check_greenlake_inventory.step.url([deployment.id, step]),
+                    {
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        credentials: 'same-origin',
+                    },
+                );
+
+                if (!response.ok) {
+                    const body = (await response.json().catch(() => null)) as {
+                        message?: string;
+                    } | null;
+                    throw new Error(
+                        body?.message ?? `Check failed (HTTP ${response.status}).`,
+                    );
+                }
+
+                const data = (await response.json()) as StepResponse;
+                setGreenLakeProgress(data.progress);
+                total = data.progress.total;
+                if (data.summary) {
+                    summary = data.summary;
+                }
+                step += 1;
+
+                if (data.done) {
+                    break;
+                }
+            }
+
+            if (summary) {
+                if (summary.ok) {
+                    toast.success(summary.message);
+                } else {
+                    toast.error(summary.message);
+                }
+            }
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to verify GreenLake inventory.',
+            );
+        } finally {
+            setIsCheckingGreenLake(false);
+        }
+    };
 
     const saveMacAddresses = async (): Promise<boolean> => {
         const invalid = macModalDevices.some((device) => {
@@ -1003,10 +1104,9 @@ export default function TaskCard({
                                     className="rounded-full"
                                     data-test="check-greenlake-inventory"
                                     aria-label="Verify devices in GreenLake inventory"
+                                    disabled={isCheckingGreenLake}
                                     onClick={() => {
-                                        router.post(check_greenlake_inventory(deployment.id).url, {
-                                            task_type: task,
-                                        });
+                                        void checkGreenLakeInventory();
                                     }}
                                 >
                                     <CircleCheck className="size-4" aria-hidden />
@@ -1016,6 +1116,45 @@ export default function TaskCard({
                                 <p>Verify devices in GreenLake inventory</p>
                             </TooltipContent>
                         </Tooltip>
+                        <Dialog open={isCheckingGreenLake}>
+                            <DialogContent
+                                className="sm:max-w-md [&>button]:hidden"
+                                onInteractOutside={(e) => e.preventDefault()}
+                                onEscapeKeyDown={(e) => e.preventDefault()}
+                            >
+                                <DialogTitle>Verifying GreenLake inventory</DialogTitle>
+                                <DialogDescription className="sr-only">
+                                    Progress while verifying deployment devices in GreenLake inventory
+                                </DialogDescription>
+                                <div
+                                    className="flex flex-col gap-3 py-2"
+                                    role="status"
+                                    aria-live="polite"
+                                    aria-busy="true"
+                                >
+                                    <div
+                                        className="bg-muted h-2 w-full overflow-hidden rounded-full"
+                                        role="progressbar"
+                                        aria-valuenow={greenLakeProgress.percent}
+                                        aria-valuemin={0}
+                                        aria-valuemax={100}
+                                    >
+                                        <div
+                                            className="bg-primary h-full rounded-full transition-all duration-300"
+                                            style={{ width: `${greenLakeProgress.percent}%` }}
+                                        />
+                                    </div>
+                                    <p className="text-muted-foreground text-sm">
+                                        {greenLakeProgress.total > 0
+                                            ? `Step ${greenLakeProgress.current} of ${greenLakeProgress.total}`
+                                            : 'Starting…'}
+                                        {greenLakeProgress.percent > 0 &&
+                                            ` (${greenLakeProgress.percent}%)`}
+                                    </p>
+                                    <p className="text-sm font-medium">{greenLakeProgress.message}</p>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
                     </div>
                 )}
                 {(task === 'PREPROVISION_DEVICE_TO_GROUP' ||
