@@ -1067,3 +1067,160 @@ test('ADD_TAGS_TO_GREENLAKE_DEVICES rejects when none of the selected devices ar
     expect($this->deployment->refresh()->tasks)->toHaveCount(0);
     Bus::assertNothingBatched();
 });
+
+test('ADD_LOCATION_TO_GREENLAKE_DEVICES stores location and attaches inventory devices', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $inInventory = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-LOC-IN-001',
+    ]);
+    $notInInventory = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-LOC-OUT-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-LOC-IN-001',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+            'greenlake_device_id' => 'gl-loc-dev-1',
+        ]],
+        locations: [
+            ['id' => 'loc-nyc', 'name' => 'Warehouse NYC'],
+        ],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_LOCATION_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [
+            ['id' => $inInventory->id],
+            ['id' => $notInInventory->id],
+        ],
+        'greenlake_location_id' => 'loc-nyc',
+    ]);
+
+    $response->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('ADD_LOCATION_TO_GREENLAKE_DEVICES')
+        ->and($task->greenlake_location_id)->toBe('loc-nyc')
+        ->and($task->greenlake_location_name)->toBe('Warehouse NYC')
+        ->and($task->devices)->toHaveCount(1)
+        ->and($task->devices->first()->id)->toBe($inInventory->id);
+
+    Bus::assertBatchCount(1);
+});
+
+test('ADD_LOCATION_TO_GREENLAKE_DEVICES rejects when no location is provided', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-LOC-NONE-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-LOC-NONE-001',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+            'greenlake_device_id' => 'gl-loc-none-1',
+        ]],
+        locations: [
+            ['id' => 'loc-nyc', 'name' => 'Warehouse NYC'],
+        ],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_LOCATION_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+    ]);
+
+    $response->assertSessionHasErrors('greenlake_location_id');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ADD_LOCATION_TO_GREENLAKE_DEVICES rejects when none of the selected devices are in inventory', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis(
+        locations: [
+            ['id' => 'loc-nyc', 'name' => 'Warehouse NYC'],
+        ],
+    );
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-LOC-MISSING-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_LOCATION_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'greenlake_location_id' => 'loc-nyc',
+    ]);
+
+    $response->assertSessionHasErrors('devices');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});

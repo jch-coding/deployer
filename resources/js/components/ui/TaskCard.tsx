@@ -143,6 +143,8 @@ export default function TaskCard({
     const isLicensingTask = isAssignSubscription || isUnassignSubscription;
     const isAddToGreenLakeInventory = task === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY';
     const isAddTagsToGreenLake = task === 'ADD_TAGS_TO_GREENLAKE_DEVICES';
+    const isAddLocationToGreenLake = task === 'ADD_LOCATION_TO_GREENLAKE_DEVICES';
+    const needsGreenLakeLocations = isAddToGreenLakeInventory || isAddLocationToGreenLake;
 
     const devicesWithMac = useMemo(
         () =>
@@ -220,7 +222,7 @@ export default function TaskCard({
     }, [filteredLicenseTypes, bulkLicenseType]);
 
     useEffect(() => {
-        if (!isAddToGreenLakeInventory) {
+        if (!needsGreenLakeLocations) {
             return;
         }
 
@@ -274,7 +276,7 @@ export default function TaskCard({
         return () => {
             cancelled = true;
         };
-    }, [isAddToGreenLakeInventory, deployment.id]);
+    }, [needsGreenLakeLocations, deployment.id]);
 
     const vlanPrefixTrimmed = vlanSitePrefix.trim()
     const isAddVlansWithPrefix =
@@ -515,6 +517,23 @@ export default function TaskCard({
             }
         }
 
+        if (taskStr === 'ADD_LOCATION_TO_GREENLAKE_DEVICES') {
+            if (!greenLakeLocationId) {
+                toast.error('Select a GreenLake location before launching this task.');
+
+                return;
+            }
+
+            const inInventory = devices_for_task.filter(
+                (device) => device.in_greenlake_inventory,
+            );
+            if (inInventory.length === 0) {
+                toast.error('None of the selected devices are in GreenLake inventory.');
+
+                return;
+            }
+        }
+
         if (taskStr === 'ASSIGN_SUBSCRIPTION') {
             if (licensingMode === 'uniform') {
                 if (!bulkLicenseTag) {
@@ -621,6 +640,11 @@ export default function TaskCard({
                               value: row.value.trim(),
                           }))
                           .filter((row) => row.key !== ''),
+                  }
+                : {}),
+            ...(taskStr === 'ADD_LOCATION_TO_GREENLAKE_DEVICES'
+                ? {
+                      greenlake_location_id: greenLakeLocationId || undefined,
                   }
                 : {}),
             ...(taskStr === 'ADD_VLANS_TO_DEVICE_GROUP'
@@ -739,15 +763,17 @@ export default function TaskCard({
                         ) : null}
                     </div>
                 ) : null}
-                {isAddToGreenLakeInventory || isAddTagsToGreenLake ? (
+                {isAddToGreenLakeInventory || isAddTagsToGreenLake || isAddLocationToGreenLake ? (
                     <div className="mt-3 space-y-2">
-                        {isAddToGreenLakeInventory ? (
+                        {needsGreenLakeLocations ? (
                             <div className="space-y-1">
                                 <label
                                     htmlFor={`greenlake-location-${task}`}
                                     className="text-sm font-medium"
                                 >
-                                    Location (optional)
+                                    {isAddLocationToGreenLake
+                                        ? 'Location'
+                                        : 'Location (optional)'}
                                 </label>
                                 <select
                                     id={`greenlake-location-${task}`}
@@ -764,7 +790,9 @@ export default function TaskCard({
                                               ? 'Could not load locations'
                                               : greenLakeLocations.length === 0
                                                 ? 'No locations available'
-                                                : 'No location'}
+                                                : isAddLocationToGreenLake
+                                                  ? 'Select a location'
+                                                  : 'No location'}
                                     </option>
                                     {greenLakeLocations.map((location) => (
                                         <option key={location.id} value={location.id}>
@@ -781,97 +809,110 @@ export default function TaskCard({
                                 )}
                             </div>
                         ) : null}
-                        <div className="flex items-center justify-between gap-2">
-                            <label className="text-sm font-medium">
-                                {isAddTagsToGreenLake
-                                    ? 'GreenLake tags'
-                                    : 'GreenLake tags (optional)'}
-                            </label>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                data-test="add-greenlake-tag"
-                                onClick={() =>
-                                    setGreenLakeTags((prev) => [...prev, { key: '', value: '' }])
-                                }
-                            >
-                                <PlusIcon className="size-3.5" aria-hidden />
-                                Add tag
-                            </Button>
-                        </div>
-                        {greenLakeTags.length === 0 ? (
-                            <p className="text-muted-foreground text-xs">
-                                {isAddTagsToGreenLake
-                                    ? 'Add at least one key–value tag to apply to all selected devices.'
-                                    : 'No tags. Add key–value pairs to apply to all selected devices.'}
-                            </p>
-                        ) : (
-                            <div className="space-y-2">
-                                {greenLakeTags.map((row, index) => (
-                                    <div
-                                        key={index}
-                                        className="flex flex-wrap items-center gap-2"
-                                        data-test="greenlake-tag-row"
+                        {isAddToGreenLakeInventory || isAddTagsToGreenLake ? (
+                            <>
+                                <div className="flex items-center justify-between gap-2">
+                                    <label className="text-sm font-medium">
+                                        {isAddTagsToGreenLake
+                                            ? 'GreenLake tags'
+                                            : 'GreenLake tags (optional)'}
+                                    </label>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        data-test="add-greenlake-tag"
+                                        onClick={() =>
+                                            setGreenLakeTags((prev) => [
+                                                ...prev,
+                                                { key: '', value: '' },
+                                            ])
+                                        }
                                     >
-                                        <Input
-                                            type="text"
-                                            placeholder="Key"
-                                            value={row.key}
-                                            onChange={(e) =>
-                                                setGreenLakeTags((prev) =>
-                                                    prev.map((item, i) =>
-                                                        i === index
-                                                            ? { ...item, key: e.target.value }
-                                                            : item,
-                                                    ),
-                                                )
-                                            }
-                                            className="min-w-[7rem] flex-1"
-                                            autoComplete="off"
-                                            aria-label={`Tag key ${index + 1}`}
-                                            data-test="greenlake-tag-key"
-                                        />
-                                        <Input
-                                            type="text"
-                                            placeholder="Value (optional)"
-                                            value={row.value}
-                                            onChange={(e) =>
-                                                setGreenLakeTags((prev) =>
-                                                    prev.map((item, i) =>
-                                                        i === index
-                                                            ? { ...item, value: e.target.value }
-                                                            : item,
-                                                    ),
-                                                )
-                                            }
-                                            className="min-w-[7rem] flex-1"
-                                            autoComplete="off"
-                                            aria-label={`Tag value ${index + 1}`}
-                                            data-test="greenlake-tag-value"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="shrink-0"
-                                            aria-label={`Remove tag ${index + 1}`}
-                                            data-test="remove-greenlake-tag"
-                                            onClick={() =>
-                                                setGreenLakeTags((prev) =>
-                                                    prev.filter((_, i) => i !== index),
-                                                )
-                                            }
-                                        >
-                                            <Trash2Icon className="size-4" aria-hidden />
-                                        </Button>
+                                        <PlusIcon className="size-3.5" aria-hidden />
+                                        Add tag
+                                    </Button>
+                                </div>
+                                {greenLakeTags.length === 0 ? (
+                                    <p className="text-muted-foreground text-xs">
+                                        {isAddTagsToGreenLake
+                                            ? 'Add at least one key–value tag to apply to all selected devices.'
+                                            : 'No tags. Add key–value pairs to apply to all selected devices.'}
+                                    </p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {greenLakeTags.map((row, index) => (
+                                            <div
+                                                key={index}
+                                                className="flex flex-wrap items-center gap-2"
+                                                data-test="greenlake-tag-row"
+                                            >
+                                                <Input
+                                                    type="text"
+                                                    placeholder="Key"
+                                                    value={row.key}
+                                                    onChange={(e) =>
+                                                        setGreenLakeTags((prev) =>
+                                                            prev.map((item, i) =>
+                                                                i === index
+                                                                    ? {
+                                                                          ...item,
+                                                                          key: e.target.value,
+                                                                      }
+                                                                    : item,
+                                                            ),
+                                                        )
+                                                    }
+                                                    className="min-w-[7rem] flex-1"
+                                                    autoComplete="off"
+                                                    aria-label={`Tag key ${index + 1}`}
+                                                    data-test="greenlake-tag-key"
+                                                />
+                                                <Input
+                                                    type="text"
+                                                    placeholder="Value (optional)"
+                                                    value={row.value}
+                                                    onChange={(e) =>
+                                                        setGreenLakeTags((prev) =>
+                                                            prev.map((item, i) =>
+                                                                i === index
+                                                                    ? {
+                                                                          ...item,
+                                                                          value: e.target.value,
+                                                                      }
+                                                                    : item,
+                                                            ),
+                                                        )
+                                                    }
+                                                    className="min-w-[7rem] flex-1"
+                                                    autoComplete="off"
+                                                    aria-label={`Tag value ${index + 1}`}
+                                                    data-test="greenlake-tag-value"
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="shrink-0"
+                                                    aria-label={`Remove tag ${index + 1}`}
+                                                    data-test="remove-greenlake-tag"
+                                                    onClick={() =>
+                                                        setGreenLakeTags((prev) =>
+                                                            prev.filter((_, i) => i !== index),
+                                                        )
+                                                    }
+                                                >
+                                                    <Trash2Icon className="size-4" aria-hidden />
+                                                </Button>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                        <p className="text-muted-foreground text-xs">
-                            Applied to all selected devices. Value may be left blank.
-                        </p>
+                                )}
+                                <p className="text-muted-foreground text-xs">
+                                    Applied to all selected devices. Value may be left blank.
+                                </p>
+                            </>
+                        ) : null}
                     </div>
                 ) : null}
                 {isAssignSubscription ? (

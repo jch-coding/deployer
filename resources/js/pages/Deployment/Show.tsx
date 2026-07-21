@@ -546,6 +546,7 @@ export default function Show() {
         'UNASSIGN_SUBSCRIPTION',
         'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
         'ADD_TAGS_TO_GREENLAKE_DEVICES',
+        'ADD_LOCATION_TO_GREENLAKE_DEVICES',
     ]);
 
     const isDeviceBasedTask = (task_type: string) =>
