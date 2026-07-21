@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Enums\OnlineDetectionMode;
 use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
 use App\Models\ProvisioningWorkflowDevice;
@@ -57,7 +58,8 @@ class MarkDeviceOnlineIfWaiting
                 ->where('serial', $serial)
                 ->where('client_id', $clientId))
             ->whereHas('workflow', fn ($query) => $query
-                ->whereNotIn('status', ['completed', 'cancelled']))
+                ->whereNotIn('status', ['completed', 'cancelled'])
+                ->where('online_detection_mode', OnlineDetectionMode::Webhook->value))
             ->with(['device', 'steps', 'workflow.deployment.client'])
             ->get();
 

@@ -4,6 +4,7 @@ namespace App\Services\Provisioning;
 
 use App\Enums\ProvisioningStep;
 use App\JobQueueShard;
+use App\Jobs\FailWaitForOnlineOnTimeoutJob;
 use App\Jobs\PollClassicDeviceOnlineJob;
 use App\Jobs\RunProvisioningWorkflowStepJob;
 use App\Models\ProvisioningWorkflow;
@@ -46,6 +47,11 @@ class ProvisioningWorkflowOrchestrator
                 'status_message' => $result->message,
             ]);
             $stepRow->markInProgress($result->message);
+
+            if ($step === ProvisioningStep::WaitForOnline
+                && $workflowDevice->workflow->onlineDetectionMode()->usesWebhook()) {
+                $this->scheduleWaitForOnlineTimeout($workflowDevice);
+            }
 
             return;
         }
@@ -134,12 +140,26 @@ class ProvisioningWorkflowOrchestrator
 
     public function ensureClassicPollerRunning(ProvisioningWorkflow $workflow): void
     {
+        if (! $workflow->onlineDetectionMode()->usesPoller()) {
+            return;
+        }
+
         if ($workflow->classic_poller_active || $workflow->isTerminal()) {
             return;
         }
 
         $workflow->update(['classic_poller_active' => true]);
         PollClassicDeviceOnlineJob::dispatch($workflow->id)
+            ->onQueue(JobQueueShard::resolve($workflow->job_queue));
+    }
+
+    private function scheduleWaitForOnlineTimeout(ProvisioningWorkflowDevice $workflowDevice): void
+    {
+        $workflow = $workflowDevice->workflow;
+        $delayMinutes = max(1, (int) $workflow->deployment_time);
+
+        FailWaitForOnlineOnTimeoutJob::dispatch($workflowDevice->id)
+            ->delay(now()->addMinutes($delayMinutes))
             ->onQueue(JobQueueShard::resolve($workflow->job_queue));
     }
 

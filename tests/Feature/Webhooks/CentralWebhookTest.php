@@ -2,7 +2,9 @@
 
 use App\ClassicBaseUrl;
 use App\DeviceFunction;
+use App\Enums\OnlineDetectionMode;
 use App\Enums\ProvisioningStep;
+use App\Jobs\FailWaitForOnlineOnTimeoutJob;
 use App\Jobs\HandleCentralDeviceOnlineWakeJob;
 use App\Jobs\RunProvisioningWorkflowStepJob;
 use App\Models\Client;
@@ -15,7 +17,7 @@ use App\Services\Provisioning\MarkDeviceOnlineIfWaiting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
-function createWaitingWorkflowDevice(array $deviceAttrs = []): array
+function createWaitingWorkflowDevice(array $deviceAttrs = [], array $workflowAttrs = []): array
 {
     $user = User::factory()->has(Client::factory())->create();
     $client = $user->clients()->first();
@@ -39,15 +41,16 @@ function createWaitingWorkflowDevice(array $deviceAttrs = []): array
         'device_function' => DeviceFunction::CAMPUS_AP->name,
     ], $deviceAttrs));
 
-    $workflow = ProvisioningWorkflow::query()->create([
+    $workflow = ProvisioningWorkflow::query()->create(array_merge([
         'deployment_id' => $deployment->id,
         'user_id' => $user->id,
         'status' => 'running',
         'job_queue' => 'q0',
         'deployment_time' => 10,
         'wait_time' => 1,
+        'online_detection_mode' => OnlineDetectionMode::Webhook,
         'classic_poller_active' => true,
-    ]);
+    ], $workflowAttrs));
 
     $workflowDevice = ProvisioningWorkflowDevice::query()->create([
         'provisioning_workflow_id' => $workflow->id,
@@ -286,4 +289,68 @@ it('saves and clears classic webhook secret from client edit', function () {
     ])->assertRedirect(route('clients.index'));
 
     expect($client->fresh()->classic_webhook_secret)->toBeNull();
+});
+
+it('does not advance poll-mode wait_for_online from a webhook wake', function () {
+    Queue::fake([RunProvisioningWorkflowStepJob::class]);
+    $ctx = createWaitingWorkflowDevice([], [
+        'online_detection_mode' => OnlineDetectionMode::Poll,
+    ]);
+
+    Http::fake([
+        '*monitoring/v2/aps*' => Http::response([
+            'aps' => [
+                ['serial' => $ctx['device']->serial, 'status' => 'Up'],
+            ],
+        ], 200),
+        '*monitoring/v1/switches*' => Http::response(['switches' => []], 200),
+    ]);
+
+    (new HandleCentralDeviceOnlineWakeJob($ctx['client']->id, $ctx['device']->serial))->handle(
+        app(MarkDeviceOnlineIfWaiting::class),
+    );
+
+    $step = $ctx['workflowDevice']->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->first();
+
+    expect($step->fresh()->status)->toBe('in_progress')
+        ->and($ctx['workflowDevice']->fresh()->current_step_key)->toBe(ProvisioningStep::WaitForOnline->value);
+});
+
+it('fails wait_for_online when webhook timeout job fires while still waiting', function () {
+    $ctx = createWaitingWorkflowDevice([], [
+        'online_detection_mode' => OnlineDetectionMode::Webhook,
+        'classic_poller_active' => false,
+    ]);
+
+    (new FailWaitForOnlineOnTimeoutJob($ctx['workflowDevice']->id))->handle(
+        app(\App\Services\Provisioning\ProvisioningWorkflowOrchestrator::class),
+    );
+
+    $ctx['workflowDevice']->refresh();
+    $step = $ctx['workflowDevice']->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->first();
+
+    expect($step->status)->toBe('failed')
+        ->and($ctx['workflowDevice']->overall_status)->toBe('failed')
+        ->and($ctx['workflowDevice']->status_message)->toContain('Timed out');
+});
+
+it('no-ops webhook timeout job when wait_for_online already completed', function () {
+    Queue::fake();
+    $ctx = createWaitingWorkflowDevice([], [
+        'online_detection_mode' => OnlineDetectionMode::Webhook,
+    ]);
+    $ctx['workflowDevice']->steps()
+        ->where('step_key', ProvisioningStep::WaitForOnline->value)
+        ->update(['status' => 'completed']);
+    $ctx['workflowDevice']->update([
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+        'overall_status' => 'in_progress',
+    ]);
+
+    (new FailWaitForOnlineOnTimeoutJob($ctx['workflowDevice']->id))->handle(
+        app(\App\Services\Provisioning\ProvisioningWorkflowOrchestrator::class),
+    );
+
+    expect($ctx['workflowDevice']->fresh()->current_step_key)->toBe(ProvisioningStep::AssociateSite->value)
+        ->and($ctx['workflowDevice']->fresh()->overall_status)->toBe('in_progress');
 });

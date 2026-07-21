@@ -71,6 +71,7 @@ type WorkflowPayload = {
     status: string;
     deployment_time: number;
     wait_time: number;
+    online_detection_mode: 'poll' | 'webhook';
     started_at: string | null;
     completed_at: string | null;
     summary: { in_progress: number; completed: number; failed: number };
@@ -97,6 +98,7 @@ type ProvisionPageProps = SharedData & {
     licensing_synced_at: string | null;
     licensing_error: string | null;
     selected_device_ids?: number[];
+    has_classic_webhook_secret?: boolean;
 };
 
 const selectClassName =
@@ -127,6 +129,7 @@ export default function Provision() {
         licensing_error,
         flash,
         selected_device_ids: selectedDeviceIdsProp = [],
+        has_classic_webhook_secret: hasClassicWebhookSecret = false,
     } = usePage<ProvisionPageProps>().props;
 
     const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>(
@@ -137,6 +140,7 @@ export default function Provision() {
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0);
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10);
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(1);
+    const [onlineDetectionMode, setOnlineDetectionMode] = useState<'poll' | 'webhook'>('poll');
     const [licensingMode, setLicensingMode] = useState<'uniform' | 'per_device'>('uniform');
     const [uniformLicenseTag, setUniformLicenseTag] = useState('');
     const [uniformLicenseType, setUniformLicenseType] = useState<LicenseTypeOption | ''>('');
@@ -211,6 +215,7 @@ export default function Provision() {
             device_ids: selectedDeviceIds,
             deployment_time: deploymentTimeHours * 60 + deploymentTimeMinutes,
             wait_time: waitTimeMinutes,
+            online_detection_mode: onlineDetectionMode,
             licensing_mode: licensingMode,
         };
 
@@ -266,7 +271,45 @@ export default function Provision() {
                                     {selectedDeviceIds.length} device(s) selected.
                                 </DialogDescription>
                                 <div className="space-y-4 py-2">
-                                    <div className="grid grid-cols-3 gap-3">
+                                    <div className="space-y-2">
+                                        <p className="text-sm font-medium">Online detection</p>
+                                        <div className="flex flex-wrap gap-4 text-sm">
+                                            <label className="flex items-center gap-2">
+                                                <input
+                                                    type="radio"
+                                                    checked={onlineDetectionMode === 'poll'}
+                                                    onChange={() => setOnlineDetectionMode('poll')}
+                                                />
+                                                Poll Central
+                                            </label>
+                                            <label
+                                                className={cn(
+                                                    'flex items-center gap-2',
+                                                    !hasClassicWebhookSecret && 'opacity-50',
+                                                )}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    checked={onlineDetectionMode === 'webhook'}
+                                                    disabled={!hasClassicWebhookSecret}
+                                                    onChange={() => setOnlineDetectionMode('webhook')}
+                                                />
+                                                Webhook
+                                            </label>
+                                        </div>
+                                        {!hasClassicWebhookSecret ? (
+                                            <p className="text-xs text-muted-foreground">
+                                                Configure a Classic Central webhook secret on the client to enable
+                                                webhook detection.
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    <div
+                                        className={cn(
+                                            'grid gap-3',
+                                            onlineDetectionMode === 'poll' ? 'grid-cols-3' : 'grid-cols-2',
+                                        )}
+                                    >
                                         <label className="text-sm">
                                             Hours
                                             <input
@@ -291,18 +334,20 @@ export default function Provision() {
                                                 }
                                             />
                                         </label>
-                                        <label className="text-sm">
-                                            Wait (min)
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                className={selectClassName}
-                                                value={waitTimeMinutes}
-                                                onChange={(e) =>
-                                                    setWaitTimeMinutes(Number(e.target.value))
-                                                }
-                                            />
-                                        </label>
+                                        {onlineDetectionMode === 'poll' ? (
+                                            <label className="text-sm">
+                                                Wait (min)
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    className={selectClassName}
+                                                    value={waitTimeMinutes}
+                                                    onChange={(e) =>
+                                                        setWaitTimeMinutes(Number(e.target.value))
+                                                    }
+                                                />
+                                            </label>
+                                        ) : null}
                                     </div>
                                     {needsLicensingDialog ? (
                                         <div className="space-y-3 rounded-md border p-3">
@@ -480,6 +525,16 @@ export default function Provision() {
                     </Card>
                 ) : (
                     <>
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                            <span>
+                                Online detection:{' '}
+                                <span className="font-medium text-foreground">
+                                    {workflow.online_detection_mode === 'webhook'
+                                        ? 'Webhook'
+                                        : 'Poll Central'}
+                                </span>
+                            </span>
+                        </div>
                         <div className="grid gap-4 md:grid-cols-3">
                             <SummaryCard
                                 title="In Progress"

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\OnlineDetectionMode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,9 +12,15 @@ class ProvisioningWorkflow extends Model
     protected $casts = [
         'licensing_config' => 'array',
         'classic_poller_active' => 'boolean',
+        'online_detection_mode' => OnlineDetectionMode::class,
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
+
+    public function onlineDetectionMode(): OnlineDetectionMode
+    {
+        return $this->online_detection_mode ?? OnlineDetectionMode::Poll;
+    }
 
     public function deployment(): BelongsTo
     {

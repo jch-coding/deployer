@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\OnlineDetectionMode;
 use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
 use App\Helper\GreenLakeAPIHelper;
@@ -12,6 +13,7 @@ use App\Services\LicensingInventoryService;
 use App\Services\Provisioning\ProvisioningWorkflowService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,6 +31,7 @@ class ProvisioningWorkflowController extends Controller
         $deployment->load('devices');
 
         $licensingOptions = $this->resolveLicensingOptions($request, $deployment, $licensingInventoryService);
+        $client = $request->user()?->currentClient();
 
         return Inertia::render('Deployment/Provision', [
             'deployment' => [
@@ -54,6 +57,7 @@ class ProvisioningWorkflowController extends Controller
             ),
             'licensing_synced_at' => $licensingOptions['licensing_synced_at'] ?? null,
             'licensing_error' => $licensingOptions['central_error'] ?? null,
+            'has_classic_webhook_secret' => filled($client?->classic_webhook_secret),
         ]);
     }
 
@@ -66,6 +70,10 @@ class ProvisioningWorkflowController extends Controller
             'device_ids.*' => ['integer'],
             'deployment_time' => ['required', 'integer', 'min:1', 'max:1440'],
             'wait_time' => ['required', 'integer', 'min:1', 'max:60'],
+            'online_detection_mode' => ['nullable', Rule::in(array_map(
+                fn (OnlineDetectionMode $mode) => $mode->value,
+                OnlineDetectionMode::cases(),
+            ))],
             'licensing_mode' => ['nullable', Rule::in(['uniform', 'per_device'])],
             'license_tag' => ['nullable', 'string'],
             'license_type' => ['nullable', 'string'],
@@ -75,6 +83,20 @@ class ProvisioningWorkflowController extends Controller
             'devices.*.license_type' => ['nullable', 'string'],
             'devices.*.name' => ['nullable', 'string', 'max:255'],
         ]);
+
+        $mode = OnlineDetectionMode::tryFrom((string) ($validated['online_detection_mode'] ?? ''))
+            ?? OnlineDetectionMode::Poll;
+
+        if ($mode === OnlineDetectionMode::Webhook) {
+            $deployment->loadMissing('client');
+            if (! filled($deployment->client?->classic_webhook_secret)) {
+                throw ValidationException::withMessages([
+                    'online_detection_mode' => 'Webhook online detection requires a Classic Central webhook secret on this client.',
+                ]);
+            }
+        }
+
+        $validated['online_detection_mode'] = $mode->value;
 
         $workflow = $workflowService->start(
             $deployment,

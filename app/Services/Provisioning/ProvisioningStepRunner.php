@@ -103,6 +103,12 @@ class ProvisioningStepRunner
 
         $status = $this->classicDeviceOnlineService->currentStatus($device, $switchStatuses, $apStatuses);
 
+        if ($workflow->onlineDetectionMode()->usesWebhook()) {
+            return ProvisioningStepResult::waitingPeer(
+                "Waiting for device to come online via webhook (status: {$status}).",
+            );
+        }
+
         return ProvisioningStepResult::retry("Waiting for device to come online (status: {$status}).");
     }
 

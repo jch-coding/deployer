@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Enums\OnlineDetectionMode;
 use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
 use App\JobQueueShard;
@@ -54,6 +55,8 @@ class ProvisioningWorkflowService
 
         $deploymentTime = max(1, (int) ($options['deployment_time'] ?? 10));
         $waitTime = max(1, (int) ($options['wait_time'] ?? 1));
+        $onlineDetectionMode = OnlineDetectionMode::tryFrom((string) ($options['online_detection_mode'] ?? ''))
+            ?? OnlineDetectionMode::Poll;
         $jobQueue = JobQueueShard::fromUserEntropy((int) $user->id, (string) Str::uuid());
         $stepContext = new ProvisioningStepContext(
             CentralAPIHelper::deploymentUsesVsxFallbackMode($devices),
@@ -61,7 +64,7 @@ class ProvisioningWorkflowService
             $provisioningNames,
         );
 
-        return DB::transaction(function () use ($deployment, $user, $devices, $licensingConfig, $deploymentTime, $waitTime, $jobQueue, $stepContext): ProvisioningWorkflow {
+        return DB::transaction(function () use ($deployment, $user, $devices, $licensingConfig, $deploymentTime, $waitTime, $onlineDetectionMode, $jobQueue, $stepContext): ProvisioningWorkflow {
             $workflow = ProvisioningWorkflow::query()->create([
                 'deployment_id' => $deployment->id,
                 'user_id' => $user->id,
@@ -69,6 +72,7 @@ class ProvisioningWorkflowService
                 'job_queue' => $jobQueue,
                 'deployment_time' => $deploymentTime,
                 'wait_time' => $waitTime,
+                'online_detection_mode' => $onlineDetectionMode,
                 'licensing_config' => $licensingConfig,
                 'started_at' => now(),
             ]);
@@ -235,6 +239,7 @@ class ProvisioningWorkflowService
             'status' => $workflow->status,
             'deployment_time' => $workflow->deployment_time,
             'wait_time' => $workflow->wait_time,
+            'online_detection_mode' => $workflow->onlineDetectionMode()->value,
             'started_at' => $workflow->started_at?->toIso8601String(),
             'completed_at' => $workflow->completed_at?->toIso8601String(),
             'summary' => $summary,
