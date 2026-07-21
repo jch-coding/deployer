@@ -626,8 +626,12 @@ test('assignLocationToDevices patches v2beta1 with location id and polls async o
 
         $body = $request->data();
 
+        $contentType = $request->header('Content-Type');
+        $contentType = is_array($contentType) ? implode(';', $contentType) : (string) $contentType;
+
         return ($body['location']['id'] ?? null) === 'loc-warehouse'
-            && str_contains($request->url(), 'id=dev-1');
+            && str_contains($request->url(), 'id=dev-1')
+            && str_contains($contentType, 'application/merge-patch+json');
     });
 });
 
@@ -670,8 +674,12 @@ test('assignTagsToDevices patches v2beta1 with tags and polls async operation', 
 
         $body = $request->data();
 
+        $contentType = $request->header('Content-Type');
+        $contentType = is_array($contentType) ? implode(';', $contentType) : (string) $contentType;
+
         return ($body['tags']['Environment'] ?? null) === 'prod'
             && ($body['tags']['Site'] ?? null) === ''
-            && str_contains($request->url(), 'id=dev-1');
+            && str_contains($request->url(), 'id=dev-1')
+            && str_contains($contentType, 'application/merge-patch+json');
     });
 });

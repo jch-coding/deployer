@@ -644,10 +644,11 @@ class GreenLakeAPIHelper
 
             $response = Http::withToken($this->client->bearer_token)
                 ->acceptJson()
-                ->asJson()
-                ->patch($this->apiUrl($this->devicesV2['update']).'?'.$query, [
-                    'location' => ['id' => $locationId],
-                ]);
+                ->withBody(
+                    json_encode(['location' => ['id' => $locationId]], JSON_THROW_ON_ERROR),
+                    'application/merge-patch+json',
+                )
+                ->patch($this->apiUrl($this->devicesV2['update']).'?'.$query);
 
             if ($response->status() !== 202) {
                 return [
@@ -776,10 +777,11 @@ class GreenLakeAPIHelper
 
             $response = Http::withToken($this->client->bearer_token)
                 ->acceptJson()
-                ->asJson()
-                ->patch($this->apiUrl($this->devicesV2['update']).'?'.$query, [
-                    'tags' => $normalizedTags,
-                ]);
+                ->withBody(
+                    json_encode(['tags' => $normalizedTags], JSON_THROW_ON_ERROR),
+                    'application/merge-patch+json',
+                )
+                ->patch($this->apiUrl($this->devicesV2['update']).'?'.$query);
 
             if ($response->status() !== 202) {
                 return [

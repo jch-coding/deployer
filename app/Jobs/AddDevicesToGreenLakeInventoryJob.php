@@ -29,6 +29,8 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
 
     public function addDevices(): void
     {
+        $this->task->refresh();
+
         $payloadDevices = [];
         foreach ($this->devices as $device) {
             $serial = trim((string) ($device['serial'] ?? ''));
@@ -214,25 +216,51 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
     private function resolveGreenLakeIds(array $succeededDevices, string $purpose): ?array
     {
         $serials = array_map(fn (array $device): string => $device['serial'], $succeededDevices);
-        $idsBySerial = $this->greenLakeAPIHelper->deviceIdsBySerial($serials);
+        $idsBySerial = [];
 
-        if (GreenLakeAPIHelper::isCollectError($idsBySerial)) {
-            $error = (string) ($idsBySerial['error'] ?? 'Failed to resolve GreenLake device ids.');
-            foreach ($succeededDevices as $device) {
-                $this->markDeviceFailed($device['id']);
-                $this->task->processTaskStatusLog(
-                    "\nDevice {$device['serial']} was added to inventory, but {$purpose} failed: {$error}"
-                );
+        // Newly added devices can take a moment to appear in the GreenLake device list.
+        foreach ([0, 2, 5] as $delaySeconds) {
+            if ($delaySeconds > 0) {
+                sleep($delaySeconds);
             }
 
-            return null;
+            $idsBySerial = $this->greenLakeAPIHelper->deviceIdsBySerial($serials);
+            if (GreenLakeAPIHelper::isCollectError($idsBySerial)) {
+                $error = (string) ($idsBySerial['error'] ?? 'Failed to resolve GreenLake device ids.');
+                foreach ($succeededDevices as $device) {
+                    $this->markDeviceFailed($device['id']);
+                    $this->task->processTaskStatusLog(
+                        "\nDevice {$device['serial']} was added to inventory, but {$purpose} failed: {$error}"
+                    );
+                }
+
+                return null;
+            }
+
+            $resolvedCount = 0;
+            foreach ($succeededDevices as $device) {
+                $greenlakeId = $idsBySerial[$device['serial']]
+                    ?? $idsBySerial[strtoupper($device['serial'])]
+                    ?? null;
+                if (is_string($greenlakeId) && trim($greenlakeId) !== '') {
+                    $resolvedCount++;
+                }
+            }
+
+            if ($resolvedCount === count($succeededDevices)) {
+                break;
+            }
         }
 
         $deviceIds = [];
         $localIdByGreenLakeId = [];
         foreach ($succeededDevices as $device) {
-            $greenlakeId = $idsBySerial[$device['serial']] ?? null;
-            if ($greenlakeId === null || $greenlakeId === '') {
+            $greenlakeId = trim((string) (
+                $idsBySerial[$device['serial']]
+                ?? $idsBySerial[strtoupper($device['serial'])]
+                ?? ''
+            ));
+            if ($greenlakeId === '') {
                 $this->markDeviceFailed($device['id']);
                 $this->task->processTaskStatusLog(
                     "\nDevice {$device['serial']} was added to inventory, but its GreenLake device id could not be resolved for {$purpose}."
