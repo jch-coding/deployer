@@ -6,7 +6,9 @@ import {
     FileUp,
     ListTodoIcon,
     MapPin,
+    Radio,
     ScrollText,
+    Webhook,
 } from 'lucide-react';
 import { AppearanceToggle } from '@/components/appearance-toggle';
 import { NavFooter } from '@/components/nav-footer';
@@ -26,7 +28,9 @@ import { index as deployment_index } from '@/routes/deployments'
 import { index as sites_index } from '@/routes/sites'
 import { index as central_api_index } from '@/routes/central-api';
 import { index as migrations_index } from '@/routes/migrations';
+import { index as streaming_index } from '@/routes/streaming';
 import { index as task_index } from '@/routes/tasks'
+import { index as webhooks_index } from '@/routes/webhooks'
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -54,6 +58,16 @@ const mainNavItems: NavItem[] = [
         title: 'Central API',
         href: central_api_index(),
         icon: Braces,
+    },
+    {
+        title: 'Webhook',
+        href: webhooks_index(),
+        icon: Webhook,
+    },
+    {
+        title: 'WebSocket',
+        href: streaming_index(),
+        icon: Radio,
     },
     {
         title: 'Migrations',

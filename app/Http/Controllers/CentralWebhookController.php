@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\CentralWebhookReceived;
 use App\JobQueueShard;
 use App\Jobs\HandleCentralDeviceOnlineWakeJob;
+use App\Models\CentralWebhookEvent;
 use App\Models\Client;
 use App\Services\Central\ClassicWebhookAlertParser;
 use App\Services\Central\ClassicWebhookHmacVerifier;
@@ -28,12 +30,22 @@ class CentralWebhookController extends Controller
             return response()->json(['message' => 'Accepted'], 200);
         }
 
-        if (! $alertParser->isOnlineWakeAlert($payload)) {
-            return response()->json(['message' => 'Ignored'], 200);
-        }
-
+        $isWake = $alertParser->isOnlineWakeAlert($payload);
         $serial = $alertParser->extractSerial($payload);
-        if ($serial === null) {
+        $disposition = $isWake && $serial !== null ? 'accepted' : 'ignored';
+
+        $event = CentralWebhookEvent::query()->create([
+            'client_id' => $client->id,
+            'payload' => $payload,
+            'alert_type' => isset($payload['alert_type']) ? (string) $payload['alert_type'] : null,
+            'serial' => $serial,
+            'disposition' => $disposition,
+            'created_at' => now(),
+        ]);
+        CentralWebhookEvent::pruneForClient((int) $client->id);
+        CentralWebhookReceived::dispatch($event);
+
+        if ($disposition !== 'accepted') {
             return response()->json(['message' => 'Ignored'], 200);
         }
 

@@ -111,6 +111,94 @@ it('rejects webhook requests with invalid hmac', function () {
         ],
         '{"alert_type":"New AP detected"}',
     )->assertUnauthorized();
+
+    expect(\App\Models\CentralWebhookEvent::query()->count())->toBe(0);
+});
+
+it('persists accepted and ignored hmac-valid webhook payloads', function () {
+    Queue::fake();
+    $ctx = createWaitingWorkflowDevice();
+
+    $acceptedBody = json_encode([
+        'alert_type' => 'New AP detected',
+        'state' => 'Open',
+        'device_id' => $ctx['device']->serial,
+        'details' => ['serial' => $ctx['device']->serial],
+    ], JSON_THROW_ON_ERROR);
+
+    $this->call(
+        'POST',
+        route('webhooks.central', $ctx['client']),
+        [],
+        [],
+        [],
+        signedCentralWebhookHeaders($acceptedBody, 'webhook-secret-token'),
+        $acceptedBody,
+    )->assertOk();
+
+    $ignoredBody = json_encode([
+        'alert_type' => 'AP Disconnected',
+        'state' => 'Close',
+        'details' => ['serial' => $ctx['device']->serial],
+    ], JSON_THROW_ON_ERROR);
+
+    $this->call(
+        'POST',
+        route('webhooks.central', $ctx['client']),
+        [],
+        [],
+        [],
+        signedCentralWebhookHeaders($ignoredBody, 'webhook-secret-token'),
+        $ignoredBody,
+    )->assertOk();
+
+    $events = \App\Models\CentralWebhookEvent::query()->orderBy('id')->get();
+    expect($events)->toHaveCount(2)
+        ->and($events[0]->disposition)->toBe('accepted')
+        ->and($events[0]->serial)->toBe($ctx['device']->serial)
+        ->and($events[0]->alert_type)->toBe('New AP detected')
+        ->and($events[1]->disposition)->toBe('ignored')
+        ->and($events[1]->alert_type)->toBe('AP Disconnected');
+});
+
+it('shows webhook events for the current client on the webhook index page', function () {
+    $this->withoutVite();
+    $ctx = createWaitingWorkflowDevice();
+    $ctx['client']->update(['current' => true]);
+    \App\Models\CentralWebhookEvent::query()->create([
+        'client_id' => $ctx['client']->id,
+        'payload' => ['alert_type' => 'New AP detected'],
+        'alert_type' => 'New AP detected',
+        'serial' => $ctx['device']->serial,
+        'disposition' => 'accepted',
+        'created_at' => now(),
+    ]);
+
+    $otherClient = \App\Models\Client::factory()->for($ctx['user'])->create();
+    \App\Models\CentralWebhookEvent::query()->create([
+        'client_id' => $otherClient->id,
+        'payload' => ['alert_type' => 'Other'],
+        'alert_type' => 'Other',
+        'serial' => 'OTHER',
+        'disposition' => 'ignored',
+        'created_at' => now(),
+    ]);
+
+    $this->actingAs($ctx['user'])
+        ->get(route('webhooks.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Webhook/Index')
+            ->has('events.data', 1)
+            ->where('events.data.0.serial', $ctx['device']->serial));
+});
+
+it('redirects webhook index when no current client is set', function () {
+    $user = User::factory()->has(Client::factory()->state(['current' => false]))->create();
+
+    $this->actingAs($user)
+        ->get(route('webhooks.index'))
+        ->assertRedirect(route('clients.index'));
 });
 
 it('dispatches a wake job for new ap detected alerts', function () {

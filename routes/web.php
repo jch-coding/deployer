@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\CentralApiExplorerController;
 use App\Http\Controllers\CentralScopeCacheController;
+use App\Http\Controllers\CentralStreamEventController;
 use App\Http\Controllers\CentralWebhookController;
+use App\Http\Controllers\CentralWebhookEventController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
@@ -105,6 +107,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/central-api', 'index')->name('central-api.index');
         Route::post('/central-api/execute', 'execute')->name('central-api.execute');
     });
+
+    Route::get('/webhooks', [CentralWebhookEventController::class, 'index'])->name('webhooks.index');
+    Route::get('/streaming', [CentralStreamEventController::class, 'index'])->name('streaming.index');
 
     Route::controller(MigrationController::class)->group(function () {
         Route::get('/migrations', 'index')->name('migrations.index');

@@ -269,6 +269,56 @@ it('dispatches a stream wake job from a monitoring up frame', function () {
             && $job->serial === $ctx['device']->serial
             && $job->mode === 'stream';
     });
+
+    $event = \App\Models\CentralStreamEvent::query()->first();
+    expect($event)->not->toBeNull()
+        ->and($event->client_id)->toBe($ctx['client']->id)
+        ->and($event->decoded['aps'][0]['serial'])->toBe($ctx['device']->serial)
+        ->and($event->decoded['aps'][0]['status'])->toBe(1);
+});
+
+it('shows stream events for the current client on the websocket index page', function () {
+    $this->withoutVite();
+    $ctx = createStreamWaitingWorkflow();
+    $ctx['client']->update(['current' => true]);
+    \App\Models\CentralStreamEvent::query()->create([
+        'client_id' => $ctx['client']->id,
+        'subject' => 'monitoring',
+        'customer_id' => 'cust-1',
+        'timestamp' => 123,
+        'decoded' => [
+            'aps' => [['serial' => $ctx['device']->serial, 'status' => 1]],
+            'switches' => [],
+            'data_elements' => [],
+        ],
+        'created_at' => now(),
+    ]);
+
+    $otherClient = Client::factory()->for($ctx['user'])->create();
+    \App\Models\CentralStreamEvent::query()->create([
+        'client_id' => $otherClient->id,
+        'subject' => 'other',
+        'customer_id' => 'cust-2',
+        'timestamp' => 456,
+        'decoded' => ['aps' => [], 'switches' => [], 'data_elements' => []],
+        'created_at' => now(),
+    ]);
+
+    $this->actingAs($ctx['user'])
+        ->get(route('streaming.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('WebSocket/Index')
+            ->has('events.data', 1)
+            ->where('events.data.0.customer_id', 'cust-1'));
+});
+
+it('redirects streaming index when no current client is set', function () {
+    $user = User::factory()->has(Client::factory()->state(['current' => false]))->create();
+
+    $this->actingAs($user)
+        ->get(route('streaming.index'))
+        ->assertRedirect(route('clients.index'));
 });
 
 it('dedupes stream up frames for the same serial within ttl', function () {

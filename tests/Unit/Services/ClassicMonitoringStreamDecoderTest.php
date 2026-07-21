@@ -62,3 +62,22 @@ it('ignores down devices and empty frames', function () {
     expect((new ClassicMonitoringStreamDecoder)->extractUpSerials(buildMonitoringEnvelope($monitoring)))->toBe([])
         ->and((new ClassicMonitoringStreamDecoder)->extractUpSerials(''))->toBe([]);
 });
+
+it('decodes full monitoring frames including down devices', function () {
+    $monitoring = encodeStringField(1, 'customer-123')
+        .encodeVarintField(2, ClassicMonitoringStreamDecoder::DATA_ELEMENT_STATE_AP)
+        .encodeMessageField(4, buildDeviceStateMessage('APDOWN', ClassicMonitoringStreamDecoder::STATUS_DOWN))
+        .encodeMessageField(11, buildDeviceStateMessage('SWUP', ClassicMonitoringStreamDecoder::STATUS_UP));
+
+    $decoded = (new ClassicMonitoringStreamDecoder)->decodeMonitoringFrame(buildMonitoringEnvelope($monitoring));
+
+    expect($decoded)->not->toBeNull()
+        ->and($decoded['customer_id'])->toBe('customer-123')
+        ->and($decoded['aps'])->toBe([
+            ['serial' => 'APDOWN', 'status' => ClassicMonitoringStreamDecoder::STATUS_DOWN],
+        ])
+        ->and($decoded['switches'])->toBe([
+            ['serial' => 'SWUP', 'status' => ClassicMonitoringStreamDecoder::STATUS_UP],
+        ])
+        ->and($decoded['data_elements'])->toBe([ClassicMonitoringStreamDecoder::DATA_ELEMENT_STATE_AP]);
+});

@@ -21,39 +21,93 @@ class ClassicMonitoringStreamDecoder
      */
     public function extractUpSerials(string $frame): array
     {
-        $envelope = $this->decodeKeyValues($frame);
-        $payload = $envelope[3][0] ?? null;
-        if (! is_string($payload) || $payload === '') {
+        $decoded = $this->decodeMonitoringFrame($frame);
+        if ($decoded === null) {
             return [];
         }
 
-        $monitoring = $this->decodeKeyValues($payload);
         $serials = [];
-
-        foreach ($monitoring[4] ?? [] as $apBytes) {
-            if (! is_string($apBytes)) {
-                continue;
-            }
-            $serial = $this->deviceSerialIfUp($apBytes);
-            if ($serial !== null) {
-                $serials[] = $serial;
-            }
-        }
-
-        foreach ($monitoring[11] ?? [] as $switchBytes) {
-            if (! is_string($switchBytes)) {
-                continue;
-            }
-            $serial = $this->deviceSerialIfUp($switchBytes);
-            if ($serial !== null) {
-                $serials[] = $serial;
+        foreach (array_merge($decoded['aps'], $decoded['switches']) as $device) {
+            if (($device['status'] ?? null) === self::STATUS_UP && ($device['serial'] ?? '') !== '') {
+                $serials[] = $device['serial'];
             }
         }
 
         return array_values(array_unique($serials));
     }
 
-    private function deviceSerialIfUp(string $message): ?string
+    /**
+     * @return array{
+     *     subject: string|null,
+     *     customer_id: string|null,
+     *     timestamp: int|null,
+     *     aps: list<array{serial: string, status: int}>,
+     *     switches: list<array{serial: string, status: int}>,
+     *     data_elements: list<int>
+     * }|null
+     */
+    public function decodeMonitoringFrame(string $frame): ?array
+    {
+        if ($frame === '') {
+            return null;
+        }
+
+        $envelope = $this->decodeKeyValues($frame);
+        $payload = $envelope[3][0] ?? null;
+        if (! is_string($payload) || $payload === '') {
+            return null;
+        }
+
+        $subject = isset($envelope[2][0]) && is_string($envelope[2][0]) ? $envelope[2][0] : null;
+        $timestamp = isset($envelope[4][0]) ? (int) $envelope[4][0] : null;
+        $envelopeCustomerId = isset($envelope[5][0]) && is_string($envelope[5][0]) ? $envelope[5][0] : null;
+
+        $monitoring = $this->decodeKeyValues($payload);
+        $customerId = isset($monitoring[1][0]) && is_string($monitoring[1][0])
+            ? $monitoring[1][0]
+            : $envelopeCustomerId;
+
+        $dataElements = [];
+        foreach ($monitoring[2] ?? [] as $element) {
+            $dataElements[] = (int) $element;
+        }
+
+        $aps = [];
+        foreach ($monitoring[4] ?? [] as $apBytes) {
+            if (! is_string($apBytes)) {
+                continue;
+            }
+            $device = $this->decodeDeviceState($apBytes);
+            if ($device !== null) {
+                $aps[] = $device;
+            }
+        }
+
+        $switches = [];
+        foreach ($monitoring[11] ?? [] as $switchBytes) {
+            if (! is_string($switchBytes)) {
+                continue;
+            }
+            $device = $this->decodeDeviceState($switchBytes);
+            if ($device !== null) {
+                $switches[] = $device;
+            }
+        }
+
+        return [
+            'subject' => $subject,
+            'customer_id' => $customerId,
+            'timestamp' => $timestamp,
+            'aps' => $aps,
+            'switches' => $switches,
+            'data_elements' => $dataElements,
+        ];
+    }
+
+    /**
+     * @return array{serial: string, status: int}|null
+     */
+    private function decodeDeviceState(string $message): ?array
     {
         $fields = $this->decodeKeyValues($message);
         $serial = isset($fields[2][0]) && is_string($fields[2][0]) ? trim($fields[2][0]) : '';
@@ -62,11 +116,11 @@ class ClassicMonitoringStreamDecoder
         }
 
         $status = isset($fields[6][0]) ? (int) $fields[6][0] : self::STATUS_UP;
-        if ($status !== self::STATUS_UP) {
-            return null;
-        }
 
-        return $serial;
+        return [
+            'serial' => $serial,
+            'status' => $status,
+        ];
     }
 
     /**

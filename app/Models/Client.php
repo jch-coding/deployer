@@ -55,6 +55,16 @@ class Client extends Model
         return $this->hasMany(LicensingInventoryDevice::class);
     }
 
+    public function centralWebhookEvents(): HasMany
+    {
+        return $this->hasMany(CentralWebhookEvent::class);
+    }
+
+    public function centralStreamEvents(): HasMany
+    {
+        return $this->hasMany(CentralStreamEvent::class);
+    }
+
     protected function casts(): array
     {
         return [

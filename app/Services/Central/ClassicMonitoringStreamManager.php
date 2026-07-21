@@ -3,8 +3,10 @@
 namespace App\Services\Central;
 
 use App\Enums\OnlineDetectionMode;
+use App\Events\CentralStreamMessageReceived;
 use App\JobQueueShard;
 use App\Jobs\HandleCentralDeviceOnlineWakeJob;
+use App\Models\CentralStreamEvent;
 use App\Models\Client;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -139,7 +141,35 @@ class ClassicMonitoringStreamManager
 
     public function handleFrame(int $clientId, string $frame): void
     {
-        foreach ($this->decoder->extractUpSerials($frame) as $serial) {
+        $decoded = $this->decoder->decodeMonitoringFrame($frame);
+        if ($decoded === null) {
+            return;
+        }
+
+        $event = CentralStreamEvent::query()->create([
+            'client_id' => $clientId,
+            'subject' => $decoded['subject'],
+            'customer_id' => $decoded['customer_id'],
+            'timestamp' => $decoded['timestamp'],
+            'decoded' => [
+                'aps' => $decoded['aps'],
+                'switches' => $decoded['switches'],
+                'data_elements' => $decoded['data_elements'],
+            ],
+            'created_at' => now(),
+        ]);
+        CentralStreamEvent::pruneForClient($clientId);
+        CentralStreamMessageReceived::dispatch($event);
+
+        $serials = [];
+        foreach (array_merge($decoded['aps'], $decoded['switches']) as $device) {
+            if (($device['status'] ?? null) === ClassicMonitoringStreamDecoder::STATUS_UP
+                && ($device['serial'] ?? '') !== '') {
+                $serials[] = $device['serial'];
+            }
+        }
+
+        foreach (array_values(array_unique($serials)) as $serial) {
             $cacheKey = "stream-up:{$clientId}:{$serial}";
             if (! Cache::add($cacheKey, true, 60)) {
                 continue;
