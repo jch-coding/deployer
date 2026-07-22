@@ -87,6 +87,8 @@ test('check greenlake inventory steps succeed when all devices are present', fun
         ->assertJsonPath('partial.missing_from_inventory', [])
         ->assertJsonPath('partial.missing_mac', [])
         ->assertJsonPath('summary.ok', true)
+        ->assertJsonPath('summary.passed_count', 1)
+        ->assertJsonPath('summary.failed_devices', [])
         ->assertJsonPath(
             'summary.message',
             'All deployment devices are present in GreenLake inventory.',
@@ -135,6 +137,8 @@ test('check greenlake inventory steps report devices missing from inventory', fu
         ->assertJsonPath('partial.missing_from_inventory', [])
         ->assertJsonPath('done', true)
         ->assertJsonPath('summary.ok', false)
+        ->assertJsonPath('summary.passed_count', 1)
+        ->assertJsonPath('summary.failed_devices', ['SN-MISSING-001'])
         ->assertJsonPath(
             'summary.message',
             'These devices were not found in GreenLake inventory: SN-MISSING-001.',
@@ -168,6 +172,8 @@ test('check greenlake inventory notes devices missing mac_address', function () 
         ->assertJsonPath('done', true)
         ->assertJsonPath('partial.missing_mac', ['SN-NO-MAC-001'])
         ->assertJsonPath('summary.ok', true)
+        ->assertJsonPath('summary.passed_count', 1)
+        ->assertJsonPath('summary.failed_devices', [])
         ->assertJsonPath(
             'summary.message',
             'All deployment devices are present in GreenLake inventory. Devices missing mac_address: SN-NO-MAC-001.',

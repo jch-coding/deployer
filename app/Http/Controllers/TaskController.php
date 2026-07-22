@@ -1950,6 +1950,7 @@ class TaskController extends Controller
             }
 
             $payload['summary'] = $this->buildGreenLakeInventorySummary(
+                $devices->count(),
                 $allMissingFromInventory,
                 $allMissingMac,
             );
@@ -2020,25 +2021,41 @@ class TaskController extends Controller
     /**
      * @param  list<string>  $missingFromInventory
      * @param  list<string>  $missingMac
-     * @return array{ok: bool, message: string}
+     * @return array{ok: bool, message: string, passed_count: int, failed_devices: list<string>}
      */
-    protected function buildGreenLakeInventorySummary(array $missingFromInventory, array $missingMac): array
-    {
-        if ($missingFromInventory === []) {
+    protected function buildGreenLakeInventorySummary(
+        int $deviceCount,
+        array $missingFromInventory,
+        array $missingMac,
+    ): array {
+        $failedDevices = array_values($missingFromInventory);
+        $passedCount = max(0, $deviceCount - count($failedDevices));
+
+        if ($failedDevices === []) {
             $message = 'All deployment devices are present in GreenLake inventory.';
             if ($missingMac !== []) {
                 $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
             }
 
-            return ['ok' => true, 'message' => $message];
+            return [
+                'ok' => true,
+                'message' => $message,
+                'passed_count' => $passedCount,
+                'failed_devices' => [],
+            ];
         }
 
-        $message = 'These devices were not found in GreenLake inventory: '.implode(', ', $missingFromInventory).'.';
+        $message = 'These devices were not found in GreenLake inventory: '.implode(', ', $failedDevices).'.';
         if ($missingMac !== []) {
             $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
         }
 
-        return ['ok' => false, 'message' => $message];
+        return [
+            'ok' => false,
+            'message' => $message,
+            'passed_count' => $passedCount,
+            'failed_devices' => $failedDevices,
+        ];
     }
 
     public function checkLagPortLists(Request $request, Deployment $deployment)

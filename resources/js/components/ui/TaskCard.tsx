@@ -121,6 +121,12 @@ export default function TaskCard({
     const [deviceMacOverrides, setDeviceMacOverrides] = useState<Record<number, string>>({});
     const [pendingDeployAllDevices, setPendingDeployAllDevices] = useState(false);
     const [isCheckingGreenLake, setIsCheckingGreenLake] = useState(false);
+    const [greenLakeCheckComplete, setGreenLakeCheckComplete] = useState(false);
+    const [greenLakeCheckResult, setGreenLakeCheckResult] = useState<{
+        passedCount: number;
+        failedDevices: string[];
+        error?: string;
+    } | null>(null);
     const [greenLakeTags, setGreenLakeTags] = useState<GreenLakeTagRow[]>([]);
     const [greenLakeLocations, setGreenLakeLocations] = useState<GreenLakeLocationOption[]>([]);
     const [greenLakeLocationId, setGreenLakeLocationId] = useState('');
@@ -306,6 +312,18 @@ export default function TaskCard({
     const devicesMissingMac = (devicesList: DeviceType[]) =>
         devicesList.filter((device) => !normalizeMacAddress(String(device.mac_address ?? '')));
 
+    const closeGreenLakeInventoryCheck = () => {
+        setIsCheckingGreenLake(false);
+        setGreenLakeCheckComplete(false);
+        setGreenLakeCheckResult(null);
+        setGreenLakeProgress({
+            current: 0,
+            total: 0,
+            percent: 0,
+            message: 'Starting GreenLake inventory check...',
+        });
+    };
+
     const checkGreenLakeInventory = async () => {
         if (isCheckingGreenLake) {
             return;
@@ -326,10 +344,14 @@ export default function TaskCard({
             summary?: {
                 ok: boolean;
                 message: string;
+                passed_count: number;
+                failed_devices: string[];
             };
         };
 
         setIsCheckingGreenLake(true);
+        setGreenLakeCheckComplete(false);
+        setGreenLakeCheckResult(null);
         setGreenLakeProgress({
             current: 0,
             total: 0,
@@ -377,20 +399,28 @@ export default function TaskCard({
             }
 
             if (summary) {
-                if (summary.ok) {
-                    toast.success(summary.message);
-                } else {
-                    toast.error(summary.message);
-                }
+                setGreenLakeCheckResult({
+                    passedCount: summary.passed_count,
+                    failedDevices: summary.failed_devices,
+                });
+            } else {
+                setGreenLakeCheckResult({
+                    passedCount: 0,
+                    failedDevices: [],
+                    error: 'Check finished without a summary.',
+                });
             }
         } catch (error) {
-            toast.error(
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to verify GreenLake inventory.',
-            );
+            setGreenLakeCheckResult({
+                passedCount: 0,
+                failedDevices: [],
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to verify GreenLake inventory.',
+            });
         } finally {
-            setIsCheckingGreenLake(false);
+            setGreenLakeCheckComplete(true);
         }
     };
 
@@ -1415,43 +1445,118 @@ export default function TaskCard({
                                 <p>Verify devices in GreenLake inventory</p>
                             </TooltipContent>
                         </Tooltip>
-                        <Dialog open={isCheckingGreenLake}>
+                        <Dialog
+                            open={isCheckingGreenLake}
+                            onOpenChange={(open) => {
+                                if (!open && greenLakeCheckComplete) {
+                                    closeGreenLakeInventoryCheck();
+                                }
+                            }}
+                        >
                             <DialogContent
-                                className="sm:max-w-md [&>button]:hidden"
-                                onInteractOutside={(e) => e.preventDefault()}
-                                onEscapeKeyDown={(e) => e.preventDefault()}
+                                className={
+                                    greenLakeCheckComplete
+                                        ? 'sm:max-w-md'
+                                        : 'sm:max-w-md [&>button]:hidden'
+                                }
+                                onInteractOutside={(e) => {
+                                    if (!greenLakeCheckComplete) {
+                                        e.preventDefault();
+                                    }
+                                }}
+                                onEscapeKeyDown={(e) => {
+                                    if (!greenLakeCheckComplete) {
+                                        e.preventDefault();
+                                    }
+                                }}
                             >
-                                <DialogTitle>Verifying GreenLake inventory</DialogTitle>
+                                <DialogTitle>
+                                    {greenLakeCheckComplete
+                                        ? 'GreenLake inventory check results'
+                                        : 'Verifying GreenLake inventory'}
+                                </DialogTitle>
                                 <DialogDescription className="sr-only">
-                                    Progress while verifying deployment devices in GreenLake inventory
+                                    {greenLakeCheckComplete
+                                        ? 'Results of verifying deployment devices in GreenLake inventory'
+                                        : 'Progress while verifying deployment devices in GreenLake inventory'}
                                 </DialogDescription>
-                                <div
-                                    className="flex flex-col gap-3 py-2"
-                                    role="status"
-                                    aria-live="polite"
-                                    aria-busy="true"
-                                >
+                                {!greenLakeCheckComplete ? (
                                     <div
-                                        className="bg-muted h-2 w-full overflow-hidden rounded-full"
-                                        role="progressbar"
-                                        aria-valuenow={greenLakeProgress.percent}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
+                                        className="flex flex-col gap-3 py-2"
+                                        role="status"
+                                        aria-live="polite"
+                                        aria-busy="true"
                                     >
                                         <div
-                                            className="bg-primary h-full rounded-full transition-all duration-300"
-                                            style={{ width: `${greenLakeProgress.percent}%` }}
-                                        />
+                                            className="bg-muted h-2 w-full overflow-hidden rounded-full"
+                                            role="progressbar"
+                                            aria-valuenow={greenLakeProgress.percent}
+                                            aria-valuemin={0}
+                                            aria-valuemax={100}
+                                        >
+                                            <div
+                                                className="bg-primary h-full rounded-full transition-all duration-300"
+                                                style={{
+                                                    width: `${greenLakeProgress.percent}%`,
+                                                }}
+                                            />
+                                        </div>
+                                        <p className="text-muted-foreground text-sm">
+                                            {greenLakeProgress.total > 0
+                                                ? `Step ${greenLakeProgress.current} of ${greenLakeProgress.total}`
+                                                : 'Starting…'}
+                                            {greenLakeProgress.percent > 0 &&
+                                                ` (${greenLakeProgress.percent}%)`}
+                                        </p>
+                                        <p className="text-sm font-medium">
+                                            {greenLakeProgress.message}
+                                        </p>
                                     </div>
-                                    <p className="text-muted-foreground text-sm">
-                                        {greenLakeProgress.total > 0
-                                            ? `Step ${greenLakeProgress.current} of ${greenLakeProgress.total}`
-                                            : 'Starting…'}
-                                        {greenLakeProgress.percent > 0 &&
-                                            ` (${greenLakeProgress.percent}%)`}
-                                    </p>
-                                    <p className="text-sm font-medium">{greenLakeProgress.message}</p>
-                                </div>
+                                ) : (
+                                    <div className="flex flex-col gap-3 py-2">
+                                        {greenLakeCheckResult?.error ? (
+                                            <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                                                {greenLakeCheckResult.error}
+                                            </p>
+                                        ) : (
+                                            <>
+                                                <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                                                    {greenLakeCheckResult?.passedCount ?? 0}{' '}
+                                                    {(greenLakeCheckResult?.passedCount ?? 0) === 1
+                                                        ? 'device'
+                                                        : 'devices'}{' '}
+                                                    passed
+                                                </p>
+                                                {(greenLakeCheckResult?.failedDevices.length ??
+                                                    0) > 0 && (
+                                                    <div className="flex flex-col gap-2">
+                                                        <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                                                            Failed devices
+                                                        </p>
+                                                        <ul className="list-inside list-disc space-y-1 text-sm text-red-600 dark:text-red-400">
+                                                            {greenLakeCheckResult?.failedDevices.map(
+                                                                (device) => (
+                                                                    <li key={device}>{device}</li>
+                                                                ),
+                                                            )}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                                {greenLakeCheckComplete && (
+                                    <DialogFooter>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={closeGreenLakeInventoryCheck}
+                                        >
+                                            Close
+                                        </Button>
+                                    </DialogFooter>
+                                )}
                             </DialogContent>
                         </Dialog>
                     </div>
