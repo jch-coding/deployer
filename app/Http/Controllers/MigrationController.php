@@ -2,13 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\DeviceFunction;
 use App\Helper\CentralAPIHelper;
+use App\Models\Client;
+use App\Models\Deployment;
+use App\Models\Device;
+use App\Models\Site;
 use App\Services\ArubaControllerConfigParser;
 use App\Services\CentralScopeCacheService;
 use App\Services\MigrationDeployService;
 use App\Services\MigrationNamedVlanService;
+use App\Support\MacAddress;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class MigrationController extends Controller
 {
@@ -22,13 +31,10 @@ class MigrationController extends Controller
             return to_route('clients.index');
         }
 
-        return Inertia::render('Migration/Index', [
-            'site_options' => $centralScopeCacheService->getSiteOptions($currentClient),
-            'parsed_controllers' => [],
-            'deploy_results' => [],
-            'named_vlan_deploy_results' => [],
-            ...$centralScopeCacheService->getCacheMetadata($currentClient),
-        ]);
+        return Inertia::render('Migration/Index', $this->migrationPageProps(
+            $currentClient,
+            $centralScopeCacheService,
+        ));
     }
 
     public function parse(Request $request, ArubaControllerConfigParser $parser, CentralScopeCacheService $centralScopeCacheService)
@@ -54,13 +60,114 @@ class MigrationController extends Controller
             ]);
         }
 
-        return Inertia::render('Migration/Index', [
-            'site_options' => $centralScopeCacheService->getSiteOptions($currentClient),
-            'parsed_controllers' => $parsedControllers,
-            'deploy_results' => [],
-            'named_vlan_deploy_results' => [],
-            ...$centralScopeCacheService->getCacheMetadata($currentClient),
+        return Inertia::render('Migration/Index', $this->migrationPageProps(
+            $currentClient,
+            $centralScopeCacheService,
+            parsedControllers: $parsedControllers,
+        ));
+    }
+
+    public function createDeployment(Request $request, CentralScopeCacheService $centralScopeCacheService): Response|\Illuminate\Http\RedirectResponse
+    {
+        $user = $request->user();
+        $currentClient = $user->currentClient();
+
+        if (! $currentClient) {
+            session()->flash('error', 'Please set current client before creating deployments');
+
+            return to_route('clients.index');
+        }
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'min:3',
+                'max:255',
+                Rule::unique('deployments', 'name')->where(
+                    fn ($query) => $query->where('client_id', $currentClient->id)
+                ),
+            ],
+            'devices' => ['required', 'array', 'min:1'],
+            'devices.*.name' => ['required', 'string', 'min:3', 'max:255'],
+            'devices.*.serial' => ['required', 'string', 'min:12', 'max:255'],
+            'devices.*.mac_address' => [
+                'nullable',
+                'string',
+                'max:17',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! is_string($value) || trim($value) === '') {
+                        return;
+                    }
+
+                    if (! MacAddress::isValid($value)) {
+                        $fail('The mac address format is invalid.');
+                    }
+                },
+            ],
+            'devices.*.site' => ['nullable', 'string', 'max:255'],
+            'devices.*.group' => ['nullable', 'string', 'max:255'],
+            'parsed_controllers' => ['sometimes', 'array'],
         ]);
+
+        $parsedControllers = $request->input('parsed_controllers', []);
+
+        $result = DB::transaction(function () use ($validated, $currentClient, $user) {
+            $deployment = Deployment::create([
+                'name' => $validated['name'],
+                'client_id' => $currentClient->id,
+            ]);
+
+            foreach ($validated['devices'] as $devicePayload) {
+                $mac = $devicePayload['mac_address'] ?? null;
+                $normalizedMac = is_string($mac) && trim($mac) !== ''
+                    ? MacAddress::normalize($mac)
+                    : null;
+
+                $attributes = [
+                    'name' => $devicePayload['name'],
+                    'serial' => $devicePayload['serial'],
+                    'device_function' => DeviceFunction::CAMPUS_AP->name,
+                    'client_id' => $currentClient->id,
+                    'user_id' => $user->id,
+                    'deployment_id' => $deployment->id,
+                    'mac_address' => $normalizedMac,
+                    'group' => filled($devicePayload['group'] ?? null)
+                        ? $devicePayload['group']
+                        : null,
+                ];
+
+                $device = Device::query()
+                    ->where('serial', $devicePayload['serial'])
+                    ->where('user_id', $user->id)
+                    ->first();
+
+                if ($device) {
+                    $device->update($attributes);
+                } else {
+                    $device = Device::create($attributes);
+                }
+
+                $this->applyDeviceSiteLocally($device, $devicePayload['site'] ?? null);
+            }
+
+            $deviceCount = $deployment->devices()->count();
+
+            return [
+                'deployment' => $deployment,
+                'device_count' => $deviceCount,
+            ];
+        });
+
+        return Inertia::render('Migration/Index', $this->migrationPageProps(
+            $currentClient,
+            $centralScopeCacheService,
+            parsedControllers: is_array($parsedControllers) ? $parsedControllers : [],
+            lastCreatedDeployment: [
+                'name' => $result['deployment']->name,
+                'device_count' => $result['device_count'],
+            ],
+        ));
     }
 
     public function deployWlan(
@@ -77,8 +184,7 @@ class MigrationController extends Controller
         }
 
         $validated = $this->validateDeployRequest($request, $centralScopeCacheService);
-        $siteOptions = $centralScopeCacheService->getSiteOptions($currentClient);
-        $selectedSiteName = collect($siteOptions)
+        $selectedSiteName = collect($centralScopeCacheService->getSiteOptions($currentClient))
             ->firstWhere('siteId', $validated['scope_id'])['siteName'] ?? '';
         $isFreezer = MigrationNamedVlanService::isFreezerSite($selectedSiteName);
 
@@ -91,14 +197,14 @@ class MigrationController extends Controller
 
         $parsedControllers = $request->input('parsed_controllers', []);
 
-        return Inertia::render('Migration/Index', [
-            'site_options' => $siteOptions,
-            'parsed_controllers' => is_array($parsedControllers) ? $parsedControllers : [],
-            'deploy_results' => $results['deploy_results'],
-            'named_vlan_deploy_results' => $results['named_vlan_deploy_results'],
-            'selected_scope_id' => $validated['scope_id'],
-            ...$centralScopeCacheService->getCacheMetadata($currentClient),
-        ]);
+        return Inertia::render('Migration/Index', $this->migrationPageProps(
+            $currentClient,
+            $centralScopeCacheService,
+            parsedControllers: is_array($parsedControllers) ? $parsedControllers : [],
+            deployResults: $results['deploy_results'],
+            namedVlanDeployResults: $results['named_vlan_deploy_results'],
+            selectedScopeId: $validated['scope_id'],
+        ));
     }
 
     public function deployWlanStep(
@@ -114,8 +220,7 @@ class MigrationController extends Controller
         }
 
         $validated = $this->validateDeployRequest($request, $centralScopeCacheService);
-        $siteOptions = $centralScopeCacheService->getSiteOptions($currentClient);
-        $selectedSiteName = collect($siteOptions)
+        $selectedSiteName = collect($centralScopeCacheService->getSiteOptions($currentClient))
             ->firstWhere('siteId', $validated['scope_id'])['siteName'] ?? '';
         $isFreezer = MigrationNamedVlanService::isFreezerSite($selectedSiteName);
 
@@ -171,5 +276,50 @@ class MigrationController extends Controller
         }
 
         return $validated;
+    }
+
+    /**
+     * @param  array<int, mixed>  $parsedControllers
+     * @param  array<int, mixed>  $deployResults
+     * @param  array<int, mixed>  $namedVlanDeployResults
+     * @param  array{name: string, device_count: int}|null  $lastCreatedDeployment
+     * @return array<string, mixed>
+     */
+    private function migrationPageProps(
+        Client $currentClient,
+        CentralScopeCacheService $centralScopeCacheService,
+        array $parsedControllers = [],
+        array $deployResults = [],
+        array $namedVlanDeployResults = [],
+        ?array $lastCreatedDeployment = null,
+        ?string $selectedScopeId = null,
+    ): array {
+        $props = [
+            'site_options' => $centralScopeCacheService->getSiteOptions($currentClient),
+            'device_group_options' => $centralScopeCacheService->getGroups($currentClient)['device_group_options'],
+            'parsed_controllers' => $parsedControllers,
+            'deploy_results' => $deployResults,
+            'named_vlan_deploy_results' => $namedVlanDeployResults,
+            'last_created_deployment' => $lastCreatedDeployment,
+            ...$centralScopeCacheService->getCacheMetadata($currentClient),
+        ];
+
+        if ($selectedScopeId !== null) {
+            $props['selected_scope_id'] = $selectedScopeId;
+        }
+
+        return $props;
+    }
+
+    private function applyDeviceSiteLocally(Device $device, ?string $siteName): void
+    {
+        if ($siteName === null || $siteName === '') {
+            $device->update(['site_id' => null]);
+
+            return;
+        }
+
+        $site = Site::firstOrCreateForClient($device->client, $siteName);
+        $device->update(['site_id' => $site->id]);
     }
 }

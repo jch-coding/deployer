@@ -21,6 +21,9 @@ import {
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import ControllerMigrationSection from '@/pages/Migration/ControllerMigrationSection';
+import CreateDeploymentFromDevicesDialog, {
+    type DeviceGroupOption,
+} from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
 import {
     buildDeployProfilePayload,
     buildInitialDeploySteps,
@@ -47,10 +50,12 @@ import type { BreadcrumbItem, SharedData } from '@/types';
 
 type MigrationIndexProps = {
     site_options: SiteOption[];
+    device_group_options: DeviceGroupOption[];
     parsed_controllers: ParsedController[];
     deploy_results: DeployResult[];
     named_vlan_deploy_results: NamedVlanDeployResult[];
     selected_scope_id?: string;
+    last_created_deployment?: { name: string; device_count: number } | null;
     central_sites_cache: CentralScopeCacheMeta;
     central_groups_cache: CentralScopeGroupsCacheMeta;
 } & SharedData;
@@ -78,6 +83,7 @@ export default function Index() {
     const {
         current_client,
         site_options,
+        device_group_options = [],
         parsed_controllers,
         deploy_results,
         named_vlan_deploy_results,
@@ -485,6 +491,8 @@ export default function Index() {
                                 key={controller.controller_name}
                                 controller={controller}
                                 siteOptions={site_options}
+                                groupOptions={device_group_options}
+                                parsedControllers={parsed_controllers}
                             />
                         ))}
                     </>
@@ -517,16 +525,26 @@ export default function Index() {
                                         database long`.
                                     </CardDescription>
                                 </div>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => downloadMigrationDevicesCsv(allDevices)}
-                                    disabled={allDevices.length === 0}
-                                >
-                                    <Download className="size-4" />
-                                    Download CSV
-                                </Button>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <CreateDeploymentFromDevicesDialog
+                                        devices={allDevices}
+                                        siteOptions={site_options}
+                                        groupOptions={device_group_options}
+                                        parsedControllers={parsed_controllers}
+                                        showController
+                                        disabled={!current_client}
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => downloadMigrationDevicesCsv(allDevices)}
+                                        disabled={allDevices.length === 0}
+                                    >
+                                        <Download className="size-4" />
+                                        Download CSV
+                                    </Button>
+                                </div>
                             </CardHeader>
                             <CardContent className="overflow-x-auto">
                                 <table className="w-full text-sm">

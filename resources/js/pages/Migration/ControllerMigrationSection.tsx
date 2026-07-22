@@ -20,6 +20,9 @@ import {
 } from '@/lib/migration-csv';
 import { csrfHeaders } from '@/lib/csrf';
 import { cn } from '@/lib/utils';
+import CreateDeploymentFromDevicesDialog, {
+    type DeviceGroupOption,
+} from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
 import {
     buildDeployProfilePayload,
     buildInitialDeploySteps,
@@ -39,6 +42,8 @@ import {
 type ControllerMigrationSectionProps = {
     controller: ParsedController;
     siteOptions: SiteOption[];
+    groupOptions: DeviceGroupOption[];
+    parsedControllers: ParsedController[];
 };
 
 function deployStepIcon(status: DeployStepStatus) {
@@ -59,6 +64,8 @@ function deployStepIcon(status: DeployStepStatus) {
 export default function ControllerMigrationSection({
     controller,
     siteOptions,
+    groupOptions,
+    parsedControllers,
 }: ControllerMigrationSectionProps) {
     const { controller_name, devices, lldp_neighbors, wlan_profiles } = controller;
 
@@ -333,18 +340,26 @@ export default function ControllerMigrationSection({
                             {devices.length} access points extracted from `show ap database long`.
                         </CardDescription>
                     </div>
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                            downloadMigrationDevicesCsv(devices, controller_name)
-                        }
-                        disabled={devices.length === 0}
-                    >
-                        <Download className="size-4" />
-                        Download CSV
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <CreateDeploymentFromDevicesDialog
+                            devices={devices}
+                            siteOptions={siteOptions}
+                            groupOptions={groupOptions}
+                            parsedControllers={parsedControllers}
+                        />
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                                downloadMigrationDevicesCsv(devices, controller_name)
+                            }
+                            disabled={devices.length === 0}
+                        >
+                            <Download className="size-4" />
+                            Download CSV
+                        </Button>
+                    </div>
                 </CardHeader>
                 <CardContent className="overflow-x-auto">
                     <table className="w-full text-sm">

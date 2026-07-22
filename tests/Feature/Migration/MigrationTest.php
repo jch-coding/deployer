@@ -37,9 +37,12 @@ test('migrations index renders with site options', function () {
             ->where('parsed_controllers', [])
             ->where('deploy_results', [])
             ->where('named_vlan_deploy_results', [])
+            ->where('last_created_deployment', null)
             ->has('site_options', 1)
             ->where('site_options.0.siteId', 'scope-site')
-            ->where('site_options.0.siteName', 'Central Site'));
+            ->where('site_options.0.siteName', 'Central Site')
+            ->has('device_group_options', 2)
+            ->where('device_group_options.0.scopeName', 'Central Group'));
 });
 
 test('migrations parse uploads config file and returns parsed controllers', function () {
