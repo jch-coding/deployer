@@ -14,11 +14,16 @@ import type { BreadcrumbItem, SharedData } from '@/types';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
+type GreenLakeStepStatuses = Record<string, string>;
+
 type TaskDevice = {
     id: number;
     name: string;
     serial: string;
-    pivot: { status: string };
+    pivot: {
+        status: string;
+        greenlake_step_statuses?: GreenLakeStepStatuses | null;
+    };
     lacp_profile?: { port_list?: string };
     [key: string]: unknown;
 };
@@ -30,16 +35,66 @@ type DeviceTaskPageProps = SharedData & {
     display_columns?: string[];
     deployment: { id: number; name: string };
     can_run_central_check?: boolean;
+    progress_completed?: number | null;
+    progress_total?: number | null;
+    greenlake_steps?: string[];
 };
 
+const GREENLAKE_STEP_LABELS: Record<string, string> = {
+    inventory: 'Inventory',
+    tags: 'Tags',
+    location: 'Location',
+};
+
+function formatGreenLakeStepStatus(
+    device: TaskDevice,
+    greenlakeSteps: string[],
+): { label: string; allCompleted: boolean } {
+    const statuses = device.pivot.greenlake_step_statuses ?? {};
+    const parts = greenlakeSteps.map((step) => {
+        const label = GREENLAKE_STEP_LABELS[step] ?? step;
+        const status = statuses[step] ?? 'PENDING';
+
+        return `${label}: ${status}`;
+    });
+
+    const allCompleted =
+        greenlakeSteps.length > 0 &&
+        greenlakeSteps.every((step) => statuses[step] === 'COMPLETED');
+
+    return {
+        label: parts.join(' | '),
+        allCompleted,
+    };
+}
+
 export default function Show() {
-    const { current_client, flash, task, task_friendly_name, devices, display_columns, deployment, can_run_central_check } =
-        usePage<DeviceTaskPageProps>().props;
+    const {
+        current_client,
+        flash,
+        task,
+        task_friendly_name,
+        devices,
+        display_columns,
+        deployment,
+        can_run_central_check,
+        progress_completed,
+        progress_total,
+        greenlake_steps,
+    } = usePage<DeviceTaskPageProps>().props;
     const displayColumns = display_columns ?? [];
     const canRunCentralCheck = can_run_central_check === true;
-    const completedDevices= devices.filter(
+    const isGreenLakeInventoryTask = task.task_type === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY';
+    const greenlakeSteps = greenlake_steps ?? [];
+    const completedDevices = devices.filter(
         (device) => device.pivot.status === 'COMPLETED',
     );
+    const progressCompleted = isGreenLakeInventoryTask
+        ? (progress_completed ?? 0)
+        : completedDevices.length;
+    const progressTotal = isGreenLakeInventoryTask
+        ? (progress_total ?? 0)
+        : devices.length;
     const [isCancelling, setIsCancelling] = useState(false);
     const [isClearingQueue, setIsClearingQueue] = useState(false);
     const isLagTask = task.task_type === 'CONFIGURE_LAG_INTERFACE';
@@ -124,11 +179,11 @@ export default function Show() {
                         </CardHeader>
                         <CardDescription className="flex items-center justify-center">
                             <span className="p-1 text-3xl font-bold">
-                                {completedDevices.length}
+                                {progressCompleted}
                             </span>
                             <ChevronRightCircleIcon />
                             <span className="p-1 text-3xl font-bold">
-                                {devices.length}
+                                {progressTotal}
                             </span>
                         </CardDescription>
                         <CardContent>
@@ -154,28 +209,40 @@ export default function Show() {
                                 <span>Task Field</span>
                                 <span>Status</span>
                             </div>
-                            {devices.map((device) => (
-                                <div
-                                    key={device.id}
-                                    className={cn(
-                                        'mb-2 grid grid-cols-4 gap-2 text-sm',
-                                        device.pivot.status === 'COMPLETED' &&
-                                            'text-green-500',
-                                    )}
-                                >
-                                    <span>{device.name}</span>
-                                    <span>{device.serial}</span>
-                                    <span className="truncate">
-                                        {isLagTask
-                                            ? device.lacp_profile?.port_list
-                                            : displayColumns
-                                                  .map((column: string) =>
-                                                      `${formatColumnLabel(column)}: ${device[column] ?? 'N/A'}`)
-                                                  .join(' | ')}
-                                    </span>
-                                    <span>{device.pivot.status}</span>
-                                </div>
-                            ))}
+                            {devices.map((device) => {
+                                const greenLakeStatus = isGreenLakeInventoryTask
+                                    ? formatGreenLakeStepStatus(device, greenlakeSteps)
+                                    : null;
+                                const isCompleted = greenLakeStatus
+                                    ? greenLakeStatus.allCompleted
+                                    : device.pivot.status === 'COMPLETED';
+
+                                return (
+                                    <div
+                                        key={device.id}
+                                        className={cn(
+                                            'mb-2 grid grid-cols-4 gap-2 text-sm',
+                                            isCompleted && 'text-green-500',
+                                        )}
+                                    >
+                                        <span>{device.name}</span>
+                                        <span>{device.serial}</span>
+                                        <span className="truncate">
+                                            {isLagTask
+                                                ? device.lacp_profile?.port_list
+                                                : displayColumns
+                                                      .map((column: string) =>
+                                                          `${formatColumnLabel(column)}: ${device[column] ?? 'N/A'}`)
+                                                      .join(' | ')}
+                                        </span>
+                                        <span>
+                                            {greenLakeStatus
+                                                ? greenLakeStatus.label
+                                                : device.pivot.status}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </CardContent>
                     </Card>
                 </div>

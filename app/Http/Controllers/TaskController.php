@@ -394,6 +394,9 @@ class TaskController extends Controller
         $isDeviceBasedTask = $task->getTaskCategory($task->task_type) === 'DEVICE';
         $inertia_component = $isDeviceBasedTask ? 'Task/DeviceTask' : 'Task/InterfaceTask';
 
+        $progressTotals = $task->trackedItemTotals();
+        $isGreenLakeInventoryTask = $task->task_type === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY';
+
         return Inertia::render($inertia_component, [
             'task' => $task,
             'task_friendly_name' => Task::getTaskFriendlyName($task->task_type),
@@ -404,6 +407,9 @@ class TaskController extends Controller
             'display_columns' => $this->display_columns[$task->task_type] ?? [],
             'supports_central_check' => Task::supportsCentralCheck($task->task_type),
             'can_run_central_check' => Task::supportsCentralCheck($task->task_type) && $task->status === 'COMPLETED',
+            'progress_completed' => $isGreenLakeInventoryTask ? $progressTotals['completed'] : null,
+            'progress_total' => $isGreenLakeInventoryTask ? $progressTotals['total'] : null,
+            'greenlake_steps' => $isGreenLakeInventoryTask ? $task->applicableGreenLakeSteps() : [],
         ]);
     }
 

@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,32 +13,41 @@ class Device extends Model
     /** @use HasFactory<\Database\Factories\DeviceFactory> */
     use HasFactory;
 
-    public function client() : BelongsTo
+    public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
     }
 
-    public function user() : BelongsTo
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function tasks() : BelongsToMany
+    public function tasks(): BelongsToMany
     {
-        return $this->belongsToMany(Task::class)->withPivot('status')->withTimestamps();
+        return $this->belongsToMany(Task::class)
+            ->using(DeviceTask::class)
+            ->withPivot(
+                'status',
+                'greenlake_step_statuses',
+                'licensing_service_name',
+                'license_tag',
+                'license_type',
+            )
+            ->withTimestamps();
     }
 
-    public function deployment() : BelongsTo
+    public function deployment(): BelongsTo
     {
         return $this->belongsTo(Deployment::class);
     }
 
-    public function site() : BelongsTo
+    public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);
     }
 
-    public function interfaces() : HasMany
+    public function interfaces(): HasMany
     {
         return $this->hasMany(DeviceInterface::class);
     }

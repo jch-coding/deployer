@@ -30,12 +30,56 @@ class Task extends Model
 
     public function devices(): BelongsToMany
     {
-        return $this->belongsToMany(Device::class)->withPivot(
-            'status',
-            'licensing_service_name',
-            'license_tag',
-            'license_type',
-        )->withTimestamps();
+        return $this->belongsToMany(Device::class)
+            ->using(DeviceTask::class)
+            ->withPivot(
+                'status',
+                'greenlake_step_statuses',
+                'licensing_service_name',
+                'license_tag',
+                'license_type',
+            )
+            ->withTimestamps();
+    }
+
+    /**
+     * Applicable GreenLake post-add steps for ADD_DEVICES_TO_GREENLAKE_INVENTORY.
+     *
+     * @return list<string>
+     */
+    public function applicableGreenLakeSteps(): array
+    {
+        if ($this->task_type !== 'ADD_DEVICES_TO_GREENLAKE_INVENTORY') {
+            return [];
+        }
+
+        $steps = ['inventory'];
+
+        $tags = $this->greenlake_tags;
+        if (is_array($tags) && $tags !== []) {
+            $steps[] = 'tags';
+        }
+
+        if (trim((string) ($this->greenlake_location_id ?? '')) !== '') {
+            $steps[] = 'location';
+        }
+
+        return $steps;
+    }
+
+    /**
+     * Initial PENDING map for applicable GreenLake steps.
+     *
+     * @return array<string, string>
+     */
+    public function initialGreenLakeStepStatuses(): array
+    {
+        $statuses = [];
+        foreach ($this->applicableGreenLakeSteps() as $step) {
+            $statuses[$step] = 'PENDING';
+        }
+
+        return $statuses;
     }
 
     public function deviceInterfaces(): BelongsToMany
@@ -343,6 +387,10 @@ class Task extends Model
             return ['category' => 'INTERFACE', 'completed' => $completed, 'total' => $total];
         }
 
+        if ($this->task_type === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY') {
+            return $this->greenLakeStepTrackedItemTotals();
+        }
+
         if ($category === 'DEVICE') {
             $total = $this->devices()->count();
             $completed = $this->devices()->wherePivot('status', 'COMPLETED')->count();
@@ -351,6 +399,36 @@ class Task extends Model
         }
 
         return ['category' => null, 'completed' => 0, 'total' => 0];
+    }
+
+    /**
+     * Progress units are per-device steps (inventory, optional tags, optional location).
+     *
+     * @return array{category: string, completed: int, total: int}
+     */
+    public function greenLakeStepTrackedItemTotals(): array
+    {
+        $steps = $this->applicableGreenLakeSteps();
+        $stepCount = count($steps);
+        $devices = $this->devices()->get();
+        $deviceCount = $devices->count();
+        $total = $deviceCount * $stepCount;
+        $completed = 0;
+
+        foreach ($devices as $device) {
+            $statuses = $device->pivot->greenlake_step_statuses ?? [];
+            if (! is_array($statuses)) {
+                $statuses = [];
+            }
+
+            foreach ($steps as $step) {
+                if (($statuses[$step] ?? null) === 'COMPLETED') {
+                    $completed++;
+                }
+            }
+        }
+
+        return ['category' => 'DEVICE', 'completed' => $completed, 'total' => $total];
     }
 
     public function allTrackedItemsCompleted(): bool

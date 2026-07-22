@@ -36,7 +36,7 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             $serial = trim((string) ($device['serial'] ?? ''));
             $mac = trim((string) ($device['mac_address'] ?? ''));
             if ($serial === '' || $mac === '') {
-                $this->markDeviceFailed($device['id'] ?? null);
+                $this->failDeviceSteps($device['id'] ?? null, 'inventory');
                 $this->task->processTaskStatusLog(
                     "\nSkipped device ".($serial !== '' ? $serial : (string) ($device['id'] ?? '')).': missing serial or mac_address.'
                 );
@@ -54,6 +54,10 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             $this->failTask('No devices with serial and mac_address available to add to GreenLake.');
 
             return;
+        }
+
+        foreach ($payloadDevices as $device) {
+            $this->initializeDeviceSteps($device['id']);
         }
 
         $tags = $this->task->greenlake_tags;
@@ -85,9 +89,10 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
 
             if ($ok) {
                 $succeededDevices[] = $device;
+                $this->completeDeviceStep($device['id'], 'inventory');
                 $this->task->processTaskStatusLog("\nAdded device {$serial} to GreenLake inventory.");
             } else {
-                $this->markDeviceFailed($device['id']);
+                $this->failDeviceSteps($device['id'], 'inventory');
                 $detail = $result['error'] ?? 'GreenLake add failed.';
                 $this->task->processTaskStatusLog("\nFailed to add device {$serial}: {$detail}");
             }
@@ -105,10 +110,6 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
 
         if ($succeededDevices !== [] && ($tags !== null || $locationId !== '')) {
             $this->applyPostAddMetadata($succeededDevices, $tags, $locationId, $locationName);
-        } else {
-            foreach ($succeededDevices as $device) {
-                $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
-            }
         }
 
         $this->task->load('devices');
@@ -153,11 +154,12 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
 
                 if ($ok) {
                     $stillOk[$greenlakeId] = $device;
+                    $this->completeDeviceStep($device['id'], 'tags');
                     $this->task->processTaskStatusLog(
                         "\nApplied GreenLake tags to device {$device['serial']}."
                     );
                 } else {
-                    $this->markDeviceFailed($device['id']);
+                    $this->failDeviceSteps($device['id'], 'tags');
                     $detail = $assignResult['error'] ?? 'GreenLake tag update failed.';
                     $this->task->processTaskStatusLog(
                         "\nDevice {$device['serial']} was added to inventory, but tag update failed: {$detail}"
@@ -184,12 +186,12 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
                 }
 
                 if ($ok) {
-                    $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
+                    $this->completeDeviceStep($device['id'], 'location');
                     $this->task->processTaskStatusLog(
                         "\nAssigned location \"{$locationName}\" to device {$device['serial']}."
                     );
                 } else {
-                    $this->markDeviceFailed($device['id']);
+                    $this->failDeviceSteps($device['id'], 'location');
                     $detail = $assignResult['error'] ?? 'GreenLake location assignment failed.';
                     $this->task->processTaskStatusLog(
                         "\nDevice {$device['serial']} was added to inventory, but location assignment failed: {$detail}"
@@ -200,12 +202,6 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             if ($assignResult['success'] !== true && ($assignResult['error'] ?? null) !== null) {
                 Log::error('Failed to assign GreenLake location: '.$assignResult['error']);
             }
-
-            return;
-        }
-
-        foreach ($localIdByGreenLakeId as $device) {
-            $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
         }
     }
 
@@ -228,7 +224,8 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             if (GreenLakeAPIHelper::isCollectError($idsBySerial)) {
                 $error = (string) ($idsBySerial['error'] ?? 'Failed to resolve GreenLake device ids.');
                 foreach ($succeededDevices as $device) {
-                    $this->markDeviceFailed($device['id']);
+                    $failStep = $purpose === 'tag update' ? 'tags' : 'location';
+                    $this->failDeviceSteps($device['id'], $failStep);
                     $this->task->processTaskStatusLog(
                         "\nDevice {$device['serial']} was added to inventory, but {$purpose} failed: {$error}"
                     );
@@ -261,7 +258,8 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
                 ?? ''
             ));
             if ($greenlakeId === '') {
-                $this->markDeviceFailed($device['id']);
+                $failStep = $purpose === 'tag update' ? 'tags' : 'location';
+                $this->failDeviceSteps($device['id'], $failStep);
                 $this->task->processTaskStatusLog(
                     "\nDevice {$device['serial']} was added to inventory, but its GreenLake device id could not be resolved for {$purpose}."
                 );
@@ -282,10 +280,183 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
         ];
     }
 
+    private function initializeDeviceSteps(mixed $deviceId): void
+    {
+        if ($deviceId === null) {
+            return;
+        }
+
+        $device = $this->task->devices()->find($deviceId);
+        if ($device === null || $device->pivot === null) {
+            return;
+        }
+
+        $existing = $this->normalizeStepStatuses($device->pivot->greenlake_step_statuses ?? null);
+        if ($existing !== []) {
+            return;
+        }
+
+        $device->pivot->update([
+            'greenlake_step_statuses' => $this->task->initialGreenLakeStepStatuses(),
+            'status' => 'PENDING',
+        ]);
+    }
+
+    private function completeDeviceStep(mixed $deviceId, string $step): void
+    {
+        if ($deviceId === null) {
+            return;
+        }
+
+        $device = $this->task->devices()->find($deviceId);
+        if ($device === null || $device->pivot === null) {
+            return;
+        }
+
+        $statuses = $this->normalizeStepStatuses($device->pivot->greenlake_step_statuses ?? null);
+        if ($statuses === []) {
+            $statuses = $this->task->initialGreenLakeStepStatuses();
+        }
+
+        if (! array_key_exists($step, $statuses)) {
+            return;
+        }
+
+        $statuses[$step] = 'COMPLETED';
+        $device->pivot->update([
+            'greenlake_step_statuses' => $statuses,
+            'status' => $this->overallStatusFromSteps($statuses),
+        ]);
+    }
+
+    /**
+     * Mark the failing step (and any still-PENDING later steps) as FAILED.
+     * Earlier COMPLETED steps are preserved so progress does not regress.
+     */
+    private function failDeviceSteps(mixed $deviceId, string $failedStep): void
+    {
+        if ($deviceId === null) {
+            return;
+        }
+
+        $device = $this->task->devices()->find($deviceId);
+        if ($device === null || $device->pivot === null) {
+            return;
+        }
+
+        $statuses = $this->normalizeStepStatuses($device->pivot->greenlake_step_statuses ?? null);
+        if ($statuses === []) {
+            $statuses = $this->task->initialGreenLakeStepStatuses();
+        }
+
+        $applicable = $this->task->applicableGreenLakeSteps();
+        $pastFailed = false;
+        foreach ($applicable as $step) {
+            if ($step === $failedStep) {
+                $pastFailed = true;
+            }
+            if (! array_key_exists($step, $statuses)) {
+                continue;
+            }
+            if ($pastFailed && ($statuses[$step] ?? null) !== 'COMPLETED') {
+                $statuses[$step] = 'FAILED';
+            }
+        }
+
+        $device->pivot->update([
+            'greenlake_step_statuses' => $statuses,
+            'status' => 'FAILED',
+        ]);
+    }
+
+    /**
+     * @param  array<string, string>  $statuses
+     */
+    private function overallStatusFromSteps(array $statuses): string
+    {
+        if ($statuses === []) {
+            return 'PENDING';
+        }
+
+        foreach ($statuses as $status) {
+            if ($status === 'FAILED') {
+                return 'FAILED';
+            }
+        }
+
+        foreach ($statuses as $status) {
+            if ($status !== 'COMPLETED') {
+                return 'IN_PROGRESS';
+            }
+        }
+
+        return 'COMPLETED';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function normalizeStepStatuses(mixed $raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($raw as $step => $status) {
+            if (! is_string($step) || ! is_string($status)) {
+                continue;
+            }
+            $normalized[$step] = $status;
+        }
+
+        return $normalized;
+    }
+
     public function failed(?Throwable $exception): void
     {
         $this->logFailedException($exception);
-        $this->markAllDevicesFailed();
+        $this->markIncompleteDevicesFailedPreservingCompletedSteps();
         $this->failTask('Failed adding devices to GreenLake inventory. Task timed out or failed.');
+    }
+
+    /**
+     * Do not overwrite devices already overall-COMPLETED.
+     * For in-flight devices, fail only still-PENDING steps and set overall FAILED.
+     */
+    private function markIncompleteDevicesFailedPreservingCompletedSteps(): void
+    {
+        $this->task->load('devices');
+
+        foreach ($this->task->devices as $device) {
+            if ($device->pivot === null) {
+                continue;
+            }
+
+            if ($device->pivot->status === 'COMPLETED') {
+                continue;
+            }
+
+            $statuses = $this->normalizeStepStatuses($device->pivot->greenlake_step_statuses ?? null);
+            if ($statuses === []) {
+                $statuses = $this->task->initialGreenLakeStepStatuses();
+            }
+
+            foreach ($statuses as $step => $status) {
+                if ($status === 'PENDING') {
+                    $statuses[$step] = 'FAILED';
+                }
+            }
+
+            $device->pivot->update([
+                'greenlake_step_statuses' => $statuses,
+                'status' => 'FAILED',
+            ]);
+        }
     }
 }
