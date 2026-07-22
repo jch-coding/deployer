@@ -75,6 +75,7 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(DeviceController::class)->group(function () {
         Route::post('/deployments/{deployment}/refresh-scope-ids', 'refreshScopeIds')->name('deployments.refresh-scope-ids');
         Route::post('/deployments/{deployment}/bulk-update-metadata', 'bulkUpdateMetadata')->name('deployments.bulk-update-metadata');
+        Route::post('/deployments/{deployment}/bulk-move', 'bulkMoveToDeployment')->name('deployments.bulk-move');
         Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::get('/devices/{device}', 'show')->name('devices.show');
@@ -114,6 +115,7 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(MigrationController::class)->group(function () {
         Route::get('/migrations', 'index')->name('migrations.index');
         Route::post('/migrations/parse', 'parse')->name('migrations.parse');
+        Route::post('/migrations/create-deployment', 'createDeployment')->name('migrations.create-deployment');
         Route::post('/migrations/deploy-wlan', 'deployWlan')->name('migrations.deploy-wlan');
         Route::post('/migrations/deploy-wlan/step/{step}', 'deployWlanStep')->name('migrations.deploy-wlan.step');
     });

@@ -1065,6 +1065,86 @@ class DeviceController extends Controller
         return back();
     }
 
+    public function bulkMoveToDeployment(Request $request, Deployment $deployment)
+    {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            session()->flash('error', 'Please set current client to match this deployment before moving devices.');
+
+            return back();
+        }
+
+        $data = $request->validate([
+            'target_deployment_id' => ['required', 'integer'],
+            'device_ids' => ['nullable', 'array', 'min:1'],
+            'device_ids.*' => ['integer'],
+            'sync_all' => ['nullable', 'boolean'],
+            'search' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $targetDeploymentId = (int) $data['target_deployment_id'];
+
+        if ($targetDeploymentId === (int) $deployment->id) {
+            throw ValidationException::withMessages([
+                'target_deployment_id' => 'Select a different deployment to move devices to.',
+            ]);
+        }
+
+        $targetDeployment = $currentClient->deployments()->find($targetDeploymentId);
+        if (! $targetDeployment) {
+            throw ValidationException::withMessages([
+                'target_deployment_id' => 'Deployment does not belong to current client.',
+            ]);
+        }
+
+        $syncAll = $request->boolean('sync_all');
+        $deviceIds = $data['device_ids'] ?? [];
+
+        if (! $syncAll && $deviceIds === []) {
+            throw ValidationException::withMessages([
+                'device_ids' => 'Select at least one device or sync all devices.',
+            ]);
+        }
+
+        $search = is_string($data['search'] ?? null) ? mb_substr(trim($data['search']), 0, 255) : '';
+
+        if ($syncAll) {
+            $devicesQuery = $deployment->devices();
+            $this->applyDeploymentDeviceSearch($devicesQuery, $search);
+            $devices = $devicesQuery->get();
+        } else {
+            $devices = $deployment->devices()
+                ->whereIn('id', $deviceIds)
+                ->get();
+
+            $missingIds = collect($deviceIds)->diff($devices->pluck('id'));
+            if ($missingIds->isNotEmpty()) {
+                session()->flash('error', 'One or more selected devices do not belong to this deployment.');
+
+                return back();
+            }
+        }
+
+        if ($devices->isEmpty()) {
+            session()->flash('error', 'No devices selected to move.');
+
+            return back();
+        }
+
+        Device::query()
+            ->whereIn('id', $devices->pluck('id'))
+            ->update(['deployment_id' => $targetDeployment->id]);
+
+        $count = $devices->count();
+        $message = $count === 1
+            ? "Moved 1 device to {$targetDeployment->name}."
+            : "Moved {$count} devices to {$targetDeployment->name}.";
+
+        session()->flash('success', $message);
+
+        return back();
+    }
+
     private function applyDeviceSiteLocally(Device $device, ?string $siteName): void
     {
         if ($siteName === null || $siteName === '') {

@@ -61,6 +61,7 @@ import {
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import {
+    bulkMove,
     bulkUpdateMetadata,
     critical_check as criticalCheckDeployment,
     index as deploymentsIndex,
@@ -216,6 +217,7 @@ type DeploymentPageProps = {
     devices: DeviceDef[];
     base_urls: string[];
     deployment: DeploymentSummary;
+    client_deployments: DeploymentSummary[];
     tasks: LaunchTask[];
     latest_tasks: Task[];
     available_subscriptions: AvailableSubscription[];
@@ -255,8 +257,11 @@ export default function Show() {
     const [syncingScopeIds, setSyncingScopeIds] = useState(false);
     const [bulkSite, setBulkSite] = useState(BULK_NO_CHANGE);
     const [bulkGroup, setBulkGroup] = useState(BULK_NO_CHANGE);
+    const [bulkTargetDeploymentId, setBulkTargetDeploymentId] = useState('');
     const [applyingMetadata, setApplyingMetadata] = useState(false);
+    const [movingDevices, setMovingDevices] = useState(false);
     const applyingMetadataRef = useRef(false);
+    const movingDevicesRef = useRef(false);
     const previousDeploymentIdRef = useRef(deploymentId);
     const previousDeviceSearchRef = useRef('');
 
@@ -294,6 +299,7 @@ export default function Show() {
         central_sites_error = null,
         central_device_groups_error = null,
         device_group_options = [],
+        client_deployments = [],
         central_sites_cache,
         central_groups_cache,
     } = usePage<DeploymentPageProps>().props;
@@ -338,6 +344,10 @@ export default function Show() {
     }, [applyingMetadata]);
 
     useEffect(() => {
+        movingDevicesRef.current = movingDevices;
+    }, [movingDevices]);
+
+    useEffect(() => {
         const stopBulkMetadataLoading = () => {
             if (!applyingMetadataRef.current) {
                 return;
@@ -353,6 +363,35 @@ export default function Show() {
         const removeExceptionListener = router.on(
             'exception',
             stopBulkMetadataLoading,
+        );
+
+        return () => {
+            removeFinishListener();
+            removeCancelListener();
+            removeErrorListener();
+            removeExceptionListener();
+        };
+    }, []);
+
+    useEffect(() => {
+        const stopMovingDevicesLoading = () => {
+            if (!movingDevicesRef.current) {
+                return;
+            }
+
+            movingDevicesRef.current = false;
+            setMovingDevices(false);
+        };
+
+        const removeFinishListener = router.on('finish', stopMovingDevicesLoading);
+        const removeCancelListener = router.on(
+            'cancel',
+            stopMovingDevicesLoading,
+        );
+        const removeErrorListener = router.on('error', stopMovingDevicesLoading);
+        const removeExceptionListener = router.on(
+            'exception',
+            stopMovingDevicesLoading,
         );
 
         return () => {
@@ -515,6 +554,54 @@ export default function Show() {
         isAllFilteredSelected,
         selectedIds,
         stopBulkMetadataLoading,
+    ]);
+
+    const stopMovingDevicesLoading = useCallback(() => {
+        movingDevicesRef.current = false;
+        setMovingDevices(false);
+    }, []);
+
+    const handleBulkMoveToDeployment = useCallback(() => {
+        if (bulkTargetDeploymentId === '') {
+            return;
+        }
+
+        const payload: {
+            target_deployment_id: number;
+            sync_all?: boolean;
+            search?: string;
+            device_ids?: number[];
+        } = {
+            target_deployment_id: Number(bulkTargetDeploymentId),
+            ...(isAllFilteredSelected
+                ? {
+                      sync_all: true,
+                      ...(deviceTableSearch.trim() !== ''
+                          ? { search: deviceTableSearch.trim() }
+                          : {}),
+                  }
+                : { device_ids: selectedIds }),
+        };
+
+        movingDevicesRef.current = true;
+        setMovingDevices(true);
+        router.post(bulkMove.url(deploymentId), payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setBulkTargetDeploymentId('');
+                setRowSelection({});
+                setAllFilteredSelected(false);
+            },
+            onError: stopMovingDevicesLoading,
+            onFinish: stopMovingDevicesLoading,
+        });
+    }, [
+        bulkTargetDeploymentId,
+        deploymentId,
+        deviceTableSearch,
+        isAllFilteredSelected,
+        selectedIds,
+        stopMovingDevicesLoading,
     ]);
 
     const breadcrumbs: BreadcrumbItem[] = [
@@ -1097,6 +1184,65 @@ export default function Show() {
                                                     ? 'Apply to all matching'
                                                     : `Apply to selected (${selectedCount})`}
                                             </Button>
+                                            {client_deployments.length > 0 ? (
+                                                <>
+                                                    <Select
+                                                        value={
+                                                            bulkTargetDeploymentId ||
+                                                            undefined
+                                                        }
+                                                        onValueChange={
+                                                            setBulkTargetDeploymentId
+                                                        }
+                                                        disabled={movingDevices}
+                                                    >
+                                                        <SelectTrigger
+                                                            className="h-9 w-48"
+                                                            aria-label="Move to deployment"
+                                                            data-test="bulk-move-deployment-select"
+                                                        >
+                                                            <SelectValue placeholder="Move to deployment" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {client_deployments.map(
+                                                                (sibling) => (
+                                                                    <SelectItem
+                                                                        key={
+                                                                            sibling.id
+                                                                        }
+                                                                        value={String(
+                                                                            sibling.id,
+                                                                        )}
+                                                                    >
+                                                                        {
+                                                                            sibling.name
+                                                                        }
+                                                                    </SelectItem>
+                                                                ),
+                                                            )}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        disabled={
+                                                            bulkTargetDeploymentId ===
+                                                                '' ||
+                                                            movingDevices
+                                                        }
+                                                        data-test="bulk-move-devices"
+                                                        onClick={
+                                                            handleBulkMoveToDeployment
+                                                        }
+                                                    >
+                                                        {movingDevices
+                                                            ? 'Moving…'
+                                                            : isAllFilteredSelected
+                                                              ? 'Move all matching'
+                                                              : `Move selected (${selectedCount})`}
+                                                    </Button>
+                                                </>
+                                            ) : null}
                                 </div>
                             ) : null}
                             {showSelectAllFilteredBanner ? (

@@ -179,12 +179,27 @@ class DeploymentController extends Controller
             }
         }
 
+        $clientDeployments = [];
+        if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
+            $clientDeployments = $currentClient->deployments()
+                ->where('id', '!=', $deployment->id)
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (Deployment $sibling) => [
+                    'id' => $sibling->id,
+                    'name' => $sibling->name,
+                ])
+                ->values()
+                ->all();
+        }
+
         return Inertia::render('Deployment/Show', [
             'deployment' => [
                 'id' => $deployment->id,
                 'name' => $deployment->name,
             ],
             'devices' => $devices,
+            'client_deployments' => $clientDeployments,
             'enabled_services' => $licensingOptions['enabled_services'],
             'available_subscriptions' => $licensingOptions['available_subscriptions'],
             'license_tags' => $licensingOptions['license_tags'],
