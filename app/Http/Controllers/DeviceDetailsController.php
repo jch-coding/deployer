@@ -17,6 +17,8 @@ class DeviceDetailsController extends Controller
 
     private const DEPLOYMENTS = ['Standalone', 'Cluster', 'Stack'];
 
+    private const MAX_SERIALS = 25;
+
     public function index(Request $request, DeviceCentralFilterBuilder $filterBuilder, CentralScopeCacheService $centralScopeCacheService)
     {
         $currentClient = $request->user()->currentClient();
@@ -118,7 +120,7 @@ class DeviceDetailsController extends Controller
         ]);
     }
 
-    public function show(Request $request, string $serial, DeviceCentralFilterBuilder $filterBuilder)
+    public function show(Request $request, DeviceCentralFilterBuilder $filterBuilder)
     {
         $currentClient = $request->user()->currentClient();
 
@@ -128,9 +130,48 @@ class DeviceDetailsController extends Controller
             return to_route('clients.index');
         }
 
-        $serial = trim($serial);
-        $helper = new CentralAPIHelper($currentClient);
+        $validated = $request->validate([
+            'serials' => ['required', 'array', 'min:1', 'max:'.self::MAX_SERIALS],
+            'serials.*' => ['required', 'string', 'max:16'],
+        ]);
 
+        $serials = [];
+        foreach ($validated['serials'] as $serial) {
+            $trimmed = trim((string) $serial);
+            if ($trimmed === '' || in_array($trimmed, $serials, true)) {
+                continue;
+            }
+            $serials[] = $trimmed;
+        }
+
+        if ($serials === []) {
+            return back()->withErrors(['serials' => 'At least one serial number is required.']);
+        }
+
+        $helper = new CentralAPIHelper($currentClient);
+        $switches = [];
+
+        foreach ($serials as $serial) {
+            $switches[] = $this->buildSwitchPayload($helper, $filterBuilder, $serial);
+        }
+
+        return Inertia::render('DeviceDetails/Show', [
+            'switches' => $switches,
+        ]);
+    }
+
+    public function redirectShow(string $serial)
+    {
+        return redirect()->route('device-details.show', [
+            'serials' => [trim($serial)],
+        ]);
+    }
+
+    /**
+     * @return array{serial: string, device_name: string, interfaces: list<array<string, mixed>>, central_error: string|null}
+     */
+    private function buildSwitchPayload(CentralAPIHelper $helper, DeviceCentralFilterBuilder $filterBuilder, string $serial): array
+    {
         $deviceName = '';
         $centralError = null;
         $filter = $filterBuilder->build(['serialNumber' => $serial]);
@@ -157,51 +198,72 @@ class DeviceDetailsController extends Controller
                 $centralError = (string) $interfacesResult['error'];
             } else {
                 $interfaces = array_map(
-                    function (array $item): array {
-                        $allowedVlanIds = $item['allowedVlanIds'] ?? [];
-                        if (! is_array($allowedVlanIds)) {
-                            $allowedVlanIds = [];
-                        }
-
-                        $normalizedVlanIds = [];
-                        foreach ($allowedVlanIds as $vlanId) {
-                            if (is_numeric($vlanId)) {
-                                $normalizedVlanIds[] = (int) $vlanId;
-                            }
-                        }
-
-                        $nativeVlan = $item['nativeVlan'] ?? '';
-                        if ($nativeVlan === null) {
-                            $nativeVlan = '';
-                        }
-
-                        return [
-                            'name' => (string) ($item['name'] ?? ''),
-                            'status' => (string) ($item['status'] ?? ''),
-                            'operStatus' => (string) ($item['operStatus'] ?? ''),
-                            'neighbour' => (string) ($item['neighbour'] ?? ''),
-                            'neighbourSerial' => (string) ($item['neighbourSerial'] ?? ''),
-                            'vlanMode' => (string) ($item['vlanMode'] ?? ''),
-                            'allowedVlanIds' => $normalizedVlanIds,
-                            'nativeVlan' => (string) $nativeVlan,
-                            'poeClass' => (string) ($item['poeClass'] ?? ''),
-                            'neighbourFamily' => (string) ($item['neighbourFamily'] ?? ''),
-                            'neighbourFunction' => (string) ($item['neighbourFunction'] ?? ''),
-                            'neighbourType' => (string) ($item['neighbourType'] ?? ''),
-                            'transceiverType' => (string) ($item['transceiverType'] ?? ''),
-                        ];
-                    },
+                    fn (array $item): array => $this->mapInterfaceItem($item),
                     $interfacesResult,
                 );
             }
         }
 
-        return Inertia::render('DeviceDetails/Show', [
+        return [
             'serial' => $serial,
             'device_name' => $deviceName,
             'interfaces' => $interfaces,
             'central_error' => $centralError,
-        ]);
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{
+     *     name: string,
+     *     status: string,
+     *     operStatus: string,
+     *     neighbour: string,
+     *     neighbourSerial: string,
+     *     vlanMode: string,
+     *     allowedVlanIds: list<int>,
+     *     nativeVlan: string,
+     *     poeClass: string,
+     *     neighbourFamily: string,
+     *     neighbourFunction: string,
+     *     neighbourType: string,
+     *     transceiverType: string
+     * }
+     */
+    private function mapInterfaceItem(array $item): array
+    {
+        $allowedVlanIds = $item['allowedVlanIds'] ?? [];
+        if (! is_array($allowedVlanIds)) {
+            $allowedVlanIds = [];
+        }
+
+        $normalizedVlanIds = [];
+        foreach ($allowedVlanIds as $vlanId) {
+            if (is_numeric($vlanId)) {
+                $normalizedVlanIds[] = (int) $vlanId;
+            }
+        }
+
+        $nativeVlan = $item['nativeVlan'] ?? '';
+        if ($nativeVlan === null) {
+            $nativeVlan = '';
+        }
+
+        return [
+            'name' => (string) ($item['name'] ?? ''),
+            'status' => (string) ($item['status'] ?? ''),
+            'operStatus' => (string) ($item['operStatus'] ?? ''),
+            'neighbour' => (string) ($item['neighbour'] ?? ''),
+            'neighbourSerial' => (string) ($item['neighbourSerial'] ?? ''),
+            'vlanMode' => (string) ($item['vlanMode'] ?? ''),
+            'allowedVlanIds' => $normalizedVlanIds,
+            'nativeVlan' => (string) $nativeVlan,
+            'poeClass' => (string) ($item['poeClass'] ?? ''),
+            'neighbourFamily' => (string) ($item['neighbourFamily'] ?? ''),
+            'neighbourFunction' => (string) ($item['neighbourFunction'] ?? ''),
+            'neighbourType' => (string) ($item['neighbourType'] ?? ''),
+            'transceiverType' => (string) ($item['transceiverType'] ?? ''),
+        ];
     }
 
     /**

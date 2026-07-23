@@ -84,3 +84,48 @@ export function downloadSwitchInterfacesCsv(interfaces: SwitchInterfaceRow[], se
         ]),
     );
 }
+
+export type SwitchInterfacesExportGroup = {
+    switchName: string;
+    interfaces: SwitchInterfaceRow[];
+};
+
+export function downloadAllSwitchInterfacesCsv(groups: SwitchInterfacesExportGroup[]): void {
+    downloadCsv(
+        'interfaces-all.csv',
+        [
+            'switch',
+            'name',
+            'status',
+            'operStatus',
+            'neighbour',
+            'neighbourSerial',
+            'vlanMode',
+            'allowedVlanIds',
+            'nativeVlan',
+            'poeClass',
+            'neighbourFamily',
+            'neighbourFunction',
+            'neighbourType',
+            'transceiverType',
+        ],
+        groups.flatMap((group) =>
+            group.interfaces.map((iface) => [
+                group.switchName,
+                iface.name,
+                iface.status,
+                iface.operStatus,
+                iface.neighbour,
+                iface.neighbourSerial,
+                iface.vlanMode,
+                formatAllowedVlanIds(iface.allowedVlanIds),
+                iface.nativeVlan,
+                iface.poeClass,
+                iface.neighbourFamily,
+                iface.neighbourFunction,
+                iface.neighbourType,
+                iface.transceiverType,
+            ]),
+        ),
+    );
+}

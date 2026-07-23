@@ -1,9 +1,10 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, RowSelectionState } from '@tanstack/react-table';
 import { Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import CentralScopeRefreshButtons, {
@@ -112,6 +113,14 @@ function hasActiveFilters(filters: DeviceDetailsFilters): boolean {
     );
 }
 
+function showUrlForSerials(serials: string[]): string {
+    return deviceDetailsShow.url({
+        query: {
+            serials,
+        },
+    });
+}
+
 const selectClassName =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
@@ -122,7 +131,6 @@ export default function Index() {
         filters,
         site_options,
         central_error,
-        has_active_filters,
         device_type_options,
         status_options,
         deployment_options,
@@ -134,8 +142,17 @@ export default function Index() {
     const [isSearching, setIsSearching] = useState(false);
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
+    const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
     const hasActiveLocalFilters = useMemo(() => hasActiveFilters(localFilters), [localFilters]);
+
+    const selectedSerials = useMemo(
+        () =>
+            Object.keys(rowSelection)
+                .filter((key) => rowSelection[key] && key.trim() !== '')
+                .map((serial) => serial),
+        [rowSelection],
+    );
 
     useEffect(() => {
         setLocalFilters(filters);
@@ -144,6 +161,7 @@ export default function Index() {
 
     useEffect(() => {
         setPageIndex(0);
+        setRowSelection({});
     }, [devices, pageSize]);
 
     const updateFilter = useCallback((patch: Partial<DeviceDetailsFilters>) => {
@@ -201,8 +219,41 @@ export default function Index() {
         );
     }, [devices.length, filters, isSearching, localFilters]);
 
+    const viewSelected = useCallback(() => {
+        if (selectedSerials.length === 0) {
+            return;
+        }
+
+        router.get(showUrlForSerials(selectedSerials));
+    }, [selectedSerials]);
+
     const columns = useMemo<ColumnDef<DeviceRow>[]>(
         () => [
+            {
+                id: 'select',
+                header: ({ table }) => (
+                    <Checkbox
+                        checked={
+                            table.getIsAllPageRowsSelected() ||
+                            (table.getIsSomePageRowsSelected() && 'indeterminate')
+                        }
+                        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                        aria-label="Select all on page"
+                        data-test="device-details-select-all"
+                    />
+                ),
+                cell: ({ row }) => (
+                    <Checkbox
+                        checked={row.getIsSelected()}
+                        onCheckedChange={(value) => row.toggleSelected(!!value)}
+                        aria-label={`Select ${row.original.serialNumber}`}
+                        disabled={row.original.serialNumber === ''}
+                        data-test="device-details-select-row"
+                    />
+                ),
+                enableSorting: false,
+                enableHiding: false,
+            },
             {
                 accessorKey: 'deviceName',
                 header: 'Device Name',
@@ -214,7 +265,7 @@ export default function Index() {
 
                     return (
                         <Link
-                            href={deviceDetailsShow.url(serial)}
+                            href={showUrlForSerials([serial])}
                             className="text-primary underline-offset-4 hover:underline"
                             data-test="device-details-link-name"
                         >
@@ -234,7 +285,7 @@ export default function Index() {
 
                     return (
                         <Link
-                            href={deviceDetailsShow.url(serial)}
+                            href={showUrlForSerials([serial])}
                             className="text-primary underline-offset-4 hover:underline"
                             data-test="device-details-link-serial"
                         >
@@ -284,7 +335,7 @@ export default function Index() {
             <div className="mx-auto max-w-7xl px-4">
                 <h1 className="text-center text-3xl font-semibold">Device Details</h1>
                 <p className="mt-2 text-center text-sm text-muted-foreground">
-                    Search Central devices, then open a device to view interfaces and related details.
+                    Search Central devices, then select one or more switches to view interfaces.
                 </p>
 
                 <div className="mt-4 flex justify-center">
@@ -412,7 +463,7 @@ export default function Index() {
                     </select>
                 </div>
 
-                <div className="mt-4 flex justify-center">
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
                     <Button
                         type="button"
                         onClick={submitSearch}
@@ -422,6 +473,15 @@ export default function Index() {
                     >
                         <Search className="size-4" aria-hidden />
                         {isSearching ? 'Searching…' : 'Search'}
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={viewSelected}
+                        disabled={selectedSerials.length === 0}
+                        data-test="device-details-view-selected"
+                    >
+                        View selected ({selectedSerials.length})
                     </Button>
                 </div>
 
@@ -449,7 +509,12 @@ export default function Index() {
                                         value={pageSize}
                                         onChange={(e) => {
                                             const next = Number(e.target.value);
-                                            if (next === 10 || next === 25 || next === 50 || next === 100) {
+                                            if (
+                                                next === 10 ||
+                                                next === 25 ||
+                                                next === 50 ||
+                                                next === 100
+                                            ) {
                                                 setPageSize(next);
                                             }
                                         }}
@@ -467,6 +532,9 @@ export default function Index() {
                                 data={pagedDevices}
                                 columns={columns}
                                 getRowId={(row) => row.serialNumber || row.deviceName}
+                                enableRowSelection
+                                rowSelection={rowSelection}
+                                onRowSelectionChange={setRowSelection}
                             />
                             {totalDevices > 0 ? (
                                 <div className="mt-3 flex items-center justify-center gap-3">
@@ -490,7 +558,9 @@ export default function Index() {
                                         type="button"
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                                        onClick={() =>
+                                            setPageIndex((p) => Math.min(totalPages - 1, p + 1))
+                                        }
                                         disabled={safePageIndex >= totalPages - 1}
                                         data-test="device-details-page-next"
                                     >
