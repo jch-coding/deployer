@@ -68,6 +68,7 @@ class CentralAPIHelper
 
     public array $switchMonitoring = [
         'switches' => 'network-monitoring/v1/switches',
+        'interfaces' => 'network-monitoring/v1/switches',
     ];
 
     public array $deviceMonitoring = [
@@ -1131,18 +1132,78 @@ class CentralAPIHelper
         }
     }
 
-    public function get_monitoring_interfaces(Device $device, array $filter = [])
+    /**
+     * @param  array<string, mixed>  $queryParameters  Optional limit, offset, filter, search, sort
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
+    public function get_switch_interfaces(string $serialNumber, array $queryParameters = [])
     {
         if (! $this->client->handleBearerTokenAuth()) {
             return ['error' => 'failed to get access token from central.'];
-        } else {
-            $queryParameters = array_merge(static::localDeviceInterfaceQueryParameters($device), $filter);
-            $response = Http::withToken($this->client->bearer_token)
-                ->withQueryParameters($queryParameters)
-                ->get($this->client->base_url.$this->interfaces['interface_ethernet']).'/'.$device->serial.'/interfaces';
-
-            return $response;
         }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->withQueryParameters($queryParameters)
+            ->get($this->client->base_url.$this->switchMonitoring['interfaces'].'/'.$serialNumber.'/interfaces');
+
+        if (! $response->ok()) {
+            return ['error' => 'failed to get switch interfaces from central.'];
+        }
+
+        return $response;
+    }
+
+    /**
+     * Page through all switch interfaces using offset pagination (limit + offset).
+     *
+     * @param  array<string, mixed>  $queryParameters  Optional filter/search/sort (limit and offset are managed internally)
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    public function get_all_switch_interfaces(string $serialNumber, array $queryParameters = []): array
+    {
+        $allItems = [];
+        $requestedLimit = $queryParameters['limit'] ?? null;
+        unset($queryParameters['limit'], $queryParameters['offset']);
+
+        $limit = is_numeric($requestedLimit) ? (int) $requestedLimit : 1000;
+        $offset = 0;
+
+        while (true) {
+            $params = array_merge($queryParameters, [
+                'limit' => $limit,
+                'offset' => $offset,
+            ]);
+
+            $response = $this->get_switch_interfaces($serialNumber, $params);
+
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch switch interfaces from Central.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get switch interfaces from central.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            $allItems = array_merge($allItems, $pageItems);
+
+            $nextOffset = $response->json('offset');
+            if ($nextOffset === null || $nextOffset === '') {
+                break;
+            }
+
+            $offset = (int) $nextOffset;
+        }
+
+        return $allItems;
     }
 
     public function post_interface_portchannel(DeviceInterface $deviceInterface)

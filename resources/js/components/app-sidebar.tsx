@@ -6,6 +6,7 @@ import {
     FileUp,
     ListTodoIcon,
     MapPin,
+    Network,
     Radio,
     ScrollText,
     Webhook,
@@ -25,6 +26,7 @@ import {
 import { documentation, usage } from '@/routes';
 import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
+import { index as device_details_index } from '@/routes/device-details'
 import { index as sites_index } from '@/routes/sites'
 import { index as central_api_index } from '@/routes/central-api';
 import { index as migrations_index } from '@/routes/migrations';
@@ -48,6 +50,11 @@ const mainNavItems: NavItem[] = [
         title: 'Sites',
         href: sites_index(),
         icon: MapPin,
+    },
+    {
+        title: 'Device Details',
+        href: device_details_index(),
+        icon: Network,
     },
     {
         title: 'Tasks',

@@ -711,6 +711,79 @@ test('get_all_devices paginates with limit and next until cursor is null', funct
     Http::assertSentCount(2);
 });
 
+test('get_all_switch_interfaces paginates with limit and offset until offset is null', function () {
+    Http::fake(function (Request $request) {
+        expect($request->url())->toContain('network-monitoring/v1/switches/SN123/interfaces');
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        expect($query['limit'] ?? null)->toBe('1000');
+
+        if (($query['offset'] ?? '0') === '0') {
+            return Http::response([
+                'items' => [[
+                    'name' => '1/1/1',
+                    'status' => 'Connected',
+                    'operStatus' => 'Up',
+                    'neighbour' => 'AP-1',
+                    'neighbourSerial' => 'APSN1',
+                ]],
+                'total' => 2,
+                'offset' => 1,
+            ], 200);
+        }
+
+        expect($query['offset'])->toBe('1');
+
+        return Http::response([
+            'items' => [[
+                'name' => '1/1/2',
+                'status' => 'Not Connected',
+                'operStatus' => 'Down',
+                'neighbour' => '',
+                'neighbourSerial' => '',
+            ]],
+            'total' => 2,
+            'offset' => null,
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_all_switch_interfaces('SN123');
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(2)
+        ->and($result[0]['name'])->toBe('1/1/1')
+        ->and($result[1]['name'])->toBe('1/1/2');
+
+    Http::assertSentCount(2);
+});
+
+test('get_all_switch_interfaces returns error when a page request fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/switches/*/interfaces*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_all_switch_interfaces('SN123');
+
+    expect($result)->toBe(['error' => 'failed to get switch interfaces from central.']);
+});
+
+test('get_switch_interfaces returns error when auth fails', function () {
+    Http::fake();
+
+    $client = mock(Client::class)->makePartial();
+    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnFalse();
+
+    $helper = new CentralAPIHelper($client);
+    $result = $helper->get_switch_interfaces('SN123');
+
+    expect($result)->toBe(['error' => 'failed to get access token from central.']);
+
+    Http::assertNothingSent();
+});
+
 test('get_all_switches returns error when a page request fails', function () {
     Http::fake([
         '*network-monitoring/v1/switches*' => Http::response(['detail' => 'error'], 500),
