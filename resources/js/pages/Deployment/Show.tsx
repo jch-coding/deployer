@@ -634,6 +634,7 @@ export default function Show() {
         'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
         'ADD_TAGS_TO_GREENLAKE_DEVICES',
         'ADD_LOCATION_TO_GREENLAKE_DEVICES',
+        'EXPORT_MAC_ADDRESSES_TO_CENTRAL',
     ]);
 
     const isDeviceBasedTask = (task_type: string) =>

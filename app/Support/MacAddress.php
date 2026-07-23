@@ -29,4 +29,17 @@ class MacAddress
     {
         return self::normalize($value) !== null;
     }
+
+    /**
+     * Format a MAC for Central NAC CSV import (AA-BB-CC-DD-EE-FF).
+     */
+    public static function toCentralCsvFormat(string $value): ?string
+    {
+        $normalized = self::normalize($value);
+        if ($normalized === null) {
+            return null;
+        }
+
+        return strtoupper(str_replace(':', '-', $normalized));
+    }
 }

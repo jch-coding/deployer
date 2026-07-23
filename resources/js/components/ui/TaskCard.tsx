@@ -128,6 +128,7 @@ export default function TaskCard({
         error?: string;
     } | null>(null);
     const [greenLakeTags, setGreenLakeTags] = useState<GreenLakeTagRow[]>([]);
+    const [centralStaticTags, setCentralStaticTags] = useState<string[]>([]);
     const [greenLakeLocations, setGreenLakeLocations] = useState<GreenLakeLocationOption[]>([]);
     const [greenLakeLocationId, setGreenLakeLocationId] = useState('');
     const [greenLakeLocationsLoading, setGreenLakeLocationsLoading] = useState(false);
@@ -150,7 +151,9 @@ export default function TaskCard({
     const isAddToGreenLakeInventory = task === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY';
     const isAddTagsToGreenLake = task === 'ADD_TAGS_TO_GREENLAKE_DEVICES';
     const isAddLocationToGreenLake = task === 'ADD_LOCATION_TO_GREENLAKE_DEVICES';
+    const isExportMacToCentral = task === 'EXPORT_MAC_ADDRESSES_TO_CENTRAL';
     const needsGreenLakeLocations = isAddToGreenLakeInventory || isAddLocationToGreenLake;
+    const needsMacAddressGate = isAddToGreenLakeInventory || isExportMacToCentral;
 
     const devicesWithMac = useMemo(
         () =>
@@ -513,7 +516,7 @@ export default function TaskCard({
             return;
         }
 
-        if (taskStr === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY' && !skipMacGate) {
+        if (needsMacAddressGate && !skipMacGate) {
             const missing = devicesMissingMac(devices_for_task);
             if (missing.length > 0) {
                 const serials = missing
@@ -675,6 +678,13 @@ export default function TaskCard({
             ...(taskStr === 'ADD_LOCATION_TO_GREENLAKE_DEVICES'
                 ? {
                       greenlake_location_id: greenLakeLocationId || undefined,
+                  }
+                : {}),
+            ...(taskStr === 'EXPORT_MAC_ADDRESSES_TO_CENTRAL'
+                ? {
+                      static_tags: centralStaticTags
+                          .map((tag) => tag.trim())
+                          .filter((tag) => tag !== ''),
                   }
                 : {}),
             ...(taskStr === 'ADD_VLANS_TO_DEVICE_GROUP'
@@ -943,6 +953,77 @@ export default function TaskCard({
                                 </p>
                             </>
                         ) : null}
+                    </div>
+                ) : null}
+                {isExportMacToCentral ? (
+                    <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                            <label className="text-sm font-medium">
+                                Static tags (optional)
+                            </label>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                data-test="add-central-static-tag"
+                                onClick={() =>
+                                    setCentralStaticTags((prev) => [...prev, ''])
+                                }
+                            >
+                                <PlusIcon className="size-3.5" aria-hidden />
+                                Add tag
+                            </Button>
+                        </div>
+                        {centralStaticTags.length === 0 ? (
+                            <p className="text-muted-foreground text-xs">
+                                No tags. Add tag names to apply to all selected devices.
+                            </p>
+                        ) : (
+                            <div className="space-y-2">
+                                {centralStaticTags.map((tag, index) => (
+                                    <div
+                                        key={index}
+                                        className="flex flex-wrap items-center gap-2"
+                                        data-test="central-static-tag-row"
+                                    >
+                                        <Input
+                                            type="text"
+                                            placeholder="Tag name"
+                                            value={tag}
+                                            onChange={(e) =>
+                                                setCentralStaticTags((prev) =>
+                                                    prev.map((item, i) =>
+                                                        i === index ? e.target.value : item,
+                                                    ),
+                                                )
+                                            }
+                                            className="min-w-[7rem] flex-1"
+                                            autoComplete="off"
+                                            aria-label={`Static tag ${index + 1}`}
+                                            data-test="central-static-tag-input"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="shrink-0"
+                                            aria-label={`Remove static tag ${index + 1}`}
+                                            data-test="remove-central-static-tag"
+                                            onClick={() =>
+                                                setCentralStaticTags((prev) =>
+                                                    prev.filter((_, i) => i !== index),
+                                                )
+                                            }
+                                        >
+                                            <Trash2Icon className="size-4" aria-hidden />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <p className="text-muted-foreground text-xs">
+                            Applied to all selected devices in the Central NAC MAC registration CSV.
+                        </p>
                     </div>
                 ) : null}
                 {isAssignSubscription ? (

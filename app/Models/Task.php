@@ -20,6 +20,7 @@ class Task extends Model
     protected $casts = [
         'remediation_context' => 'array',
         'greenlake_tags' => 'array',
+        'central_static_tags' => 'array',
         'mirror_fallback_mode' => 'boolean',
     ];
 
@@ -178,6 +179,7 @@ class Task extends Model
             'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
             'ADD_TAGS_TO_GREENLAKE_DEVICES',
             'ADD_LOCATION_TO_GREENLAKE_DEVICES',
+            'EXPORT_MAC_ADDRESSES_TO_CENTRAL',
             'ADD_VLANS_FOR_DEVICE_GROUP',
             'CREATE_NEW_CENTRAL_CX_GROUP',
             'CONFIGURE_MIRROR_SESSION',
@@ -248,6 +250,8 @@ class Task extends Model
                 return 'Add Tags to GreenLake Devices';
             case 'ADD_LOCATION_TO_GREENLAKE_DEVICES':
                 return 'Add Location to GreenLake Devices';
+            case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
+                return 'Export MAC Addresses to Central';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Add VLANs to device group (single group)';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -312,6 +316,8 @@ class Task extends Model
                 return 'Add or update the same key–value tags on selected devices that are already in the HPE GreenLake workspace inventory.';
             case 'ADD_LOCATION_TO_GREENLAKE_DEVICES':
                 return 'Assign an existing GreenLake location to selected devices that are already in the HPE GreenLake workspace inventory.';
+            case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
+                return 'Import selected device MAC addresses into Central NAC MAC Registration. Optionally apply the same static tags to every selected device.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Adds VLAN definitions to one Central device group.';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -363,6 +369,8 @@ class Task extends Model
                 return ['name', 'serial', 'device_function'];
             case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
                 return ['name', 'serial', 'device_function', 'mac_address'];
+            case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
+                return ['mac_address'];
             case 'ADD_TAGS_TO_GREENLAKE_DEVICES':
             case 'ADD_LOCATION_TO_GREENLAKE_DEVICES':
                 return ['name', 'serial', 'device_function'];

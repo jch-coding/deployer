@@ -21,6 +21,7 @@ use App\Jobs\ConfigureVlanInterfaceJob;
 use App\Jobs\CreateNewCentralCXGroup;
 use App\Jobs\CreateVSFProfileJob;
 use App\Jobs\CreateVsxProfileJob;
+use App\Jobs\ExportMacAddressesToCentralJob;
 use App\Jobs\MoveDevicesToGroupJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Jobs\RemoveLocalOverrideDNSJob;
@@ -804,6 +805,8 @@ class TaskController extends Controller
             'tags' => ['nullable', 'array'],
             'tags.*.key' => ['nullable', 'string', 'max:255'],
             'tags.*.value' => ['nullable', 'string', 'max:255'],
+            'static_tags' => ['nullable', 'array'],
+            'static_tags.*' => ['nullable', 'string', 'max:255'],
             'greenlake_location_id' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -1447,6 +1450,46 @@ class TaskController extends Controller
             ]);
 
             $task->devices()->attach($devicesToLocate->pluck('id')->all());
+            $batchId = $this->dispatchJob($task);
+            if ($batchId !== null) {
+                $task->forceFill(['batch_id' => $batchId])->save();
+            }
+        } elseif ($validated['task_type'] === 'EXPORT_MAC_ADDRESSES_TO_CENTRAL') {
+            $selectedDeviceIds = Collection::make($validated['devices'])
+                ->pluck('id')
+                ->filter(fn ($id) => $id !== null)
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $selectedDevices = Device::query()
+                ->where('deployment_id', $deployment->id)
+                ->whereIn('id', $selectedDeviceIds)
+                ->get();
+
+            $missingMac = $selectedDevices->filter(
+                fn (Device $device) => trim((string) ($device->mac_address ?? '')) === ''
+            );
+
+            if ($missingMac->isNotEmpty()) {
+                $serials = $missingMac->pluck('serial')->filter()->values()->all();
+
+                return back()->withErrors([
+                    'devices' => 'The following devices are missing mac_address: '.implode(', ', $serials).'.',
+                ]);
+            }
+
+            $centralStaticTags = $this->normalizeCentralStaticTags($validated['static_tags'] ?? []);
+
+            $task = $deployment->tasks()->create([
+                'task_type' => $validated['task_type'],
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+                'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+                'central_static_tags' => $centralStaticTags,
+            ]);
+
+            $task->devices()->attach($selectedDevices->pluck('id')->all());
             $batchId = $this->dispatchJob($task);
             if ($batchId !== null) {
                 $task->forceFill(['batch_id' => $batchId])->save();
@@ -2159,6 +2202,34 @@ class TaskController extends Controller
     }
 
     /**
+     * Normalize Central NAC static tag names into a unique list of strings.
+     *
+     * @param  array<int, mixed>  $rows
+     * @return list<string>|null
+     */
+    protected function normalizeCentralStaticTags(array $rows): ?array
+    {
+        $tags = [];
+
+        foreach ($rows as $row) {
+            if (! is_scalar($row)) {
+                continue;
+            }
+
+            $tag = trim((string) $row);
+            if ($tag === '') {
+                continue;
+            }
+
+            if (! in_array($tag, $tags, true)) {
+                $tags[] = $tag;
+            }
+        }
+
+        return $tags === [] ? null : $tags;
+    }
+
+    /**
      * Normalize GreenLake device tag rows into an associative map.
      * Empty keys are dropped; missing values become empty strings. Duplicate keys are rejected.
      *
@@ -2736,6 +2807,20 @@ class TaskController extends Controller
                 }
                 if ($locationJobs !== []) {
                     $jobs[] = $locationJobs;
+                }
+                break;
+            case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
+                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+                if ($in_progress->isNotEmpty()) {
+                    $jobs[] = new ExportMacAddressesToCentralJob(
+                        $in_progress->map(fn ($device) => [
+                            'id' => $device->id,
+                            'serial' => $device->serial,
+                            'mac_address' => (string) ($device->mac_address ?? ''),
+                        ])->all(),
+                        $task,
+                        $centralAPIHelper,
+                    );
                 }
                 break;
         }

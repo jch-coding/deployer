@@ -5,6 +5,7 @@ use App\InterfaceKind;
 use App\Jobs\AddDevicesToGreenLakeInventoryJob;
 use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\AssignSubscriptionJob;
+use App\Jobs\ExportMacAddressesToCentralJob;
 use App\Jobs\MoveDevicesToGroupJob;
 use App\Jobs\PreprovisionDevicesToGroupJob;
 use App\Jobs\UnassignSubscriptionJob;
@@ -1218,6 +1219,70 @@ test('ADD_LOCATION_TO_GREENLAKE_DEVICES rejects when none of the selected device
         'deployment_time' => 3,
         'devices' => [['id' => $device->id]],
         'greenlake_location_id' => 'loc-nyc',
+    ]);
+
+    $response->assertSessionHasErrors('devices');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('EXPORT_MAC_ADDRESSES_TO_CENTRAL stores central_static_tags and dispatches job', function () {
+    Bus::fake();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'serial' => 'SN-MAC-EXPORT-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'EXPORT_MAC_ADDRESSES_TO_CENTRAL',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'static_tags' => ['BVSD-AP', '  BVSD-VOICE  ', '', 'BVSD-AP'],
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('EXPORT_MAC_ADDRESSES_TO_CENTRAL')
+        ->and($task->central_static_tags)->toBe(['BVSD-AP', 'BVSD-VOICE'])
+        ->and($task->batch_id)->not()->toBeNull();
+
+    Bus::assertBatchCount(1);
+    Bus::assertBatched(function ($batch) use ($device): bool {
+        if ($batch->jobs->count() !== 1) {
+            return false;
+        }
+
+        $job = $batch->jobs->first();
+
+        return $job instanceof ExportMacAddressesToCentralJob
+            && count($job->devices) === 1
+            && (int) $job->devices[0]['id'] === $device->id
+            && $job->devices[0]['mac_address'] === 'aa:bb:cc:dd:ee:ff';
+    });
+});
+
+test('EXPORT_MAC_ADDRESSES_TO_CENTRAL rejects devices missing mac_address', function () {
+    Bus::fake();
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => null,
+        'serial' => 'SN-MAC-MISSING-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'EXPORT_MAC_ADDRESSES_TO_CENTRAL',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'static_tags' => ['BVSD-AP'],
     ]);
 
     $response->assertSessionHasErrors('devices');

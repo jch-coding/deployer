@@ -85,6 +85,10 @@ class CentralAPIHelper
         'radios' => 'network-config/v1alpha1/radios',
     ];
 
+    public array $central_nac = [
+        'mac_reg_import' => 'network-config/v1alpha1/cnac-mac-reg/import',
+    ];
+
     public array $classic_monitoring = [
         'sites' => 'central/v2/sites',
         'switches' => 'monitoring/v1/switches',
@@ -3579,6 +3583,49 @@ class CentralAPIHelper
             ->withQueryParameters(static::localDeviceInterfaceQueryParameters($device))
             ->withBody(json_encode($patchBody))
             ->patch($this->client->base_url.$this->interfaces['interface_ethernet'].'/'.$interfaceName);
+    }
+
+    /**
+     * Import a MAC registration CSV into Central NAC.
+     *
+     * @return array{success: true, job_ids: list<string>}|array{success: false, error: string}
+     */
+    public function importMacCsvFile(string $csvContents, string $filename = 'mac-registration.csv'): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['success' => false, 'error' => 'failed to get access token from central.'];
+        }
+
+        try {
+            $response = Http::withToken($this->client->bearer_token)
+                ->attach('file', $csvContents, $filename, ['Content-Type' => 'text/csv'])
+                ->post($this->client->base_url.$this->central_nac['mac_reg_import']);
+        } catch (RequestException|ConnectionException $e) {
+            Log::error('Central MAC CSV import request failed: '.$e->getMessage());
+
+            return ['success' => false, 'error' => 'Central MAC CSV import request failed.'];
+        }
+
+        if (! $response->ok()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return [
+                'success' => false,
+                'error' => $message !== '' ? $message : 'Central MAC CSV import failed.',
+            ];
+        }
+
+        $jobIds = $response->json('jobid');
+        if (! is_array($jobIds)) {
+            $jobIds = [];
+        }
+
+        $jobIds = array_values(array_filter(
+            array_map(fn ($id) => is_scalar($id) ? trim((string) $id) : '', $jobIds),
+            fn (string $id): bool => $id !== ''
+        ));
+
+        return ['success' => true, 'job_ids' => $jobIds];
     }
 
     protected function isSuccessfulCentralResponse(mixed $response): bool
