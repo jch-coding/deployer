@@ -123,7 +123,7 @@ test('ASSIGN_DEVICE_FUNCTION dispatches grouped chunks for each device function'
 
     Bus::assertBatchCount(1);
     Bus::assertBatched(function ($batch): bool {
-        if ($batch->jobs->count() !== 3) {
+        if ($batch->jobs->count() !== 2) {
             return false;
         }
 
@@ -131,9 +131,15 @@ test('ASSIGN_DEVICE_FUNCTION dispatches grouped chunks for each device function'
             return false;
         }
 
-        $deviceFunctions = $batch->jobs->map(fn ($job) => $job->device_function)->sort()->values()->all();
+        $byFunction = $batch->jobs->keyBy(fn ($job) => $job->device_function);
 
-        return $deviceFunctions === ['ACCESS_SWITCH', 'ACCESS_SWITCH', 'CORE_SWITCH'];
+        return $byFunction->has('ACCESS_SWITCH')
+            && $byFunction->has('CORE_SWITCH')
+            && count($byFunction['ACCESS_SWITCH']->device_chunks) === 2
+            && count($byFunction['ACCESS_SWITCH']->device_chunks[0]) === 25
+            && count($byFunction['ACCESS_SWITCH']->device_chunks[1]) === 1
+            && count($byFunction['CORE_SWITCH']->device_chunks) === 1
+            && count($byFunction['CORE_SWITCH']->device_chunks[0]) === 1;
     });
 });
 

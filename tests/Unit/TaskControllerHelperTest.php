@@ -2,7 +2,6 @@
 
 use App\Helper\CentralAPIHelper;
 use App\Http\Controllers\TaskController;
-use App\Jobs\AssignDeviceFunctionJob;
 use App\Jobs\MoveDevicesToGroupJob;
 use App\Models\Client;
 use App\Models\Task;
@@ -137,31 +136,4 @@ test('create_jobs_by_grouped_chunks keeps key to chunk alignment and job payload
         ->and($actual[2]->group_name)->toBe('beta-group')
         ->and($actual[2]->devices)->toHaveCount(1)
         ->and($actual[2]->devices[0]['serial'])->toBe('CN444');
-});
-
-test('create_jobs_by_grouped_chunks supports assign device function jobs', function () {
-    $task = Task::factory()->create();
-    $user = User::factory()->create();
-    $client = Client::factory()->for($user)->create();
-    $user->clients->first()->update(['current' => true]);
-    $helper = new CentralAPIHelper($client->refresh());
-    $task_controller = new TaskController();
-
-    $payload = [
-        'keys' => ['ACCESS'],
-        'chunked_devices_by_group' => [
-            [
-                [
-                    ['id' => 10, 'serial' => 'CNACCESS1', 'name' => 'switch-a'],
-                ],
-            ],
-        ],
-    ];
-
-    $actual = $task_controller->create_jobs_by_grouped_chunks($payload, $task, $helper, AssignDeviceFunctionJob::class);
-
-    expect($actual)->toHaveCount(1)
-        ->and($actual[0])->toBeInstanceOf(AssignDeviceFunctionJob::class)
-        ->and($actual[0]->device_function)->toBe('ACCESS')
-        ->and($actual[0]->devices[0]['serial'])->toBe('CNACCESS1');
 });

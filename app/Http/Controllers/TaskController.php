@@ -2761,7 +2761,11 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $devices_by_device_function = $in_progress->groupBy('device_function');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_device_function);
-                $devices_by_device_function_jobs = $this->create_jobs_by_grouped_chunks($chunked_devices_by_group_with_keys, $task, $centralAPIHelper, AssignDeviceFunctionJob::class);
+                $devices_by_device_function_jobs = array_map(
+                    fn (array $chunks, string $deviceFunction) => new AssignDeviceFunctionJob($chunks, $deviceFunction, $task, $centralAPIHelper),
+                    $chunked_devices_by_group_with_keys['chunked_devices_by_group'],
+                    $chunked_devices_by_group_with_keys['keys']
+                );
                 $jobs[] = $devices_by_device_function_jobs;
                 break;
             case 'ASSOCIATE_DEVICE_TO_SITE':
