@@ -152,6 +152,14 @@ test('device details show maps interface fields', function () {
                     'operStatus' => 'Up',
                     'neighbour' => 'AP-1',
                     'neighbourSerial' => 'APSN1',
+                    'vlanMode' => 'Trunk',
+                    'allowedVlanIds' => [10, 20],
+                    'nativeVlan' => 1,
+                    'poeClass' => 'Class4',
+                    'neighbourFamily' => 'Aruba',
+                    'neighbourFunction' => 'AP',
+                    'neighbourType' => 'Access Point',
+                    'transceiverType' => 'SFP',
                 ]],
                 'total' => 1,
                 'offset' => null,
@@ -173,7 +181,15 @@ test('device details show maps interface fields', function () {
             ->where('interfaces.0.status', 'Connected')
             ->where('interfaces.0.operStatus', 'Up')
             ->where('interfaces.0.neighbour', 'AP-1')
-            ->where('interfaces.0.neighbourSerial', 'APSN1'));
+            ->where('interfaces.0.neighbourSerial', 'APSN1')
+            ->where('interfaces.0.vlanMode', 'Trunk')
+            ->where('interfaces.0.allowedVlanIds', [10, 20])
+            ->where('interfaces.0.nativeVlan', '1')
+            ->where('interfaces.0.poeClass', 'Class4')
+            ->where('interfaces.0.neighbourFamily', 'Aruba')
+            ->where('interfaces.0.neighbourFunction', 'AP')
+            ->where('interfaces.0.neighbourType', 'Access Point')
+            ->where('interfaces.0.transceiverType', 'SFP'));
 });
 
 test('device details show surfaces central error when interfaces request fails', function () {

@@ -4,6 +4,14 @@ export type SwitchInterfaceRow = {
     operStatus: string;
     neighbour: string;
     neighbourSerial: string;
+    vlanMode: string;
+    allowedVlanIds: number[];
+    nativeVlan: string;
+    poeClass: string;
+    neighbourFamily: string;
+    neighbourFunction: string;
+    neighbourType: string;
+    transceiverType: string;
 };
 
 function escapeCsvValue(value: string): string {
@@ -37,16 +45,42 @@ function sanitizeSerialForFilename(serial: string): string {
     return sanitized === '' ? 'device' : sanitized;
 }
 
+export function formatAllowedVlanIds(allowedVlanIds: number[]): string {
+    return allowedVlanIds.join(', ');
+}
+
 export function downloadSwitchInterfacesCsv(interfaces: SwitchInterfaceRow[], serial: string): void {
     downloadCsv(
         `interfaces-${sanitizeSerialForFilename(serial)}.csv`,
-        ['name', 'status', 'operStatus', 'neighbour', 'neighbourSerial'],
+        [
+            'name',
+            'status',
+            'operStatus',
+            'neighbour',
+            'neighbourSerial',
+            'vlanMode',
+            'allowedVlanIds',
+            'nativeVlan',
+            'poeClass',
+            'neighbourFamily',
+            'neighbourFunction',
+            'neighbourType',
+            'transceiverType',
+        ],
         interfaces.map((iface) => [
             iface.name,
             iface.status,
             iface.operStatus,
             iface.neighbour,
             iface.neighbourSerial,
+            iface.vlanMode,
+            formatAllowedVlanIds(iface.allowedVlanIds),
+            iface.nativeVlan,
+            iface.poeClass,
+            iface.neighbourFamily,
+            iface.neighbourFunction,
+            iface.neighbourType,
+            iface.transceiverType,
         ]),
     );
 }

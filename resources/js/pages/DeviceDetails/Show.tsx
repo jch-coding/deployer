@@ -1,15 +1,23 @@
 import { Link, usePage } from '@inertiajs/react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Download } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
 import {
     downloadSwitchInterfacesCsv,
+    formatAllowedVlanIds,
     type SwitchInterfaceRow,
 } from '@/lib/switch-interfaces-csv';
+import {
+    emptySwitchInterfacesTableFilters,
+    filterSwitchInterfaces,
+    hasActiveSwitchInterfacesTableFilters,
+    type SwitchInterfacesTableFilters,
+} from '@/lib/switch-interfaces-table-filters';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as deviceDetailsIndex } from '@/routes/device-details';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -37,12 +45,81 @@ function statusBadgeClass(status: string): string {
 const selectClassName =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs sm:w-auto';
 
+const filterFields: {
+    key: keyof SwitchInterfacesTableFilters;
+    placeholder: string;
+    testId: string;
+}[] = [
+    { key: 'name', placeholder: 'Name', testId: 'device-details-iface-filter-name' },
+    { key: 'status', placeholder: 'Status', testId: 'device-details-iface-filter-status' },
+    {
+        key: 'operStatus',
+        placeholder: 'Oper Status',
+        testId: 'device-details-iface-filter-oper-status',
+    },
+    { key: 'neighbour', placeholder: 'Neighbour', testId: 'device-details-iface-filter-neighbour' },
+    {
+        key: 'neighbourSerial',
+        placeholder: 'Neighbour Serial',
+        testId: 'device-details-iface-filter-neighbour-serial',
+    },
+    { key: 'vlanMode', placeholder: 'VLAN Mode', testId: 'device-details-iface-filter-vlan-mode' },
+    {
+        key: 'allowedVlanIds',
+        placeholder: 'Allowed VLAN IDs',
+        testId: 'device-details-iface-filter-allowed-vlan-ids',
+    },
+    {
+        key: 'nativeVlan',
+        placeholder: 'Native VLAN',
+        testId: 'device-details-iface-filter-native-vlan',
+    },
+    { key: 'poeClass', placeholder: 'PoE Class', testId: 'device-details-iface-filter-poe-class' },
+    {
+        key: 'neighbourFamily',
+        placeholder: 'Neighbour Family',
+        testId: 'device-details-iface-filter-neighbour-family',
+    },
+    {
+        key: 'neighbourFunction',
+        placeholder: 'Neighbour Function',
+        testId: 'device-details-iface-filter-neighbour-function',
+    },
+    {
+        key: 'neighbourType',
+        placeholder: 'Neighbour Type',
+        testId: 'device-details-iface-filter-neighbour-type',
+    },
+    {
+        key: 'transceiverType',
+        placeholder: 'Transceiver Type',
+        testId: 'device-details-iface-filter-transceiver-type',
+    },
+];
+
 export default function Show() {
     const { current_client, serial, device_name, interfaces, central_error } =
         usePage<DeviceDetailsShowProps>().props;
 
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
+    const [tableFilters, setTableFilters] = useState<SwitchInterfacesTableFilters>(
+        emptySwitchInterfacesTableFilters,
+    );
+
+    const filteredInterfaces = useMemo(
+        () => filterSwitchInterfaces(interfaces, tableFilters),
+        [interfaces, tableFilters],
+    );
+
+    const hasActiveTableFilters = useMemo(
+        () => hasActiveSwitchInterfacesTableFilters(tableFilters),
+        [tableFilters],
+    );
+
+    useEffect(() => {
+        setPageIndex(0);
+    }, [tableFilters, pageSize, interfaces]);
 
     const columns = useMemo<ColumnDef<SwitchInterfaceRow>[]>(
         () => [
@@ -67,6 +144,18 @@ export default function Show() {
             },
             { accessorKey: 'neighbour', header: 'Neighbour' },
             { accessorKey: 'neighbourSerial', header: 'Neighbour Serial' },
+            { accessorKey: 'vlanMode', header: 'VLAN Mode' },
+            {
+                accessorKey: 'allowedVlanIds',
+                header: 'Allowed VLAN IDs',
+                cell: ({ row }) => formatAllowedVlanIds(row.original.allowedVlanIds),
+            },
+            { accessorKey: 'nativeVlan', header: 'Native VLAN' },
+            { accessorKey: 'poeClass', header: 'PoE Class' },
+            { accessorKey: 'neighbourFamily', header: 'Neighbour Family' },
+            { accessorKey: 'neighbourFunction', header: 'Neighbour Function' },
+            { accessorKey: 'neighbourType', header: 'Neighbour Type' },
+            { accessorKey: 'transceiverType', header: 'Transceiver Type' },
         ],
         [],
     );
@@ -88,14 +177,14 @@ export default function Show() {
         },
     ];
 
-    const totalInterfaces = interfaces.length;
-    const totalPages = Math.max(1, Math.ceil(totalInterfaces / pageSize));
+    const totalFiltered = filteredInterfaces.length;
+    const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
     const safePageIndex = Math.min(pageIndex, totalPages - 1);
     const start = safePageIndex * pageSize;
-    const end = Math.min(start + pageSize, totalInterfaces);
+    const end = Math.min(start + pageSize, totalFiltered);
     const pagedInterfaces = useMemo(
-        () => interfaces.slice(start, end),
-        [interfaces, end, start],
+        () => filteredInterfaces.slice(start, end),
+        [filteredInterfaces, end, start],
     );
 
     return (
@@ -107,7 +196,10 @@ export default function Show() {
                             {title}
                         </h1>
                         {device_name !== '' ? (
-                            <p className="mt-1 text-sm text-muted-foreground" data-test="device-details-show-serial">
+                            <p
+                                className="mt-1 text-sm text-muted-foreground"
+                                data-test="device-details-show-serial"
+                            >
                                 Serial: {serial}
                             </p>
                         ) : null}
@@ -131,15 +223,18 @@ export default function Show() {
 
                 <section className="mt-8">
                     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <h2 className="text-xl font-semibold" data-test="device-details-interfaces-heading">
+                        <h2
+                            className="text-xl font-semibold"
+                            data-test="device-details-interfaces-heading"
+                        >
                             Interfaces
                         </h2>
                         <Button
                             type="button"
                             variant="outline"
                             className="gap-2"
-                            disabled={interfaces.length === 0}
-                            onClick={() => downloadSwitchInterfacesCsv(interfaces, serial)}
+                            disabled={filteredInterfaces.length === 0}
+                            onClick={() => downloadSwitchInterfacesCsv(filteredInterfaces, serial)}
                             data-test="device-details-export-csv"
                         >
                             <Download className="size-4" aria-hidden />
@@ -147,12 +242,49 @@ export default function Show() {
                         </Button>
                     </div>
 
+                    <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {filterFields.map((field) => (
+                            <Input
+                                key={field.key}
+                                type="search"
+                                value={tableFilters[field.key]}
+                                onChange={(e) =>
+                                    setTableFilters((prev) => ({
+                                        ...prev,
+                                        [field.key]: e.target.value,
+                                    }))
+                                }
+                                placeholder={field.placeholder}
+                                data-test={field.testId}
+                            />
+                        ))}
+                    </div>
+
+                    {hasActiveTableFilters ? (
+                        <div className="mb-3 flex justify-end">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setTableFilters(emptySwitchInterfacesTableFilters)}
+                                data-test="device-details-iface-clear-filters"
+                            >
+                                Clear table filters
+                            </Button>
+                        </div>
+                    ) : null}
+
                     <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="text-sm text-muted-foreground" data-test="device-details-interfaces-count">
-                            {totalInterfaces === 1
-                                ? '1 interface'
-                                : `${totalInterfaces} interfaces`}
-                            {totalInterfaces > 0 ? ` (showing ${start + 1}–${end})` : null}
+                        <div
+                            className="text-sm text-muted-foreground"
+                            data-test="device-details-interfaces-count"
+                        >
+                            {totalFiltered === 0
+                                ? '0 interfaces'
+                                : `Showing ${start + 1}–${end} of ${totalFiltered}`}
+                            {totalFiltered !== interfaces.length
+                                ? ` (filtered from ${interfaces.length})`
+                                : null}
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="text-sm text-muted-foreground">Per page</span>
@@ -162,7 +294,6 @@ export default function Show() {
                                     const next = Number(e.target.value);
                                     if (next === 10 || next === 25 || next === 50 || next === 100) {
                                         setPageSize(next);
-                                        setPageIndex(0);
                                     }
                                 }}
                                 className={selectClassName}
@@ -182,7 +313,7 @@ export default function Show() {
                         getRowId={(row) => row.name || `${row.neighbourSerial}-${row.status}`}
                     />
 
-                    {totalInterfaces > 0 ? (
+                    {totalFiltered > 0 ? (
                         <div className="mt-3 flex items-center justify-center gap-3">
                             <Button
                                 type="button"
@@ -204,7 +335,9 @@ export default function Show() {
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                                onClick={() =>
+                                    setPageIndex((p) => Math.min(totalPages - 1, p + 1))
+                                }
                                 disabled={safePageIndex >= totalPages - 1}
                                 data-test="device-details-interfaces-page-next"
                             >
@@ -219,6 +352,15 @@ export default function Show() {
                             data-test="device-details-interfaces-empty"
                         >
                             No interfaces found for this device.
+                        </p>
+                    ) : null}
+
+                    {interfaces.length > 0 && totalFiltered === 0 ? (
+                        <p
+                            className="mt-4 text-center text-sm text-muted-foreground"
+                            data-test="device-details-interfaces-no-filter-matches"
+                        >
+                            No interfaces match the current table filters.
                         </p>
                     ) : null}
                 </section>

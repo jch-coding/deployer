@@ -157,13 +157,40 @@ class DeviceDetailsController extends Controller
                 $centralError = (string) $interfacesResult['error'];
             } else {
                 $interfaces = array_map(
-                    fn (array $item): array => [
-                        'name' => (string) ($item['name'] ?? ''),
-                        'status' => (string) ($item['status'] ?? ''),
-                        'operStatus' => (string) ($item['operStatus'] ?? ''),
-                        'neighbour' => (string) ($item['neighbour'] ?? ''),
-                        'neighbourSerial' => (string) ($item['neighbourSerial'] ?? ''),
-                    ],
+                    function (array $item): array {
+                        $allowedVlanIds = $item['allowedVlanIds'] ?? [];
+                        if (! is_array($allowedVlanIds)) {
+                            $allowedVlanIds = [];
+                        }
+
+                        $normalizedVlanIds = [];
+                        foreach ($allowedVlanIds as $vlanId) {
+                            if (is_numeric($vlanId)) {
+                                $normalizedVlanIds[] = (int) $vlanId;
+                            }
+                        }
+
+                        $nativeVlan = $item['nativeVlan'] ?? '';
+                        if ($nativeVlan === null) {
+                            $nativeVlan = '';
+                        }
+
+                        return [
+                            'name' => (string) ($item['name'] ?? ''),
+                            'status' => (string) ($item['status'] ?? ''),
+                            'operStatus' => (string) ($item['operStatus'] ?? ''),
+                            'neighbour' => (string) ($item['neighbour'] ?? ''),
+                            'neighbourSerial' => (string) ($item['neighbourSerial'] ?? ''),
+                            'vlanMode' => (string) ($item['vlanMode'] ?? ''),
+                            'allowedVlanIds' => $normalizedVlanIds,
+                            'nativeVlan' => (string) $nativeVlan,
+                            'poeClass' => (string) ($item['poeClass'] ?? ''),
+                            'neighbourFamily' => (string) ($item['neighbourFamily'] ?? ''),
+                            'neighbourFunction' => (string) ($item['neighbourFunction'] ?? ''),
+                            'neighbourType' => (string) ($item['neighbourType'] ?? ''),
+                            'transceiverType' => (string) ($item['transceiverType'] ?? ''),
+                        ];
+                    },
                     $interfacesResult,
                 );
             }
