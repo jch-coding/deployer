@@ -1289,3 +1289,388 @@ test('EXPORT_MAC_ADDRESSES_TO_CENTRAL rejects devices missing mac_address', func
     expect($this->deployment->refresh()->tasks)->toHaveCount(0);
     Bus::assertNothingBatched();
 });
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY stores greenlake application id region and name', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis(
+        locations: [],
+        serviceManagers: [
+            ['id' => 'app-central', 'name' => 'Aruba Central'],
+        ],
+        serviceManagerProvisions: [
+            [
+                'id' => 'prov-1',
+                'serviceManager' => ['id' => 'app-central'],
+                'region' => 'us-west',
+                'provisionStatus' => 'PROVISIONED',
+            ],
+        ],
+    );
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'serial' => 'SN-SVC-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'greenlake_application_id' => 'app-central',
+        'greenlake_application_region' => 'us-west',
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->greenlake_application_id)->toBe('app-central')
+        ->and($task->greenlake_application_region)->toBe('us-west')
+        ->and($task->greenlake_application_name)->toBe('Aruba Central (us-west)')
+        ->and($task->applicableGreenLakeSteps())->toBe(['inventory', 'service']);
+});
+
+test('ADD_DEVICES_TO_GREENLAKE_INVENTORY rejects unknown greenlake application pair', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis(
+        locations: [],
+        serviceManagers: [
+            ['id' => 'app-central', 'name' => 'Aruba Central'],
+        ],
+        serviceManagerProvisions: [
+            [
+                'id' => 'prov-1',
+                'serviceManager' => ['id' => 'app-central'],
+                'region' => 'us-west',
+                'provisionStatus' => 'PROVISIONED',
+            ],
+        ],
+    );
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'serial' => 'SN-SVC-UNKNOWN',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'greenlake_application_id' => 'app-central',
+        'greenlake_application_region' => 'eu-central',
+    ]);
+
+    $response->assertSessionHasErrors('greenlake_application_id');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('greenlake service regions endpoint returns provisioned services for deployment client', function () {
+    $this->client->update([
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis(
+        serviceManagers: [
+            ['id' => 'app-central', 'name' => 'Aruba Central'],
+        ],
+        serviceManagerProvisions: [
+            [
+                'id' => 'prov-1',
+                'serviceManager' => ['id' => 'app-central'],
+                'region' => 'us-west',
+                'provisionStatus' => 'PROVISIONED',
+            ],
+        ],
+    );
+
+    $response = $this->getJson(route('tasks.greenlake_service_regions', $this->deployment));
+
+    $response->assertOk()
+        ->assertJson([
+            'service_regions' => [
+                [
+                    'application_id' => 'app-central',
+                    'region' => 'us-west',
+                    'name' => 'Aruba Central (us-west)',
+                ],
+            ],
+        ]);
+});
+
+test('ASSIGN_SERVICE_TO_GREENLAKE_DEVICES stores application fields and attaches inventory devices', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $inInventory = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-SVC-IN-001',
+    ]);
+    $notInInventory = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-SVC-OUT-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-SVC-IN-001',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+            'greenlake_device_id' => 'gl-svc-dev-1',
+        ]],
+        serviceManagers: [
+            ['id' => 'app-central', 'name' => 'Aruba Central'],
+        ],
+        serviceManagerProvisions: [
+            [
+                'id' => 'prov-1',
+                'serviceManager' => ['id' => 'app-central'],
+                'region' => 'us-west',
+                'provisionStatus' => 'PROVISIONED',
+            ],
+        ],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [
+            ['id' => $inInventory->id],
+            ['id' => $notInInventory->id],
+        ],
+        'greenlake_application_id' => 'app-central',
+        'greenlake_application_region' => 'us-west',
+    ]);
+
+    $response->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('ASSIGN_SERVICE_TO_GREENLAKE_DEVICES')
+        ->and($task->greenlake_application_id)->toBe('app-central')
+        ->and($task->greenlake_application_region)->toBe('us-west')
+        ->and($task->greenlake_application_name)->toBe('Aruba Central (us-west)')
+        ->and($task->devices)->toHaveCount(1)
+        ->and($task->devices->first()->id)->toBe($inInventory->id);
+
+    Bus::assertBatchCount(1);
+});
+
+test('ASSIGN_SERVICE_TO_GREENLAKE_DEVICES rejects when no service is provided', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-SVC-NONE-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-SVC-NONE-001',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+            'greenlake_device_id' => 'gl-svc-none-1',
+        ]],
+        serviceManagers: [
+            ['id' => 'app-central', 'name' => 'Aruba Central'],
+        ],
+        serviceManagerProvisions: [
+            [
+                'id' => 'prov-1',
+                'serviceManager' => ['id' => 'app-central'],
+                'region' => 'us-west',
+                'provisionStatus' => 'PROVISIONED',
+            ],
+        ],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+    ]);
+
+    $response->assertSessionHasErrors('greenlake_application_id');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ASSIGN_SERVICE_TO_GREENLAKE_DEVICES rejects unknown service pair', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-SVC-UNKNOWN-001',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [[
+            'serial' => 'SN-SVC-UNKNOWN-001',
+            'mac' => 'aa:bb:cc:dd:ee:02',
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'licensed' => false,
+            'greenlake_device_id' => 'gl-svc-unknown-1',
+        ]],
+        serviceManagers: [
+            ['id' => 'app-central', 'name' => 'Aruba Central'],
+        ],
+        serviceManagerProvisions: [
+            [
+                'id' => 'prov-1',
+                'serviceManager' => ['id' => 'app-central'],
+                'region' => 'us-west',
+                'provisionStatus' => 'PROVISIONED',
+            ],
+        ],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'greenlake_application_id' => 'app-central',
+        'greenlake_application_region' => 'eu-central',
+    ]);
+
+    $response->assertSessionHasErrors('greenlake_application_id');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ASSIGN_SERVICE_TO_GREENLAKE_DEVICES rejects when none of the selected devices are in inventory', function () {
+    Bus::fake();
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    fakeLicensingCentralApis(
+        serviceManagers: [
+            ['id' => 'app-central', 'name' => 'Aruba Central'],
+        ],
+        serviceManagerProvisions: [
+            [
+                'id' => 'prov-1',
+                'serviceManager' => ['id' => 'app-central'],
+                'region' => 'us-west',
+                'provisionStatus' => 'PROVISIONED',
+            ],
+        ],
+    );
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'SN-SVC-MISSING-001',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES',
+        'deployment_time' => 3,
+        'devices' => [['id' => $device->id]],
+        'greenlake_application_id' => 'app-central',
+        'greenlake_application_region' => 'us-west',
+    ]);
+
+    $response->assertSessionHasErrors('devices');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});

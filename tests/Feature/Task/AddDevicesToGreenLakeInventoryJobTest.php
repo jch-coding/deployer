@@ -613,3 +613,95 @@ it('does not flip already completed sibling devices when job fails', function ()
         ->and($task->fresh()->status)->toBe('FAILED')
         ->and($task->trackedItemTotals()['completed'])->toBe(3);
 });
+
+it('assigns greenlake service after a successful inventory add', function () {
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+        'status' => 'IN_PROGRESS',
+        'deployment_time' => 5,
+        'greenlake_application_id' => 'app-central',
+        'greenlake_application_region' => 'us-west',
+        'greenlake_application_name' => 'Aruba Central (us-west)',
+    ]);
+
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'serial' => 'ADDSN-SVC',
+        'mac_address' => 'aa:bb:cc:dd:ee:06',
+    ]);
+    $task->devices()->attach($device->id, ['status' => 'PENDING']);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/devices*' => function ($request) {
+            if ($request->method() === 'POST') {
+                return Http::response(['transactionId' => 'async-add-svc'], 202, [
+                    'Location' => '/devices/v1/async-operations/async-add-svc',
+                ]);
+            }
+
+            return Http::response([
+                'items' => [[
+                    'id' => 'gl-dev-svc',
+                    'serialNumber' => 'ADDSN-SVC',
+                    'macAddress' => 'aa:bb:cc:dd:ee:06',
+                ]],
+                'total' => 1,
+            ], 200);
+        },
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-add-svc' => Http::response([
+            'id' => 'async-add-svc',
+            'status' => 'SUCCEEDED',
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeeded' => [['serialNumber' => 'ADDSN-SVC']],
+            ],
+        ], 200),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
+            'transactionId' => 'async-assign-svc',
+        ], 202, [
+            'Location' => '/devices/v1/async-operations/async-assign-svc',
+        ]),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-assign-svc' => Http::response([
+            'id' => 'async-assign-svc',
+            'status' => 'SUCCEEDED',
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeededDevices' => [['id' => 'gl-dev-svc']],
+            ],
+        ], 200),
+    ]);
+
+    $helper = new GreenLakeAPIHelper($this->client);
+    $job = new AddDevicesToGreenLakeInventoryJob(
+        [[
+            'id' => $device->id,
+            'serial' => $device->serial,
+            'mac_address' => $device->mac_address,
+        ]],
+        $task,
+        $helper,
+    );
+    $job->addDevices();
+
+    Http::assertSent(function ($request) {
+        if ($request->method() !== 'PATCH' || ! str_contains($request->url(), '/devices/v2beta1/devices')) {
+            return false;
+        }
+
+        $body = $request->data();
+
+        return ($body['application']['id'] ?? null) === 'app-central'
+            && ($body['region'] ?? null) === 'us-west';
+    });
+
+    expect($task->fresh()->status)->toBe('COMPLETED')
+        ->and($task->devices()->where('devices.id', $device->id)->first()->pivot->status)->toBe('COMPLETED');
+
+    $pivot = $task->devices()->where('devices.id', $device->id)->first()->pivot;
+    expect($pivot->greenlake_step_statuses)->toBe([
+        'inventory' => 'COMPLETED',
+        'service' => 'COMPLETED',
+    ])->and($task->trackedItemTotals())->toBe(['category' => 'DEVICE', 'completed' => 2, 'total' => 2]);
+});
