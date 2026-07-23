@@ -65,6 +65,12 @@ class Task extends Model
             $steps[] = 'location';
         }
 
+        $applicationId = trim((string) ($this->greenlake_application_id ?? ''));
+        $applicationRegion = trim((string) ($this->greenlake_application_region ?? ''));
+        if ($applicationId !== '' && $applicationRegion !== '') {
+            $steps[] = 'service';
+        }
+
         return $steps;
     }
 
@@ -179,6 +185,7 @@ class Task extends Model
             'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
             'ADD_TAGS_TO_GREENLAKE_DEVICES',
             'ADD_LOCATION_TO_GREENLAKE_DEVICES',
+            'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES',
             'EXPORT_MAC_ADDRESSES_TO_CENTRAL',
             'ADD_VLANS_FOR_DEVICE_GROUP',
             'CREATE_NEW_CENTRAL_CX_GROUP',
@@ -250,6 +257,8 @@ class Task extends Model
                 return 'Add Tags to GreenLake Devices';
             case 'ADD_LOCATION_TO_GREENLAKE_DEVICES':
                 return 'Add Location to GreenLake Devices';
+            case 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES':
+                return 'Assign Service to GreenLake Devices';
             case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
                 return 'Export MAC Addresses to Central';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
@@ -311,11 +320,13 @@ class Task extends Model
             case 'UNASSIGN_SUBSCRIPTION':
                 return 'Remove assigned licenses from selected devices.';
             case 'ADD_DEVICES_TO_GREENLAKE_INVENTORY':
-                return 'Add selected network devices to the HPE GreenLake workspace inventory using serial and MAC address. Optionally apply the same key–value tags and assign an existing GreenLake location to every selected device.';
+                return 'Add selected network devices to the HPE GreenLake workspace inventory using serial and MAC address. Optionally apply the same key–value tags, assign an existing GreenLake location, and assign a provisioned GreenLake service to every selected device.';
             case 'ADD_TAGS_TO_GREENLAKE_DEVICES':
                 return 'Add or update the same key–value tags on selected devices that are already in the HPE GreenLake workspace inventory.';
             case 'ADD_LOCATION_TO_GREENLAKE_DEVICES':
                 return 'Assign an existing GreenLake location to selected devices that are already in the HPE GreenLake workspace inventory.';
+            case 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES':
+                return 'Assign a provisioned GreenLake service (application and region) to selected devices that are already in the HPE GreenLake workspace inventory.';
             case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
                 return 'Import selected device MAC addresses into Central NAC MAC Registration. Optionally apply the same static tags to every selected device.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
@@ -373,6 +384,7 @@ class Task extends Model
                 return ['mac_address'];
             case 'ADD_TAGS_TO_GREENLAKE_DEVICES':
             case 'ADD_LOCATION_TO_GREENLAKE_DEVICES':
+            case 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES':
                 return ['name', 'serial', 'device_function'];
             default:
                 return [];

@@ -108,8 +108,25 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             $locationName = $locationId;
         }
 
-        if ($succeededDevices !== [] && ($tags !== null || $locationId !== '')) {
-            $this->applyPostAddMetadata($succeededDevices, $tags, $locationId, $locationName);
+        $applicationId = trim((string) ($this->task->greenlake_application_id ?? ''));
+        $applicationRegion = trim((string) ($this->task->greenlake_application_region ?? ''));
+        $applicationName = trim((string) ($this->task->greenlake_application_name ?? ''));
+        if ($applicationName === '') {
+            $applicationName = $applicationId !== '' && $applicationRegion !== ''
+                ? "{$applicationId} ({$applicationRegion})"
+                : $applicationId;
+        }
+
+        if ($succeededDevices !== [] && ($tags !== null || $locationId !== '' || ($applicationId !== '' && $applicationRegion !== ''))) {
+            $this->applyPostAddMetadata(
+                $succeededDevices,
+                $tags,
+                $locationId,
+                $locationName,
+                $applicationId,
+                $applicationRegion,
+                $applicationName,
+            );
         }
 
         $this->task->load('devices');
@@ -122,7 +139,7 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
     }
 
     /**
-     * Apply tags and/or location via v2beta1 after a successful inventory add.
+     * Apply tags, location, and/or service via v2beta1 after a successful inventory add.
      * Create-time tags are not reliably persisted by GreenLake, so tags are patched after add.
      *
      * @param  array<int, array{id: int|string, serial: string, mac_address: string}>  $succeededDevices
@@ -133,8 +150,14 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
         ?array $tags,
         string $locationId,
         string $locationName,
+        string $applicationId = '',
+        string $applicationRegion = '',
+        string $applicationName = '',
     ): void {
-        $resolved = $this->resolveGreenLakeIds($succeededDevices, $tags !== null ? 'tag update' : 'location assignment');
+        $resolvePurpose = $tags !== null
+            ? 'tag update'
+            : ($locationId !== '' ? 'location assignment' : 'service assignment');
+        $resolved = $this->resolveGreenLakeIds($succeededDevices, $resolvePurpose);
         if ($resolved === null) {
             return;
         }
@@ -178,6 +201,7 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
         if ($locationId !== '' && $deviceIds !== []) {
             $assignResult = $this->greenLakeAPIHelper->assignLocationToDevices($deviceIds, $locationId);
             $perDevice = $assignResult['results'] ?? [];
+            $stillOk = [];
 
             foreach ($localIdByGreenLakeId as $greenlakeId => $device) {
                 $ok = $assignResult['success'] === true;
@@ -186,6 +210,7 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
                 }
 
                 if ($ok) {
+                    $stillOk[$greenlakeId] = $device;
                     $this->completeDeviceStep($device['id'], 'location');
                     $this->task->processTaskStatusLog(
                         "\nAssigned location \"{$locationName}\" to device {$device['serial']}."
@@ -202,6 +227,42 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             if ($assignResult['success'] !== true && ($assignResult['error'] ?? null) !== null) {
                 Log::error('Failed to assign GreenLake location: '.$assignResult['error']);
             }
+
+            $localIdByGreenLakeId = $stillOk;
+            $deviceIds = array_keys($stillOk);
+        }
+
+        if ($applicationId !== '' && $applicationRegion !== '' && $deviceIds !== []) {
+            $assignResult = $this->greenLakeAPIHelper->assignDevicesToApplication(
+                $deviceIds,
+                $applicationId,
+                $applicationRegion,
+            );
+            $perDevice = $assignResult['results'] ?? [];
+
+            foreach ($localIdByGreenLakeId as $greenlakeId => $device) {
+                $ok = $assignResult['success'] === true;
+                if (array_key_exists($greenlakeId, $perDevice)) {
+                    $ok = $perDevice[$greenlakeId] === true;
+                }
+
+                if ($ok) {
+                    $this->completeDeviceStep($device['id'], 'service');
+                    $this->task->processTaskStatusLog(
+                        "\nAssigned service \"{$applicationName}\" to device {$device['serial']}."
+                    );
+                } else {
+                    $this->failDeviceSteps($device['id'], 'service');
+                    $detail = $assignResult['error'] ?? 'GreenLake service assignment failed.';
+                    $this->task->processTaskStatusLog(
+                        "\nDevice {$device['serial']} was added to inventory, but service assignment failed: {$detail}"
+                    );
+                }
+            }
+
+            if ($assignResult['success'] !== true && ($assignResult['error'] ?? null) !== null) {
+                Log::error('Failed to assign GreenLake service after inventory add: '.$assignResult['error']);
+            }
         }
     }
 
@@ -213,6 +274,11 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
     {
         $serials = array_map(fn (array $device): string => $device['serial'], $succeededDevices);
         $idsBySerial = [];
+        $failStep = match ($purpose) {
+            'tag update' => 'tags',
+            'service assignment' => 'service',
+            default => 'location',
+        };
 
         // Newly added devices can take a moment to appear in the GreenLake device list.
         foreach ([0, 2, 5] as $delaySeconds) {
@@ -224,7 +290,6 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
             if (GreenLakeAPIHelper::isCollectError($idsBySerial)) {
                 $error = (string) ($idsBySerial['error'] ?? 'Failed to resolve GreenLake device ids.');
                 foreach ($succeededDevices as $device) {
-                    $failStep = $purpose === 'tag update' ? 'tags' : 'location';
                     $this->failDeviceSteps($device['id'], $failStep);
                     $this->task->processTaskStatusLog(
                         "\nDevice {$device['serial']} was added to inventory, but {$purpose} failed: {$error}"
@@ -258,7 +323,6 @@ class AddDevicesToGreenLakeInventoryJob extends BaseTaskJob
                 ?? ''
             ));
             if ($greenlakeId === '') {
-                $failStep = $purpose === 'tag update' ? 'tags' : 'location';
                 $this->failDeviceSteps($device['id'], $failStep);
                 $this->task->processTaskStatusLog(
                     "\nDevice {$device['serial']} was added to inventory, but its GreenLake device id could not be resolved for {$purpose}."

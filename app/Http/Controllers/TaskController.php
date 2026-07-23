@@ -11,6 +11,7 @@ use App\Jobs\AddLocationToGreenLakeDevicesJob;
 use App\Jobs\AddTagsToGreenLakeDevicesJob;
 use App\Jobs\AddVlansToDeviceGroup;
 use App\Jobs\AssignDeviceFunctionJob;
+use App\Jobs\AssignServiceToGreenLakeDevicesJob;
 use App\Jobs\AssignSubscriptionJob;
 use App\Jobs\AssociateDeviceToSiteJob;
 use App\Jobs\AssociateSiteAndNameJob;
@@ -808,6 +809,8 @@ class TaskController extends Controller
             'static_tags' => ['nullable', 'array'],
             'static_tags.*' => ['nullable', 'string', 'max:255'],
             'greenlake_location_id' => ['nullable', 'string', 'max:255'],
+            'greenlake_application_id' => ['nullable', 'string', 'max:255'],
+            'greenlake_application_region' => ['nullable', 'string', 'max:255'],
         ]);
 
         $isAddVlans = $validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP';
@@ -1192,6 +1195,35 @@ class TaskController extends Controller
                 $greenlakeLocationName = (string) ($match['name'] ?? $greenlakeLocationId);
             }
 
+            $greenlakeApplicationId = trim((string) ($validated['greenlake_application_id'] ?? ''));
+            $greenlakeApplicationRegion = trim((string) ($validated['greenlake_application_region'] ?? ''));
+            $greenlakeApplicationName = null;
+            if ($greenlakeApplicationId !== '' || $greenlakeApplicationRegion !== '') {
+                if ($greenlakeApplicationId === '' || $greenlakeApplicationRegion === '') {
+                    return back()->withErrors([
+                        'greenlake_application_id' => 'Both GreenLake application id and region are required when assigning a service.',
+                    ]);
+                }
+
+                $serviceRegions = (new GreenLakeAPIHelper($currentClient))->collectProvisionedServiceRegions();
+                if (GreenLakeAPIHelper::isCollectError($serviceRegions)) {
+                    return back()->withErrors([
+                        'greenlake_application_id' => (string) ($serviceRegions['error'] ?? 'Failed to load GreenLake service regions.'),
+                    ]);
+                }
+
+                $serviceMatch = collect($serviceRegions)->first(
+                    fn (array $region): bool => ($region['application_id'] ?? '') === $greenlakeApplicationId
+                        && ($region['region'] ?? '') === $greenlakeApplicationRegion
+                );
+                if ($serviceMatch === null) {
+                    return back()->withErrors([
+                        'greenlake_application_id' => 'Selected GreenLake service was not found among provisioned services for this workspace.',
+                    ]);
+                }
+                $greenlakeApplicationName = (string) ($serviceMatch['name'] ?? "{$greenlakeApplicationId} ({$greenlakeApplicationRegion})");
+            }
+
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
                 'name' => 'task_for_'.$deployment->name.now(),
@@ -1201,6 +1233,9 @@ class TaskController extends Controller
                 'greenlake_tags' => $greenlakeTags,
                 'greenlake_location_id' => $greenlakeLocationId !== '' ? $greenlakeLocationId : null,
                 'greenlake_location_name' => $greenlakeLocationName,
+                'greenlake_application_id' => $greenlakeApplicationId !== '' ? $greenlakeApplicationId : null,
+                'greenlake_application_region' => $greenlakeApplicationRegion !== '' ? $greenlakeApplicationRegion : null,
+                'greenlake_application_name' => $greenlakeApplicationName,
             ]);
 
             $task->devices()->attach($devicesToAdd->pluck('id')->all());
@@ -1450,6 +1485,141 @@ class TaskController extends Controller
             ]);
 
             $task->devices()->attach($devicesToLocate->pluck('id')->all());
+            $batchId = $this->dispatchJob($task);
+            if ($batchId !== null) {
+                $task->forceFill(['batch_id' => $batchId])->save();
+            }
+        } elseif ($validated['task_type'] === 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES') {
+            $selectedDeviceIds = Collection::make($validated['devices'])
+                ->pluck('id')
+                ->filter(fn ($id) => $id !== null)
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $selectedDevices = Device::query()
+                ->where('deployment_id', $deployment->id)
+                ->whereIn('id', $selectedDeviceIds)
+                ->get();
+
+            $currentClient = $request->user()->currentClient();
+            if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+                return back()->withErrors([
+                    'devices' => 'Please set current client to match this deployment before assigning GreenLake services.',
+                ]);
+            }
+
+            $greenlakeApplicationId = trim((string) ($validated['greenlake_application_id'] ?? ''));
+            $greenlakeApplicationRegion = trim((string) ($validated['greenlake_application_region'] ?? ''));
+            if ($greenlakeApplicationId === '' || $greenlakeApplicationRegion === '') {
+                return back()->withErrors([
+                    'greenlake_application_id' => 'Select a GreenLake service before launching this task.',
+                ]);
+            }
+
+            $serviceRegions = (new GreenLakeAPIHelper($currentClient))->collectProvisionedServiceRegions();
+            if (GreenLakeAPIHelper::isCollectError($serviceRegions)) {
+                return back()->withErrors([
+                    'greenlake_application_id' => (string) ($serviceRegions['error'] ?? 'Failed to load GreenLake service regions.'),
+                ]);
+            }
+
+            $serviceMatch = collect($serviceRegions)->first(
+                fn (array $region): bool => ($region['application_id'] ?? '') === $greenlakeApplicationId
+                    && ($region['region'] ?? '') === $greenlakeApplicationRegion
+            );
+            if ($serviceMatch === null) {
+                return back()->withErrors([
+                    'greenlake_application_id' => 'Selected GreenLake service was not found among provisioned services for this workspace.',
+                ]);
+            }
+            $greenlakeApplicationName = (string) ($serviceMatch['name'] ?? "{$greenlakeApplicationId} ({$greenlakeApplicationRegion})");
+
+            try {
+                $licensingSyncService->syncFromCentral(
+                    $currentClient,
+                    new CentralAPIHelper($currentClient),
+                    new GreenLakeAPIHelper($currentClient),
+                );
+            } catch (LicensingSyncException $e) {
+                return back()->withErrors([
+                    'devices' => $e->getMessage(),
+                ]);
+            }
+
+            $selectedSerials = $selectedDevices
+                ->map(fn (Device $device) => trim((string) ($device->serial ?? '')))
+                ->filter(fn (string $serial): bool => $serial !== '')
+                ->values();
+
+            if ($selectedSerials->isEmpty()) {
+                return back()->withErrors([
+                    'devices' => 'None of the selected devices have a serial number.',
+                ]);
+            }
+
+            $upperSerials = $selectedSerials
+                ->map(fn (string $serial): string => strtoupper($serial))
+                ->unique()
+                ->values()
+                ->all();
+
+            $inventoryBySerial = LicensingInventoryDevice::query()
+                ->where('client_id', $currentClient->id)
+                ->whereIn(DB::raw('UPPER(TRIM(serial))'), $upperSerials)
+                ->get()
+                ->keyBy(fn (LicensingInventoryDevice $row) => strtoupper(trim((string) $row->serial)));
+
+            $needsIdResolution = $inventoryBySerial
+                ->filter(fn (LicensingInventoryDevice $row): bool => trim((string) ($row->greenlake_device_id ?? '')) === '')
+                ->map(fn (LicensingInventoryDevice $row): string => trim((string) $row->serial))
+                ->values()
+                ->all();
+
+            if ($needsIdResolution !== []) {
+                $idsBySerial = (new GreenLakeAPIHelper($currentClient))->deviceIdsBySerial($needsIdResolution);
+
+                if (! GreenLakeAPIHelper::isCollectError($idsBySerial)) {
+                    foreach ($inventoryBySerial as $serialKey => $row) {
+                        if (trim((string) ($row->greenlake_device_id ?? '')) !== '') {
+                            continue;
+                        }
+                        $resolvedId = trim((string) ($idsBySerial[trim((string) $row->serial)] ?? ''));
+                        if ($resolvedId === '') {
+                            continue;
+                        }
+                        $row->forceFill(['greenlake_device_id' => $resolvedId])->save();
+                        $inventoryBySerial[$serialKey] = $row;
+                    }
+                }
+            }
+
+            $devicesToAssign = $selectedDevices->filter(function (Device $device) use ($inventoryBySerial): bool {
+                $serial = strtoupper(trim((string) ($device->serial ?? '')));
+                if ($serial === '' || ! $inventoryBySerial->has($serial)) {
+                    return false;
+                }
+
+                return trim((string) ($inventoryBySerial->get($serial)->greenlake_device_id ?? '')) !== '';
+            })->values();
+
+            if ($devicesToAssign->isEmpty()) {
+                return back()->withErrors([
+                    'devices' => 'None of the selected devices are in GreenLake inventory with a resolvable device id.',
+                ]);
+            }
+
+            $task = $deployment->tasks()->create([
+                'task_type' => $validated['task_type'],
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+                'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+                'greenlake_application_id' => $greenlakeApplicationId,
+                'greenlake_application_region' => $greenlakeApplicationRegion,
+                'greenlake_application_name' => $greenlakeApplicationName,
+            ]);
+
+            $task->devices()->attach($devicesToAssign->pluck('id')->all());
             $batchId = $this->dispatchJob($task);
             if ($batchId !== null) {
                 $task->forceFill(['batch_id' => $batchId])->save();
@@ -1900,6 +2070,27 @@ class TaskController extends Controller
 
         return response()->json([
             'locations' => $locations,
+        ]);
+    }
+
+    public function greenlakeServiceRegions(Request $request, Deployment $deployment)
+    {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            return response()->json([
+                'message' => 'Please set current client to match this deployment before loading GreenLake service regions.',
+            ], 403);
+        }
+
+        $serviceRegions = (new GreenLakeAPIHelper($currentClient))->collectProvisionedServiceRegions();
+        if (GreenLakeAPIHelper::isCollectError($serviceRegions)) {
+            return response()->json([
+                'message' => (string) ($serviceRegions['error'] ?? 'Failed to load GreenLake service regions.'),
+            ], 422);
+        }
+
+        return response()->json([
+            'service_regions' => $serviceRegions,
         ]);
     }
 
@@ -2807,6 +2998,24 @@ class TaskController extends Controller
                 }
                 if ($locationJobs !== []) {
                     $jobs[] = $locationJobs;
+                }
+                break;
+            case 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES':
+                $greenLakeAPIHelper = new GreenLakeAPIHelper($task->deployment->client);
+                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
+                $serviceJobs = [];
+                foreach ($in_progress->chunk(25) as $deviceChunk) {
+                    $serviceJobs[] = new AssignServiceToGreenLakeDevicesJob(
+                        $deviceChunk->map(fn ($device) => [
+                            'id' => $device->id,
+                            'serial' => $device->serial,
+                        ])->all(),
+                        $task,
+                        $greenLakeAPIHelper,
+                    );
+                }
+                if ($serviceJobs !== []) {
+                    $jobs[] = $serviceJobs;
                 }
                 break;
             case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':

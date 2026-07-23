@@ -25,7 +25,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, greenlake_locations, store } from '@/routes/tasks';
+import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, greenlake_locations, greenlake_service_regions, store } from '@/routes/tasks';
 import check_greenlake_inventory from '@/routes/tasks/check_greenlake_inventory';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
@@ -62,6 +62,12 @@ type GreenLakeTagRow = {
 
 type GreenLakeLocationOption = {
     id: string;
+    name: string;
+};
+
+type GreenLakeServiceRegionOption = {
+    application_id: string;
+    region: string;
     name: string;
 };
 
@@ -133,6 +139,10 @@ export default function TaskCard({
     const [greenLakeLocationId, setGreenLakeLocationId] = useState('');
     const [greenLakeLocationsLoading, setGreenLakeLocationsLoading] = useState(false);
     const [greenLakeLocationsError, setGreenLakeLocationsError] = useState<string | null>(null);
+    const [greenLakeServiceRegions, setGreenLakeServiceRegions] = useState<GreenLakeServiceRegionOption[]>([]);
+    const [greenLakeServiceKey, setGreenLakeServiceKey] = useState('');
+    const [greenLakeServiceRegionsLoading, setGreenLakeServiceRegionsLoading] = useState(false);
+    const [greenLakeServiceRegionsError, setGreenLakeServiceRegionsError] = useState<string | null>(null);
     const [greenLakeProgress, setGreenLakeProgress] = useState<{
         current: number;
         total: number;
@@ -151,8 +161,10 @@ export default function TaskCard({
     const isAddToGreenLakeInventory = task === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY';
     const isAddTagsToGreenLake = task === 'ADD_TAGS_TO_GREENLAKE_DEVICES';
     const isAddLocationToGreenLake = task === 'ADD_LOCATION_TO_GREENLAKE_DEVICES';
+    const isAssignServiceToGreenLake = task === 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES';
     const isExportMacToCentral = task === 'EXPORT_MAC_ADDRESSES_TO_CENTRAL';
     const needsGreenLakeLocations = isAddToGreenLakeInventory || isAddLocationToGreenLake;
+    const needsGreenLakeServiceRegions = isAddToGreenLakeInventory || isAssignServiceToGreenLake;
     const needsMacAddressGate = isAddToGreenLakeInventory || isExportMacToCentral;
 
     const devicesWithMac = useMemo(
@@ -286,6 +298,63 @@ export default function TaskCard({
             cancelled = true;
         };
     }, [needsGreenLakeLocations, deployment.id]);
+
+    useEffect(() => {
+        if (!needsGreenLakeServiceRegions) {
+            return;
+        }
+
+        let cancelled = false;
+        setGreenLakeServiceRegionsLoading(true);
+        setGreenLakeServiceRegionsError(null);
+
+        fetch(greenlake_service_regions.url(deployment.id), {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        })
+            .then(async (response) => {
+                const data = (await response.json().catch(() => ({}))) as {
+                    service_regions?: GreenLakeServiceRegionOption[];
+                    message?: string;
+                };
+                if (!response.ok) {
+                    throw new Error(
+                        data.message ?? 'Failed to load GreenLake service regions.',
+                    );
+                }
+
+                return data.service_regions ?? [];
+            })
+            .then((serviceRegions) => {
+                if (cancelled) {
+                    return;
+                }
+                setGreenLakeServiceRegions(serviceRegions);
+            })
+            .catch((error: unknown) => {
+                if (cancelled) {
+                    return;
+                }
+                setGreenLakeServiceRegions([]);
+                setGreenLakeServiceRegionsError(
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to load GreenLake service regions.',
+                );
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setGreenLakeServiceRegionsLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [needsGreenLakeServiceRegions, deployment.id]);
 
     const vlanPrefixTrimmed = vlanSitePrefix.trim()
     const isAddVlansWithPrefix =
@@ -567,6 +636,23 @@ export default function TaskCard({
             }
         }
 
+        if (taskStr === 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES') {
+            if (!greenLakeServiceKey.includes('|')) {
+                toast.error('Select a GreenLake service before launching this task.');
+
+                return;
+            }
+
+            const inInventory = devices_for_task.filter(
+                (device) => device.in_greenlake_inventory,
+            );
+            if (inInventory.length === 0) {
+                toast.error('None of the selected devices are in GreenLake inventory.');
+
+                return;
+            }
+        }
+
         if (taskStr === 'ASSIGN_SUBSCRIPTION') {
             if (licensingMode === 'uniform') {
                 if (!bulkLicenseTag) {
@@ -663,6 +749,19 @@ export default function TaskCard({
                           }))
                           .filter((row) => row.key !== ''),
                       greenlake_location_id: greenLakeLocationId || undefined,
+                      ...(greenLakeServiceKey.includes('|')
+                          ? {
+                                greenlake_application_id:
+                                    greenLakeServiceKey.slice(
+                                        0,
+                                        greenLakeServiceKey.indexOf('|'),
+                                    ),
+                                greenlake_application_region:
+                                    greenLakeServiceKey.slice(
+                                        greenLakeServiceKey.indexOf('|') + 1,
+                                    ),
+                            }
+                          : {}),
                   }
                 : {}),
             ...(taskStr === 'ADD_TAGS_TO_GREENLAKE_DEVICES'
@@ -678,6 +777,18 @@ export default function TaskCard({
             ...(taskStr === 'ADD_LOCATION_TO_GREENLAKE_DEVICES'
                 ? {
                       greenlake_location_id: greenLakeLocationId || undefined,
+                  }
+                : {}),
+            ...(taskStr === 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES' &&
+            greenLakeServiceKey.includes('|')
+                ? {
+                      greenlake_application_id: greenLakeServiceKey.slice(
+                          0,
+                          greenLakeServiceKey.indexOf('|'),
+                      ),
+                      greenlake_application_region: greenLakeServiceKey.slice(
+                          greenLakeServiceKey.indexOf('|') + 1,
+                      ),
                   }
                 : {}),
             ...(taskStr === 'EXPORT_MAC_ADDRESSES_TO_CENTRAL'
@@ -803,7 +914,10 @@ export default function TaskCard({
                         ) : null}
                     </div>
                 ) : null}
-                {isAddToGreenLakeInventory || isAddTagsToGreenLake || isAddLocationToGreenLake ? (
+                {isAddToGreenLakeInventory ||
+                isAddTagsToGreenLake ||
+                isAddLocationToGreenLake ||
+                isAssignServiceToGreenLake ? (
                     <div className="mt-3 space-y-2">
                         {needsGreenLakeLocations ? (
                             <div className="space-y-1">
@@ -845,6 +959,58 @@ export default function TaskCard({
                                 ) : (
                                     <p className="text-muted-foreground text-xs">
                                         Must already exist in GreenLake. Applied to all selected devices.
+                                    </p>
+                                )}
+                            </div>
+                        ) : null}
+                        {needsGreenLakeServiceRegions ? (
+                            <div className="space-y-1">
+                                <label
+                                    htmlFor={`greenlake-service-${task}`}
+                                    className="text-sm font-medium"
+                                >
+                                    {isAssignServiceToGreenLake
+                                        ? 'Service'
+                                        : 'Service (optional)'}
+                                </label>
+                                <select
+                                    id={`greenlake-service-${task}`}
+                                    value={greenLakeServiceKey}
+                                    onChange={(e) => setGreenLakeServiceKey(e.target.value)}
+                                    className={selectClassName}
+                                    data-test="greenlake-service-select"
+                                    disabled={greenLakeServiceRegionsLoading}
+                                >
+                                    <option value="">
+                                        {greenLakeServiceRegionsLoading
+                                            ? 'Loading services...'
+                                            : greenLakeServiceRegionsError
+                                              ? 'Could not load services'
+                                              : greenLakeServiceRegions.length === 0
+                                                ? 'No provisioned services available'
+                                                : isAssignServiceToGreenLake
+                                                  ? 'Select a service'
+                                                  : 'No service'}
+                                    </option>
+                                    {greenLakeServiceRegions.map((service) => {
+                                        const value = `${service.application_id}|${service.region}`;
+
+                                        return (
+                                            <option key={value} value={value}>
+                                                {service.name}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                                {greenLakeServiceRegionsError ? (
+                                    <p className="text-destructive text-xs">
+                                        {greenLakeServiceRegionsError}
+                                    </p>
+                                ) : (
+                                    <p className="text-muted-foreground text-xs">
+                                        {isAssignServiceToGreenLake
+                                            ? 'Provisioned GreenLake services for this workspace. Applied to all selected devices.'
+                                            : 'Provisioned GreenLake services for this workspace. Applied to all selected devices after inventory add.'}
                                     </p>
                                 )}
                             </div>

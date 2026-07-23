@@ -33,6 +33,7 @@ const TASK_TYPE_TO_CATEGORY: Record<string, TaskLaunchCategoryId> = {
     ADD_DEVICES_TO_GREENLAKE_INVENTORY: 'licensing',
     ADD_TAGS_TO_GREENLAKE_DEVICES: 'licensing',
     ADD_LOCATION_TO_GREENLAKE_DEVICES: 'licensing',
+    ASSIGN_SERVICE_TO_GREENLAKE_DEVICES: 'licensing',
     EXPORT_MAC_ADDRESSES_TO_CENTRAL: 'misc',
     PREPROVISION_DEVICE_TO_GROUP: 'preprovisioning',
     ASSIGN_DEVICE_FUNCTION: 'preprovisioning',
@@ -71,6 +72,14 @@ const TASK_SEARCH_ALIASES: Record<string, string[]> = {
     ADD_LOCATION_TO_GREENLAKE_DEVICES: [
         'location',
         'greenlake location',
+        'inventory',
+        'greenlake',
+    ],
+    ASSIGN_SERVICE_TO_GREENLAKE_DEVICES: [
+        'service',
+        'application',
+        'greenlake service',
+        'assign service',
         'inventory',
         'greenlake',
     ],

@@ -683,3 +683,140 @@ test('assignTagsToDevices patches v2beta1 with tags and polls async operation', 
             && str_contains($contentType, 'application/merge-patch+json');
     });
 });
+
+test('collectProvisionedServiceRegions returns sorted application region pairs', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/service-catalog/v1/service-managers*' => Http::response([
+            'items' => [
+                ['id' => 'app-central', 'name' => 'Aruba Central'],
+                ['id' => 'app-other', 'name' => 'Other Service'],
+            ],
+            'total' => 2,
+        ], 200),
+        GreenLakeAPIHelper::BASE_URL.'/service-catalog/v1/service-manager-provisions*' => Http::response([
+            'items' => [
+                [
+                    'id' => 'prov-2',
+                    'serviceManager' => ['id' => 'app-other'],
+                    'region' => 'eu-central',
+                    'provisionStatus' => 'PROVISIONED',
+                ],
+                [
+                    'id' => 'prov-1',
+                    'serviceManager' => ['id' => 'app-central'],
+                    'region' => 'us-west',
+                    'provisionStatus' => 'PROVISIONED',
+                ],
+            ],
+            'total' => 2,
+        ], 200),
+    ]);
+
+    $regions = $helper->collectProvisionedServiceRegions();
+
+    expect($regions)->toBe([
+        [
+            'application_id' => 'app-central',
+            'region' => 'us-west',
+            'name' => 'Aruba Central (us-west)',
+        ],
+        [
+            'application_id' => 'app-other',
+            'region' => 'eu-central',
+            'name' => 'Other Service (eu-central)',
+        ],
+    ]);
+
+    Http::assertSent(function (Request $request) {
+        if (! str_contains($request->url(), '/service-manager-provisions')) {
+            return false;
+        }
+
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return ($query['filter'] ?? '') === "status eq 'PROVISIONED'";
+    });
+});
+
+test('assignDevicesToApplication patches v2beta1 with application and region', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v2beta1/devices*' => Http::response([
+            'transactionId' => 'async-svc',
+        ], 202, [
+            'Location' => '/devices/v1/async-operations/async-svc',
+        ]),
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/async-operations/async-svc' => Http::response([
+            'id' => 'async-svc',
+            'status' => 'SUCCEEDED',
+            'suggestedPollingIntervalSeconds' => 0,
+            'result' => [
+                'succeededDevices' => [['id' => 'dev-1']],
+            ],
+        ], 200),
+    ]);
+
+    $result = $helper->assignDevicesToApplication(
+        ['dev-1'],
+        'app-central',
+        'us-west',
+        sleepBetweenPolls: false,
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['transaction_id'])->toBe('async-svc');
+
+    Http::assertSent(function (Request $request) {
+        if ($request->method() !== 'PATCH' || ! str_contains($request->url(), '/devices/v2beta1/devices')) {
+            return false;
+        }
+
+        $body = $request->data();
+
+        $contentType = $request->header('Content-Type');
+        $contentType = is_array($contentType) ? implode(';', $contentType) : (string) $contentType;
+
+        return ($body['application']['id'] ?? null) === 'app-central'
+            && ($body['region'] ?? null) === 'us-west'
+            && str_contains($request->url(), 'id=dev-1')
+            && str_contains($contentType, 'application/merge-patch+json');
+    });
+});
+
+test('assignDeviceToApplication clears region when unassigning', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    $helper = new GreenLakeAPIHelper($client);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/devices/v1/devices*' => Http::response([], 200),
+    ]);
+
+    $helper->assignDeviceToApplication('dev-1', null);
+
+    Http::assertSent(function (Request $request) {
+        if ($request->method() !== 'PATCH' || ! str_contains($request->url(), '/devices/v1/devices')) {
+            return false;
+        }
+
+        $body = $request->data();
+
+        return array_key_exists('application', $body)
+            && $body['application'] === null
+            && array_key_exists('region', $body)
+            && $body['region'] === null;
+    });
+});

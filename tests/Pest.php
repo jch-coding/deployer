@@ -55,6 +55,8 @@ use Illuminate\Support\Facades\Http;
  * @param  array<int, array<string, mixed>>  $centralInventoryDevices  Classic device inventory rows (serial, name, …)
  * @param  array<int, array<string, mixed>>  $newCentralDevices  New Central network-monitoring device rows (serialNumber, deviceName, …)
  * @param  array<int, array{id?: string, name?: string}>  $greenLakeLocations  Raw GreenLake location items
+ * @param  array<int, array{id?: string, name?: string}>  $serviceManagers  Service catalog managers
+ * @param  array<int, array<string, mixed>>  $serviceManagerProvisions  Provisioned service managers (serviceManager, region, provisionStatus)
  */
 function fakeLicensingApis(
     array $greenLakeDevices = [],
@@ -63,6 +65,8 @@ function fakeLicensingApis(
     array $centralInventoryDevices = [],
     array $newCentralDevices = [],
     array $greenLakeLocations = [],
+    array $serviceManagers = [],
+    array $serviceManagerProvisions = [],
 ): void {
     Http::fake(function (Request $request) use (
         $greenLakeDevices,
@@ -71,6 +75,8 @@ function fakeLicensingApis(
         $centralInventoryDevices,
         $newCentralDevices,
         $greenLakeLocations,
+        $serviceManagers,
+        $serviceManagerProvisions,
     ) {
         if (str_contains($request->url(), GreenLakeAPIHelper::BASE_URL)) {
             if (str_contains($request->url(), '/locations/v1/locations') && $request->method() === 'GET') {
@@ -82,6 +88,41 @@ function fakeLicensingApis(
                 return Http::response([
                     'items' => $page,
                     'total' => count($greenLakeLocations),
+                ], 200);
+            }
+
+            if (str_contains($request->url(), '/service-catalog/v1/service-managers')
+                && ! str_contains($request->url(), 'provisions')
+                && $request->method() === 'GET') {
+                parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+                $offset = (int) ($query['offset'] ?? 0);
+                $limit = (int) ($query['limit'] ?? 50);
+                $page = array_slice($serviceManagers, $offset, $limit);
+
+                return Http::response([
+                    'items' => $page,
+                    'total' => count($serviceManagers),
+                ], 200);
+            }
+
+            if (str_contains($request->url(), '/service-catalog/v1/service-manager-provisions')
+                && $request->method() === 'GET') {
+                parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+                $offset = (int) ($query['offset'] ?? 0);
+                $limit = (int) ($query['limit'] ?? 50);
+                $filtered = $serviceManagerProvisions;
+                $filter = (string) ($query['filter'] ?? '');
+                if (str_contains($filter, "status eq 'PROVISIONED'")) {
+                    $filtered = array_values(array_filter(
+                        $serviceManagerProvisions,
+                        fn (array $item): bool => strtoupper((string) ($item['provisionStatus'] ?? $item['status'] ?? '')) === 'PROVISIONED',
+                    ));
+                }
+                $page = array_slice($filtered, $offset, $limit);
+
+                return Http::response([
+                    'items' => $page,
+                    'total' => count($filtered),
                 ], 200);
             }
 
@@ -160,6 +201,8 @@ function fakeLicensingApis(
  * @param  array<int, array<string, mixed>>  $centralInventoryDevices
  * @param  array<int, array<string, mixed>>  $newCentralDevices
  * @param  array<int, array{id?: string, name?: string}>  $locations
+ * @param  array<int, array{id?: string, name?: string}>  $serviceManagers
+ * @param  array<int, array<string, mixed>>  $serviceManagerProvisions
  */
 function fakeLicensingCentralApis(
     array $devices = [],
@@ -167,6 +210,8 @@ function fakeLicensingCentralApis(
     array $centralInventoryDevices = [],
     array $newCentralDevices = [],
     array $locations = [],
+    array $serviceManagers = [],
+    array $serviceManagerProvisions = [],
 ): void {
     $greenLakeDevices = array_map(function (array $device): array {
         $subscriptionKey = (string) ($device['subscription_key'] ?? '');
@@ -209,6 +254,8 @@ function fakeLicensingCentralApis(
         $centralInventoryDevices,
         $newCentralDevices,
         $locations,
+        $serviceManagers,
+        $serviceManagerProvisions,
     );
 }
 

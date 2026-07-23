@@ -44,6 +44,7 @@ const GREENLAKE_STEP_LABELS: Record<string, string> = {
     inventory: 'Inventory',
     tags: 'Tags',
     location: 'Location',
+    service: 'Service',
 };
 
 function formatGreenLakeStepStatus(

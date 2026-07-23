@@ -35,6 +35,11 @@ class GreenLakeAPIHelper
         'list' => '/locations/v1/locations',
     ];
 
+    public array $serviceCatalog = [
+        'service_managers' => '/service-catalog/v1/service-managers',
+        'service_manager_provisions' => '/service-catalog/v1/service-manager-provisions',
+    ];
+
     public function __construct(public Client $client) {}
 
     private function apiUrl(string $path): string
@@ -1403,16 +1408,329 @@ class GreenLakeAPIHelper
     }
 
     /**
-     * @param  string|null  $applicationId  Pass null to remove application assignment.
      * @return Response|array{error: string}
      */
-    public function assignDeviceToApplication(string $deviceId, ?string $applicationId)
+    public function getServiceManagers(array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token for GreenLake.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->acceptJson()
+            ->withQueryParameters($queryParameters)
+            ->get($this->apiUrl($this->serviceCatalog['service_managers']));
+    }
+
+    /**
+     * @return Response|array{error: string}
+     */
+    public function getServiceManagerProvisions(array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token for GreenLake.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->acceptJson()
+            ->withQueryParameters($queryParameters)
+            ->get($this->apiUrl($this->serviceCatalog['service_manager_provisions']));
+    }
+
+    /**
+     * Provisioned service manager + region pairs available to assign to devices.
+     *
+     * @return array<int, array{application_id: string, region: string, name: string}>|array{error: string}
+     */
+    public function collectProvisionedServiceRegions(int $limit = 50): array
+    {
+        $namesById = $this->collectServiceManagerNames($limit);
+        if (self::isCollectError($namesById)) {
+            return $namesById;
+        }
+
+        $allRegions = [];
+        $offset = 0;
+        $seen = [];
+
+        while (true) {
+            $response = $this->getServiceManagerProvisions([
+                'limit' => $limit,
+                'offset' => $offset,
+                'filter' => "status eq 'PROVISIONED'",
+            ]);
+
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch service manager provisions from GreenLake.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get service manager provisions from GreenLake.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            foreach ($pageItems as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $serviceManager = $item['serviceManager'] ?? null;
+                $applicationId = '';
+                if (is_array($serviceManager)) {
+                    $applicationId = trim((string) ($serviceManager['id'] ?? ''));
+                }
+                $region = trim((string) ($item['region'] ?? ''));
+                if ($applicationId === '' || $region === '') {
+                    continue;
+                }
+
+                $dedupeKey = $applicationId.'|'.$region;
+                if (isset($seen[$dedupeKey])) {
+                    continue;
+                }
+                $seen[$dedupeKey] = true;
+
+                $managerName = trim((string) ($namesById[$applicationId] ?? ''));
+                if ($managerName === '') {
+                    $managerName = $applicationId;
+                }
+
+                $allRegions[] = [
+                    'application_id' => $applicationId,
+                    'region' => $region,
+                    'name' => "{$managerName} ({$region})",
+                ];
+            }
+
+            $total = $response->json('total') ?? $response->json('count');
+            if (is_numeric($total) && count($seen) >= (int) $total) {
+                break;
+            }
+
+            if (count($pageItems) < $limit) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        usort(
+            $allRegions,
+            fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']),
+        );
+
+        return $allRegions;
+    }
+
+    /**
+     * @return array<string, string>|array{error: string}
+     */
+    private function collectServiceManagerNames(int $limit = 50): array
+    {
+        $namesById = [];
+        $offset = 0;
+
+        while (true) {
+            $response = $this->getServiceManagers([
+                'limit' => $limit,
+                'offset' => $offset,
+            ]);
+
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch service managers from GreenLake.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get service managers from GreenLake.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            foreach ($pageItems as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $id = trim((string) ($item['id'] ?? ''));
+                if ($id === '') {
+                    continue;
+                }
+                $name = trim((string) ($item['name'] ?? ''));
+                $namesById[$id] = $name !== '' ? $name : $id;
+            }
+
+            $total = $response->json('total') ?? $response->json('count');
+            if (is_numeric($total) && count($namesById) >= (int) $total) {
+                break;
+            }
+
+            if (count($pageItems) < $limit) {
+                break;
+            }
+
+            $offset += $limit;
+        }
+
+        return $namesById;
+    }
+
+    /**
+     * Assign devices to a GreenLake application (service) in a region via v2beta1.
+     *
+     * @param  array<int, string>  $deviceIds
+     * @return array{success: bool, error: string|null, results: array<string, bool>, transaction_id: string|null, status: string|null}
+     */
+    public function assignDevicesToApplication(
+        array $deviceIds,
+        string $applicationId,
+        string $region,
+        bool $sleepBetweenPolls = true,
+    ): array {
+        $applicationId = trim($applicationId);
+        $region = trim($region);
+        $ids = [];
+        foreach ($deviceIds as $deviceId) {
+            $deviceId = trim((string) $deviceId);
+            if ($deviceId !== '') {
+                $ids[] = $deviceId;
+            }
+        }
+        $ids = array_values(array_unique($ids));
+
+        if ($applicationId === '' || $region === '' || $ids === []) {
+            return [
+                'success' => false,
+                'error' => 'Application id, region, and at least one device id are required.',
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'success' => false,
+                'error' => 'failed to get access token for GreenLake.',
+                'results' => [],
+                'transaction_id' => null,
+                'status' => null,
+            ];
+        }
+
+        $aggregateResults = [];
+        $lastStatus = null;
+        $lastTransactionId = null;
+        $payload = [
+            'application' => ['id' => $applicationId],
+            'region' => $region,
+        ];
+
+        foreach (array_chunk($ids, 25) as $chunk) {
+            $query = collect($chunk)
+                ->map(fn (string $id): string => 'id='.rawurlencode($id))
+                ->implode('&');
+
+            $response = Http::withToken($this->client->bearer_token)
+                ->acceptJson()
+                ->withBody(
+                    json_encode($payload, JSON_THROW_ON_ERROR),
+                    'application/merge-patch+json',
+                )
+                ->patch($this->apiUrl($this->devicesV2['update']).'?'.$query);
+
+            if ($response->status() !== 202) {
+                return [
+                    'success' => false,
+                    'error' => $this->extractErrorMessage($response),
+                    'results' => $aggregateResults,
+                    'transaction_id' => $lastTransactionId,
+                    'status' => $lastStatus,
+                ];
+            }
+
+            $operationId = $this->extractAsyncOperationId($response);
+            if ($operationId === '') {
+                return [
+                    'success' => false,
+                    'error' => 'GreenLake accepted the service assignment but did not return an async operation id.',
+                    'results' => $aggregateResults,
+                    'transaction_id' => null,
+                    'status' => null,
+                ];
+            }
+
+            $result = $this->waitForDeviceAsyncOperation(
+                $operationId,
+                $chunk,
+                $sleepBetweenPolls,
+                asyncOperationPath: $this->extractAsyncOperationPath(
+                    $response,
+                    $this->devicesV2['async_operation'],
+                ),
+            );
+
+            $lastStatus = $result['status'];
+            $lastTransactionId = $result['transaction_id'];
+            foreach ($result['results'] as $deviceId => $ok) {
+                $aggregateResults[$deviceId] = $ok;
+            }
+
+            if ($result['success'] !== true) {
+                return [
+                    'success' => false,
+                    'error' => $result['error'] ?? 'GreenLake service assignment failed.',
+                    'results' => $aggregateResults,
+                    'transaction_id' => $lastTransactionId,
+                    'status' => $lastStatus,
+                ];
+            }
+        }
+
+        foreach ($ids as $id) {
+            if (! array_key_exists($id, $aggregateResults)) {
+                $aggregateResults[$id] = true;
+            }
+        }
+
+        return [
+            'success' => true,
+            'error' => null,
+            'results' => $aggregateResults,
+            'transaction_id' => $lastTransactionId,
+            'status' => $lastStatus,
+        ];
+    }
+
+    /**
+     * @param  string|null  $applicationId  Pass null to remove application assignment.
+     * @param  string|null  $region  Required when assigning; set null when unassigning.
+     * @return Response|array{error: string}
+     */
+    public function assignDeviceToApplication(string $deviceId, ?string $applicationId, ?string $region = null)
     {
         $payload = [];
         if ($applicationId !== null && $applicationId !== '') {
             $payload['application'] = ['id' => $applicationId];
+            if ($region !== null && $region !== '') {
+                $payload['region'] = $region;
+            }
         } else {
             $payload['application'] = null;
+            $payload['region'] = null;
         }
 
         return $this->updateDevice($deviceId, $payload);
