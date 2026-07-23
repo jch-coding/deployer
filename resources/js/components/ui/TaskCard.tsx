@@ -1594,37 +1594,42 @@ export default function TaskCard({
                                         </p>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-col gap-3 py-2">
-                                        {greenLakeCheckResult?.error ? (
-                                            <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                                                {greenLakeCheckResult.error}
-                                            </p>
-                                        ) : (
-                                            <>
-                                                <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                                                    {greenLakeCheckResult?.passedCount ?? 0}{' '}
-                                                    {(greenLakeCheckResult?.passedCount ?? 0) === 1
-                                                        ? 'device'
-                                                        : 'devices'}{' '}
-                                                    passed
+                                    <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4">
+                                        <div className="flex flex-col gap-3 py-2">
+                                            {greenLakeCheckResult?.error ? (
+                                                <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                                                    {greenLakeCheckResult.error}
                                                 </p>
-                                                {(greenLakeCheckResult?.failedDevices.length ??
-                                                    0) > 0 && (
-                                                    <div className="flex flex-col gap-2">
-                                                        <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                                                            Failed devices
-                                                        </p>
-                                                        <ul className="list-inside list-disc space-y-1 text-sm text-red-600 dark:text-red-400">
-                                                            {greenLakeCheckResult?.failedDevices.map(
-                                                                (device) => (
-                                                                    <li key={device}>{device}</li>
-                                                                ),
-                                                            )}
-                                                        </ul>
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
+                                            ) : (
+                                                <>
+                                                    <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                                                        {greenLakeCheckResult?.passedCount ?? 0}{' '}
+                                                        {(greenLakeCheckResult?.passedCount ??
+                                                            0) === 1
+                                                            ? 'device'
+                                                            : 'devices'}{' '}
+                                                        passed
+                                                    </p>
+                                                    {(greenLakeCheckResult?.failedDevices
+                                                        .length ?? 0) > 0 && (
+                                                        <div className="flex flex-col gap-2">
+                                                            <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                                                                Failed devices
+                                                            </p>
+                                                            <ul className="list-inside list-disc space-y-1 text-sm text-red-600 dark:text-red-400">
+                                                                {greenLakeCheckResult?.failedDevices.map(
+                                                                    (device) => (
+                                                                        <li key={device}>
+                                                                            {device}
+                                                                        </li>
+                                                                    ),
+                                                                )}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                                 {greenLakeCheckComplete && (
