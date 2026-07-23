@@ -8,6 +8,7 @@ use App\Http\Controllers\CentralWebhookEventController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\DeviceDetailsController;
 use App\Http\Controllers\DispatchController;
 use App\Http\Controllers\LicensingController;
 use App\Http\Controllers\MigrationController;
@@ -89,6 +90,11 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(SiteController::class)->group(function () {
         Route::get('/sites', 'index')->name('sites.index');
+    });
+
+    Route::controller(DeviceDetailsController::class)->group(function () {
+        Route::get('/device-details', 'index')->name('device-details.index');
+        Route::get('/device-details/{serial}', 'show')->name('device-details.show');
     });
 
     Route::controller(CentralScopeCacheController::class)->group(function () {
