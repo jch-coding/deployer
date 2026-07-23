@@ -19,6 +19,10 @@ export type SwitchInterfacesTableFilters = {
     transceiverType: string;
 };
 
+export type SwitchInterfacesFilterOptions = {
+    [K in keyof SwitchInterfacesTableFilters]: string[];
+};
+
 export const emptySwitchInterfacesTableFilters: SwitchInterfacesTableFilters = {
     name: '',
     status: '',
@@ -35,13 +39,43 @@ export const emptySwitchInterfacesTableFilters: SwitchInterfacesTableFilters = {
     transceiverType: '',
 };
 
-export function matchesSwitchInterfaceTextFilter(haystack: string, needle: string): boolean {
-    const trimmed = needle.trim();
-    if (trimmed === '') {
+function uniqueSortedValues(values: string[]): string[] {
+    const unique = [...new Set(values.filter((value) => value.trim() !== ''))];
+    unique.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    return unique;
+}
+
+function fieldDisplayValue(
+    iface: SwitchInterfaceRow,
+    key: keyof SwitchInterfacesTableFilters,
+): string {
+    if (key === 'allowedVlanIds') {
+        return formatAllowedVlanIds(iface.allowedVlanIds);
+    }
+
+    return iface[key];
+}
+
+export function buildSwitchInterfaceFilterOptions(
+    interfaces: SwitchInterfaceRow[],
+): SwitchInterfacesFilterOptions {
+    const keys = Object.keys(emptySwitchInterfacesTableFilters) as (keyof SwitchInterfacesTableFilters)[];
+    const options = {} as SwitchInterfacesFilterOptions;
+
+    for (const key of keys) {
+        options[key] = uniqueSortedValues(interfaces.map((iface) => fieldDisplayValue(iface, key)));
+    }
+
+    return options;
+}
+
+export function matchesSwitchInterfaceExactFilter(haystack: string, selected: string): boolean {
+    if (selected.trim() === '') {
         return true;
     }
 
-    return haystack.toLowerCase().includes(trimmed.toLowerCase());
+    return haystack === selected;
 }
 
 export function hasActiveSwitchInterfacesTableFilters(
@@ -57,53 +91,10 @@ export function filterSwitchInterfaces<T extends SwitchInterfaceRow>(
     filters: SwitchInterfacesTableFilters,
 ): T[] {
     return interfaces.filter((iface) => {
-        if (!matchesSwitchInterfaceTextFilter(iface.name, filters.name)) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.status, filters.status)) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.operStatus, filters.operStatus)) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.neighbour, filters.neighbour)) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.neighbourSerial, filters.neighbourSerial)) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.vlanMode, filters.vlanMode)) {
-            return false;
-        }
-        if (
-            !matchesSwitchInterfaceTextFilter(
-                formatAllowedVlanIds(iface.allowedVlanIds),
-                filters.allowedVlanIds,
-            )
-        ) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.nativeVlan, filters.nativeVlan)) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.poeClass, filters.poeClass)) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.neighbourFamily, filters.neighbourFamily)) {
-            return false;
-        }
-        if (
-            !matchesSwitchInterfaceTextFilter(iface.neighbourFunction, filters.neighbourFunction)
-        ) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.neighbourType, filters.neighbourType)) {
-            return false;
-        }
-        if (!matchesSwitchInterfaceTextFilter(iface.transceiverType, filters.transceiverType)) {
-            return false;
-        }
+        const keys = Object.keys(filters) as (keyof SwitchInterfacesTableFilters)[];
 
-        return true;
+        return keys.every((key) =>
+            matchesSwitchInterfaceExactFilter(fieldDisplayValue(iface, key), filters[key]),
+        );
     });
 }

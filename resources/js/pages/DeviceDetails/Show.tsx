@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
-import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
 import {
     downloadSwitchInterfacesCsv,
@@ -13,6 +12,7 @@ import {
     type SwitchInterfaceRow,
 } from '@/lib/switch-interfaces-csv';
 import {
+    buildSwitchInterfaceFilterOptions,
     emptySwitchInterfacesTableFilters,
     filterSwitchInterfaces,
     hasActiveSwitchInterfacesTableFilters,
@@ -43,56 +43,56 @@ function statusBadgeClass(status: string): string {
 }
 
 const selectClassName =
-    'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs sm:w-auto';
+    'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
 const filterFields: {
     key: keyof SwitchInterfacesTableFilters;
-    placeholder: string;
+    label: string;
     testId: string;
 }[] = [
-    { key: 'name', placeholder: 'Name', testId: 'device-details-iface-filter-name' },
-    { key: 'status', placeholder: 'Status', testId: 'device-details-iface-filter-status' },
+    { key: 'name', label: 'Name', testId: 'device-details-iface-filter-name' },
+    { key: 'status', label: 'Status', testId: 'device-details-iface-filter-status' },
     {
         key: 'operStatus',
-        placeholder: 'Oper Status',
+        label: 'Oper Status',
         testId: 'device-details-iface-filter-oper-status',
     },
-    { key: 'neighbour', placeholder: 'Neighbour', testId: 'device-details-iface-filter-neighbour' },
+    { key: 'neighbour', label: 'Neighbour', testId: 'device-details-iface-filter-neighbour' },
     {
         key: 'neighbourSerial',
-        placeholder: 'Neighbour Serial',
+        label: 'Neighbour Serial',
         testId: 'device-details-iface-filter-neighbour-serial',
     },
-    { key: 'vlanMode', placeholder: 'VLAN Mode', testId: 'device-details-iface-filter-vlan-mode' },
+    { key: 'vlanMode', label: 'VLAN Mode', testId: 'device-details-iface-filter-vlan-mode' },
     {
         key: 'allowedVlanIds',
-        placeholder: 'Allowed VLAN IDs',
+        label: 'Allowed VLAN IDs',
         testId: 'device-details-iface-filter-allowed-vlan-ids',
     },
     {
         key: 'nativeVlan',
-        placeholder: 'Native VLAN',
+        label: 'Native VLAN',
         testId: 'device-details-iface-filter-native-vlan',
     },
-    { key: 'poeClass', placeholder: 'PoE Class', testId: 'device-details-iface-filter-poe-class' },
+    { key: 'poeClass', label: 'PoE Class', testId: 'device-details-iface-filter-poe-class' },
     {
         key: 'neighbourFamily',
-        placeholder: 'Neighbour Family',
+        label: 'Neighbour Family',
         testId: 'device-details-iface-filter-neighbour-family',
     },
     {
         key: 'neighbourFunction',
-        placeholder: 'Neighbour Function',
+        label: 'Neighbour Function',
         testId: 'device-details-iface-filter-neighbour-function',
     },
     {
         key: 'neighbourType',
-        placeholder: 'Neighbour Type',
+        label: 'Neighbour Type',
         testId: 'device-details-iface-filter-neighbour-type',
     },
     {
         key: 'transceiverType',
-        placeholder: 'Transceiver Type',
+        label: 'Transceiver Type',
         testId: 'device-details-iface-filter-transceiver-type',
     },
 ];
@@ -105,6 +105,11 @@ export default function Show() {
     const [pageIndex, setPageIndex] = useState(0);
     const [tableFilters, setTableFilters] = useState<SwitchInterfacesTableFilters>(
         emptySwitchInterfacesTableFilters,
+    );
+
+    const filterOptions = useMemo(
+        () => buildSwitchInterfaceFilterOptions(interfaces),
+        [interfaces],
     );
 
     const filteredInterfaces = useMemo(
@@ -120,6 +125,23 @@ export default function Show() {
     useEffect(() => {
         setPageIndex(0);
     }, [tableFilters, pageSize, interfaces]);
+
+    useEffect(() => {
+        setTableFilters((prev) => {
+            let changed = false;
+            const next = { ...prev };
+
+            (Object.keys(prev) as (keyof SwitchInterfacesTableFilters)[]).forEach((key) => {
+                const selected = prev[key];
+                if (selected !== '' && !filterOptions[key].includes(selected)) {
+                    next[key] = '';
+                    changed = true;
+                }
+            });
+
+            return changed ? next : prev;
+        });
+    }, [filterOptions]);
 
     const columns = useMemo<ColumnDef<SwitchInterfaceRow>[]>(
         () => [
@@ -244,9 +266,8 @@ export default function Show() {
 
                     <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {filterFields.map((field) => (
-                            <Input
+                            <select
                                 key={field.key}
-                                type="search"
                                 value={tableFilters[field.key]}
                                 onChange={(e) =>
                                     setTableFilters((prev) => ({
@@ -254,9 +275,17 @@ export default function Show() {
                                         [field.key]: e.target.value,
                                     }))
                                 }
-                                placeholder={field.placeholder}
+                                className={selectClassName}
                                 data-test={field.testId}
-                            />
+                                disabled={filterOptions[field.key].length === 0}
+                            >
+                                <option value="">All {field.label}</option>
+                                {filterOptions[field.key].map((option) => (
+                                    <option key={option} value={option}>
+                                        {option}
+                                    </option>
+                                ))}
+                            </select>
                         ))}
                     </div>
 
@@ -296,7 +325,7 @@ export default function Show() {
                                         setPageSize(next);
                                     }
                                 }}
-                                className={selectClassName}
+                                className={`${selectClassName} sm:w-auto`}
                                 data-test="device-details-interfaces-page-size"
                             >
                                 <option value={10}>10</option>
