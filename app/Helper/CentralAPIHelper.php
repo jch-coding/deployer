@@ -2052,6 +2052,23 @@ class CentralAPIHelper
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @param  array<string, mixed>  $body
+     */
+    public function patch_wlan_ssid_profile(string $ssid_profile_name, array $queryParameters, array $body)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->patch($this->client->base_url.$this->wireless['wlan_ssids'].'/'.$ssid_profile_name, $body);
+
+            return $response;
+        }
+    }
+
     public function patch_mirror(array $mirror, array $queryParameters = [])
     {
         if (! $this->client->handleBearerTokenAuth()) {

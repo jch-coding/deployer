@@ -159,6 +159,89 @@ test('migrations deploy wlan skips profiles missing passphrase or vlan', functio
     Http::assertNothingSent();
 });
 
+test('migrations deploy wlan patches profile when post fails', function () {
+    Http::fake(function (Request $request) {
+        if ($request->method() === 'POST' && str_contains($request->url(), 'wlan-ssids/DAYKIT')) {
+            return Http::response(['error' => 'already exists'], 409);
+        }
+
+        if ($request->method() === 'PATCH' && str_contains($request->url(), 'wlan-ssids/DAYKIT')) {
+            return Http::response(['ok' => true], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $body = migrationWlanProfilePayload();
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-site',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT',
+                'body' => $body,
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('deploy_results.0.ssid', 'DAYKIT')
+            ->where('deploy_results.0.status', 'success')
+            ->where('deploy_results.0.message', 'Updated successfully'));
+
+    Http::assertSent(function (Request $request) use ($body) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT')
+            && json_decode($request->body(), true) === $body;
+    });
+
+    Http::assertSent(function (Request $request) use ($body) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'PATCH'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT')
+            && ($query['object-type'] ?? null) === 'LOCAL'
+            && ($query['view-type'] ?? null) === 'LOCAL'
+            && ($query['scope-id'] ?? null) === 'scope-site'
+            && ($query['device-function'] ?? null) === 'CAMPUS_AP'
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
+test('migrations deploy wlan returns error when post and patch both fail', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'wlan-ssids/DAYKIT')) {
+            return Http::response(['error' => 'server error'], 500);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $body = migrationWlanProfilePayload();
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-site',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT',
+                'body' => $body,
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('deploy_results.0.ssid', 'DAYKIT')
+            ->where('deploy_results.0.status', 'error'));
+
+    Http::assertSent(fn (Request $request) => $request->method() === 'POST'
+        && str_contains($request->url(), 'wlan-ssids/DAYKIT'));
+
+    Http::assertSent(fn (Request $request) => $request->method() === 'PATCH'
+        && str_contains($request->url(), 'wlan-ssids/DAYKIT'));
+});
+
 function seedMigrationSiteCache(Client $client, string $scopeName, string $scopeId): void
 {
     CentralScopeCache::query()

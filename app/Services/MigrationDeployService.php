@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Helper\CentralAPIHelper;
+use Illuminate\Http\Client\Response;
 
 class MigrationDeployService
 {
@@ -333,15 +334,7 @@ class MigrationDeployService
 
         $response = $helper->post_wlan_ssid_profile($ssidProfileName, $queryParameters, $body);
 
-        if (is_array($response) && array_key_exists('error', $response)) {
-            return [
-                'ssid' => $ssidProfileName,
-                'status' => 'error',
-                'message' => (string) $response['error'],
-            ];
-        }
-
-        if ($response->successful()) {
+        if ($this->wlanSsidRequestSucceeded($response)) {
             return [
                 'ssid' => $ssidProfileName,
                 'status' => 'success',
@@ -349,11 +342,39 @@ class MigrationDeployService
             ];
         }
 
+        $patchResponse = $helper->patch_wlan_ssid_profile($ssidProfileName, $queryParameters, $body);
+
+        if ($this->wlanSsidRequestSucceeded($patchResponse)) {
+            return [
+                'ssid' => $ssidProfileName,
+                'status' => 'success',
+                'message' => 'Updated successfully',
+            ];
+        }
+
         return [
             'ssid' => $ssidProfileName,
             'status' => 'error',
-            'message' => $response->body() ?: 'Request failed with status '.$response->status(),
+            'message' => $this->wlanSsidRequestFailureMessage($patchResponse),
         ];
+    }
+
+    private function wlanSsidRequestSucceeded(mixed $response): bool
+    {
+        return $response instanceof Response && $response->successful();
+    }
+
+    private function wlanSsidRequestFailureMessage(mixed $response): string
+    {
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return (string) $response['error'];
+        }
+
+        if ($response instanceof Response) {
+            return $response->body() ?: 'Request failed with status '.$response->status();
+        }
+
+        return 'Request failed';
     }
 
     /**

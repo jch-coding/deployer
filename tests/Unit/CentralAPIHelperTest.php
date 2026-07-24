@@ -1064,6 +1064,24 @@ test('post_wlan_ssid_profile posts to wlan-ssids endpoint with query parameters 
     });
 });
 
+test('patch_wlan_ssid_profile patches wlan-ssids endpoint with query parameters and body', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $body = ['ssid' => 'CorpWiFi'];
+
+    $helper->patch_wlan_ssid_profile('my-ssid-profile', ['view-type' => 'LIBRARY'], $body);
+
+    Http::assertSent(function (Request $request) use ($body) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'PATCH'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/my-ssid-profile')
+            && ($query['view-type'] ?? null) === 'LIBRARY'
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
 test('build_named_vlan_profile_body coerces numeric vlan id ranges to strings', function () {
     expect(CentralAPIHelper::build_named_vlan_profile_body('CorpVLAN', [10, '20-30']))
         ->toEqual([
