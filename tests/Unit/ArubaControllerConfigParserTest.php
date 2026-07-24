@@ -68,8 +68,15 @@ it('builds wlan profile body for DAYKIT with mapped vlan', function () {
         ->and($daykit['body']['ssid'])->toBe('DAYKIT')
         ->and($daykit['body']['high-throughput'])->toBe(['enable' => true, 'very-high-throughput' => true])
         ->and($daykit['body']['high-efficiency'])->toBe(['enable' => true])
+        ->and($daykit['body']['forward-mode'])->toBe('FORWARD_MODE_BRIDGE')
+        ->and($daykit['body']['broadcast-filter-ipv4'])->toBe('BCAST_FILTER_ARP')
+        ->and($daykit['body']['extremely-high-throughput'])->toBe(['enable' => false, 'mlo' => false])
+        ->and($daykit['body']['client-isolation'])->toBeFalse()
         ->and($daykit['body'])->not->toHaveKey('internal-auth-server')
-        ->and($daykit['body'])->not->toHaveKey('g-legacy-rates')
+        ->and($daykit['body']['g-legacy-rates'])->toBe([
+            'basic-rates' => ['RATE_12MB', 'RATE_24MB'],
+            'tx-rates' => ['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB'],
+        ])
         ->and($daykit['body']['rf-band'])->toBe('5GHZ')
         ->and($daykit['body']['advertise-apname'])->toBeTrue()
         ->and($daykit['body']['a-legacy-rates']['basic-rates'])->toBe(['RATE_12MB', 'RATE_24MB'])
@@ -86,13 +93,13 @@ it('builds wlan profile body for DAYRF with both band legacy rates', function ()
     expect($dayrf)->not->toBeNull()
         ->and($dayrf['body'])->toHaveKey('g-legacy-rates')
         ->and($dayrf['body'])->toHaveKey('a-legacy-rates')
-        ->and($dayrf['body'])->not->toHaveKey('rf-band')
+        ->and($dayrf['body']['rf-band'])->toBe('24GHZ_5GHZ')
         ->and($dayrf['body']['advertise-apname'])->toBeTrue()
         ->and($dayrf['body']['g-legacy-rates']['basic-rates'])->toBe(['RATE_12MB', 'RATE_24MB'])
         ->and($dayrf['body']['g-legacy-rates']['tx-rates'])->toBe(['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB']);
 });
 
-it('omits legacy rates from WCD_PI profile when config has no rates', function () {
+it('applies default legacy rates to WCD_PI profile when config has no rates', function () {
     $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
     $parser = new ArubaControllerConfigParser;
     $profiles = $parser->parse($content)[0]['wlan_profiles'];
@@ -100,8 +107,14 @@ it('omits legacy rates from WCD_PI profile when config has no rates', function (
     $wcdPi = collect($profiles)->firstWhere('ssid_profile_name', 'WCD_PI');
 
     expect($wcdPi)->not->toBeNull()
-        ->and($wcdPi['body'])->not->toHaveKey('g-legacy-rates')
-        ->and($wcdPi['body'])->not->toHaveKey('a-legacy-rates');
+        ->and($wcdPi['body']['g-legacy-rates'])->toBe([
+            'basic-rates' => ['RATE_12MB', 'RATE_24MB'],
+            'tx-rates' => ['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB'],
+        ])
+        ->and($wcdPi['body']['a-legacy-rates'])->toBe([
+            'basic-rates' => ['RATE_12MB', 'RATE_24MB'],
+            'tx-rates' => ['RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB'],
+        ]);
 });
 
 it('maps DAYWCD vlan to WCD_WLAN for DAYWCD profile', function () {
@@ -327,10 +340,10 @@ it('builds wlan profile body for WCD_AGV with rf-band from allowed-band a', func
 
     expect($wcdAgv)->not->toBeNull()
         ->and($wcdAgv['body']['rf-band'])->toBe('5GHZ')
-        ->and($wcdAgv['body'])->not->toHaveKey('advertise-apname');
+        ->and($wcdAgv['body']['advertise-apname'])->toBeTrue();
 });
 
-it('omits rf-band and advertise-apname when not present in config', function () {
+it('defaults rf-band and advertise-apname when not present in config', function () {
     $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
     $parser = new ArubaControllerConfigParser;
     $profiles = $parser->parse($content)[0]['wlan_profiles'];
@@ -339,11 +352,11 @@ it('omits rf-band and advertise-apname when not present in config', function () 
     $daywcd = collect($profiles)->firstWhere('ssid_profile_name', 'DAYWCD');
 
     expect($daytj)->not->toBeNull()
-        ->and($daytj['body'])->not->toHaveKey('rf-band')
-        ->and($daytj['body'])->not->toHaveKey('advertise-apname')
+        ->and($daytj['body']['rf-band'])->toBe('24GHZ_5GHZ')
+        ->and($daytj['body']['advertise-apname'])->toBeTrue()
         ->and($daywcd)->not->toBeNull()
-        ->and($daywcd['body'])->not->toHaveKey('rf-band')
-        ->and($daywcd['body'])->not->toHaveKey('advertise-apname');
+        ->and($daywcd['body']['rf-band'])->toBe('24GHZ_5GHZ')
+        ->and($daywcd['body']['advertise-apname'])->toBeTrue();
 });
 
 it('maps allowed-band g to rf-band 24GHZ', function () {
@@ -374,7 +387,7 @@ CONFIG;
         ->and($profile['body']['rf-band'])->toBe('24GHZ');
 });
 
-it('omits rf-band for unknown allowed-band values', function () {
+it('defaults rf-band for unknown allowed-band values', function () {
     $content = <<<'CONFIG'
 (WLC-ONE) #show ap database long
 AP Database
@@ -399,7 +412,7 @@ CONFIG;
     $profile = $parser->parse($content)[0]['wlan_profiles'][0];
 
     expect($profile['ssid_profile_name'])->toBe('UNK')
-        ->and($profile['body'])->not->toHaveKey('rf-band');
+        ->and($profile['body']['rf-band'])->toBe('24GHZ_5GHZ');
 });
 
 function pairedControllerConfig(string $firstName, string $secondName): string

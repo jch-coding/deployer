@@ -588,19 +588,63 @@ class ArubaControllerConfigParser
     private function buildWlanSsidProfileBody(string $ssidName, array $ssidData, ?string $vlanName, ?string $allowedBand = null): array
     {
         $body = [
+            'ssid' => $ssidName,
+            'enable' => true,
+            'forward-mode' => 'FORWARD_MODE_BRIDGE',
+            'dmo' => [
+                'enable' => false,
+                'channel-utilization-threshold' => 90,
+                'clients-threshold' => 6,
+            ],
+            'broadcast-filter-ipv4' => 'BCAST_FILTER_ARP',
+            'local-proxy-ns' => false,
+            'optimize-mcast-rate' => false,
+            'ssid-utf8' => true,
             'essid' => ['name' => $ssidData['essid']],
+            'advertise-apname' => true,
+            'disable-on-6ghz-mesh' => false,
+            'dot11k' => false,
+            'dot11r' => false,
+            'dtim-period' => 1,
+            'ftm-responder' => false,
+            'hide-ssid' => false,
+            'explicit-ageout-client' => false,
+            'inactivity-timeout' => 1000,
+            'max-clients-threshold' => 128,
+            'rf-band' => '24GHZ_5GHZ',
+            'high-throughput' => ['enable' => true, 'very-high-throughput' => true],
+            'g-legacy-rates' => [
+                'basic-rates' => ['RATE_12MB', 'RATE_24MB'],
+                'tx-rates' => ['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB'],
+            ],
+            'a-legacy-rates' => [
+                'basic-rates' => ['RATE_12MB', 'RATE_24MB'],
+                'tx-rates' => ['RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB'],
+            ],
+            'high-efficiency' => ['enable' => true],
+            'extremely-high-throughput' => ['enable' => false, 'mlo' => false],
+            'wmm-cfg' => ['uapsd' => false],
+            'advertise-timing' => false,
             'opmode' => 'WPA2_PERSONAL',
+            'mac-authentication' => false,
             'personal-security' => [
                 'passphrase-format' => 'STRING',
                 'wpa-passphrase' => $ssidData['wpa_passphrase'],
             ],
             'type' => 'EMPLOYEE',
-            'high-throughput' => ['enable' => true, 'very-high-throughput' => true],
-            'high-efficiency' => ['enable' => true],
-            'vlan-name' => $vlanName,
+            'use-ip-for-calling-station-id' => false,
+            'server-load-balancing' => false,
+            'called-station-id' => [
+                'type' => 'MAC_ADDRESS',
+                'include-ssid' => false,
+            ],
+            'cloud-auth' => false,
+            'denylist' => false,
+            'enforce-dhcp' => false,
+            'pan' => false,
             'vlan-selector' => 'NAMED_VLAN',
-            'enable' => true,
-            'ssid' => $ssidName,
+            'vlan-name' => $vlanName,
+            'client-isolation' => false,
         ];
 
         $gLegacyRates = $this->buildLegacyRates($ssidData['g_basic_rates'], $ssidData['g_tx_rates']);
@@ -616,10 +660,6 @@ class ArubaControllerConfigParser
         $rfBand = self::mapAllowedBandToRfBand($allowedBand);
         if ($rfBand !== null) {
             $body['rf-band'] = $rfBand;
-        }
-
-        if ($ssidData['advertise_ap_name']) {
-            $body['advertise-apname'] = true;
         }
 
         return $body;
