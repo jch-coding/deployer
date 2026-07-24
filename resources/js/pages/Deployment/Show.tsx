@@ -1,6 +1,6 @@
 import { Form, router, useForm, usePage } from '@inertiajs/react';
 import type { RowSelectionState } from '@tanstack/react-table';
-import { Crown, Download, Search } from 'lucide-react';
+import { Crown, Download, Search, Workflow } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { toast } from 'sonner';
@@ -64,6 +64,7 @@ import {
     bulkMove,
     bulkUpdateMetadata,
     critical_check as criticalCheckDeployment,
+    custom_provision as customProvisionDeployment,
     index as deploymentsIndex,
     provision as provisionDeployment,
     refreshScopeIds,
@@ -1008,6 +1009,30 @@ export default function Show() {
                             {selectedIds.length > 0
                                 ? `Run full provisioning for ${selectedCount} selected device(s).`
                                 : 'Open the provisioning workflow page for this deployment.'}
+                        </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button asChild variant="outline">
+                                <a
+                                    href={
+                                        selectedIds.length > 0
+                                            ? `${customProvisionDeployment(deploymentId).url}?device_ids=${selectedIds.join(',')}`
+                                            : customProvisionDeployment(
+                                                  deploymentId,
+                                              ).url
+                                    }
+                                    data-test="create-custom-workflow"
+                                >
+                                    <Workflow className="size-4" aria-hidden />
+                                    Create custom workflow
+                                </a>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            {selectedIds.length > 0
+                                ? `Build a custom step sequence for ${selectedCount} selected device(s).`
+                                : 'Build a named custom provisioning workflow for this deployment.'}
                         </TooltipContent>
                     </Tooltip>
                 </div>

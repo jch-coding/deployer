@@ -46,6 +46,14 @@ class ProvisioningPreflightService
         $startStep = ProvisioningStep::tryFrom((string) ($options['start_step'] ?? ''))
             ?? ProvisioningStep::VerifyLicensing;
 
+        $customSteps = null;
+        if (array_key_exists('steps', $options) && $options['steps'] !== null) {
+            if (! is_array($options['steps'])) {
+                throw ValidationException::withMessages(['steps' => 'Steps must be an array.']);
+            }
+            $customSteps = CustomWorkflowStepOrder::validate($options['steps']);
+        }
+
         $provisioningNames = $this->provisioningNamesFromOptions($options);
         $stepContext = new ProvisioningStepContext(
             CentralAPIHelper::deploymentUsesVsxFallbackMode($devices),
@@ -67,11 +75,11 @@ class ProvisioningPreflightService
 
         foreach ($devices as $device) {
             $steps = [];
-            foreach (ProvisioningStep::ordered() as $step) {
-                if ($step->order() >= $startStep->order()) {
-                    break;
-                }
+            $stepsToCheck = $customSteps !== null
+                ? $customSteps
+                : $this->stepsBeforeStart($startStep);
 
+            foreach ($stepsToCheck as $step) {
                 if ($step->shouldSkipForDevice($device, $stepContext)) {
                     continue;
                 }
@@ -606,5 +614,21 @@ class ProvisioningPreflightService
             'message' => $message,
             'remediation' => null,
         ];
+    }
+
+    /**
+     * @return list<ProvisioningStep>
+     */
+    private function stepsBeforeStart(ProvisioningStep $startStep): array
+    {
+        $steps = [];
+        foreach (ProvisioningStep::ordered() as $step) {
+            if ($step->order() >= $startStep->order()) {
+                break;
+            }
+            $steps[] = $step;
+        }
+
+        return $steps;
     }
 }

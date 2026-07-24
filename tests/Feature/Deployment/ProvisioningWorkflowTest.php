@@ -750,3 +750,157 @@ it('launches a remediation-shaped assign subscription task for a device subset',
         ->and($task->task_type)->toBe('ASSIGN_SUBSCRIPTION')
         ->and($task->devices()->pluck('devices.id')->all())->toBe([$failed->id]);
 });
+
+it('renders the custom provisioning workflow page with templates', function () {
+    $this->actingAs($this->user);
+
+    $this->get(route('deployments.custom_provision', $this->deployment))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/CustomProvision')
+            ->where('deployment.id', $this->deployment->id)
+            ->has('available_steps')
+            ->has('templates')
+        );
+});
+
+it('rejects an illegal custom step order', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::VerifyLicensing->value,
+        ],
+        'name' => 'Bad order',
+    ])->assertSessionHasErrors('steps');
+});
+
+it('starts a custom workflow with only selected steps in custom order', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $this->actingAs($this->user);
+
+    $steps = [
+        ProvisioningStep::AssociateSite->value,
+        ProvisioningStep::ConfigureEthernetInterfaces->value,
+        ProvisioningStep::ConfigureVlanInterfaces->value,
+    ];
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => $steps,
+        'name' => 'Site then interfaces',
+        'save_as_template' => true,
+        'template_name' => 'Site then interfaces',
+    ])->assertRedirect(route('deployments.custom_provision', $this->deployment));
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    expect($workflow)->not->toBeNull()
+        ->and($workflow->name)->toBe('Site then interfaces')
+        ->and($workflow->steps)->toBe($steps)
+        ->and($workflow->provisioning_workflow_template_id)->not->toBeNull();
+
+    $workflowDevice = $workflow->workflowDevices()->first();
+    $stepKeys = $workflowDevice->steps()->orderBy('step_order')->pluck('step_key')->all();
+    expect($stepKeys)->toBe($steps)
+        ->and($workflowDevice->steps)->toHaveCount(3);
+
+    $template = \App\Models\ProvisioningWorkflowTemplate::query()->first();
+    expect($template)->not->toBeNull()
+        ->and($template->name)->toBe('Site then interfaces')
+        ->and($template->steps)->toBe($steps)
+        ->and($template->client_id)->toBe($this->client->id);
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) {
+        return $job->stepKey === ProvisioningStep::AssociateSite->value;
+    });
+});
+
+it('advances a custom workflow in the user-defined step order', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssignDeviceFunction->value,
+            ProvisioningStep::WaitForOnline->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+        'name' => 'Free reorder',
+    ])->assertRedirect(route('deployments.custom_provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    $orchestrator = app(ProvisioningWorkflowOrchestrator::class);
+
+    $orchestrator->processStepResult(
+        $workflowDevice->fresh(['steps', 'device', 'workflow']),
+        ProvisioningStep::AssignDeviceFunction,
+        ProvisioningStepResult::completed('Function assigned'),
+    );
+
+    $workflowDevice->refresh();
+    expect($workflowDevice->current_step_key)->toBe(ProvisioningStep::WaitForOnline->value);
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) {
+        return $job->stepKey === ProvisioningStep::WaitForOnline->value;
+    });
+});
+
+it('launches a custom workflow from a saved template', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $template = \App\Models\ProvisioningWorkflowTemplate::query()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'name' => 'Preprovision only',
+        'steps' => [ProvisioningStep::PreprovisionGroup->value],
+    ]);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'template_id' => $template->id,
+        'name' => 'From template',
+    ])->assertRedirect(route('deployments.custom_provision', $this->deployment));
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    expect($workflow->steps)->toBe([ProvisioningStep::PreprovisionGroup->value])
+        ->and($workflow->provisioning_workflow_template_id)->toBe($template->id)
+        ->and($workflow->name)->toBe('From template');
+});
+
+it('keeps the diva path unchanged when steps are omitted', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    expect($workflow->steps)->toBeNull()
+        ->and($workflow->name)->toBeNull()
+        ->and($workflow->workflowDevices()->first()->steps)->toHaveCount(14);
+});

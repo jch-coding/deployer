@@ -49,16 +49,30 @@ class ProvisioningWorkflowService
         }
 
         $deployment->loadMissing('client');
-        [$startStep, $omitSteps] = $this->resolveStartAndOmitSteps($options);
+        $customSteps = $this->resolveCustomSteps($options);
+        $isCustom = $customSteps !== null;
+
+        if ($isCustom) {
+            $startStep = $customSteps[0];
+            $omitSteps = [];
+            $stepKeys = array_map(fn (ProvisioningStep $step) => $step->value, $customSteps);
+            $licensingWillRun = in_array(ProvisioningStep::VerifyLicensing->value, $stepKeys, true);
+        } else {
+            [$startStep, $omitSteps] = $this->resolveStartAndOmitSteps($options);
+            $stepKeys = null;
+            $licensingWillRun = $startStep->order() <= ProvisioningStep::VerifyLicensing->order()
+                && ! in_array(ProvisioningStep::VerifyLicensing->value, $omitSteps, true);
+        }
+
         $provisioningNames = $this->applyProvisioningDeviceNames($devices, $options);
-        $licensingWillRun = $startStep->order() <= ProvisioningStep::VerifyLicensing->order()
-            && ! in_array(ProvisioningStep::VerifyLicensing->value, $omitSteps, true);
         $licensingConfig = $licensingWillRun
             ? $this->buildLicensingConfig($deployment, $devices, $options)
             : ['mode' => 'skipped'];
         $licensingConfig['naming'] = ['per_device' => $provisioningNames];
-        $licensingConfig['start_step'] = $startStep->value;
-        $licensingConfig['omit_steps'] = $omitSteps;
+        if (! $isCustom) {
+            $licensingConfig['start_step'] = $startStep->value;
+            $licensingConfig['omit_steps'] = $omitSteps;
+        }
 
         $deploymentTime = max(1, (int) ($options['deployment_time'] ?? 10));
         $waitTime = max(1, (int) ($options['wait_time'] ?? 1));
@@ -75,6 +89,13 @@ class ProvisioningWorkflowService
             ? $options['preflight_results']
             : [];
 
+        $workflowName = trim((string) ($options['name'] ?? ''));
+        $workflowName = $workflowName !== '' ? $workflowName : null;
+        $templateId = isset($options['template_id']) ? (int) $options['template_id'] : null;
+        if ($templateId !== null && $templateId <= 0) {
+            $templateId = null;
+        }
+
         return DB::transaction(function () use (
             $deployment,
             $user,
@@ -88,16 +109,24 @@ class ProvisioningWorkflowService
             $startStep,
             $omitSteps,
             $preflightResults,
+            $isCustom,
+            $customSteps,
+            $stepKeys,
+            $workflowName,
+            $templateId,
         ): ProvisioningWorkflow {
             $workflow = ProvisioningWorkflow::query()->create([
                 'deployment_id' => $deployment->id,
                 'user_id' => $user->id,
+                'name' => $workflowName,
                 'status' => 'running',
                 'job_queue' => $jobQueue,
                 'deployment_time' => $deploymentTime,
                 'wait_time' => $waitTime,
                 'online_detection_mode' => $onlineDetectionMode,
                 'licensing_config' => $licensingConfig,
+                'steps' => $stepKeys,
+                'provisioning_workflow_template_id' => $templateId,
                 'started_at' => now(),
             ]);
 
@@ -110,26 +139,47 @@ class ProvisioningWorkflowService
                     'status_message' => 'Starting '.$startStep->label().'...',
                 ]);
 
-                foreach (ProvisioningStep::ordered() as $step) {
-                    [$status, $message] = $this->initialStepStatus(
-                        $step,
-                        $device,
-                        $stepContext,
-                        $startStep,
-                        $omitSteps,
-                        $preflightResults[(string) $device->id][$step->value] ?? null,
-                    );
-                    ProvisioningWorkflowDeviceStep::query()->create([
-                        'provisioning_workflow_device_id' => $workflowDevice->id,
-                        'step_key' => $step->value,
-                        'step_order' => $step->order(),
-                        'status' => $status,
-                        'message' => $message,
-                        'completed_at' => $status === 'skipped' ? now() : null,
-                    ]);
+                if ($isCustom) {
+                    $order = 1;
+                    foreach ($customSteps as $step) {
+                        [$status, $message] = $this->initialCustomStepStatus(
+                            $step,
+                            $device,
+                            $stepContext,
+                        );
+                        ProvisioningWorkflowDeviceStep::query()->create([
+                            'provisioning_workflow_device_id' => $workflowDevice->id,
+                            'step_key' => $step->value,
+                            'step_order' => $order,
+                            'status' => $status,
+                            'message' => $message,
+                            'completed_at' => $status === 'skipped' ? now() : null,
+                        ]);
+                        $order++;
+                    }
+                    $firstStep = $this->firstRunnableStepFromSequence($device, $stepContext, $customSteps);
+                } else {
+                    foreach (ProvisioningStep::ordered() as $step) {
+                        [$status, $message] = $this->initialStepStatus(
+                            $step,
+                            $device,
+                            $stepContext,
+                            $startStep,
+                            $omitSteps,
+                            $preflightResults[(string) $device->id][$step->value] ?? null,
+                        );
+                        ProvisioningWorkflowDeviceStep::query()->create([
+                            'provisioning_workflow_device_id' => $workflowDevice->id,
+                            'step_key' => $step->value,
+                            'step_order' => $step->order(),
+                            'status' => $status,
+                            'message' => $message,
+                            'completed_at' => $status === 'skipped' ? now() : null,
+                        ]);
+                    }
+                    $firstStep = $this->firstRunnableStep($device, $stepContext, $startStep, $omitSteps);
                 }
 
-                $firstStep = $this->firstRunnableStep($device, $stepContext, $startStep, $omitSteps);
                 if ($firstStep !== null) {
                     $firstStepRow = $workflowDevice->steps()->where('step_key', $firstStep->value)->first();
                     $firstStepRow?->markInProgress($firstStep->label().'...');
@@ -151,6 +201,23 @@ class ProvisioningWorkflowService
 
             return $workflow->load(['workflowDevices.device', 'workflowDevices.steps']);
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return list<ProvisioningStep>|null
+     */
+    public function resolveCustomSteps(array $options): ?array
+    {
+        if (! array_key_exists('steps', $options) || $options['steps'] === null) {
+            return null;
+        }
+
+        if (! is_array($options['steps'])) {
+            throw ValidationException::withMessages(['steps' => 'Steps must be an array.']);
+        }
+
+        return CustomWorkflowStepOrder::validate($options['steps']);
     }
 
     /**
@@ -267,17 +334,26 @@ class ProvisioningWorkflowService
             return;
         }
 
-        $fromOrder = $fromStep->order();
+        $fromRow = $workflowDevice->steps->firstWhere('step_key', $fromStep->value);
+        if ($fromRow === null) {
+            throw ValidationException::withMessages([
+                'from_step' => 'That step is not part of this workflow.',
+            ]);
+        }
+
+        $fromOrder = (int) $fromRow->step_order;
         $stepContext = ProvisioningStepContext::forWorkflow($workflow);
 
-        foreach ($workflowDevice->steps as $stepRow) {
+        foreach ($workflowDevice->steps->sortBy('step_order') as $stepRow) {
+            if ((int) $stepRow->step_order < $fromOrder) {
+                continue;
+            }
+
             $stepEnum = ProvisioningStep::from($stepRow->step_key);
-            if ($stepEnum->order() >= $fromOrder) {
-                if ($stepEnum->shouldSkipForDevice($workflowDevice->device, $stepContext)) {
-                    $stepRow->markSkipped('Not applicable for this device.');
-                } else {
-                    $stepRow->resetToPending();
-                }
+            if ($stepEnum->shouldSkipForDevice($workflowDevice->device, $stepContext)) {
+                $stepRow->markSkipped('Not applicable for this device.');
+            } else {
+                $stepRow->resetToPending();
             }
         }
 
@@ -359,7 +435,10 @@ class ProvisioningWorkflowService
 
         return [
             'id' => $workflow->id,
+            'name' => $workflow->name,
             'status' => $workflow->status,
+            'steps' => $workflow->customStepKeys(),
+            'template_id' => $workflow->provisioning_workflow_template_id,
             'deployment_time' => $workflow->deployment_time,
             'wait_time' => $workflow->wait_time,
             'online_detection_mode' => $workflow->onlineDetectionMode()->value,
@@ -494,6 +573,21 @@ class ProvisioningWorkflowService
     }
 
     /**
+     * @return array{0: string, 1: ?string}
+     */
+    private function initialCustomStepStatus(
+        ProvisioningStep $step,
+        Device $device,
+        ProvisioningStepContext $stepContext,
+    ): array {
+        if ($step->shouldSkipForDevice($device, $stepContext)) {
+            return ['skipped', 'Not applicable for this device.'];
+        }
+
+        return ['pending', null];
+    }
+
+    /**
      * @param  list<string>  $omitSteps
      */
     private function firstRunnableStep(
@@ -518,6 +612,23 @@ class ProvisioningWorkflowService
     }
 
     /**
+     * @param  list<ProvisioningStep>  $steps
+     */
+    private function firstRunnableStepFromSequence(
+        Device $device,
+        ProvisioningStepContext $context,
+        array $steps,
+    ): ?ProvisioningStep {
+        foreach ($steps as $step) {
+            if (! $step->shouldSkipForDevice($device, $context)) {
+                return $step;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @return list<array{step_key: string, label: string}>
      */
     private function restartableSteps(ProvisioningWorkflowDevice $workflowDevice): array
@@ -526,17 +637,24 @@ class ProvisioningWorkflowService
             return [];
         }
 
-        $failedOrder = ProvisioningStep::from($workflowDevice->failed_step_key)->order();
+        $failedRow = $workflowDevice->steps->firstWhere('step_key', $workflowDevice->failed_step_key);
+        if ($failedRow === null) {
+            return [];
+        }
+
+        $failedOrder = (int) $failedRow->step_order;
         $steps = [];
 
         foreach ($workflowDevice->steps->sortBy('step_order') as $stepRow) {
-            $step = ProvisioningStep::from($stepRow->step_key);
-            if ($step->order() >= $failedOrder && $stepRow->status !== 'skipped') {
-                $steps[] = [
-                    'step_key' => $step->value,
-                    'label' => $step->label(),
-                ];
+            if ((int) $stepRow->step_order < $failedOrder || $stepRow->status === 'skipped') {
+                continue;
             }
+
+            $step = ProvisioningStep::from($stepRow->step_key);
+            $steps[] = [
+                'step_key' => $step->value,
+                'label' => $step->label(),
+            ];
         }
 
         return $steps;

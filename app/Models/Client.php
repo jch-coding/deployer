@@ -65,6 +65,11 @@ class Client extends Model
         return $this->hasMany(CentralStreamEvent::class);
     }
 
+    public function provisioningWorkflowTemplates(): HasMany
+    {
+        return $this->hasMany(ProvisioningWorkflowTemplate::class);
+    }
+
     protected function casts(): array
     {
         return [

@@ -11,6 +11,7 @@ class ProvisioningWorkflow extends Model
 {
     protected $casts = [
         'licensing_config' => 'array',
+        'steps' => 'array',
         'classic_poller_active' => 'boolean',
         'online_detection_mode' => OnlineDetectionMode::class,
         'started_at' => 'datetime',
@@ -32,9 +33,26 @@ class ProvisioningWorkflow extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(ProvisioningWorkflowTemplate::class, 'provisioning_workflow_template_id');
+    }
+
     public function workflowDevices(): HasMany
     {
         return $this->hasMany(ProvisioningWorkflowDevice::class);
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    public function customStepKeys(): ?array
+    {
+        if (! is_array($this->steps) || $this->steps === []) {
+            return null;
+        }
+
+        return array_values(array_map('strval', $this->steps));
     }
 
     public function isTerminal(): bool

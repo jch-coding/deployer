@@ -9,7 +9,9 @@ use App\Helper\GreenLakeAPIHelper;
 use App\Models\Deployment;
 use App\Models\ProvisioningWorkflow;
 use App\Models\ProvisioningWorkflowDevice;
+use App\Models\ProvisioningWorkflowTemplate;
 use App\Services\LicensingInventoryService;
+use App\Services\Provisioning\CustomWorkflowStepOrder;
 use App\Services\Provisioning\ProvisioningPreflightService;
 use App\Services\Provisioning\ProvisioningWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -27,42 +29,29 @@ class ProvisioningWorkflowController extends Controller
         ProvisioningWorkflowService $workflowService,
         LicensingInventoryService $licensingInventoryService,
     ): Response {
-        $this->authorizeDeployment($request, $deployment);
+        return $this->renderProvisionPage(
+            $request,
+            $deployment,
+            $workflowService,
+            $licensingInventoryService,
+            'Deployment/Provision',
+        );
+    }
 
-        $workflow = $workflowService->latestForDeployment($deployment);
-        $deployment->load('devices');
-
-        $licensingOptions = $this->resolveLicensingOptions($request, $deployment, $licensingInventoryService);
-        $client = $request->user()?->currentClient();
-
-        return Inertia::render('Deployment/Provision', [
-            'deployment' => [
-                'id' => $deployment->id,
-                'name' => $deployment->name,
-                'devices' => $deployment->devices->map(fn ($device) => [
-                    'id' => $device->id,
-                    'name' => $device->name,
-                    'serial' => $device->serial,
-                    'device_function' => $device->device_function,
-                    'license_tag' => $device->license_tag,
-                    'license_type' => $device->license_type,
-                    'group' => $device->group,
-                ])->values(),
-            ],
-            'workflow' => $workflow ? $workflowService->serializeForUi($workflow) : null,
-            'available_steps' => $workflowService->availableStepsForUi(),
-            'selected_device_ids' => $this->parseSelectedDeviceIds($request),
-            'license_tags' => $licensingOptions['license_tags'] ?? [],
-            'available_subscriptions' => $licensingOptions['available_subscriptions'] ?? [],
-            'license_type_options' => array_map(
-                fn (\App\LicenseType $type) => $type->value,
-                \App\LicenseType::cases(),
-            ),
-            'licensing_synced_at' => $licensingOptions['licensing_synced_at'] ?? null,
-            'licensing_error' => $licensingOptions['central_error'] ?? null,
-            'has_classic_webhook_secret' => filled($client?->classic_webhook_secret),
-            'has_classic_streaming_credentials' => (bool) $client?->hasClassicStreamingCredentials(),
-        ]);
+    public function customShow(
+        Request $request,
+        Deployment $deployment,
+        ProvisioningWorkflowService $workflowService,
+        LicensingInventoryService $licensingInventoryService,
+    ): Response {
+        return $this->renderProvisionPage(
+            $request,
+            $deployment,
+            $workflowService,
+            $licensingInventoryService,
+            'Deployment/CustomProvision',
+            includeTemplates: true,
+        );
     }
 
     public function preflight(
@@ -73,19 +62,27 @@ class ProvisioningWorkflowController extends Controller
     ): JsonResponse {
         $this->authorizeDeployment($request, $deployment);
 
+        $stepValues = array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases());
+
         $validated = $request->validate([
             'device_ids' => ['required', 'array', 'min:1'],
             'device_ids.*' => ['integer'],
-            'start_step' => ['nullable', 'string', Rule::in(array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases()))],
+            'start_step' => ['nullable', 'string', Rule::in($stepValues)],
+            'steps' => ['nullable', 'array', 'min:1'],
+            'steps.*' => ['string', Rule::in($stepValues)],
             'devices' => ['nullable', 'array'],
             'devices.*.id' => ['nullable', 'integer'],
             'devices.*.name' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $workflowService->resolveStartAndOmitSteps([
-            'start_step' => $validated['start_step'] ?? ProvisioningStep::VerifyLicensing->value,
-            'omit_steps' => [],
-        ]);
+        if (isset($validated['steps'])) {
+            $workflowService->resolveCustomSteps($validated);
+        } else {
+            $workflowService->resolveStartAndOmitSteps([
+                'start_step' => $validated['start_step'] ?? ProvisioningStep::VerifyLicensing->value,
+                'omit_steps' => [],
+            ]);
+        }
 
         $result = $preflightService->run($deployment, $validated['device_ids'], $validated);
 
@@ -118,10 +115,20 @@ class ProvisioningWorkflowController extends Controller
             'start_step' => ['nullable', 'string', Rule::in($stepValues)],
             'omit_steps' => ['nullable', 'array'],
             'omit_steps.*' => ['string', Rule::in($stepValues)],
+            'steps' => ['nullable', 'array', 'min:1'],
+            'steps.*' => ['string', Rule::in($stepValues)],
+            'name' => ['nullable', 'string', 'max:255'],
+            'template_id' => ['nullable', 'integer'],
+            'save_as_template' => ['nullable', 'boolean'],
+            'template_name' => ['nullable', 'string', 'max:255'],
             'preflight_results' => ['nullable', 'array'],
         ]);
 
-        $workflowService->resolveStartAndOmitSteps($validated);
+        if (isset($validated['steps'])) {
+            $workflowService->resolveCustomSteps($validated);
+        } else {
+            $workflowService->resolveStartAndOmitSteps($validated);
+        }
 
         $mode = OnlineDetectionMode::tryFrom((string) ($validated['online_detection_mode'] ?? ''))
             ?? OnlineDetectionMode::Poll;
@@ -146,6 +153,58 @@ class ProvisioningWorkflowController extends Controller
 
         $validated['online_detection_mode'] = $mode->value;
 
+        $templateId = isset($validated['template_id']) ? (int) $validated['template_id'] : null;
+        if ($templateId) {
+            $template = ProvisioningWorkflowTemplate::query()
+                ->where('client_id', $deployment->client_id)
+                ->whereKey($templateId)
+                ->first();
+            if ($template === null) {
+                throw ValidationException::withMessages([
+                    'template_id' => 'Selected workflow template was not found for this client.',
+                ]);
+            }
+            if (! isset($validated['steps'])) {
+                $validated['steps'] = $template->steps;
+                $workflowService->resolveCustomSteps($validated);
+            }
+            $validated['template_id'] = $template->id;
+        } else {
+            unset($validated['template_id']);
+        }
+
+        if ($request->boolean('save_as_template')) {
+            $templateName = trim((string) ($validated['template_name'] ?? $validated['name'] ?? ''));
+            if ($templateName === '') {
+                throw ValidationException::withMessages([
+                    'template_name' => 'A template name is required when saving as a template.',
+                ]);
+            }
+            $steps = CustomWorkflowStepOrder::validate($validated['steps'] ?? []);
+            $stepKeys = array_map(fn (ProvisioningStep $step) => $step->value, $steps);
+
+            $existing = ProvisioningWorkflowTemplate::query()
+                ->where('client_id', $deployment->client_id)
+                ->where('name', $templateName)
+                ->first();
+
+            if ($existing) {
+                $existing->update([
+                    'steps' => $stepKeys,
+                    'user_id' => $request->user()?->id,
+                ]);
+                $validated['template_id'] = $existing->id;
+            } else {
+                $created = ProvisioningWorkflowTemplate::query()->create([
+                    'client_id' => $deployment->client_id,
+                    'user_id' => $request->user()?->id,
+                    'name' => $templateName,
+                    'steps' => $stepKeys,
+                ]);
+                $validated['template_id'] = $created->id;
+            }
+        }
+
         $workflow = $workflowService->start(
             $deployment,
             $request->user(),
@@ -153,8 +212,12 @@ class ProvisioningWorkflowController extends Controller
             $validated,
         );
 
+        $redirectRoute = isset($validated['steps'])
+            ? 'deployments.custom_provision'
+            : 'deployments.provision';
+
         return redirect()
-            ->route('deployments.provision', $deployment)
+            ->route($redirectRoute, $deployment)
             ->with('success', 'Provisioning workflow started for '.$workflow->workflowDevices()->count().' device(s).');
     }
 
@@ -206,6 +269,67 @@ class ProvisioningWorkflowController extends Controller
             new CentralAPIHelper($client),
             new GreenLakeAPIHelper($client),
         );
+    }
+
+    private function renderProvisionPage(
+        Request $request,
+        Deployment $deployment,
+        ProvisioningWorkflowService $workflowService,
+        LicensingInventoryService $licensingInventoryService,
+        string $component,
+        bool $includeTemplates = false,
+    ): Response {
+        $this->authorizeDeployment($request, $deployment);
+
+        $workflow = $workflowService->latestForDeployment($deployment);
+        $deployment->load('devices');
+
+        $licensingOptions = $this->resolveLicensingOptions($request, $deployment, $licensingInventoryService);
+        $client = $request->user()?->currentClient();
+
+        $props = [
+            'deployment' => [
+                'id' => $deployment->id,
+                'name' => $deployment->name,
+                'devices' => $deployment->devices->map(fn ($device) => [
+                    'id' => $device->id,
+                    'name' => $device->name,
+                    'serial' => $device->serial,
+                    'device_function' => $device->device_function,
+                    'license_tag' => $device->license_tag,
+                    'license_type' => $device->license_type,
+                    'group' => $device->group,
+                ])->values(),
+            ],
+            'workflow' => $workflow ? $workflowService->serializeForUi($workflow) : null,
+            'available_steps' => $workflowService->availableStepsForUi(),
+            'selected_device_ids' => $this->parseSelectedDeviceIds($request),
+            'license_tags' => $licensingOptions['license_tags'] ?? [],
+            'available_subscriptions' => $licensingOptions['available_subscriptions'] ?? [],
+            'license_type_options' => array_map(
+                fn (\App\LicenseType $type) => $type->value,
+                \App\LicenseType::cases(),
+            ),
+            'licensing_synced_at' => $licensingOptions['licensing_synced_at'] ?? null,
+            'licensing_error' => $licensingOptions['central_error'] ?? null,
+            'has_classic_webhook_secret' => filled($client?->classic_webhook_secret),
+            'has_classic_streaming_credentials' => (bool) $client?->hasClassicStreamingCredentials(),
+        ];
+
+        if ($includeTemplates) {
+            $props['templates'] = ProvisioningWorkflowTemplate::query()
+                ->where('client_id', $deployment->client_id)
+                ->orderBy('name')
+                ->get()
+                ->map(fn (ProvisioningWorkflowTemplate $template) => [
+                    'id' => $template->id,
+                    'name' => $template->name,
+                    'steps' => $template->steps,
+                ])
+                ->values();
+        }
+
+        return Inertia::render($component, $props);
     }
 
     private function authorizeDeployment(Request $request, Deployment $deployment): void
