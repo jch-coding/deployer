@@ -208,8 +208,12 @@ class ProvisioningWorkflowOrchestrator
                 continue;
             }
 
+            $stepRow = $workflowDevice->steps->firstWhere('step_key', $step->value);
+            if ($stepRow instanceof ProvisioningWorkflowDeviceStep && $stepRow->status === 'skipped') {
+                continue;
+            }
+
             if ($step->shouldSkipForDevice($device, $context)) {
-                $stepRow = $workflowDevice->steps->firstWhere('step_key', $step->value);
                 if ($stepRow instanceof ProvisioningWorkflowDeviceStep && $stepRow->status === 'pending') {
                     $stepRow->markSkipped('Not applicable for this device.');
                 }

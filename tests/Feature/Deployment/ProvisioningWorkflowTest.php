@@ -41,8 +41,38 @@ it('renders the provisioning workflow page', function () {
             ->where('deployment.id', $this->deployment->id)
             ->where('workflow', null)
             ->where('has_classic_webhook_secret', false)
+            ->has('available_steps')
+            ->where('available_steps.0.step_key', ProvisioningStep::VerifyLicensing->value)
         );
 });
+
+function provisionLicensedDevice(Deployment $deployment, Client $client, array $overrides = []): Device
+{
+    $device = Device::factory()->for($deployment)->create(array_merge([
+        'license_tag' => 'pool-a',
+        'license_type' => 'Advanced AP',
+        'group' => 'TestGroup',
+    ], $overrides));
+
+    if (! $client->clientSubscriptions()->where('subscription_key', 'sub-key')->exists()) {
+        ClientSubscription::factory()->for($client)->create([
+            'subscription_key' => 'sub-key',
+            'greenlake_subscription_id' => 'gl-sub-1',
+            'tags' => ['pool-a'],
+            'license_type' => 'Advanced AP',
+            'available' => 5,
+        ]);
+    }
+
+    LicensingInventoryDevice::factory()->for($client)->create([
+        'serial' => $device->serial,
+        'greenlake_device_id' => 'gl-'.$device->serial,
+        'licensed' => true,
+        'subscription_key' => 'sub-key',
+    ]);
+
+    return $device;
+}
 
 it('exposes has_classic_webhook_secret when the client has a secret', function () {
     $this->client->update(['classic_webhook_secret' => 'secret-token']);
@@ -431,4 +461,292 @@ it('does not start the classic poller for webhook-mode wait_for_online', functio
     Queue::assertPushed(FailWaitForOnlineOnTimeoutJob::class, function (FailWaitForOnlineOnTimeoutJob $job) use ($workflowDevice) {
         return $job->workflowDeviceId === $workflowDevice->id;
     });
+});
+
+it('starts a workflow at the selected step and skips earlier steps', function () {
+    Queue::fake();
+
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::AssociateSite->value,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    expect($workflowDevice->current_step_key)->toBe(ProvisioningStep::AssociateSite->value)
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::VerifyLicensing->value)->value('status'))->toBe('skipped')
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::PreprovisionGroup->value)->value('status'))->toBe('skipped')
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('status'))->toBe('in_progress');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) {
+        return $job->stepKey === ProvisioningStep::AssociateSite->value;
+    });
+});
+
+it('omits selected steps after the start step', function () {
+    Queue::fake();
+
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::AssociateSite->value,
+        'omit_steps' => [
+            ProvisioningStep::NameDevice->value,
+            ProvisioningStep::ConfigureMirrorSessions->value,
+        ],
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    expect($workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->value('status'))->toBe('skipped')
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->value('message'))->toBe('Omitted by user.')
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::ConfigureMirrorSessions->value)->value('status'))->toBe('skipped');
+});
+
+it('rejects omitting the start step', function () {
+    Queue::fake();
+
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::AssociateSite->value,
+        'omit_steps' => [ProvisioningStep::AssociateSite->value],
+    ])->assertSessionHasErrors('omit_steps');
+
+    expect(ProvisioningWorkflow::query()->count())->toBe(0);
+});
+
+it('rejects omit steps that are before the start step', function () {
+    Queue::fake();
+
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::AssociateSite->value,
+        'omit_steps' => [ProvisioningStep::VerifyLicensing->value],
+    ])->assertSessionHasErrors('omit_steps');
+});
+
+it('returns a licensing preflight warning for unlicensed devices', function () {
+    $unlicensed = Device::factory()->for($this->deployment)->create([
+        'license_tag' => 'pool-a',
+        'license_type' => 'Advanced AP',
+        'group' => 'TestGroup',
+        'serial' => 'UNLICENSED01',
+    ]);
+    $licensed = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'LICENSED0001',
+    ]);
+
+    LicensingInventoryDevice::factory()->for($this->client)->create([
+        'serial' => $unlicensed->serial,
+        'greenlake_device_id' => 'gl-unlicensed',
+        'licensed' => false,
+        'subscription_key' => '',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $response = $this->postJson(route('deployments.provision.preflight', $this->deployment), [
+        'device_ids' => [$unlicensed->id, $licensed->id],
+        'start_step' => ProvisioningStep::PreprovisionGroup->value,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('has_warnings', true);
+
+    $remediations = $response->json('remediations');
+    expect($remediations)->toHaveCount(1)
+        ->and($remediations[0]['task_type'])->toBe('ASSIGN_SUBSCRIPTION')
+        ->and($remediations[0]['device_ids'])->toBe([$unlicensed->id]);
+
+    $devices = collect($response->json('devices'));
+    $unlicensedResult = $devices->firstWhere('device_id', $unlicensed->id);
+    $licensedResult = $devices->firstWhere('device_id', $licensed->id);
+
+    expect($unlicensedResult['steps'][0]['status'])->toBe('warn')
+        ->and($licensedResult['steps'][0]['status'])->toBe('ok');
+});
+
+it('marks interface steps before start as unchecked in preflight', function () {
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'device_function' => \App\DeviceFunction::ACCESS_SWITCH->name,
+    ]);
+    \App\Models\DeviceInterface::factory()->for($device)->create([
+        'interface_kind' => \App\InterfaceKind::VLAN,
+    ]);
+    \App\Models\DeviceInterface::factory()->for($device)->create([
+        'interface_kind' => \App\InterfaceKind::LAG,
+    ]);
+
+    $this->actingAs($this->user);
+
+    $response = $this->postJson(route('deployments.provision.preflight', $this->deployment), [
+        'device_ids' => [$device->id],
+        'start_step' => ProvisioningStep::ConfigureEthernetInterfaces->value,
+    ]);
+
+    $response->assertOk();
+
+    $steps = collect($response->json('devices.0.steps'));
+    expect($steps->firstWhere('step_key', ProvisioningStep::ConfigureVlanInterfaces->value)['status'])->toBe('unchecked')
+        ->and($steps->firstWhere('step_key', ProvisioningStep::ConfigureLagInterfaces->value)['status'])->toBe('unchecked');
+});
+
+it('splits VSF and VSX stack profile remediations by device', function () {
+    $vsf = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'VSFDEVICE001',
+        'sku' => \App\SwitchSKU::JL724A,
+        'stack_id' => null,
+        'device_function' => \App\DeviceFunction::ACCESS_SWITCH->name,
+        'scope_id' => 'scope-1',
+    ]);
+    $vsx = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'VSXDEVICE001',
+        'sku' => null,
+        'vsx_profile' => 'vsx-pair-a',
+        'device_function' => \App\DeviceFunction::ACCESS_SWITCH->name,
+        'scope_id' => 'scope-2',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $response = $this->postJson(route('deployments.provision.preflight', $this->deployment), [
+        'device_ids' => [$vsf->id, $vsx->id],
+        'start_step' => ProvisioningStep::ConfigureLagInterfaces->value,
+    ]);
+
+    $response->assertOk();
+
+    $remediations = collect($response->json('remediations'))
+        ->where('step_key', ProvisioningStep::CreateStackProfile->value)
+        ->values();
+
+    $vsfRemediation = $remediations->firstWhere('task_type', 'CREATE_VSF_PROFILE');
+    $vsxRemediation = $remediations->firstWhere('task_type', 'CREATE_VSX_PROFILE');
+
+    expect($vsfRemediation)->not->toBeNull()
+        ->and($vsfRemediation['device_ids'])->toBe([$vsf->id])
+        ->and($vsxRemediation)->not->toBeNull()
+        ->and($vsxRemediation['device_ids'])->toBe([$vsx->id]);
+});
+
+it('advances past omitted steps after a completed step', function () {
+    Queue::fake([RunProvisioningWorkflowStepJob::class]);
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    foreach (ProvisioningStep::ordered() as $step) {
+        $status = 'pending';
+        if ($step->order() < ProvisioningStep::AssociateSite->order()) {
+            $status = 'skipped';
+        } elseif ($step === ProvisioningStep::NameDevice) {
+            $status = 'skipped';
+        }
+
+        $workflowDevice->steps()->create([
+            'step_key' => $step->value,
+            'step_order' => $step->order(),
+            'status' => $status,
+            'message' => $status === 'skipped' && $step === ProvisioningStep::NameDevice ? 'Omitted by user.' : null,
+        ]);
+    }
+
+    app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
+        $workflowDevice->fresh(['steps', 'workflow', 'device']),
+        ProvisioningStep::AssociateSite,
+        ProvisioningStepResult::completed('Associated to site.'),
+    );
+
+    $workflowDevice->refresh();
+    expect($workflowDevice->current_step_key)->toBe(ProvisioningStep::ResolveScopeId->value);
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) {
+        return $job->stepKey === ProvisioningStep::ResolveScopeId->value;
+    });
+});
+
+it('launches a remediation-shaped assign subscription task for a device subset', function () {
+    Queue::fake();
+
+    $failed = Device::factory()->for($this->deployment)->create([
+        'license_tag' => 'pool-a',
+        'license_type' => 'Advanced AP',
+    ]);
+    $ok = Device::factory()->for($this->deployment)->create([
+        'license_tag' => 'pool-a',
+        'license_type' => 'Advanced AP',
+    ]);
+
+    ClientSubscription::factory()->for($this->client)->create([
+        'subscription_key' => 'sub-key',
+        'greenlake_subscription_id' => 'gl-sub-1',
+        'tags' => ['pool-a'],
+        'license_type' => 'Advanced AP',
+        'available' => 5,
+    ]);
+
+    LicensingInventoryDevice::factory()->for($this->client)->create([
+        'serial' => $failed->serial,
+        'greenlake_device_id' => 'gl-failed',
+        'licensed' => false,
+        'subscription_key' => '',
+    ]);
+    LicensingInventoryDevice::factory()->for($this->client)->create([
+        'serial' => $ok->serial,
+        'greenlake_device_id' => 'gl-ok',
+        'licensed' => true,
+        'subscription_key' => 'sub-key',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SUBSCRIPTION',
+        'devices' => [['id' => $failed->id]],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_mode' => 'uniform',
+        'license_tag' => 'pool-a',
+        'license_type' => 'Advanced AP',
+    ])->assertRedirect();
+
+    $task = \App\Models\Task::query()->latest('id')->first();
+    expect($task)->not->toBeNull()
+        ->and($task->task_type)->toBe('ASSIGN_SUBSCRIPTION')
+        ->and($task->devices()->pluck('devices.id')->all())->toBe([$failed->id]);
 });

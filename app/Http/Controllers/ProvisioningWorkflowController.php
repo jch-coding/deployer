@@ -10,7 +10,9 @@ use App\Models\Deployment;
 use App\Models\ProvisioningWorkflow;
 use App\Models\ProvisioningWorkflowDevice;
 use App\Services\LicensingInventoryService;
+use App\Services\Provisioning\ProvisioningPreflightService;
 use App\Services\Provisioning\ProvisioningWorkflowService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -48,6 +50,7 @@ class ProvisioningWorkflowController extends Controller
                 ])->values(),
             ],
             'workflow' => $workflow ? $workflowService->serializeForUi($workflow) : null,
+            'available_steps' => $workflowService->availableStepsForUi(),
             'selected_device_ids' => $this->parseSelectedDeviceIds($request),
             'license_tags' => $licensingOptions['license_tags'] ?? [],
             'available_subscriptions' => $licensingOptions['available_subscriptions'] ?? [],
@@ -62,9 +65,38 @@ class ProvisioningWorkflowController extends Controller
         ]);
     }
 
+    public function preflight(
+        Request $request,
+        Deployment $deployment,
+        ProvisioningWorkflowService $workflowService,
+        ProvisioningPreflightService $preflightService,
+    ): JsonResponse {
+        $this->authorizeDeployment($request, $deployment);
+
+        $validated = $request->validate([
+            'device_ids' => ['required', 'array', 'min:1'],
+            'device_ids.*' => ['integer'],
+            'start_step' => ['nullable', 'string', Rule::in(array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases()))],
+            'devices' => ['nullable', 'array'],
+            'devices.*.id' => ['nullable', 'integer'],
+            'devices.*.name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $workflowService->resolveStartAndOmitSteps([
+            'start_step' => $validated['start_step'] ?? ProvisioningStep::VerifyLicensing->value,
+            'omit_steps' => [],
+        ]);
+
+        $result = $preflightService->run($deployment, $validated['device_ids'], $validated);
+
+        return response()->json($result);
+    }
+
     public function store(Request $request, Deployment $deployment, ProvisioningWorkflowService $workflowService)
     {
         $this->authorizeDeployment($request, $deployment);
+
+        $stepValues = array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases());
 
         $validated = $request->validate([
             'device_ids' => ['required', 'array', 'min:1'],
@@ -83,7 +115,13 @@ class ProvisioningWorkflowController extends Controller
             'devices.*.license_tag' => ['nullable', 'string'],
             'devices.*.license_type' => ['nullable', 'string'],
             'devices.*.name' => ['nullable', 'string', 'max:255'],
+            'start_step' => ['nullable', 'string', Rule::in($stepValues)],
+            'omit_steps' => ['nullable', 'array'],
+            'omit_steps.*' => ['string', Rule::in($stepValues)],
+            'preflight_results' => ['nullable', 'array'],
         ]);
+
+        $workflowService->resolveStartAndOmitSteps($validated);
 
         $mode = OnlineDetectionMode::tryFrom((string) ($validated['online_detection_mode'] ?? ''))
             ?? OnlineDetectionMode::Poll;

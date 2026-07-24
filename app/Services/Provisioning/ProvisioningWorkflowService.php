@@ -49,9 +49,16 @@ class ProvisioningWorkflowService
         }
 
         $deployment->loadMissing('client');
-        $licensingConfig = $this->buildLicensingConfig($deployment, $devices, $options);
+        [$startStep, $omitSteps] = $this->resolveStartAndOmitSteps($options);
         $provisioningNames = $this->applyProvisioningDeviceNames($devices, $options);
+        $licensingWillRun = $startStep->order() <= ProvisioningStep::VerifyLicensing->order()
+            && ! in_array(ProvisioningStep::VerifyLicensing->value, $omitSteps, true);
+        $licensingConfig = $licensingWillRun
+            ? $this->buildLicensingConfig($deployment, $devices, $options)
+            : ['mode' => 'skipped'];
         $licensingConfig['naming'] = ['per_device' => $provisioningNames];
+        $licensingConfig['start_step'] = $startStep->value;
+        $licensingConfig['omit_steps'] = $omitSteps;
 
         $deploymentTime = max(1, (int) ($options['deployment_time'] ?? 10));
         $waitTime = max(1, (int) ($options['wait_time'] ?? 1));
@@ -63,8 +70,25 @@ class ProvisioningWorkflowService
             CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices),
             $provisioningNames,
         );
+        /** @var array<string, array<string, array{status?: string, message?: string}>> $preflightResults */
+        $preflightResults = is_array($options['preflight_results'] ?? null)
+            ? $options['preflight_results']
+            : [];
 
-        return DB::transaction(function () use ($deployment, $user, $devices, $licensingConfig, $deploymentTime, $waitTime, $onlineDetectionMode, $jobQueue, $stepContext): ProvisioningWorkflow {
+        return DB::transaction(function () use (
+            $deployment,
+            $user,
+            $devices,
+            $licensingConfig,
+            $deploymentTime,
+            $waitTime,
+            $onlineDetectionMode,
+            $jobQueue,
+            $stepContext,
+            $startStep,
+            $omitSteps,
+            $preflightResults,
+        ): ProvisioningWorkflow {
             $workflow = ProvisioningWorkflow::query()->create([
                 'deployment_id' => $deployment->id,
                 'user_id' => $user->id,
@@ -82,23 +106,30 @@ class ProvisioningWorkflowService
                     'provisioning_workflow_id' => $workflow->id,
                     'device_id' => $device->id,
                     'overall_status' => 'in_progress',
-                    'current_step_key' => ProvisioningStep::VerifyLicensing->value,
-                    'status_message' => 'Starting licensing verification...',
+                    'current_step_key' => $startStep->value,
+                    'status_message' => 'Starting '.$startStep->label().'...',
                 ]);
 
                 foreach (ProvisioningStep::ordered() as $step) {
-                    $status = $step->shouldSkipForDevice($device, $stepContext) ? 'skipped' : 'pending';
+                    [$status, $message] = $this->initialStepStatus(
+                        $step,
+                        $device,
+                        $stepContext,
+                        $startStep,
+                        $omitSteps,
+                        $preflightResults[(string) $device->id][$step->value] ?? null,
+                    );
                     ProvisioningWorkflowDeviceStep::query()->create([
                         'provisioning_workflow_device_id' => $workflowDevice->id,
                         'step_key' => $step->value,
                         'step_order' => $step->order(),
                         'status' => $status,
-                        'message' => $status === 'skipped' ? 'Not applicable for this device.' : null,
+                        'message' => $message,
                         'completed_at' => $status === 'skipped' ? now() : null,
                     ]);
                 }
 
-                $firstStep = $this->firstRunnableStep($device, $stepContext);
+                $firstStep = $this->firstRunnableStep($device, $stepContext, $startStep, $omitSteps);
                 if ($firstStep !== null) {
                     $firstStepRow = $workflowDevice->steps()->where('step_key', $firstStep->value)->first();
                     $firstStepRow?->markInProgress($firstStep->label().'...');
@@ -120,6 +151,98 @@ class ProvisioningWorkflowService
 
             return $workflow->load(['workflowDevices.device', 'workflowDevices.steps']);
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array{0: ProvisioningStep, 1: list<string>}
+     */
+    public function resolveStartAndOmitSteps(array $options): array
+    {
+        $stepValues = array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases());
+        $startStep = ProvisioningStep::tryFrom((string) ($options['start_step'] ?? ''))
+            ?? ProvisioningStep::VerifyLicensing;
+
+        $omitSteps = [];
+        foreach (($options['omit_steps'] ?? []) as $raw) {
+            $value = (string) $raw;
+            if (! in_array($value, $stepValues, true)) {
+                throw ValidationException::withMessages(['omit_steps' => "Invalid omit step \"{$value}\"."]);
+            }
+            $omitSteps[] = $value;
+        }
+        $omitSteps = array_values(array_unique($omitSteps));
+
+        if (in_array($startStep->value, $omitSteps, true)) {
+            throw ValidationException::withMessages(['omit_steps' => 'Cannot omit the start step.']);
+        }
+
+        foreach ($omitSteps as $omitKey) {
+            $omitStep = ProvisioningStep::from($omitKey);
+            if ($omitStep->order() <= $startStep->order()) {
+                throw ValidationException::withMessages([
+                    'omit_steps' => 'Omitted steps must come after the start step.',
+                ]);
+            }
+        }
+
+        return [$startStep, $omitSteps];
+    }
+
+    /**
+     * @return list<array{step_key: string, label: string, order: int}>
+     */
+    public function availableStepsForUi(): array
+    {
+        return array_map(
+            fn (ProvisioningStep $step) => [
+                'step_key' => $step->value,
+                'label' => $step->label(),
+                'order' => $step->order(),
+            ],
+            ProvisioningStep::ordered(),
+        );
+    }
+
+    /**
+     * @param  list<string>  $omitSteps
+     * @param  array{status?: string, message?: string}|null  $preflight
+     * @return array{0: string, 1: ?string}
+     */
+    private function initialStepStatus(
+        ProvisioningStep $step,
+        Device $device,
+        ProvisioningStepContext $stepContext,
+        ProvisioningStep $startStep,
+        array $omitSteps,
+        ?array $preflight,
+    ): array {
+        if ($step->shouldSkipForDevice($device, $stepContext)) {
+            return ['skipped', 'Not applicable for this device.'];
+        }
+
+        if ($step->order() < $startStep->order()) {
+            $preflightStatus = (string) ($preflight['status'] ?? '');
+            $preflightMessage = trim((string) ($preflight['message'] ?? ''));
+
+            if ($preflightStatus === 'ok') {
+                return ['skipped', $preflightMessage !== '' ? 'Preflight check passed: '.$preflightMessage : 'Preflight check passed.'];
+            }
+
+            if ($preflightStatus === 'warn' || $preflightStatus === 'unchecked') {
+                $detail = $preflightMessage !== '' ? $preflightMessage : 'Prerequisite not verified.';
+
+                return ['skipped', 'Preflight warning: '.$detail.' (continued anyway)'];
+            }
+
+            return ['skipped', 'Started at '.$startStep->label().' (not checked).'];
+        }
+
+        if (in_array($step->value, $omitSteps, true)) {
+            return ['skipped', 'Omitted by user.'];
+        }
+
+        return ['pending', null];
     }
 
     public function cancel(ProvisioningWorkflow $workflow): void
@@ -370,9 +493,22 @@ class ProvisioningWorkflowService
         return $provisioningNames;
     }
 
-    private function firstRunnableStep(Device $device, ProvisioningStepContext $context): ?ProvisioningStep
-    {
+    /**
+     * @param  list<string>  $omitSteps
+     */
+    private function firstRunnableStep(
+        Device $device,
+        ProvisioningStepContext $context,
+        ProvisioningStep $startStep,
+        array $omitSteps = [],
+    ): ?ProvisioningStep {
         foreach (ProvisioningStep::ordered() as $step) {
+            if ($step->order() < $startStep->order()) {
+                continue;
+            }
+            if (in_array($step->value, $omitSteps, true)) {
+                continue;
+            }
             if (! $step->shouldSkipForDevice($device, $context)) {
                 return $step;
             }
