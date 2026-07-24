@@ -1,0 +1,932 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Wireless",
+        "description": "WLAN SSID profiles and radio (RF) profiles.",
+        "version": "v1alpha1"
+    },
+    "tags": [
+        {
+            "name": "Radio",
+            "description": "AP radio profiles for static RF-related configuration."
+        },
+        {
+            "name": "Wlan Ssid",
+            "description": "WLAN SSID profiles for wireless network broadcast configuration."
+        }
+    ],
+    "paths": {
+        "/network-config/v1alpha1/radios": {
+            "get": {
+                "operationId": "readRadios",
+                "summary": "Read configured radios.",
+                "description": "List radio profiles used for AP static RF-related configuration.",
+                "tags": [
+                    "Radio"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "patch": {
+                "operationId": "updateRadios",
+                "summary": "Update radios configuration",
+                "tags": [
+                    "Radio"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List radio profiles used for AP static RF-related configuration.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/network-config/v1alpha1/radios/{name}": {
+            "get": {
+                "operationId": "readRadiosProfileById",
+                "summary": "Read existing radio profile configurations.",
+                "description": "Read a radio profile by unique name.",
+                "tags": [
+                    "Radio"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Radio profile name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createRadiosProfileById",
+                "summary": "Create or replace radios profile by id",
+                "tags": [
+                    "Radio"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Radio profile name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a radio profile by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateRadiosProfileById",
+                "summary": "Update radios profile by id",
+                "tags": [
+                    "Radio"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Radio profile name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a radio profile by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteRadiosProfileById",
+                "summary": "Delete radios profile by id",
+                "tags": [
+                    "Radio"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Radio profile name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a radio profile by unique name."
+            }
+        },
+        "/network-config/v1alpha1/wlan-ssids": {
+            "get": {
+                "operationId": "readWlanSsids",
+                "summary": "Read configuration of WLAN SSID profile",
+                "description": "List WLAN SSID profiles.",
+                "tags": [
+                    "Wlan Ssid"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "patch": {
+                "operationId": "updateWlanSsids",
+                "summary": "Update wlan ssids configuration",
+                "tags": [
+                    "Wlan Ssid"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List WLAN SSID profiles.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/network-config/v1alpha1/wlan-ssids/{ssid}": {
+            "get": {
+                "operationId": "readWlanSsidsWlanSsidById",
+                "summary": "Read existing WLAN SSID profile configuration",
+                "description": "Read a WLAN SSID profile by unique name.",
+                "tags": [
+                    "Wlan Ssid"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "ssid",
+                        "required": true,
+                        "description": "WLAN SSID profile name",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createWlanSsidsWlanSsidById",
+                "summary": "Create or replace wlan ssids wlan ssid by id",
+                "tags": [
+                    "Wlan Ssid"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "ssid",
+                        "required": true,
+                        "description": "WLAN SSID profile name",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a WLAN SSID profile by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateWlanSsidsWlanSsidById",
+                "summary": "Update wlan ssids wlan ssid by id",
+                "tags": [
+                    "Wlan Ssid"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "ssid",
+                        "required": true,
+                        "description": "WLAN SSID profile name",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a WLAN SSID profile by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteWlanSsidsWlanSsidById",
+                "summary": "Delete wlan ssids wlan ssid by id",
+                "tags": [
+                    "Wlan Ssid"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "ssid",
+                        "required": true,
+                        "description": "WLAN SSID profile name",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a WLAN SSID profile by unique name."
+            }
+        }
+    }
+}

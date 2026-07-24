@@ -100,3 +100,35 @@ test('registry loads singleton patch endpoints', function () {
         ->and($updateLacp['path'])->toBe('/network-config/v1alpha1/lacp')
         ->and($updateLacp['requires_body'])->toBeTrue();
 });
+
+test('registry loads wireless get endpoints', function () {
+    $registry = app(CentralOpenApiRegistry::class);
+
+    expect($registry->hasOperation('readRadios'))->toBeTrue()
+        ->and($registry->hasOperation('readRadiosProfileById'))->toBeTrue()
+        ->and($registry->hasOperation('readWlanSsids'))->toBeTrue()
+        ->and($registry->hasOperation('readWlanSsidsWlanSsidById'))->toBeTrue()
+        ->and($registry->hasOperation('createWlanSsidsWlanSsidById'))->toBeTrue()
+        ->and($registry->hasOperation('updateRadiosProfileById'))->toBeTrue()
+        ->and($registry->hasOperation('deleteRadiosProfileById'))->toBeTrue();
+
+    $wlanSsids = $registry->operation('readWlanSsids');
+
+    expect($wlanSsids['method'])->toBe('GET')
+        ->and($wlanSsids['path'])->toBe('/network-config/v1alpha1/wlan-ssids')
+        ->and($wlanSsids['tags'])->toContain('Wlan Ssid')
+        ->and($wlanSsids['reference_url'])->toBe('https://developer.arubanetworks.com/new-central-config/reference/readwlanssids')
+        ->and(collect($wlanSsids['parameters'])->pluck('name'))->toContain('view-type', 'scope-id')
+        ->and($wlanSsids['requires_body'])->toBeFalse();
+
+    $createWlan = $registry->operation('createWlanSsidsWlanSsidById');
+
+    expect($createWlan['method'])->toBe('POST')
+        ->and($createWlan['path'])->toBe('/network-config/v1alpha1/wlan-ssids/{ssid}')
+        ->and($createWlan['requires_body'])->toBeTrue()
+        ->and(collect($createWlan['parameters'])->pluck('name'))->toContain('ssid');
+
+    $tags = collect($registry->tags())->pluck('name');
+
+    expect($tags)->toContain('Radio', 'Wlan Ssid');
+});
