@@ -13,6 +13,7 @@ use App\Http\Controllers\DispatchController;
 use App\Http\Controllers\LicensingController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\ProvisioningWorkflowController;
+use App\Http\Controllers\ProvisioningWorkflowTemplateController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\TaskController;
 use App\Http\Resources\ClientResource;
@@ -68,10 +69,17 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(ProvisioningWorkflowController::class)->group(function () {
         Route::get('/deployments/{deployment}/provision', 'show')->name('deployments.provision');
+        Route::get('/deployments/{deployment}/custom-provision', 'customShow')->name('deployments.custom_provision');
         Route::post('/deployments/{deployment}/provision', 'store')->name('deployments.provision.store');
         Route::post('/deployments/{deployment}/provision/preflight', 'preflight')->name('deployments.provision.preflight');
         Route::post('/provisioning-workflows/{workflow}/cancel', 'cancel')->name('provisioning_workflows.cancel');
         Route::post('/provisioning-workflow-devices/{workflowDevice}/restart', 'restart')->name('provisioning_workflow_devices.restart');
+    });
+
+    Route::controller(ProvisioningWorkflowTemplateController::class)->group(function () {
+        Route::post('/clients/{client}/provisioning-workflow-templates', 'store')->name('provisioning_workflow_templates.store');
+        Route::put('/provisioning-workflow-templates/{template}', 'update')->name('provisioning_workflow_templates.update');
+        Route::delete('/provisioning-workflow-templates/{template}', 'destroy')->name('provisioning_workflow_templates.destroy');
     });
 
     Route::controller(DeviceController::class)->group(function () {
