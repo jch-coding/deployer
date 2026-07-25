@@ -135,6 +135,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/migrations/deploy-wlan', 'deployWlan')->name('migrations.deploy-wlan');
         Route::post('/migrations/deploy-wlan/step/{step}', 'deployWlanStep')->name('migrations.deploy-wlan.step');
         Route::post('/migrations/deploy-auth-servers/step/{step}', 'deployAuthServerStep')->name('migrations.deploy-auth-servers.step');
+        Route::post('/migrations/deploy-server-groups/step/{step}', 'deployServerGroupStep')->name('migrations.deploy-server-groups.step');
     });
 
     Route::controller(DispatchController::class)->group(function () {
