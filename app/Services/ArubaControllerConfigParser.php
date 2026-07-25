@@ -33,6 +33,10 @@ class ArubaControllerConfigParser
                     $parsedControllers[$pairedIndex]['wlan_profiles'],
                     $this->parseWlanProfiles($block['content']),
                 );
+                $parsedControllers[$pairedIndex]['auth_servers'] = $this->mergeAuthServers(
+                    $parsedControllers[$pairedIndex]['auth_servers'],
+                    $this->parseAuthServers($block['content']),
+                );
 
                 continue;
             }
@@ -118,6 +122,13 @@ class ArubaControllerConfigParser
      *     controller_name: string,
      *     devices: array<int, array{name: string, serial: string, mac: string}>,
      *     lldp_neighbors: array<int, array{switch: string, ports: array<int, string>}>,
+     *     auth_servers: array<int, array{
+     *         name: string,
+     *         host: string|null,
+     *         has_coa: bool,
+     *         body: array<string, mixed>,
+     *         warnings: array<int, string>
+     *     }>,
      *     wlan_profiles: array<int, array{
      *         ssid_profile_name: string,
      *         raw_vlan: string|null,
@@ -133,6 +144,7 @@ class ArubaControllerConfigParser
             'controller_name' => $controllerName,
             'devices' => $this->parseApDatabase($content),
             'lldp_neighbors' => $this->parseLldpNeighbors($content),
+            'auth_servers' => $this->deduplicateAuthServers($this->parseAuthServers($content)),
             'wlan_profiles' => $this->deduplicateWlanProfiles($this->parseWlanProfiles($content)),
         ];
     }
@@ -263,6 +275,141 @@ class ArubaControllerConfigParser
 
     /**
      * @param  array<int, array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>  $primaryServers
+     * @param  array<int, array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>  $partnerServers
+     * @return array<int, array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function mergeAuthServers(array $primaryServers, array $partnerServers): array
+    {
+        return $this->deduplicateAuthServers(array_merge($primaryServers, $partnerServers));
+    }
+
+    /**
+     * @param  array<int, array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>  $servers
+     * @return array<int, array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function deduplicateAuthServers(array $servers): array
+    {
+        $byName = [];
+
+        foreach ($servers as $server) {
+            $name = $server['name'];
+
+            if (! isset($byName[$name])) {
+                $byName[$name] = $server;
+
+                continue;
+            }
+
+            $byName[$name] = $this->preferAuthServer($byName[$name], $server);
+        }
+
+        $deduplicated = array_values($byName);
+        usort(
+            $deduplicated,
+            fn (array $a, array $b): int => strcmp($a['name'], $b['name']),
+        );
+
+        return $deduplicated;
+    }
+
+    /**
+     * @param  array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }  $first
+     * @param  array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }  $second
+     * @return array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }
+     */
+    private function preferAuthServer(array $first, array $second): array
+    {
+        $firstScore = $this->authServerCompletenessScore($first);
+        $secondScore = $this->authServerCompletenessScore($second);
+
+        if ($secondScore > $firstScore) {
+            return $second;
+        }
+
+        return $first;
+    }
+
+    /**
+     * @param  array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }  $server
+     */
+    private function authServerCompletenessScore(array $server): int
+    {
+        $score = 0;
+
+        if (($server['host'] ?? null) !== null && $server['host'] !== '') {
+            $score += 2;
+        }
+
+        $secret = $server['body']['shared-secret-config']['plaintext-value'] ?? null;
+        if ($secret !== null && $secret !== '') {
+            $score += 2;
+        }
+
+        if ($server['has_coa'] ?? false) {
+            $score += 1;
+        }
+
+        $score -= count($server['warnings'] ?? []);
+
+        return $score;
+    }
+
+    /**
+     * @param  array<int, array{
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
@@ -371,6 +518,242 @@ class ArubaControllerConfigParser
         usort($merged, fn (array $a, array $b): int => strcmp($a['switch'], $b['switch']));
 
         return $merged;
+    }
+
+    /**
+     * @return array<int, array{
+     *     name: string,
+     *     host: string|null,
+     *     has_coa: bool,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function parseAuthServers(string $content): array
+    {
+        $section = $this->extractSection($content, '/#show running-config/i', null);
+
+        if ($section === null) {
+            return [];
+        }
+
+        $radiusServers = $this->parseRadiusAuthServerBlocks($section);
+        $rfc3576Servers = $this->parseRfc3576ServerBlocks($section);
+        $servers = [];
+
+        foreach ($radiusServers as $name => $data) {
+            $host = $data['host'];
+            $key = $data['key'];
+            $hasCoa = $this->hasMatchingRfc3576Server($host, $key, $rfc3576Servers);
+            $warnings = $this->buildAuthServerWarnings($host, $key);
+
+            $servers[] = [
+                'name' => $name,
+                'host' => $host,
+                'has_coa' => $hasCoa,
+                'body' => $this->buildAuthServerBody($name, $host, $key, $hasCoa),
+                'warnings' => $warnings,
+            ];
+        }
+
+        return $servers;
+    }
+
+    /**
+     * @return array<string, array{host: string|null, key: string|null}>
+     */
+    private function parseRadiusAuthServerBlocks(string $section): array
+    {
+        $servers = [];
+        $currentName = null;
+        $currentLines = [];
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^aaa authentication-server radius "([^"]+)"/', $trimmed, $match)) {
+                if ($currentName !== null) {
+                    $servers[$currentName] = $this->parseRadiusAuthServerLines($currentLines);
+                }
+
+                $currentName = $match[1];
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentName !== null) {
+                $servers[$currentName] = $this->parseRadiusAuthServerLines($currentLines);
+                $currentName = null;
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($currentName !== null) {
+                $currentLines[] = $trimmed;
+            }
+        }
+
+        if ($currentName !== null) {
+            $servers[$currentName] = $this->parseRadiusAuthServerLines($currentLines);
+        }
+
+        return $servers;
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     * @return array{host: string|null, key: string|null}
+     */
+    private function parseRadiusAuthServerLines(array $lines): array
+    {
+        $data = [
+            'host' => null,
+            'key' => null,
+        ];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^host "([^"]*)"/', $line, $match)) {
+                $data['host'] = $match[1];
+            } elseif (preg_match('/^key "([^"]*)"/', $line, $match)) {
+                $data['key'] = $match[1];
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * @return array<string, array{key: string|null}>
+     */
+    private function parseRfc3576ServerBlocks(string $section): array
+    {
+        $servers = [];
+        $currentIp = null;
+        $currentLines = [];
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^aaa rfc-3576-server "([^"]+)"/', $trimmed, $match)) {
+                if ($currentIp !== null) {
+                    $servers[$currentIp] = $this->parseRfc3576ServerLines($currentLines);
+                }
+
+                $currentIp = $match[1];
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentIp !== null) {
+                $servers[$currentIp] = $this->parseRfc3576ServerLines($currentLines);
+                $currentIp = null;
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($currentIp !== null) {
+                $currentLines[] = $trimmed;
+            }
+        }
+
+        if ($currentIp !== null) {
+            $servers[$currentIp] = $this->parseRfc3576ServerLines($currentLines);
+        }
+
+        return $servers;
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     * @return array{key: string|null}
+     */
+    private function parseRfc3576ServerLines(array $lines): array
+    {
+        $key = null;
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^key "([^"]*)"/', $line, $match)) {
+                $key = $match[1];
+            }
+        }
+
+        return ['key' => $key];
+    }
+
+    /**
+     * @param  array<string, array{key: string|null}>  $rfc3576Servers
+     */
+    private function hasMatchingRfc3576Server(?string $host, ?string $key, array $rfc3576Servers): bool
+    {
+        if ($host === null || $host === '' || $key === null || $key === '') {
+            return false;
+        }
+
+        $rfcServer = $rfc3576Servers[$host] ?? null;
+
+        if ($rfcServer === null) {
+            return false;
+        }
+
+        return ($rfcServer['key'] ?? null) === $key;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildAuthServerBody(string $name, ?string $host, ?string $key, bool $hasCoa): array
+    {
+        $body = [
+            'auth-server-address' => $host,
+            'enable' => true,
+            'name' => $name,
+            'shared-secret-config' => [
+                'plaintext-value' => $key,
+                'secret-type' => 'PLAIN_TEXT',
+            ],
+            'type' => 'RADIUS',
+        ];
+
+        if ($hasCoa) {
+            $body['dynamic-authorization-enable'] = true;
+            $body['radius-server-mode'] = 'AUTH_AND_COA';
+        }
+
+        return $body;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function buildAuthServerWarnings(?string $host, ?string $key): array
+    {
+        $warnings = [];
+
+        if ($host === null || $host === '') {
+            $warnings[] = 'Missing host';
+        }
+
+        if ($key === null || $key === '') {
+            $warnings[] = 'Missing key';
+        }
+
+        return $warnings;
     }
 
     /**

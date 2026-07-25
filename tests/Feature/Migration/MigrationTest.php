@@ -20,6 +20,13 @@ beforeEach(function () {
     ]);
     $this->actingAs($this->user);
     seedCentralScopeCache($this->client);
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD Collection', 'scopeId' => 'scope-collection'],
+            ],
+        ], 200),
+    ]);
 });
 
 test('migrations index redirects when no current client is set', function () {
@@ -42,7 +49,11 @@ test('migrations index renders with site options', function () {
             ->where('site_options.0.siteId', 'scope-site')
             ->where('site_options.0.siteName', 'Central Site')
             ->has('device_group_options', 2)
-            ->where('device_group_options.0.scopeName', 'Central Group'));
+            ->where('device_group_options.0.scopeName', 'Central Group')
+            ->has('site_collection_options', 1)
+            ->where('site_collection_options.0.scopeId', 'scope-collection')
+            ->has('device_function_options')
+            ->where('device_function_options.1', 'CAMPUS_AP'));
 });
 
 test('migrations parse uploads config file and returns parsed controllers', function () {
@@ -64,6 +75,7 @@ test('migrations parse uploads config file and returns parsed controllers', func
             ->where('parsed_controllers.0.controller_name', 'DAY-HUB-WLC1')
             ->has('parsed_controllers.0.devices', 106)
             ->has('parsed_controllers.0.lldp_neighbors')
+            ->has('parsed_controllers.0.auth_servers')
             ->has('parsed_controllers.0.wlan_profiles'));
 });
 
@@ -123,8 +135,6 @@ test('migrations deploy wlan posts subset of profiles when caller sends partial 
             ->where('deploy_results.0.ssid', 'DAYKIT')
             ->where('deploy_results.0.status', 'success'));
 
-    Http::assertSentCount(1);
-
     Http::assertSent(function (Request $request) use ($body) {
         return $request->method() === 'POST'
             && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT')
@@ -137,7 +147,9 @@ test('migrations deploy wlan posts subset of profiles when caller sends partial 
 });
 
 test('migrations deploy wlan skips profiles missing passphrase or vlan', function () {
-    Http::fake();
+    Http::fake([
+        '*site-collections*' => Http::response(['items' => []], 200),
+    ]);
 
     $this->post(route('migrations.deploy-wlan'), [
         'scope_id' => 'scope-site',
@@ -156,7 +168,7 @@ test('migrations deploy wlan skips profiles missing passphrase or vlan', functio
         ->assertInertia(fn (Assert $page) => $page
             ->where('deploy_results.0.status', 'skipped'));
 
-    Http::assertNothingSent();
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'wlan-ssids'));
 });
 
 test('migrations deploy wlan patches profile when post fails', function () {
@@ -215,6 +227,14 @@ test('migrations deploy wlan returns error when post and patch both fail', funct
             return Http::response(['error' => 'server error'], 500);
         }
 
+        if (str_contains($request->url(), 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD Collection', 'scopeId' => 'scope-collection'],
+                ],
+            ], 200);
+        }
+
         return Http::response(['ok' => true], 200);
     });
 
@@ -240,6 +260,119 @@ test('migrations deploy wlan returns error when post and patch both fail', funct
 
     Http::assertSent(fn (Request $request) => $request->method() === 'PATCH'
         && str_contains($request->url(), 'wlan-ssids/DAYKIT'));
+});
+
+test('migrations deploy auth server step posts to central with scope and device function', function () {
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD Collection', 'scopeId' => 'scope-collection'],
+            ],
+        ], 200),
+        '*auth-servers*' => Http::response(['ok' => true], 200),
+    ]);
+
+    $body = migrationAuthServerPayload();
+
+    $this->post(route('migrations.deploy-auth-servers.step', ['step' => 0]), [
+        'scope_id' => 'scope-collection',
+        'device_function' => 'CAMPUS_AP',
+        'servers' => [
+            [
+                'name' => 'ECPPM',
+                'body' => $body,
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('step.key', 'auth-server-ECPPM')
+        ->assertJsonPath('step.status', 'success')
+        ->assertJsonPath('partial.deploy_results.0.name', 'ECPPM')
+        ->assertJsonPath('partial.deploy_results.0.status', 'success');
+
+    Http::assertSent(function (Request $request) use ($body) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/auth-servers/ECPPM')
+            && ($query['object-type'] ?? null) === 'LOCAL'
+            && ($query['view-type'] ?? null) === 'LOCAL'
+            && ($query['scope-id'] ?? null) === 'scope-collection'
+            && ($query['device-function'] ?? null) === 'CAMPUS_AP'
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
+test('migrations deploy auth server step patches when post fails', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD Collection', 'scopeId' => 'scope-collection'],
+                ],
+            ], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($request->url(), 'auth-servers/ECPPM')) {
+            return Http::response(['error' => 'already exists'], 409);
+        }
+
+        if ($request->method() === 'PATCH' && str_contains($request->url(), 'auth-servers/ECPPM')) {
+            return Http::response(['ok' => true], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $body = migrationAuthServerPayload();
+
+    $this->post(route('migrations.deploy-auth-servers.step', ['step' => 0]), [
+        'scope_id' => 'scope-site',
+        'device_function' => 'BRANCH_GW',
+        'servers' => [
+            [
+                'name' => 'ECPPM',
+                'body' => $body,
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('partial.deploy_results.0.status', 'success')
+        ->assertJsonPath('partial.deploy_results.0.message', 'Updated successfully');
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'PATCH'
+            && str_contains($request->url(), 'network-config/v1alpha1/auth-servers/ECPPM')
+            && ($query['device-function'] ?? null) === 'BRANCH_GW'
+            && ($query['scope-id'] ?? null) === 'scope-site';
+    });
+});
+
+test('migrations deploy auth server step skips servers missing host or key', function () {
+    Http::fake([
+        '*site-collections*' => Http::response(['items' => []], 200),
+    ]);
+
+    $this->post(route('migrations.deploy-auth-servers.step', ['step' => 0]), [
+        'scope_id' => 'scope-site',
+        'device_function' => 'CAMPUS_AP',
+        'servers' => [
+            [
+                'name' => 'incomplete',
+                'body' => [
+                    'auth-server-address' => null,
+                    'shared-secret-config' => ['plaintext-value' => null],
+                    'type' => 'RADIUS',
+                ],
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('partial.deploy_results.0.status', 'skipped');
+
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'auth-servers'));
 });
 
 function seedMigrationSiteCache(Client $client, string $scopeName, string $scopeId): void
@@ -311,6 +444,22 @@ function migrationWlanProfilePayload(): array
         'vlan-selector' => 'NAMED_VLAN',
         'vlan-name' => 'WCD_KIT',
         'client-isolation' => false,
+    ];
+}
+
+function migrationAuthServerPayload(): array
+{
+    return [
+        'auth-server-address' => '10.232.188.4',
+        'enable' => true,
+        'name' => 'ECPPM',
+        'shared-secret-config' => [
+            'plaintext-value' => 'r3@LcH0c0L@t315tH3B35t',
+            'secret-type' => 'PLAIN_TEXT',
+        ],
+        'type' => 'RADIUS',
+        'dynamic-authorization-enable' => true,
+        'radius-server-mode' => 'AUTH_AND_COA',
     ];
 }
 

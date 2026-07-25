@@ -51,6 +51,87 @@ it('aggregates lldp neighbors by switch', function () {
         ->and($idf6['ports'])->toContain('Te1/0/41');
 });
 
+it('parses radius auth servers and pairs rfc-3576 for CoA', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $servers = $parser->parse($content)[0]['auth_servers'];
+
+    $ecppm = collect($servers)->firstWhere('name', 'ECPPM');
+    $wcppm = collect($servers)->firstWhere('name', 'WCPPM');
+    $dalnet = collect($servers)->firstWhere('name', 'dalnet52.traderjoes.com');
+
+    expect($ecppm)->not->toBeNull()
+        ->and($ecppm['host'])->toBe('10.232.188.4')
+        ->and($ecppm['has_coa'])->toBeTrue()
+        ->and($ecppm['body'])->toMatchArray([
+            'auth-server-address' => '10.232.188.4',
+            'enable' => true,
+            'name' => 'ECPPM',
+            'shared-secret-config' => [
+                'plaintext-value' => 'r3@LcH0c0L@t315tH3B35t',
+                'secret-type' => 'PLAIN_TEXT',
+            ],
+            'type' => 'RADIUS',
+            'dynamic-authorization-enable' => true,
+            'radius-server-mode' => 'AUTH_AND_COA',
+        ])
+        ->and($wcppm)->not->toBeNull()
+        ->and($wcppm['has_coa'])->toBeTrue()
+        ->and($wcppm['body']['radius-server-mode'])->toBe('AUTH_AND_COA')
+        ->and($dalnet)->not->toBeNull()
+        ->and($dalnet['has_coa'])->toBeFalse()
+        ->and($dalnet['warnings'])->toContain('Missing key')
+        ->and($dalnet['body'])->not->toHaveKey('dynamic-authorization-enable');
+});
+
+it('merges and deduplicates auth servers for paired controllers', function () {
+    $content = <<<'CONFIG'
+(DAY-HUB-WLC1) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-FIRST-001     default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERFIRST1   N/A   N/A   N/A
+
+(DAY-HUB-WLC1) #show running-config
+aaa authentication-server radius "ECPPM"
+    host "10.232.188.4"
+    key "shared-secret"
+!
+aaa rfc-3576-server "10.232.188.4"
+    key "shared-secret"
+!
+
+(DAY-HUB-WLC2) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-SECOND-001    default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERSECOND1  N/A   N/A   N/A
+
+(DAY-HUB-WLC2) #show running-config
+aaa authentication-server radius "ECPPM"
+    host "10.232.188.4"
+    key "shared-secret"
+!
+aaa authentication-server radius "WCPPM"
+    host "10.236.188.4"
+    key "other-secret"
+!
+aaa rfc-3576-server "10.232.188.4"
+    key "shared-secret"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $servers = $parser->parse($content)[0]['auth_servers'];
+
+    expect($servers)->toHaveCount(2)
+        ->and(collect($servers)->pluck('name')->all())->toBe(['ECPPM', 'WCPPM'])
+        ->and(collect($servers)->firstWhere('name', 'ECPPM')['has_coa'])->toBeTrue()
+        ->and(collect($servers)->firstWhere('name', 'WCPPM')['has_coa'])->toBeFalse();
+});
+
 it('builds wlan profile body for DAYKIT with mapped vlan', function () {
     $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
     $parser = new ArubaControllerConfigParser;

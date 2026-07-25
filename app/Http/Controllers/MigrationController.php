@@ -248,6 +248,36 @@ class MigrationController extends Controller
         );
     }
 
+    public function deployAuthServerStep(
+        Request $request,
+        int $step,
+        CentralScopeCacheService $centralScopeCacheService,
+        MigrationDeployService $migrationDeployService,
+    ) {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json(['message' => 'Please set current client to deploy auth servers.'], 403);
+        }
+
+        $validated = $this->validateAuthServerDeployRequest($request, $centralScopeCacheService);
+        $total = $migrationDeployService->authServerTotalSteps($validated['servers']);
+
+        if ($step < 0 || $step >= $total) {
+            abort(404);
+        }
+
+        return response()->json(
+            $migrationDeployService->runAuthServerStep(
+                new CentralAPIHelper($currentClient),
+                $validated['scope_id'],
+                $validated['device_function'],
+                $validated['servers'],
+                $step,
+            ),
+        );
+    }
+
     /**
      * @return array{
      *     scope_id: string,
@@ -279,6 +309,56 @@ class MigrationController extends Controller
     }
 
     /**
+     * @return array{
+     *     scope_id: string,
+     *     device_function: string,
+     *     servers: array<int, array{name: string, body: array<string, mixed>}>
+     * }
+     */
+    private function validateAuthServerDeployRequest(Request $request, CentralScopeCacheService $centralScopeCacheService): array
+    {
+        $currentClient = $request->user()->currentClient();
+        $deviceFunctionNames = array_map(
+            fn (DeviceFunction $deviceFunction): string => $deviceFunction->name,
+            DeviceFunction::cases(),
+        );
+
+        $validated = $request->validate([
+            'scope_id' => ['required', 'string', 'max:255'],
+            'device_function' => ['required', 'string', Rule::in($deviceFunctionNames)],
+            'servers' => ['required', 'array', 'min:1'],
+            'servers.*.name' => ['required', 'string', 'max:255'],
+            'servers.*.body' => ['required', 'array'],
+        ]);
+
+        $validScopeIds = $this->validAuthServerScopeIds($currentClient, $centralScopeCacheService);
+
+        if (! in_array($validated['scope_id'], $validScopeIds, true)) {
+            abort(422, 'Selected scope is not valid for the current client.');
+        }
+
+        return $validated;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function validAuthServerScopeIds(Client $currentClient, CentralScopeCacheService $centralScopeCacheService): array
+    {
+        $siteIds = array_column($centralScopeCacheService->getSiteOptions($currentClient), 'siteId');
+        $groupIds = array_column(
+            $centralScopeCacheService->getGroups($currentClient)['device_group_options'],
+            'scopeId',
+        );
+        $collectionIds = array_column(
+            (new CentralAPIHelper($currentClient))->collectScopeManagementSiteCollections()['site_collections'],
+            'scopeId',
+        );
+
+        return array_values(array_unique(array_merge($siteIds, $groupIds, $collectionIds)));
+    }
+
+    /**
      * @param  array<int, mixed>  $parsedControllers
      * @param  array<int, mixed>  $deployResults
      * @param  array<int, mixed>  $namedVlanDeployResults
@@ -294,9 +374,17 @@ class MigrationController extends Controller
         ?array $lastCreatedDeployment = null,
         ?string $selectedScopeId = null,
     ): array {
+        $siteCollections = (new CentralAPIHelper($currentClient))->collectScopeManagementSiteCollections();
+
         $props = [
             'site_options' => $centralScopeCacheService->getSiteOptions($currentClient),
             'device_group_options' => $centralScopeCacheService->getGroups($currentClient)['device_group_options'],
+            'site_collection_options' => $siteCollections['site_collections'],
+            'site_collection_options_error' => $siteCollections['error'],
+            'device_function_options' => array_map(
+                fn (DeviceFunction $deviceFunction): string => $deviceFunction->name,
+                DeviceFunction::cases(),
+            ),
             'parsed_controllers' => $parsedControllers,
             'deploy_results' => $deployResults,
             'named_vlan_deploy_results' => $namedVlanDeployResults,

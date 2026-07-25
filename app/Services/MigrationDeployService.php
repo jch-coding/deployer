@@ -391,4 +391,113 @@ class MigrationDeployService
             'message' => $message,
         ];
     }
+
+    /**
+     * @param  array<int, array{name: string, body: array<string, mixed>}>  $servers
+     */
+    public function authServerTotalSteps(array $servers): int
+    {
+        return count($servers);
+    }
+
+    /**
+     * @param  array<int, array{name: string, body: array<string, mixed>}>  $servers
+     * @return array{
+     *     progress: array{current: int, total: int, percent: int, message: string},
+     *     step: array{key: string, label: string, status: string, message: string},
+     *     partial: array{
+     *         deploy_results: array<int, array{name: string, status: string, message: string}>
+     *     }
+     * }
+     */
+    public function runAuthServerStep(
+        CentralAPIHelper $helper,
+        string $scopeId,
+        string $deviceFunction,
+        array $servers,
+        int $step,
+    ): array {
+        $total = $this->authServerTotalSteps($servers);
+
+        if ($step < 0 || $step >= $total) {
+            abort(404);
+        }
+
+        $server = $servers[$step];
+        $name = $server['name'];
+        $result = $this->deployAuthServer($helper, $scopeId, $deviceFunction, $name, $server['body']);
+
+        return [
+            'progress' => $this->buildProgress(
+                $step + 1,
+                $total,
+                "Deployed auth server {$name}",
+            ),
+            'step' => [
+                'key' => 'auth-server-'.$name,
+                'label' => 'Deploy auth server: '.$name,
+                'status' => $result['status'],
+                'message' => $result['message'],
+            ],
+            'partial' => [
+                'deploy_results' => [$result],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     * @return array{name: string, status: string, message: string}
+     */
+    private function deployAuthServer(
+        CentralAPIHelper $helper,
+        string $scopeId,
+        string $deviceFunction,
+        string $name,
+        array $body,
+    ): array {
+        $address = $body['auth-server-address'] ?? null;
+        $secret = $body['shared-secret-config']['plaintext-value'] ?? null;
+
+        if ($address === null || $address === '' || $secret === null || $secret === '') {
+            return [
+                'name' => $name,
+                'status' => 'skipped',
+                'message' => 'Missing required auth-server-address or shared secret',
+            ];
+        }
+
+        $queryParameters = [
+            'object-type' => 'LOCAL',
+            'view-type' => 'LOCAL',
+            'scope-id' => $scopeId,
+            'device-function' => $deviceFunction,
+        ];
+
+        $response = $helper->post_auth_server_profile($name, $queryParameters, $body);
+
+        if ($this->wlanSsidRequestSucceeded($response)) {
+            return [
+                'name' => $name,
+                'status' => 'success',
+                'message' => 'Deployed successfully',
+            ];
+        }
+
+        $patchResponse = $helper->patch_auth_server_profile($name, $queryParameters, $body);
+
+        if ($this->wlanSsidRequestSucceeded($patchResponse)) {
+            return [
+                'name' => $name,
+                'status' => 'success',
+                'message' => 'Updated successfully',
+            ];
+        }
+
+        return [
+            'name' => $name,
+            'status' => 'error',
+            'message' => $this->wlanSsidRequestFailureMessage($patchResponse),
+        ];
+    }
 }

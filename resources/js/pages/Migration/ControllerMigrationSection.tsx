@@ -20,6 +20,7 @@ import {
 } from '@/lib/migration-csv';
 import { csrfHeaders } from '@/lib/csrf';
 import { cn } from '@/lib/utils';
+import AuthServersCard from '@/pages/Migration/AuthServersCard';
 import CreateDeploymentFromDevicesDialog, {
     type DeviceGroupOption,
 } from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
@@ -36,6 +37,7 @@ import {
     type DeployStepStatus,
     type NamedVlanDeployResult,
     type ParsedController,
+    type ScopeOption,
     type SiteOption,
 } from '@/pages/Migration/migration-types';
 
@@ -43,6 +45,9 @@ type ControllerMigrationSectionProps = {
     controller: ParsedController;
     siteOptions: SiteOption[];
     groupOptions: DeviceGroupOption[];
+    siteCollectionOptions: ScopeOption[];
+    siteCollectionOptionsError?: string | null;
+    deviceFunctionOptions: string[];
     parsedControllers: ParsedController[];
 };
 
@@ -65,9 +70,12 @@ export default function ControllerMigrationSection({
     controller,
     siteOptions,
     groupOptions,
+    siteCollectionOptions = [],
+    siteCollectionOptionsError = null,
+    deviceFunctionOptions = [],
     parsedControllers,
 }: ControllerMigrationSectionProps) {
-    const { controller_name, devices, lldp_neighbors, wlan_profiles } = controller;
+    const { controller_name, devices, lldp_neighbors, auth_servers = [], wlan_profiles } = controller;
 
     const [scopeId, setScopeId] = useState('');
     const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
@@ -427,6 +435,16 @@ export default function ControllerMigrationSection({
                     </table>
                 </CardContent>
             </Card>
+
+            <AuthServersCard
+                authServers={auth_servers}
+                controllerName={controller_name}
+                siteOptions={siteOptions}
+                siteCollectionOptions={siteCollectionOptions}
+                siteCollectionOptionsError={siteCollectionOptionsError}
+                deviceGroupOptions={groupOptions}
+                deviceFunctionOptions={deviceFunctionOptions}
+            />
 
             <Card>
                 <CardHeader>

@@ -85,6 +85,10 @@ class CentralAPIHelper
         'radios' => 'network-config/v1alpha1/radios',
     ];
 
+    public array $security = [
+        'auth_servers' => 'network-config/v1alpha1/auth-servers',
+    ];
+
     public array $central_nac = [
         'mac_reg_import' => 'network-config/v1alpha1/cnac-mac-reg/import',
     ];
@@ -2064,6 +2068,40 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->patch($this->client->base_url.$this->wireless['wlan_ssids'].'/'.$ssid_profile_name, $body);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @param  array<string, mixed>  $body
+     */
+    public function post_auth_server_profile(string $name, array $queryParameters, array $body)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->security['auth_servers'].'/'.$name, $body);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @param  array<string, mixed>  $body
+     */
+    public function patch_auth_server_profile(string $name, array $queryParameters, array $body)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->patch($this->client->base_url.$this->security['auth_servers'].'/'.$name, $body);
 
             return $response;
         }

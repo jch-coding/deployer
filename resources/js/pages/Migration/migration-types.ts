@@ -5,6 +5,21 @@ export type SiteOption = {
     siteName: string;
 };
 
+export type ScopeOption = {
+    scopeId: string;
+    scopeName: string;
+};
+
+export type AuthServerScopeType = 'site-collection' | 'site' | 'device-group';
+
+export type AuthServer = {
+    name: string;
+    host: string | null;
+    has_coa: boolean;
+    body: Record<string, unknown>;
+    warnings: string[];
+};
+
 export type WlanProfile = {
     ssid_profile_name: string;
     raw_vlan: string | null;
@@ -17,11 +32,18 @@ export type ParsedController = {
     controller_name: string;
     devices: MigrationDevice[];
     lldp_neighbors: MigrationLldpNeighbor[];
+    auth_servers: AuthServer[];
     wlan_profiles: WlanProfile[];
 };
 
 export type DeployResult = {
     ssid: string;
+    status: 'success' | 'error' | 'skipped';
+    message: string;
+};
+
+export type AuthServerDeployResult = {
+    name: string;
     status: 'success' | 'error' | 'skipped';
     message: string;
 };
@@ -65,8 +87,21 @@ export type DeployStepResponse = {
     };
 };
 
+export type AuthServerDeployStepResponse = {
+    progress: DeployProgress;
+    step: {
+        key: string;
+        label: string;
+        status: 'success' | 'error' | 'skipped';
+        message: string;
+    };
+    partial: {
+        deploy_results: AuthServerDeployResult[];
+    };
+};
+
 export function deployStatusVariant(
-    status: DeployResult['status'] | NamedVlanDeployResult['status'],
+    status: DeployResult['status'] | NamedVlanDeployResult['status'] | AuthServerDeployResult['status'],
 ): 'default' | 'destructive' | 'secondary' {
     switch (status) {
         case 'success':
@@ -100,8 +135,20 @@ export function buildInitialDeploySteps(profiles: WlanProfile[], isFreezer: bool
     return steps;
 }
 
+export function buildInitialAuthServerDeploySteps(servers: AuthServer[]): DeployStep[] {
+    return servers.map((server) => ({
+        key: `auth-server-${server.name}`,
+        label: `Deploy auth server: ${server.name}`,
+        status: 'pending',
+    }));
+}
+
 export function profileSelectionKey(controllerName: string, profileName: string): string {
     return `${controllerName}:${profileName}`;
+}
+
+export function authServerSelectionKey(controllerName: string, serverName: string): string {
+    return `${controllerName}:${serverName}`;
 }
 
 export function buildDeployProfilePayload(
@@ -120,5 +167,14 @@ export function buildDeployProfilePayload(
             ...profile.body,
             'vlan-name': resolvedVlanName,
         },
+    };
+}
+
+export function buildDeployAuthServerPayload(
+    server: AuthServer,
+): { name: string; body: Record<string, unknown> } {
+    return {
+        name: server.name,
+        body: { ...server.body },
     };
 }

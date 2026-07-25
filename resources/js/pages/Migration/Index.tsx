@@ -20,6 +20,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
+import AuthServersCard from '@/pages/Migration/AuthServersCard';
 import ControllerMigrationSection from '@/pages/Migration/ControllerMigrationSection';
 import CreateDeploymentFromDevicesDialog, {
     type DeviceGroupOption,
@@ -36,6 +37,7 @@ import {
     type DeployStepStatus,
     type NamedVlanDeployResult,
     type ParsedController,
+    type ScopeOption,
     type SiteOption,
 } from '@/pages/Migration/migration-types';
 import {
@@ -51,6 +53,9 @@ import type { BreadcrumbItem, SharedData } from '@/types';
 type MigrationIndexProps = {
     site_options: SiteOption[];
     device_group_options: DeviceGroupOption[];
+    site_collection_options: ScopeOption[];
+    site_collection_options_error?: string | null;
+    device_function_options: string[];
     parsed_controllers: ParsedController[];
     deploy_results: DeployResult[];
     named_vlan_deploy_results: NamedVlanDeployResult[];
@@ -84,6 +89,9 @@ export default function Index() {
         current_client,
         site_options,
         device_group_options = [],
+        site_collection_options = [],
+        site_collection_options_error = null,
+        device_function_options = [],
         parsed_controllers,
         deploy_results,
         named_vlan_deploy_results,
@@ -161,6 +169,11 @@ export default function Index() {
 
     const allWlanProfiles = useMemo(
         () => parsed_controllers.flatMap((controller) => controller.wlan_profiles),
+        [parsed_controllers],
+    );
+
+    const allAuthServers = useMemo(
+        () => parsed_controllers.flatMap((controller) => controller.auth_servers ?? []),
         [parsed_controllers],
     );
 
@@ -492,6 +505,9 @@ export default function Index() {
                                 controller={controller}
                                 siteOptions={site_options}
                                 groupOptions={device_group_options}
+                                siteCollectionOptions={site_collection_options}
+                                siteCollectionOptionsError={site_collection_options_error}
+                                deviceFunctionOptions={device_function_options}
                                 parsedControllers={parsed_controllers}
                             />
                         ))}
@@ -614,6 +630,15 @@ export default function Index() {
                                 </table>
                             </CardContent>
                         </Card>
+
+                        <AuthServersCard
+                            authServers={allAuthServers}
+                            siteOptions={site_options}
+                            siteCollectionOptions={site_collection_options}
+                            siteCollectionOptionsError={site_collection_options_error}
+                            deviceGroupOptions={device_group_options}
+                            deviceFunctionOptions={device_function_options}
+                        />
 
                         <Card>
                             <CardHeader>
