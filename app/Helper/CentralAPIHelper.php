@@ -87,6 +87,7 @@ class CentralAPIHelper
 
     public array $security = [
         'auth_servers' => 'network-config/v1alpha1/auth-servers',
+        'server_groups' => 'network-config/v1alpha1/server-groups',
     ];
 
     public array $central_nac = [
@@ -2102,6 +2103,40 @@ class CentralAPIHelper
             $response = Http::withToken($this->client->bearer_token)
                 ->withQueryParameters($queryParameters)
                 ->patch($this->client->base_url.$this->security['auth_servers'].'/'.$name, $body);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @param  array<string, mixed>  $body
+     */
+    public function post_server_group_profile(string $name, array $queryParameters, array $body)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->post($this->client->base_url.$this->security['server_groups'].'/'.$name, $body);
+
+            return $response;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @param  array<string, mixed>  $body
+     */
+    public function patch_server_group_profile(string $name, array $queryParameters, array $body)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        } else {
+            $response = Http::withToken($this->client->bearer_token)
+                ->withQueryParameters($queryParameters)
+                ->patch($this->client->base_url.$this->security['server_groups'].'/'.$name, $body);
 
             return $response;
         }

@@ -20,6 +20,14 @@ export type AuthServer = {
     warnings: string[];
 };
 
+export type ServerGroup = {
+    name: string;
+    servers: Array<{ 'server-name': string; position: number }>;
+    body: Record<string, unknown>;
+    associated_essids: string[];
+    warnings: string[];
+};
+
 export type WlanProfile = {
     ssid_profile_name: string;
     raw_vlan: string | null;
@@ -33,6 +41,7 @@ export type ParsedController = {
     devices: MigrationDevice[];
     lldp_neighbors: MigrationLldpNeighbor[];
     auth_servers: AuthServer[];
+    server_groups: ServerGroup[];
     wlan_profiles: WlanProfile[];
 };
 
@@ -43,6 +52,12 @@ export type DeployResult = {
 };
 
 export type AuthServerDeployResult = {
+    name: string;
+    status: 'success' | 'error' | 'skipped';
+    message: string;
+};
+
+export type ServerGroupDeployResult = {
     name: string;
     status: 'success' | 'error' | 'skipped';
     message: string;
@@ -100,8 +115,25 @@ export type AuthServerDeployStepResponse = {
     };
 };
 
+export type ServerGroupDeployStepResponse = {
+    progress: DeployProgress;
+    step: {
+        key: string;
+        label: string;
+        status: 'success' | 'error' | 'skipped';
+        message: string;
+    };
+    partial: {
+        deploy_results: ServerGroupDeployResult[];
+    };
+};
+
 export function deployStatusVariant(
-    status: DeployResult['status'] | NamedVlanDeployResult['status'] | AuthServerDeployResult['status'],
+    status:
+        | DeployResult['status']
+        | NamedVlanDeployResult['status']
+        | AuthServerDeployResult['status']
+        | ServerGroupDeployResult['status'],
 ): 'default' | 'destructive' | 'secondary' {
     switch (status) {
         case 'success':
@@ -143,12 +175,24 @@ export function buildInitialAuthServerDeploySteps(servers: AuthServer[]): Deploy
     }));
 }
 
+export function buildInitialServerGroupDeploySteps(groups: ServerGroup[]): DeployStep[] {
+    return groups.map((group) => ({
+        key: `server-group-${group.name}`,
+        label: `Deploy server group: ${group.name}`,
+        status: 'pending',
+    }));
+}
+
 export function profileSelectionKey(controllerName: string, profileName: string): string {
     return `${controllerName}:${profileName}`;
 }
 
 export function authServerSelectionKey(controllerName: string, serverName: string): string {
     return `${controllerName}:${serverName}`;
+}
+
+export function serverGroupSelectionKey(controllerName: string, groupName: string): string {
+    return `${controllerName}:${groupName}`;
 }
 
 export function buildDeployProfilePayload(
@@ -176,5 +220,14 @@ export function buildDeployAuthServerPayload(
     return {
         name: server.name,
         body: { ...server.body },
+    };
+}
+
+export function buildDeployServerGroupPayload(
+    group: ServerGroup,
+): { name: string; body: Record<string, unknown> } {
+    return {
+        name: group.name,
+        body: { ...group.body },
     };
 }

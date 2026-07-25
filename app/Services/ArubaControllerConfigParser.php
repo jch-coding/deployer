@@ -8,6 +8,15 @@ class ArubaControllerConfigParser
 
     private const LLDP_ROW_PATTERN = '/^(\S+)\s+\S+\s+\d+\s+(\S+)\s+(\S+)\s+/';
 
+    /** @var array<int, string> */
+    private const PERSONAL_OPMODE_TOKENS = [
+        'opensystem',
+        'wpa-psk-aes',
+        'wpa-psk-tkip',
+        'wpa2-psk-aes',
+        'wpa3-sae-aes',
+    ];
+
     public function parse(string $content): array
     {
         $content = str_replace("\r\n", "\n", $content);
@@ -29,13 +38,18 @@ class ArubaControllerConfigParser
                     $parsedControllers[$pairedIndex]['lldp_neighbors'],
                     $this->parseLldpNeighbors($block['content']),
                 );
+                $partnerWlanProfiles = $this->parseWlanProfiles($block['content']);
                 $parsedControllers[$pairedIndex]['wlan_profiles'] = $this->mergeWlanProfiles(
                     $parsedControllers[$pairedIndex]['wlan_profiles'],
-                    $this->parseWlanProfiles($block['content']),
+                    $partnerWlanProfiles,
                 );
                 $parsedControllers[$pairedIndex]['auth_servers'] = $this->mergeAuthServers(
                     $parsedControllers[$pairedIndex]['auth_servers'],
                     $this->parseAuthServers($block['content']),
+                );
+                $parsedControllers[$pairedIndex]['server_groups'] = $this->mergeServerGroups(
+                    $parsedControllers[$pairedIndex]['server_groups'],
+                    $this->parseServerGroups($block['content'], $partnerWlanProfiles),
                 );
 
                 continue;
@@ -129,6 +143,13 @@ class ArubaControllerConfigParser
      *         body: array<string, mixed>,
      *         warnings: array<int, string>
      *     }>,
+     *     server_groups: array<int, array{
+     *         name: string,
+     *         servers: array<int, array{server-name: string, position: int}>,
+     *         body: array<string, mixed>,
+     *         associated_essids: array<int, string>,
+     *         warnings: array<int, string>
+     *     }>,
      *     wlan_profiles: array<int, array{
      *         ssid_profile_name: string,
      *         raw_vlan: string|null,
@@ -140,12 +161,15 @@ class ArubaControllerConfigParser
      */
     private function parseControllerBlock(string $controllerName, string $content): array
     {
+        $wlanProfiles = $this->deduplicateWlanProfiles($this->parseWlanProfiles($content));
+
         return [
             'controller_name' => $controllerName,
             'devices' => $this->parseApDatabase($content),
             'lldp_neighbors' => $this->parseLldpNeighbors($content),
             'auth_servers' => $this->deduplicateAuthServers($this->parseAuthServers($content)),
-            'wlan_profiles' => $this->deduplicateWlanProfiles($this->parseWlanProfiles($content)),
+            'server_groups' => $this->deduplicateServerGroups($this->parseServerGroups($content, $wlanProfiles)),
+            'wlan_profiles' => $wlanProfiles,
         ];
     }
 
@@ -299,6 +323,113 @@ class ArubaControllerConfigParser
     private function mergeAuthServers(array $primaryServers, array $partnerServers): array
     {
         return $this->deduplicateAuthServers(array_merge($primaryServers, $partnerServers));
+    }
+
+    /**
+     * @param  array<int, array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }>  $primaryGroups
+     * @param  array<int, array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }>  $partnerGroups
+     * @return array<int, array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function mergeServerGroups(array $primaryGroups, array $partnerGroups): array
+    {
+        return $this->deduplicateServerGroups(array_merge($primaryGroups, $partnerGroups));
+    }
+
+    /**
+     * @param  array<int, array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }>  $groups
+     * @return array<int, array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function deduplicateServerGroups(array $groups): array
+    {
+        $byName = [];
+
+        foreach ($groups as $group) {
+            $name = $group['name'];
+
+            if (! isset($byName[$name])) {
+                $byName[$name] = $group;
+
+                continue;
+            }
+
+            $byName[$name] = $this->preferServerGroup($byName[$name], $group);
+        }
+
+        $deduplicated = array_values($byName);
+        usort(
+            $deduplicated,
+            fn (array $a, array $b): int => strcmp($a['name'], $b['name']),
+        );
+
+        return $deduplicated;
+    }
+
+    /**
+     * @param  array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }  $first
+     * @param  array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }  $second
+     * @return array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }
+     */
+    private function preferServerGroup(array $first, array $second): array
+    {
+        $preferred = count($second['servers']) > count($first['servers']) ? $second : $first;
+        $other = $preferred === $first ? $second : $first;
+
+        $essids = array_values(array_unique(array_merge(
+            $preferred['associated_essids'],
+            $other['associated_essids'],
+        )));
+        sort($essids);
+        $preferred['associated_essids'] = $essids;
+
+        return $preferred;
     }
 
     /**
@@ -757,6 +888,147 @@ class ArubaControllerConfigParser
     }
 
     /**
+     * @param  array<int, array{
+     *     ssid_profile_name: string,
+     *     raw_vlan: string|null,
+     *     vlan_name: string|null,
+     *     body: array<string, mixed>,
+     *     warnings: array<int, string>
+     * }>  $wlanProfiles
+     * @return array<int, array{
+     *     name: string,
+     *     servers: array<int, array{server-name: string, position: int}>,
+     *     body: array<string, mixed>,
+     *     associated_essids: array<int, string>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function parseServerGroups(string $content, array $wlanProfiles): array
+    {
+        $section = $this->extractSection($content, '/#show running-config/i', null);
+
+        if ($section === null) {
+            return [];
+        }
+
+        $essidsByGroup = [];
+
+        foreach ($wlanProfiles as $profile) {
+            $essid = $profile['ssid_profile_name'];
+            $authGroup = $profile['body']['auth-server-group'] ?? null;
+            $acctGroup = $profile['body']['acct-server-group'] ?? null;
+
+            if (is_string($authGroup) && $authGroup !== '') {
+                $essidsByGroup[$authGroup][$essid] = true;
+            }
+
+            if (is_string($acctGroup) && $acctGroup !== '') {
+                $essidsByGroup[$acctGroup][$essid] = true;
+            }
+        }
+
+        $groups = [];
+
+        foreach ($this->parseServerGroupBlocks($section) as $name => $servers) {
+            $associated = array_keys($essidsByGroup[$name] ?? []);
+            sort($associated);
+
+            $warnings = [];
+            if ($servers === []) {
+                $warnings[] = 'No auth-server entries';
+            }
+
+            $groups[] = [
+                'name' => $name,
+                'servers' => $servers,
+                'body' => [
+                    'name' => $name,
+                    'type' => 'RADIUS',
+                    'servers' => $servers,
+                ],
+                'associated_essids' => $associated,
+                'warnings' => $warnings,
+            ];
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @return array<string, array<int, array{server-name: string, position: int}>>
+     */
+    private function parseServerGroupBlocks(string $section): array
+    {
+        $groups = [];
+        $currentName = null;
+        $currentLines = [];
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^aaa server-group "([^"]+)"/', $trimmed, $match)) {
+                if ($currentName !== null) {
+                    $groups[$currentName] = $this->parseServerGroupLines($currentLines);
+                }
+
+                $currentName = $match[1];
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentName !== null) {
+                $groups[$currentName] = $this->parseServerGroupLines($currentLines);
+                $currentName = null;
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($currentName !== null) {
+                $currentLines[] = $trimmed;
+            }
+        }
+
+        if ($currentName !== null) {
+            $groups[$currentName] = $this->parseServerGroupLines($currentLines);
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     * @return array<int, array{server-name: string, position: int}>
+     */
+    private function parseServerGroupLines(array $lines): array
+    {
+        $servers = [];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^auth-server "?([^"\s]+)"? position (\d+)/', $line, $match)) {
+                $servers[] = [
+                    'server-name' => $match[1],
+                    'position' => (int) $match[2],
+                ];
+            }
+        }
+
+        usort(
+            $servers,
+            fn (array $a, array $b): int => $a['position'] <=> $b['position'],
+        );
+
+        return $servers;
+    }
+
+    /**
      * @return array<int, array{
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
@@ -774,7 +1046,8 @@ class ArubaControllerConfigParser
         }
 
         $ssidProfiles = $this->parseSsidProfileBlocks($section);
-        $virtualApBySsidProfile = $this->parseVirtualApVlanMap($section);
+        $virtualApBySsidProfile = $this->parseVirtualApMap($section);
+        $aaaProfiles = $this->parseAaaProfileBlocks($section);
 
         $profiles = [];
 
@@ -782,16 +1055,30 @@ class ArubaControllerConfigParser
             $virtualApData = $virtualApBySsidProfile[$profileName] ?? null;
             $rawVlan = $virtualApData['vlan'] ?? null;
             $allowedBand = $virtualApData['allowed_band'] ?? null;
-            $vlanName = $rawVlan !== null ? self::mapVlanName($rawVlan) : null;
-            $warnings = $this->buildProfileWarnings($ssidData, $rawVlan, $vlanName);
+            $aaaProfileName = $virtualApData['aaa_profile'] ?? null;
             $deployName = ($ssidData['essid'] !== null && $ssidData['essid'] !== '')
                 ? $ssidData['essid']
                 : $profileName;
+            $security = $this->resolveSsidSecurity($ssidData, $aaaProfileName, $aaaProfiles);
+            $vlanName = $rawVlan !== null ? self::mapVlanName($rawVlan) : null;
+            $warnings = $this->buildProfileWarnings(
+                $ssidData,
+                $rawVlan,
+                $vlanName,
+                $security,
+                $aaaProfileName,
+            );
             $profiles[] = [
                 'ssid_profile_name' => $deployName,
                 'raw_vlan' => $rawVlan,
                 'vlan_name' => $vlanName,
-                'body' => $this->buildWlanSsidProfileBody($deployName, $ssidData, $vlanName, $allowedBand),
+                'body' => $this->buildWlanSsidProfileBody(
+                    $deployName,
+                    $ssidData,
+                    $vlanName,
+                    $allowedBand,
+                    $security,
+                ),
                 'warnings' => $warnings,
             ];
         }
@@ -803,6 +1090,7 @@ class ArubaControllerConfigParser
      * @return array<string, array{
      *     essid: string|null,
      *     wpa_passphrase: string|null,
+     *     opmode_tokens: array<int, string>,
      *     a_basic_rates: array<int, string>,
      *     a_tx_rates: array<int, string>,
      *     g_basic_rates: array<int, string>,
@@ -855,6 +1143,7 @@ class ArubaControllerConfigParser
      * @return array{
      *     essid: string|null,
      *     wpa_passphrase: string|null,
+     *     opmode_tokens: array<int, string>,
      *     a_basic_rates: array<int, string>,
      *     a_tx_rates: array<int, string>,
      *     g_basic_rates: array<int, string>,
@@ -867,6 +1156,7 @@ class ArubaControllerConfigParser
         $data = [
             'essid' => null,
             'wpa_passphrase' => null,
+            'opmode_tokens' => [],
             'a_basic_rates' => [],
             'a_tx_rates' => [],
             'g_basic_rates' => [],
@@ -885,6 +1175,12 @@ class ArubaControllerConfigParser
                 $data['essid'] = $match[1];
             } elseif (preg_match('/^wpa-passphrase "([^"]*)"/', $line, $match)) {
                 $data['wpa_passphrase'] = $match[1];
+            } elseif (preg_match('/^opmode (.+)$/', $line, $match)) {
+                $data['opmode_tokens'] = preg_split('/\s+/', trim($match[1])) ?: [];
+                $data['opmode_tokens'] = array_values(array_filter(
+                    $data['opmode_tokens'],
+                    fn (string $token): bool => $token !== '',
+                ));
             } elseif (preg_match('/^a-basic-rates (.+)$/', $line, $match)) {
                 $data['a_basic_rates'] = $this->parseRates($match[1]);
             } elseif (preg_match('/^a-tx-rates (.+)$/', $line, $match)) {
@@ -902,44 +1198,51 @@ class ArubaControllerConfigParser
     }
 
     /**
-     * @return array<string, array{vlan: ?string, allowed_band: ?string}>
+     * @return array<string, array{vlan: ?string, allowed_band: ?string, aaa_profile: ?string}>
      */
-    private function parseVirtualApVlanMap(string $section): array
+    private function parseVirtualApMap(string $section): array
     {
         $map = [];
         $currentSsidProfile = null;
         $currentVlan = null;
         $currentAllowedBand = null;
+        $currentAaaProfile = null;
+
+        $flush = function () use (&$map, &$currentSsidProfile, &$currentVlan, &$currentAllowedBand, &$currentAaaProfile): void {
+            if ($currentSsidProfile === null) {
+                return;
+            }
+
+            if ($currentVlan === null && $currentAaaProfile === null && $currentAllowedBand === null) {
+                return;
+            }
+
+            $map[$currentSsidProfile] = [
+                'vlan' => $currentVlan,
+                'allowed_band' => $currentAllowedBand,
+                'aaa_profile' => $currentAaaProfile,
+            ];
+        };
 
         foreach (explode("\n", $section) as $line) {
             $trimmed = rtrim($line);
 
             if (preg_match('/^wlan virtual-ap "/', $trimmed)) {
-                if ($currentSsidProfile !== null && $currentVlan !== null) {
-                    $map[$currentSsidProfile] = [
-                        'vlan' => $currentVlan,
-                        'allowed_band' => $currentAllowedBand,
-                    ];
-                }
-
+                $flush();
                 $currentSsidProfile = null;
                 $currentVlan = null;
                 $currentAllowedBand = null;
+                $currentAaaProfile = null;
 
                 continue;
             }
 
             if ($trimmed === '!' && $currentSsidProfile !== null) {
-                if ($currentVlan !== null) {
-                    $map[$currentSsidProfile] = [
-                        'vlan' => $currentVlan,
-                        'allowed_band' => $currentAllowedBand,
-                    ];
-                }
-
+                $flush();
                 $currentSsidProfile = null;
                 $currentVlan = null;
                 $currentAllowedBand = null;
+                $currentAaaProfile = null;
 
                 continue;
             }
@@ -950,26 +1253,225 @@ class ArubaControllerConfigParser
                 $currentVlan = $match[1];
             } elseif (preg_match('/^\s+allowed-band (\S+)/', $trimmed, $match)) {
                 $currentAllowedBand = $match[1];
+            } elseif (preg_match('/^\s+aaa-profile "([^"]+)"/', $trimmed, $match)) {
+                $currentAaaProfile = $match[1];
             }
         }
 
+        $flush();
+
         return $map;
+    }
+
+    /**
+     * @return array<string, array{dot1x_server_group: ?string, radius_accounting: ?string}>
+     */
+    private function parseAaaProfileBlocks(string $section): array
+    {
+        $profiles = [];
+        $currentName = null;
+        $currentLines = [];
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^aaa profile "([^"]+)"/', $trimmed, $match)) {
+                if ($currentName !== null) {
+                    $profiles[$currentName] = $this->parseAaaProfileLines($currentLines);
+                }
+
+                $currentName = $match[1];
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentName !== null) {
+                $profiles[$currentName] = $this->parseAaaProfileLines($currentLines);
+                $currentName = null;
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($currentName !== null) {
+                $currentLines[] = $trimmed;
+            }
+        }
+
+        if ($currentName !== null) {
+            $profiles[$currentName] = $this->parseAaaProfileLines($currentLines);
+        }
+
+        return $profiles;
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     * @return array{dot1x_server_group: ?string, radius_accounting: ?string}
+     */
+    private function parseAaaProfileLines(array $lines): array
+    {
+        $data = [
+            'dot1x_server_group' => null,
+            'radius_accounting' => null,
+        ];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^dot1x-server-group "([^"]+)"/', $line, $match)) {
+                $data['dot1x_server_group'] = $match[1];
+            } elseif (preg_match('/^radius-accounting "([^"]+)"/', $line, $match)) {
+                $data['radius_accounting'] = $match[1];
+            }
+        }
+
+        return $data;
     }
 
     /**
      * @param  array{
      *     essid: string|null,
      *     wpa_passphrase: string|null,
+     *     opmode_tokens: array<int, string>,
      *     a_basic_rates: array<int, string>,
      *     a_tx_rates: array<int, string>,
      *     g_basic_rates: array<int, string>,
      *     g_tx_rates: array<int, string>,
      *     advertise_ap_name: bool
      * }  $ssidData
+     * @param  array<string, array{dot1x_server_group: ?string, radius_accounting: ?string}>  $aaaProfiles
+     * @return array{
+     *     mode: 'personal'|'open'|'enterprise',
+     *     opmode: string|null,
+     *     auth_server_group: string|null,
+     *     acct_server_group: string|null,
+     *     has_radius_accounting: bool,
+     *     unmapped_opmode: bool
+     * }
+     */
+    private function resolveSsidSecurity(array $ssidData, ?string $aaaProfileName, array $aaaProfiles): array
+    {
+        $tokens = $ssidData['opmode_tokens'];
+        $isPersonalPath = $tokens === [] || $this->isPersonalOpmodePath($tokens);
+        $mappedOpmode = $this->mapOpmodeToCentral($tokens);
+        $unmapped = $tokens !== [] && $mappedOpmode === null;
+
+        if ($isPersonalPath) {
+            $isOpen = $tokens === ['opensystem'];
+
+            return [
+                'mode' => $isOpen ? 'open' : 'personal',
+                'opmode' => $mappedOpmode ?? 'WPA2_PERSONAL',
+                'auth_server_group' => null,
+                'acct_server_group' => null,
+                'has_radius_accounting' => false,
+                'unmapped_opmode' => $unmapped,
+            ];
+        }
+
+        $aaa = $aaaProfileName !== null ? ($aaaProfiles[$aaaProfileName] ?? null) : null;
+
+        return [
+            'mode' => 'enterprise',
+            'opmode' => $mappedOpmode,
+            'auth_server_group' => $aaa['dot1x_server_group'] ?? null,
+            'acct_server_group' => $aaa['radius_accounting'] ?? null,
+            'has_radius_accounting' => ($aaa['radius_accounting'] ?? null) !== null,
+            'unmapped_opmode' => $unmapped,
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $tokens
+     */
+    private function isPersonalOpmodePath(array $tokens): bool
+    {
+        foreach ($tokens as $token) {
+            if (! in_array($token, self::PERSONAL_OPMODE_TOKENS, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<int, string>  $tokens
+     */
+    private function mapOpmodeToCentral(array $tokens): ?string
+    {
+        if ($tokens === []) {
+            return 'WPA2_PERSONAL';
+        }
+
+        $sorted = $tokens;
+        sort($sorted);
+
+        if ($sorted === ['wpa-aes', 'wpa-tkip', 'wpa2-aes']) {
+            return 'BOTH_WPA_WPA2_DOT1X';
+        }
+
+        if (count($tokens) === 1) {
+            return match ($tokens[0]) {
+                'opensystem' => 'OPEN',
+                'wpa-psk-aes', 'wpa-psk-tkip', 'wpa2-psk-aes' => 'WPA2_PERSONAL',
+                'wpa3-sae-aes' => 'WPA3_SAE',
+                'wpa2-aes' => 'WPA2_ENTERPRISE',
+                'wpa3-aes-ccm-128' => 'WPA3_AES_CCM_128',
+                'wpa3-aes-gcm-256' => 'WPA3_ENTERPRISE_GCM_256',
+                default => null,
+            };
+        }
+
+        if ($this->isPersonalOpmodePath($tokens)) {
+            if (in_array('wpa3-sae-aes', $tokens, true)) {
+                return 'WPA3_SAE';
+            }
+
+            if (in_array('opensystem', $tokens, true) && count($tokens) === 1) {
+                return 'OPEN';
+            }
+
+            return 'WPA2_PERSONAL';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{
+     *     essid: string|null,
+     *     wpa_passphrase: string|null,
+     *     opmode_tokens: array<int, string>,
+     *     a_basic_rates: array<int, string>,
+     *     a_tx_rates: array<int, string>,
+     *     g_basic_rates: array<int, string>,
+     *     g_tx_rates: array<int, string>,
+     *     advertise_ap_name: bool
+     * }  $ssidData
+     * @param  array{
+     *     mode: 'personal'|'open'|'enterprise',
+     *     opmode: string|null,
+     *     auth_server_group: string|null,
+     *     acct_server_group: string|null,
+     *     has_radius_accounting: bool,
+     *     unmapped_opmode: bool
+     * }  $security
      * @return array<string, mixed>
      */
-    private function buildWlanSsidProfileBody(string $ssidName, array $ssidData, ?string $vlanName, ?string $allowedBand = null): array
-    {
+    private function buildWlanSsidProfileBody(
+        string $ssidName,
+        array $ssidData,
+        ?string $vlanName,
+        ?string $allowedBand,
+        array $security,
+    ): array {
         $body = [
             'ssid' => $ssidName,
             'enable' => true,
@@ -1008,12 +1510,7 @@ class ArubaControllerConfigParser
             'extremely-high-throughput' => ['enable' => false, 'mlo' => false],
             'wmm-cfg' => ['uapsd' => false],
             'advertise-timing' => false,
-            'opmode' => 'WPA2_PERSONAL',
             'mac-authentication' => false,
-            'personal-security' => [
-                'passphrase-format' => 'STRING',
-                'wpa-passphrase' => $ssidData['wpa_passphrase'],
-            ],
             'type' => 'EMPLOYEE',
             'use-ip-for-calling-station-id' => false,
             'server-load-balancing' => false,
@@ -1029,6 +1526,30 @@ class ArubaControllerConfigParser
             'vlan-name' => $vlanName,
             'client-isolation' => false,
         ];
+
+        if ($security['opmode'] !== null) {
+            $body['opmode'] = $security['opmode'];
+        } elseif ($security['mode'] !== 'enterprise') {
+            $body['opmode'] = 'WPA2_PERSONAL';
+        }
+
+        if ($security['mode'] === 'personal') {
+            $body['personal-security'] = [
+                'passphrase-format' => 'STRING',
+                'wpa-passphrase' => $ssidData['wpa_passphrase'],
+            ];
+        } elseif ($security['mode'] === 'enterprise') {
+            $body['dot1x'] = true;
+
+            if ($security['auth_server_group'] !== null) {
+                $body['auth-server-group'] = $security['auth_server_group'];
+            }
+
+            if ($security['has_radius_accounting'] && $security['acct_server_group'] !== null) {
+                $body['acct-server-group'] = $security['acct_server_group'];
+                $body['radius-accounting'] = true;
+            }
+        }
 
         $gLegacyRates = $this->buildLegacyRates($ssidData['g_basic_rates'], $ssidData['g_tx_rates']);
         if ($gLegacyRates !== null) {
@@ -1083,24 +1604,52 @@ class ArubaControllerConfigParser
      * @param  array{
      *     essid: string|null,
      *     wpa_passphrase: string|null,
+     *     opmode_tokens: array<int, string>,
      *     a_basic_rates: array<int, string>,
      *     a_tx_rates: array<int, string>,
      *     g_basic_rates: array<int, string>,
      *     g_tx_rates: array<int, string>,
      *     advertise_ap_name: bool
      * }  $ssidData
+     * @param  array{
+     *     mode: 'personal'|'open'|'enterprise',
+     *     opmode: string|null,
+     *     auth_server_group: string|null,
+     *     acct_server_group: string|null,
+     *     has_radius_accounting: bool,
+     *     unmapped_opmode: bool
+     * }  $security
      * @return array<int, string>
      */
-    private function buildProfileWarnings(array $ssidData, ?string $rawVlan, ?string $vlanName): array
-    {
+    private function buildProfileWarnings(
+        array $ssidData,
+        ?string $rawVlan,
+        ?string $vlanName,
+        array $security,
+        ?string $aaaProfileName = null,
+    ): array {
         $warnings = [];
 
         if ($ssidData['essid'] === null || $ssidData['essid'] === '') {
             $warnings[] = 'Missing essid';
         }
 
-        if ($ssidData['wpa_passphrase'] === null || $ssidData['wpa_passphrase'] === '') {
+        if ($security['mode'] === 'personal'
+            && ($ssidData['wpa_passphrase'] === null || $ssidData['wpa_passphrase'] === '')
+        ) {
             $warnings[] = 'Missing wpa-passphrase';
+        }
+
+        if ($security['unmapped_opmode']) {
+            $warnings[] = 'Unmapped opmode: '.implode(' ', $ssidData['opmode_tokens']);
+        }
+
+        if ($security['mode'] === 'enterprise') {
+            if ($aaaProfileName === null) {
+                $warnings[] = 'Missing aaa-profile from virtual-ap';
+            } elseif ($security['auth_server_group'] === null) {
+                $warnings[] = 'Missing dot1x-server-group from aaa profile';
+            }
         }
 
         if ($rawVlan === null) {

@@ -278,6 +278,36 @@ class MigrationController extends Controller
         );
     }
 
+    public function deployServerGroupStep(
+        Request $request,
+        int $step,
+        CentralScopeCacheService $centralScopeCacheService,
+        MigrationDeployService $migrationDeployService,
+    ) {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json(['message' => 'Please set current client to deploy server groups.'], 403);
+        }
+
+        $validated = $this->validateServerGroupDeployRequest($request, $centralScopeCacheService);
+        $total = $migrationDeployService->serverGroupTotalSteps($validated['server_groups']);
+
+        if ($step < 0 || $step >= $total) {
+            abort(404);
+        }
+
+        return response()->json(
+            $migrationDeployService->runServerGroupStep(
+                new CentralAPIHelper($currentClient),
+                $validated['scope_id'],
+                $validated['device_function'],
+                $validated['server_groups'],
+                $step,
+            ),
+        );
+    }
+
     /**
      * @return array{
      *     scope_id: string,
@@ -329,6 +359,38 @@ class MigrationController extends Controller
             'servers' => ['required', 'array', 'min:1'],
             'servers.*.name' => ['required', 'string', 'max:255'],
             'servers.*.body' => ['required', 'array'],
+        ]);
+
+        $validScopeIds = $this->validAuthServerScopeIds($currentClient, $centralScopeCacheService);
+
+        if (! in_array($validated['scope_id'], $validScopeIds, true)) {
+            abort(422, 'Selected scope is not valid for the current client.');
+        }
+
+        return $validated;
+    }
+
+    /**
+     * @return array{
+     *     scope_id: string,
+     *     device_function: string,
+     *     server_groups: array<int, array{name: string, body: array<string, mixed>}>
+     * }
+     */
+    private function validateServerGroupDeployRequest(Request $request, CentralScopeCacheService $centralScopeCacheService): array
+    {
+        $currentClient = $request->user()->currentClient();
+        $deviceFunctionNames = array_map(
+            fn (DeviceFunction $deviceFunction): string => $deviceFunction->name,
+            DeviceFunction::cases(),
+        );
+
+        $validated = $request->validate([
+            'scope_id' => ['required', 'string', 'max:255'],
+            'device_function' => ['required', 'string', Rule::in($deviceFunctionNames)],
+            'server_groups' => ['required', 'array', 'min:1'],
+            'server_groups.*.name' => ['required', 'string', 'max:255'],
+            'server_groups.*.body' => ['required', 'array'],
         ]);
 
         $validScopeIds = $this->validAuthServerScopeIds($currentClient, $centralScopeCacheService);

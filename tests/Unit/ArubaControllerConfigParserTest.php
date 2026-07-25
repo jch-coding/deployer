@@ -224,7 +224,7 @@ it('keeps WCD_PI vlan unchanged for WCD_PI profile', function () {
         ->and($wcdPi['body']['vlan-name'])->toBe('WCD_PI');
 });
 
-it('includes partial wlan profiles with warnings', function () {
+it('builds enterprise wlan profile for TJs without personal-security', function () {
     $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
     $parser = new ArubaControllerConfigParser;
     $profiles = $parser->parse($content)[0]['wlan_profiles'];
@@ -232,7 +232,156 @@ it('includes partial wlan profiles with warnings', function () {
     $tjs = collect($profiles)->firstWhere('ssid_profile_name', 'TJs');
 
     expect($tjs)->not->toBeNull()
-        ->and($tjs['warnings'])->toContain('Missing wpa-passphrase');
+        ->and($tjs['body']['opmode'])->toBe('WPA3_AES_CCM_128')
+        ->and($tjs['body']['dot1x'])->toBeTrue()
+        ->and($tjs['body']['auth-server-group'])->toBe('CPPM-West-preferred-svr-group')
+        ->and($tjs['body'])->not->toHaveKey('personal-security')
+        ->and($tjs['body'])->not->toHaveKey('acct-server-group')
+        ->and($tjs['body'])->not->toHaveKey('radius-accounting')
+        ->and($tjs['warnings'])->not->toContain('Missing wpa-passphrase')
+        ->and($tjs['warnings'])->toContain('Missing vlan from virtual-ap');
+});
+
+it('parses server groups and associates enterprise essids', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $groups = $parser->parse($content)[0]['server_groups'];
+
+    $west = collect($groups)->firstWhere('name', 'CPPM-West-preferred-svr-group');
+
+    expect($west)->not->toBeNull()
+        ->and($west['servers'])->toBe([
+            ['server-name' => 'WCPPM', 'position' => 1],
+            ['server-name' => 'ECPPM', 'position' => 2],
+        ])
+        ->and($west['body'])->toMatchArray([
+            'name' => 'CPPM-West-preferred-svr-group',
+            'type' => 'RADIUS',
+            'servers' => [
+                ['server-name' => 'WCPPM', 'position' => 1],
+                ['server-name' => 'ECPPM', 'position' => 2],
+            ],
+        ])
+        ->and($west['associated_essids'])->toBe(['TJs']);
+});
+
+it('maps personal opmode wpa2-psk-aes to WPA2_PERSONAL', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    $daykit = collect($profiles)->firstWhere('ssid_profile_name', 'DAYKIT');
+
+    expect($daykit['body']['opmode'])->toBe('WPA2_PERSONAL')
+        ->and($daykit['body'])->toHaveKey('personal-security');
+});
+
+it('maps opensystem to OPEN without personal-security', function () {
+    $content = <<<'CONFIG'
+(WLC-OPEN) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-OPEN-001      default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SEROPEN001  N/A   N/A   N/A
+
+(WLC-OPEN) #show running-config
+wlan ssid-profile "OPEN_ssid_prof"
+    essid "GuestOpen"
+    opmode opensystem
+!
+wlan virtual-ap "OPEN"
+    vlan DAYKIT
+    ssid-profile "OPEN_ssid_prof"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profile = $parser->parse($content)[0]['wlan_profiles'][0];
+
+    expect($profile['body']['opmode'])->toBe('OPEN')
+        ->and($profile['body'])->not->toHaveKey('personal-security')
+        ->and($profile['body'])->not->toHaveKey('dot1x')
+        ->and($profile['warnings'])->not->toContain('Missing wpa-passphrase');
+});
+
+it('maps multi-token enterprise opmode to BOTH_WPA_WPA2_DOT1X with accounting', function () {
+    $content = <<<'CONFIG'
+(WLC-ENT) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ENT-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERENT001   N/A   N/A   N/A
+
+(WLC-ENT) #show running-config
+aaa authentication-server radius "RAD1"
+    host "10.0.0.1"
+    key "secret"
+!
+aaa server-group "AuthGroup"
+    auth-server RAD1 position 1
+!
+aaa server-group "AcctGroup"
+    auth-server RAD1 position 1
+!
+aaa profile "ENT-aaa"
+    dot1x-server-group "AuthGroup"
+    radius-accounting "AcctGroup"
+!
+wlan ssid-profile "ENT_ssid_prof"
+    essid "CorpBoth"
+    opmode wpa-tkip wpa-aes wpa2-aes
+!
+wlan virtual-ap "ENT"
+    aaa-profile "ENT-aaa"
+    vlan DAYKIT
+    ssid-profile "ENT_ssid_prof"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $result = $parser->parse($content)[0];
+    $profile = collect($result['wlan_profiles'])->firstWhere('ssid_profile_name', 'CorpBoth');
+    $authGroup = collect($result['server_groups'])->firstWhere('name', 'AuthGroup');
+    $acctGroup = collect($result['server_groups'])->firstWhere('name', 'AcctGroup');
+
+    expect($profile['body']['opmode'])->toBe('BOTH_WPA_WPA2_DOT1X')
+        ->and($profile['body']['dot1x'])->toBeTrue()
+        ->and($profile['body']['auth-server-group'])->toBe('AuthGroup')
+        ->and($profile['body']['acct-server-group'])->toBe('AcctGroup')
+        ->and($profile['body']['radius-accounting'])->toBeTrue()
+        ->and($profile['body'])->not->toHaveKey('personal-security')
+        ->and($authGroup['associated_essids'])->toBe(['CorpBoth'])
+        ->and($acctGroup['associated_essids'])->toBe(['CorpBoth']);
+});
+
+it('maps wpa3-sae-aes to WPA3_SAE with personal-security', function () {
+    $content = <<<'CONFIG'
+(WLC-SAE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-SAE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERSAE001   N/A   N/A   N/A
+
+(WLC-SAE) #show running-config
+wlan ssid-profile "SAE_ssid_prof"
+    essid "SaeSsid"
+    wpa-passphrase "sae-passphrase-123"
+    opmode wpa3-sae-aes
+!
+wlan virtual-ap "SAE"
+    vlan DAYKIT
+    ssid-profile "SAE_ssid_prof"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profile = $parser->parse($content)[0]['wlan_profiles'][0];
+
+    expect($profile['body']['opmode'])->toBe('WPA3_SAE')
+        ->and($profile['body']['personal-security']['wpa-passphrase'])->toBe('sae-passphrase-123');
 });
 
 it('parses multiple controller blocks with isolated data', function () {

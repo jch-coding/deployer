@@ -177,6 +177,11 @@ export default function Index() {
         [parsed_controllers],
     );
 
+    const allServerGroups = useMemo(
+        () => parsed_controllers.flatMap((controller) => controller.server_groups ?? []),
+        [parsed_controllers],
+    );
+
     useEffect(() => {
         setSelectedProfileNames(
             new Set(allWlanProfiles.map((profile) => profile.ssid_profile_name)),
@@ -633,6 +638,7 @@ export default function Index() {
 
                         <AuthServersCard
                             authServers={allAuthServers}
+                            serverGroups={allServerGroups}
                             siteOptions={site_options}
                             siteCollectionOptions={site_collection_options}
                             siteCollectionOptionsError={site_collection_options_error}
@@ -698,6 +704,7 @@ export default function Index() {
                                                 </th>
                                                 <th className="px-2 py-2 font-medium">Profile</th>
                                                 <th className="px-2 py-2 font-medium">ESSID</th>
+                                                <th className="px-2 py-2 font-medium">Opmode</th>
                                                 <th className="px-2 py-2 font-medium">VLAN</th>
                                                 <th className="px-2 py-2 font-medium">Passphrase</th>
                                                 <th className="px-2 py-2 font-medium">Warnings</th>
@@ -715,6 +722,10 @@ export default function Index() {
                                                             | { 'wpa-passphrase'?: string | null }
                                                             | undefined
                                                     )?.['wpa-passphrase'] ?? null;
+                                                const opmode =
+                                                    typeof profile.body.opmode === 'string'
+                                                        ? profile.body.opmode
+                                                        : null;
 
                                                 return (
                                                     <tr
@@ -745,6 +756,9 @@ export default function Index() {
                                                             </label>
                                                         </td>
                                                         <td className="px-2 py-2">{essid || '—'}</td>
+                                                        <td className="px-2 py-2 font-mono text-xs">
+                                                            {opmode || '—'}
+                                                        </td>
                                                         <td className="px-2 py-2">
                                                             {profile.raw_vlan ? (
                                                                 <span className="text-muted-foreground block text-xs">

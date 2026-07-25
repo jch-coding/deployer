@@ -75,7 +75,7 @@ export default function ControllerMigrationSection({
     deviceFunctionOptions = [],
     parsedControllers,
 }: ControllerMigrationSectionProps) {
-    const { controller_name, devices, lldp_neighbors, auth_servers = [], wlan_profiles } = controller;
+    const { controller_name, devices, lldp_neighbors, auth_servers = [], server_groups = [], wlan_profiles } = controller;
 
     const [scopeId, setScopeId] = useState('');
     const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
@@ -438,6 +438,7 @@ export default function ControllerMigrationSection({
 
             <AuthServersCard
                 authServers={auth_servers}
+                serverGroups={server_groups}
                 controllerName={controller_name}
                 siteOptions={siteOptions}
                 siteCollectionOptions={siteCollectionOptions}
@@ -504,6 +505,7 @@ export default function ControllerMigrationSection({
                                     </th>
                                     <th className="px-2 py-2 font-medium">Profile</th>
                                     <th className="px-2 py-2 font-medium">ESSID</th>
+                                    <th className="px-2 py-2 font-medium">Opmode</th>
                                     <th className="px-2 py-2 font-medium">VLAN</th>
                                     <th className="px-2 py-2 font-medium">Passphrase</th>
                                     <th className="px-2 py-2 font-medium">Warnings</th>
@@ -525,6 +527,10 @@ export default function ControllerMigrationSection({
                                                 | { 'wpa-passphrase'?: string | null }
                                                 | undefined
                                         )?.['wpa-passphrase'] ?? null;
+                                    const opmode =
+                                        typeof profile.body.opmode === 'string'
+                                            ? profile.body.opmode
+                                            : null;
 
                                     return (
                                         <tr key={profileKey} className="border-b align-top">
@@ -550,6 +556,9 @@ export default function ControllerMigrationSection({
                                                 </label>
                                             </td>
                                             <td className="px-2 py-2">{essid || '—'}</td>
+                                            <td className="px-2 py-2 font-mono text-xs">
+                                                {opmode || '—'}
+                                            </td>
                                             <td className="px-2 py-2">
                                                 {profile.raw_vlan ? (
                                                     <span className="text-muted-foreground block text-xs">

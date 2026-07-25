@@ -76,6 +76,7 @@ test('migrations parse uploads config file and returns parsed controllers', func
             ->has('parsed_controllers.0.devices', 106)
             ->has('parsed_controllers.0.lldp_neighbors')
             ->has('parsed_controllers.0.auth_servers')
+            ->has('parsed_controllers.0.server_groups')
             ->has('parsed_controllers.0.wlan_profiles'));
 });
 
@@ -167,6 +168,64 @@ test('migrations deploy wlan skips profiles missing passphrase or vlan', functio
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('deploy_results.0.status', 'skipped'));
+
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'wlan-ssids'));
+});
+
+test('migrations deploy wlan allows enterprise profiles without passphrase', function () {
+    Http::fake([
+        '*site-collections*' => Http::response(['items' => []], 200),
+        '*wlan-ssids*' => Http::response(['ok' => true], 200),
+    ]);
+
+    $body = migrationWlanProfilePayload();
+    unset($body['personal-security']);
+    $body['opmode'] = 'WPA3_AES_CCM_128';
+    $body['dot1x'] = true;
+    $body['auth-server-group'] = 'CPPM-West-preferred-svr-group';
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-site',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'TJs',
+                'body' => $body,
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('deploy_results.0.status', 'success'));
+
+    Http::assertSent(fn (Request $request) => $request->method() === 'POST'
+        && str_contains($request->url(), 'wlan-ssids/TJs'));
+});
+
+test('migrations deploy wlan skips enterprise profiles missing auth-server-group', function () {
+    Http::fake([
+        '*site-collections*' => Http::response(['items' => []], 200),
+    ]);
+
+    $body = migrationWlanProfilePayload();
+    unset($body['personal-security']);
+    $body['opmode'] = 'WPA2_ENTERPRISE';
+    $body['dot1x'] = true;
+
+    $this->post(route('migrations.deploy-wlan'), [
+        'scope_id' => 'scope-site',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'Corp',
+                'body' => $body,
+            ],
+        ],
+        'parsed_controllers' => [],
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('deploy_results.0.status', 'skipped')
+            ->where('deploy_results.0.message', 'Missing required auth-server-group'));
 
     Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'wlan-ssids'));
 });
@@ -375,6 +434,119 @@ test('migrations deploy auth server step skips servers missing host or key', fun
     Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'auth-servers'));
 });
 
+test('migrations deploy server group step posts to central with scope and device function', function () {
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD Collection', 'scopeId' => 'scope-collection'],
+            ],
+        ], 200),
+        '*server-groups*' => Http::response(['ok' => true], 200),
+    ]);
+
+    $body = migrationServerGroupPayload();
+
+    $this->post(route('migrations.deploy-server-groups.step', ['step' => 0]), [
+        'scope_id' => 'scope-collection',
+        'device_function' => 'CAMPUS_AP',
+        'server_groups' => [
+            [
+                'name' => 'CPPM-West-preferred-svr-group',
+                'body' => $body,
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('step.key', 'server-group-CPPM-West-preferred-svr-group')
+        ->assertJsonPath('step.status', 'success')
+        ->assertJsonPath('partial.deploy_results.0.name', 'CPPM-West-preferred-svr-group')
+        ->assertJsonPath('partial.deploy_results.0.status', 'success');
+
+    Http::assertSent(function (Request $request) use ($body) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/server-groups/CPPM-West-preferred-svr-group')
+            && ($query['object-type'] ?? null) === 'LOCAL'
+            && ($query['view-type'] ?? null) === 'LOCAL'
+            && ($query['scope-id'] ?? null) === 'scope-collection'
+            && ($query['device-function'] ?? null) === 'CAMPUS_AP'
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
+test('migrations deploy server group step patches when post fails', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'site-collections')) {
+            return Http::response([
+                'items' => [
+                    ['scopeName' => 'WCD Collection', 'scopeId' => 'scope-collection'],
+                ],
+            ], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($request->url(), 'server-groups/')) {
+            return Http::response(['error' => 'already exists'], 409);
+        }
+
+        if ($request->method() === 'PATCH' && str_contains($request->url(), 'server-groups/')) {
+            return Http::response(['ok' => true], 200);
+        }
+
+        return Http::response(['ok' => true], 200);
+    });
+
+    $body = migrationServerGroupPayload();
+
+    $this->post(route('migrations.deploy-server-groups.step', ['step' => 0]), [
+        'scope_id' => 'scope-site',
+        'device_function' => 'BRANCH_GW',
+        'server_groups' => [
+            [
+                'name' => 'CPPM-West-preferred-svr-group',
+                'body' => $body,
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('partial.deploy_results.0.status', 'success')
+        ->assertJsonPath('partial.deploy_results.0.message', 'Updated successfully');
+
+    Http::assertSent(function (Request $request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'PATCH'
+            && str_contains($request->url(), 'network-config/v1alpha1/server-groups/CPPM-West-preferred-svr-group')
+            && ($query['device-function'] ?? null) === 'BRANCH_GW'
+            && ($query['scope-id'] ?? null) === 'scope-site';
+    });
+});
+
+test('migrations deploy server group step skips groups missing servers', function () {
+    Http::fake([
+        '*site-collections*' => Http::response(['items' => []], 200),
+    ]);
+
+    $this->post(route('migrations.deploy-server-groups.step', ['step' => 0]), [
+        'scope_id' => 'scope-site',
+        'device_function' => 'CAMPUS_AP',
+        'server_groups' => [
+            [
+                'name' => 'empty-group',
+                'body' => [
+                    'name' => 'empty-group',
+                    'type' => 'RADIUS',
+                    'servers' => [],
+                ],
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('partial.deploy_results.0.status', 'skipped');
+
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'server-groups'));
+});
+
 function seedMigrationSiteCache(Client $client, string $scopeName, string $scopeId): void
 {
     CentralScopeCache::query()
@@ -460,6 +632,18 @@ function migrationAuthServerPayload(): array
         'type' => 'RADIUS',
         'dynamic-authorization-enable' => true,
         'radius-server-mode' => 'AUTH_AND_COA',
+    ];
+}
+
+function migrationServerGroupPayload(): array
+{
+    return [
+        'name' => 'CPPM-West-preferred-svr-group',
+        'type' => 'RADIUS',
+        'servers' => [
+            ['server-name' => 'WCPPM', 'position' => 1],
+            ['server-name' => 'ECPPM', 'position' => 2],
+        ],
     ];
 }
 

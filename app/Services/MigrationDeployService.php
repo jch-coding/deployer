@@ -314,14 +314,33 @@ class MigrationDeployService
         string $ssidProfileName,
         array $body,
     ): array {
-        $passphrase = $body['personal-security']['wpa-passphrase'] ?? null;
         $vlanName = $body['vlan-name'] ?? null;
+        $isEnterprise = ($body['dot1x'] ?? false) === true;
+        $isOpen = ($body['opmode'] ?? null) === 'OPEN';
+        $passphrase = $body['personal-security']['wpa-passphrase'] ?? null;
+        $requiresPassphrase = ! $isEnterprise && ! $isOpen;
 
-        if ($passphrase === null || $passphrase === '' || $vlanName === null || $vlanName === '') {
+        if ($vlanName === null || $vlanName === '') {
             return [
                 'ssid' => $ssidProfileName,
                 'status' => 'skipped',
-                'message' => 'Missing required wpa-passphrase or vlan-name',
+                'message' => 'Missing required vlan-name',
+            ];
+        }
+
+        if ($requiresPassphrase && ($passphrase === null || $passphrase === '')) {
+            return [
+                'ssid' => $ssidProfileName,
+                'status' => 'skipped',
+                'message' => 'Missing required wpa-passphrase',
+            ];
+        }
+
+        if ($isEnterprise && (($body['auth-server-group'] ?? null) === null || $body['auth-server-group'] === '')) {
+            return [
+                'ssid' => $ssidProfileName,
+                'status' => 'skipped',
+                'message' => 'Missing required auth-server-group',
             ];
         }
 
@@ -485,6 +504,114 @@ class MigrationDeployService
         }
 
         $patchResponse = $helper->patch_auth_server_profile($name, $queryParameters, $body);
+
+        if ($this->wlanSsidRequestSucceeded($patchResponse)) {
+            return [
+                'name' => $name,
+                'status' => 'success',
+                'message' => 'Updated successfully',
+            ];
+        }
+
+        return [
+            'name' => $name,
+            'status' => 'error',
+            'message' => $this->wlanSsidRequestFailureMessage($patchResponse),
+        ];
+    }
+
+    /**
+     * @param  array<int, array{name: string, body: array<string, mixed>}>  $groups
+     */
+    public function serverGroupTotalSteps(array $groups): int
+    {
+        return count($groups);
+    }
+
+    /**
+     * @param  array<int, array{name: string, body: array<string, mixed>}>  $groups
+     * @return array{
+     *     progress: array{current: int, total: int, percent: int, message: string},
+     *     step: array{key: string, label: string, status: string, message: string},
+     *     partial: array{
+     *         deploy_results: array<int, array{name: string, status: string, message: string}>
+     *     }
+     * }
+     */
+    public function runServerGroupStep(
+        CentralAPIHelper $helper,
+        string $scopeId,
+        string $deviceFunction,
+        array $groups,
+        int $step,
+    ): array {
+        $total = $this->serverGroupTotalSteps($groups);
+
+        if ($step < 0 || $step >= $total) {
+            abort(404);
+        }
+
+        $group = $groups[$step];
+        $name = $group['name'];
+        $result = $this->deployServerGroup($helper, $scopeId, $deviceFunction, $name, $group['body']);
+
+        return [
+            'progress' => $this->buildProgress(
+                $step + 1,
+                $total,
+                "Deployed server group {$name}",
+            ),
+            'step' => [
+                'key' => 'server-group-'.$name,
+                'label' => 'Deploy server group: '.$name,
+                'status' => $result['status'],
+                'message' => $result['message'],
+            ],
+            'partial' => [
+                'deploy_results' => [$result],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     * @return array{name: string, status: string, message: string}
+     */
+    private function deployServerGroup(
+        CentralAPIHelper $helper,
+        string $scopeId,
+        string $deviceFunction,
+        string $name,
+        array $body,
+    ): array {
+        $servers = $body['servers'] ?? null;
+
+        if (! is_array($servers) || $servers === []) {
+            return [
+                'name' => $name,
+                'status' => 'skipped',
+                'message' => 'Missing required servers list',
+            ];
+        }
+
+        $queryParameters = [
+            'object-type' => 'LOCAL',
+            'view-type' => 'LOCAL',
+            'scope-id' => $scopeId,
+            'device-function' => $deviceFunction,
+        ];
+
+        $response = $helper->post_server_group_profile($name, $queryParameters, $body);
+
+        if ($this->wlanSsidRequestSucceeded($response)) {
+            return [
+                'name' => $name,
+                'status' => 'success',
+                'message' => 'Deployed successfully',
+            ];
+        }
+
+        $patchResponse = $helper->patch_server_group_profile($name, $queryParameters, $body);
 
         if ($this->wlanSsidRequestSucceeded($patchResponse)) {
             return [
