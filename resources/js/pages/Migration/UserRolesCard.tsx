@@ -1,6 +1,33 @@
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useState } from 'react';
+import {
+    ArrowDown,
+    ArrowUp,
+    ChevronDown,
+    ChevronRight,
+    Plus,
+    Trash2,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    DropdownMenu,
+    DropdownMenuCheckboxItem,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import type {
     AccessList,
     AccessListEndpoint,
@@ -9,44 +36,20 @@ import type {
     NetService,
     UserRole,
 } from '@/pages/Migration/migration-types';
+import {
+    aggregateSharedRules,
+    formatEndpoint,
+    formatService,
+    moveArrayItem,
+    pruneRuleGroups,
+    type RuleGroup,
+} from '@/pages/Migration/user-role-mapping';
 
 type UserRolesCardProps = {
     userRoles: UserRole[];
 };
 
-function formatEndpoint(endpoint: AccessListEndpoint): string {
-    switch (endpoint.type) {
-        case 'user':
-        case 'any':
-            return endpoint.type;
-        case 'host':
-            return `host ${endpoint.value ?? ''}`;
-        case 'alias':
-            return `alias ${endpoint.value ?? ''}`;
-        case 'network':
-            return `network ${endpoint.value ?? ''} ${endpoint.subnet ?? ''}`.trim();
-        default:
-            return endpoint.type;
-    }
-}
-
-function formatService(service: AccessListService): string {
-    switch (service.type) {
-        case 'any':
-            return 'any';
-        case 'tcp':
-        case 'udp':
-            return [service.type, ...(service.ports ?? [])].join(' ');
-        case 'svc':
-            return service.name ?? 'svc';
-        case 'app':
-            return `app ${service.name ?? ''}`.trim();
-        case 'other':
-            return service.raw ?? 'other';
-        default:
-            return service.type;
-    }
-}
+const UNASSIGNED_GROUP_VALUE = '__unassigned__';
 
 function formatNetDestination(alias: NetDestination): string {
     const parts: string[] = [];
@@ -90,7 +93,7 @@ function EndpointCell({ endpoint }: { endpoint: AccessListEndpoint }) {
                 </div>
             )}
             {endpoint.type === 'alias' && resolved === null && (
-                <div className="text-amber-600 mt-1 text-xs">Unresolved alias</div>
+                <div className="mt-1 text-xs text-amber-600">Unresolved alias</div>
             )}
         </div>
     );
@@ -108,7 +111,7 @@ function ServiceCell({ service }: { service: AccessListService }) {
                 </div>
             )}
             {service.type === 'svc' && resolved === null && (
-                <div className="text-amber-600 mt-1 text-xs">Unresolved service</div>
+                <div className="mt-1 text-xs text-amber-600">Unresolved service</div>
             )}
         </div>
     );
@@ -166,6 +169,422 @@ function AccessListRules({ accessList }: { accessList: AccessList }) {
                     ))}
                 </tbody>
             </table>
+        </div>
+    );
+}
+
+function CentralRoleMappingSection({ userRoles }: { userRoles: UserRole[] }) {
+    const [selectedRoleNames, setSelectedRoleNames] = useState<Set<string>>(new Set());
+    const [groups, setGroups] = useState<RuleGroup[]>([]);
+
+    const sharedRules = useMemo(
+        () => aggregateSharedRules(userRoles, selectedRoleNames),
+        [userRoles, selectedRoleNames],
+    );
+
+    const validKeys = useMemo(
+        () => new Set(sharedRules.map((rule) => rule.key)),
+        [sharedRules],
+    );
+
+    const prunedGroups = useMemo(
+        () => pruneRuleGroups(groups, validKeys),
+        [groups, validKeys],
+    );
+
+    useEffect(() => {
+        setGroups((current) => {
+            const pruned = pruneRuleGroups(current, validKeys);
+            const unchanged =
+                pruned.length === current.length &&
+                pruned.every(
+                    (group, index) =>
+                        group.ruleKeys.length === current[index].ruleKeys.length &&
+                        group.ruleKeys.every(
+                            (key, keyIndex) => key === current[index].ruleKeys[keyIndex],
+                        ),
+                );
+
+            return unchanged ? current : pruned;
+        });
+    }, [validKeys]);
+
+    const groupIdByRuleKey = useMemo(() => {
+        const map = new Map<string, string>();
+
+        for (const group of prunedGroups) {
+            for (const key of group.ruleKeys) {
+                map.set(key, group.id);
+            }
+        }
+
+        return map;
+    }, [prunedGroups]);
+
+    const selectedCount = selectedRoleNames.size;
+    const allSelected = userRoles.length > 0 && selectedCount === userRoles.length;
+
+    const toggleRole = (roleName: string) => {
+        setSelectedRoleNames((current) => {
+            const next = new Set(current);
+            if (next.has(roleName)) {
+                next.delete(roleName);
+            } else {
+                next.add(roleName);
+            }
+
+            return next;
+        });
+    };
+
+    const selectAllRoles = () => {
+        setSelectedRoleNames(new Set(userRoles.map((role) => role.name)));
+    };
+
+    const clearRoles = () => {
+        setSelectedRoleNames(new Set());
+    };
+
+    const addGroup = () => {
+        setGroups((current) => [
+            ...pruneRuleGroups(current, validKeys),
+            {
+                id: crypto.randomUUID(),
+                name: `Group ${current.length + 1}`,
+                ruleKeys: [],
+            },
+        ]);
+    };
+
+    const renameGroup = (groupId: string, name: string) => {
+        setGroups((current) =>
+            pruneRuleGroups(current, validKeys).map((group) =>
+                group.id === groupId ? { ...group, name } : group,
+            ),
+        );
+    };
+
+    const deleteGroup = (groupId: string) => {
+        setGroups((current) =>
+            pruneRuleGroups(current, validKeys).filter((group) => group.id !== groupId),
+        );
+    };
+
+    const moveGroup = (groupId: string, direction: -1 | 1) => {
+        setGroups((current) => {
+            const pruned = pruneRuleGroups(current, validKeys);
+            const index = pruned.findIndex((group) => group.id === groupId);
+
+            return moveArrayItem(pruned, index, index + direction);
+        });
+    };
+
+    const assignRuleToGroup = (ruleKey: string, groupId: string | null) => {
+        setGroups((current) => {
+            const pruned = pruneRuleGroups(current, validKeys).map((group) => ({
+                ...group,
+                ruleKeys: group.ruleKeys.filter((key) => key !== ruleKey),
+            }));
+
+            if (groupId === null) {
+                return pruned;
+            }
+
+            return pruned.map((group) =>
+                group.id === groupId
+                    ? { ...group, ruleKeys: [...group.ruleKeys, ruleKey] }
+                    : group,
+            );
+        });
+    };
+
+    const moveRuleInGroup = (groupId: string, ruleKey: string, direction: -1 | 1) => {
+        setGroups((current) =>
+            pruneRuleGroups(current, validKeys).map((group) => {
+                if (group.id !== groupId) {
+                    return group;
+                }
+
+                const index = group.ruleKeys.indexOf(ruleKey);
+
+                return {
+                    ...group,
+                    ruleKeys: moveArrayItem(group.ruleKeys, index, index + direction),
+                };
+            }),
+        );
+    };
+
+    return (
+        <div className="mt-8 flex flex-col gap-4 border-t pt-6">
+            <div>
+                <h3 className="text-sm font-medium">New Central Role Mapping</h3>
+                <p className="text-muted-foreground mt-1 text-xs">
+                    Select roles to compare shared access-list rules, then group matching lines
+                    into named, ordered Central policy sets.
+                </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" size="sm">
+                            Select roles
+                            <Badge variant="secondary" className="ml-1">
+                                {selectedCount}
+                            </Badge>
+                            <ChevronDown className="size-3" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
+                        <DropdownMenuLabel>Parsed roles</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                selectAllRoles();
+                            }}
+                        >
+                            Select all
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                clearRoles();
+                            }}
+                        >
+                            Clear
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {userRoles.length === 0 && (
+                            <DropdownMenuItem disabled>No roles available</DropdownMenuItem>
+                        )}
+                        {userRoles.map((role) => (
+                            <DropdownMenuCheckboxItem
+                                key={role.name}
+                                checked={selectedRoleNames.has(role.name)}
+                                onCheckedChange={() => toggleRole(role.name)}
+                                onSelect={(event) => event.preventDefault()}
+                            >
+                                {role.name}
+                            </DropdownMenuCheckboxItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                {allSelected && (
+                    <span className="text-muted-foreground text-xs">All roles selected</span>
+                )}
+            </div>
+
+            {selectedCount === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                    Choose one or more roles to list their access-list rules.
+                </p>
+            ) : (
+                <>
+                    <div className="overflow-x-auto rounded-md border">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b text-left">
+                                    <th className="px-2 py-2 font-medium">Rule</th>
+                                    <th className="px-2 py-2 font-medium">Roles</th>
+                                    <th className="w-48 px-2 py-2 font-medium">Group</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {sharedRules.length === 0 && (
+                                    <tr>
+                                        <td
+                                            colSpan={3}
+                                            className="text-muted-foreground px-2 py-6 text-center"
+                                        >
+                                            Selected roles have no IPv4 session rules.
+                                        </td>
+                                    </tr>
+                                )}
+                                {sharedRules.map((rule) => {
+                                    const assignedGroupId =
+                                        groupIdByRuleKey.get(rule.key) ?? UNASSIGNED_GROUP_VALUE;
+
+                                    return (
+                                        <tr key={rule.key} className="border-b align-top">
+                                            <td className="px-2 py-2 font-mono text-xs">
+                                                {rule.display}
+                                            </td>
+                                            <td className="px-2 py-2">
+                                                <div className="flex flex-wrap gap-1">
+                                                    {rule.roleNames.map((roleName) => (
+                                                        <Badge
+                                                            key={roleName}
+                                                            variant="secondary"
+                                                        >
+                                                            {roleName}
+                                                        </Badge>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                            <td className="px-2 py-2">
+                                                <Select
+                                                    value={assignedGroupId}
+                                                    onValueChange={(value) =>
+                                                        assignRuleToGroup(
+                                                            rule.key,
+                                                            value === UNASSIGNED_GROUP_VALUE
+                                                                ? null
+                                                                : value,
+                                                        )
+                                                    }
+                                                >
+                                                    <SelectTrigger className="h-8">
+                                                        <SelectValue placeholder="Unassigned" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value={UNASSIGNED_GROUP_VALUE}>
+                                                            Unassigned
+                                                        </SelectItem>
+                                                        {prunedGroups.map((group) => (
+                                                            <SelectItem
+                                                                key={group.id}
+                                                                value={group.id}
+                                                            >
+                                                                {group.name || 'Untitled group'}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                        <Label className="text-sm font-medium">Rule groups</Label>
+                        <Button type="button" variant="outline" size="sm" onClick={addGroup}>
+                            <Plus className="size-4" />
+                            Add group
+                        </Button>
+                    </div>
+
+                    {prunedGroups.length === 0 ? (
+                        <p className="text-muted-foreground text-sm">
+                            No groups yet. Add a group, then assign rules from the table above.
+                        </p>
+                    ) : (
+                        <div className="flex flex-col gap-3">
+                            {prunedGroups.map((group, groupIndex) => (
+                                <div
+                                    key={group.id}
+                                    className="bg-muted/30 rounded-md border p-3"
+                                >
+                                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                                        <Input
+                                            value={group.name}
+                                            onChange={(event) =>
+                                                renameGroup(group.id, event.target.value)
+                                            }
+                                            className="h-8 max-w-xs"
+                                            aria-label="Group name"
+                                        />
+                                        <div className="flex items-center gap-1">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={groupIndex === 0}
+                                                onClick={() => moveGroup(group.id, -1)}
+                                                aria-label="Move group up"
+                                            >
+                                                <ArrowUp className="size-4" />
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={groupIndex === prunedGroups.length - 1}
+                                                onClick={() => moveGroup(group.id, 1)}
+                                                aria-label="Move group down"
+                                            >
+                                                <ArrowDown className="size-4" />
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => deleteGroup(group.id)}
+                                                aria-label="Delete group"
+                                            >
+                                                <Trash2 className="size-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    {group.ruleKeys.length === 0 ? (
+                                        <p className="text-muted-foreground text-xs">
+                                            No rules assigned.
+                                        </p>
+                                    ) : (
+                                        <ul className="flex flex-col gap-1">
+                                            {group.ruleKeys.map((ruleKey, ruleIndex) => (
+                                                <li
+                                                    key={ruleKey}
+                                                    className="bg-background flex items-start justify-between gap-2 rounded border px-2 py-1.5"
+                                                >
+                                                    <span className="font-mono text-xs">
+                                                        {ruleKey}
+                                                    </span>
+                                                    <div className="flex shrink-0 items-center gap-0.5">
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 w-7 p-0"
+                                                            disabled={ruleIndex === 0}
+                                                            onClick={() =>
+                                                                moveRuleInGroup(
+                                                                    group.id,
+                                                                    ruleKey,
+                                                                    -1,
+                                                                )
+                                                            }
+                                                            aria-label="Move rule up"
+                                                        >
+                                                            <ArrowUp className="size-3" />
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 w-7 p-0"
+                                                            disabled={
+                                                                ruleIndex ===
+                                                                group.ruleKeys.length - 1
+                                                            }
+                                                            onClick={() =>
+                                                                moveRuleInGroup(
+                                                                    group.id,
+                                                                    ruleKey,
+                                                                    1,
+                                                                )
+                                                            }
+                                                            aria-label="Move rule down"
+                                                        >
+                                                            <ArrowDown className="size-3" />
+                                                        </Button>
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </>
+            )}
         </div>
     );
 }
@@ -302,6 +721,8 @@ export default function UserRolesCard({ userRoles }: UserRolesCardProps) {
                         })}
                     </tbody>
                 </table>
+
+                <CentralRoleMappingSection userRoles={userRoles} />
             </CardContent>
         </Card>
     );
