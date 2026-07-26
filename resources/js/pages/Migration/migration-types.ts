@@ -36,6 +36,60 @@ export type WlanProfile = {
     warnings: string[];
 };
 
+export type NetDestinationEntry = {
+    type: 'host' | 'network' | 'name';
+    value?: string;
+    subnet?: string;
+};
+
+export type NetDestination = {
+    name: string;
+    invert: boolean;
+    entries: NetDestinationEntry[];
+};
+
+export type NetService = {
+    name: string;
+    protocol: string | null;
+    values: string[];
+    alg: string | null;
+};
+
+export type AccessListEndpoint = {
+    type: 'user' | 'any' | 'host' | 'alias' | 'network';
+    value?: string;
+    subnet?: string;
+    resolved?: NetDestination | null;
+};
+
+export type AccessListService = {
+    type: 'any' | 'tcp' | 'udp' | 'svc' | 'app' | 'other';
+    ports?: string[];
+    name?: string;
+    raw?: string;
+    resolved?: NetService | null;
+};
+
+export type AccessListRule = {
+    source: AccessListEndpoint;
+    destination: AccessListEndpoint;
+    service: AccessListService;
+    action: string;
+    other: string;
+};
+
+export type AccessList = {
+    name: string;
+    rules: AccessListRule[];
+    warnings: string[];
+};
+
+export type UserRole = {
+    name: string;
+    access_lists: AccessList[];
+    warnings: string[];
+};
+
 export type ParsedController = {
     controller_name: string;
     devices: MigrationDevice[];
@@ -43,6 +97,7 @@ export type ParsedController = {
     auth_servers: AuthServer[];
     server_groups: ServerGroup[];
     wlan_profiles: WlanProfile[];
+    user_roles: UserRole[];
 };
 
 export type DeployResult = {

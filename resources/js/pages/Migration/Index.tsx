@@ -25,6 +25,7 @@ import ControllerMigrationSection from '@/pages/Migration/ControllerMigrationSec
 import CreateDeploymentFromDevicesDialog, {
     type DeviceGroupOption,
 } from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
+import UserRolesCard from '@/pages/Migration/UserRolesCard';
 import {
     buildDeployProfilePayload,
     buildInitialDeploySteps,
@@ -179,6 +180,11 @@ export default function Index() {
 
     const allServerGroups = useMemo(
         () => parsed_controllers.flatMap((controller) => controller.server_groups ?? []),
+        [parsed_controllers],
+    );
+
+    const allUserRoles = useMemo(
+        () => parsed_controllers.flatMap((controller) => controller.user_roles ?? []),
         [parsed_controllers],
     );
 
@@ -635,6 +641,8 @@ export default function Index() {
                                 </table>
                             </CardContent>
                         </Card>
+
+                        <UserRolesCard userRoles={allUserRoles} />
 
                         <AuthServersCard
                             authServers={allAuthServers}

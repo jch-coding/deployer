@@ -49,7 +49,10 @@ function migrationCreateDeploymentPayload(array $overrides = []): array
                     ['name' => 'AP-Lobby-01', 'serial' => 'CN1234567890', 'mac' => 'aa:bb:cc:dd:ee:01'],
                 ],
                 'lldp_neighbors' => [],
+                'auth_servers' => [],
+                'server_groups' => [],
                 'wlan_profiles' => [],
+                'user_roles' => [],
             ],
         ],
     ], $overrides);

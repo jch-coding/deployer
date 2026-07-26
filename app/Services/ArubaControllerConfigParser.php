@@ -51,6 +51,10 @@ class ArubaControllerConfigParser
                     $parsedControllers[$pairedIndex]['server_groups'],
                     $this->parseServerGroups($block['content'], $partnerWlanProfiles),
                 );
+                $parsedControllers[$pairedIndex]['user_roles'] = $this->mergeUserRoles(
+                    $parsedControllers[$pairedIndex]['user_roles'],
+                    $this->parseUserRoles($block['content']),
+                );
 
                 continue;
             }
@@ -156,6 +160,15 @@ class ArubaControllerConfigParser
      *         vlan_name: string|null,
      *         body: array<string, mixed>,
      *         warnings: array<int, string>
+     *     }>,
+     *     user_roles: array<int, array{
+     *         name: string,
+     *         access_lists: array<int, array{
+     *             name: string,
+     *             rules: array<int, array<string, mixed>>,
+     *             warnings: array<int, string>
+     *         }>,
+     *         warnings: array<int, string>
      *     }>
      * }
      */
@@ -170,6 +183,7 @@ class ArubaControllerConfigParser
             'auth_servers' => $this->deduplicateAuthServers($this->parseAuthServers($content)),
             'server_groups' => $this->deduplicateServerGroups($this->parseServerGroups($content, $wlanProfiles)),
             'wlan_profiles' => $wlanProfiles,
+            'user_roles' => $this->deduplicateUserRoles($this->parseUserRoles($content)),
         ];
     }
 
@@ -351,6 +365,107 @@ class ArubaControllerConfigParser
     private function mergeServerGroups(array $primaryGroups, array $partnerGroups): array
     {
         return $this->deduplicateServerGroups(array_merge($primaryGroups, $partnerGroups));
+    }
+
+    /**
+     * @param  array<int, array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }>  $primaryRoles
+     * @param  array<int, array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }>  $partnerRoles
+     * @return array<int, array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function mergeUserRoles(array $primaryRoles, array $partnerRoles): array
+    {
+        return $this->deduplicateUserRoles(array_merge($primaryRoles, $partnerRoles));
+    }
+
+    /**
+     * @param  array<int, array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }>  $roles
+     * @return array<int, array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function deduplicateUserRoles(array $roles): array
+    {
+        $byName = [];
+
+        foreach ($roles as $role) {
+            $name = $role['name'];
+
+            if (! isset($byName[$name])) {
+                $byName[$name] = $role;
+
+                continue;
+            }
+
+            $byName[$name] = $this->preferUserRole($byName[$name], $role);
+        }
+
+        $deduplicated = array_values($byName);
+        usort(
+            $deduplicated,
+            fn (array $a, array $b): int => strcmp($a['name'], $b['name']),
+        );
+
+        return $deduplicated;
+    }
+
+    /**
+     * @param  array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }  $first
+     * @param  array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }  $second
+     * @return array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }
+     */
+    private function preferUserRole(array $first, array $second): array
+    {
+        $firstCount = count($first['access_lists']);
+        $secondCount = count($second['access_lists']);
+
+        if ($secondCount > $firstCount) {
+            return $second;
+        }
+
+        if ($firstCount > $secondCount) {
+            return $first;
+        }
+
+        $firstRules = array_sum(array_map(
+            fn (array $acl): int => count($acl['rules']),
+            $first['access_lists'],
+        ));
+        $secondRules = array_sum(array_map(
+            fn (array $acl): int => count($acl['rules']),
+            $second['access_lists'],
+        ));
+
+        return $secondRules > $firstRules ? $second : $first;
     }
 
     /**
@@ -1681,6 +1796,613 @@ class ArubaControllerConfigParser
             fn (string $rate): string => 'RATE_'.$rate.'MB',
             $rates,
         );
+    }
+
+    /**
+     * @return array<int, array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }>
+     */
+    private function parseUserRoles(string $content): array
+    {
+        $section = $this->extractSection($content, '/#show running-config/i', null);
+
+        if ($section === null) {
+            return [];
+        }
+
+        $services = $this->parseNetServices($section);
+        $aliases = $this->parseNetDestinations($section);
+        $accessLists = $this->parseSessionAccessLists($section);
+
+        $roles = [];
+        $currentName = null;
+        $currentAclNames = [];
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^user-role\s+(\S+)/', $trimmed, $match)) {
+                if ($currentName !== null) {
+                    $roles[] = $this->buildUserRole($currentName, $currentAclNames, $accessLists, $aliases, $services);
+                }
+
+                $currentName = $match[1];
+                $currentAclNames = [];
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentName !== null) {
+                $roles[] = $this->buildUserRole($currentName, $currentAclNames, $accessLists, $aliases, $services);
+                $currentName = null;
+                $currentAclNames = [];
+
+                continue;
+            }
+
+            if ($currentName === null) {
+                continue;
+            }
+
+            $inner = trim($trimmed);
+
+            if (preg_match('/^access-list\s+session\s+(\S+)/', $inner, $aclMatch)) {
+                $currentAclNames[] = $aclMatch[1];
+            }
+        }
+
+        if ($currentName !== null) {
+            $roles[] = $this->buildUserRole($currentName, $currentAclNames, $accessLists, $aliases, $services);
+        }
+
+        return $roles;
+    }
+
+    /**
+     * @param  array<int, string>  $aclNames
+     * @param  array<string, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>  $accessLists
+     * @param  array<string, array{name: string, invert: bool, entries: array<int, array<string, mixed>>}>  $aliases
+     * @param  array<string, array{name: string, protocol: string|null, values: array<int, string>, alg: string|null}>  $services
+     * @return array{
+     *     name: string,
+     *     access_lists: array<int, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>,
+     *     warnings: array<int, string>
+     * }
+     */
+    private function buildUserRole(
+        string $name,
+        array $aclNames,
+        array $accessLists,
+        array $aliases,
+        array $services,
+    ): array {
+        $includedNames = array_slice($aclNames, 2);
+        $resolvedAcls = [];
+        $warnings = [];
+
+        foreach ($includedNames as $aclName) {
+            if (! isset($accessLists[$aclName])) {
+                $warnings[] = "Access-list \"{$aclName}\" not found";
+                $resolvedAcls[] = [
+                    'name' => $aclName,
+                    'rules' => [],
+                    'warnings' => ["Access-list \"{$aclName}\" not found"],
+                ];
+
+                continue;
+            }
+
+            $resolvedAcls[] = $this->resolveAccessListReferences(
+                $accessLists[$aclName],
+                $aliases,
+                $services,
+            );
+        }
+
+        return [
+            'name' => $name,
+            'access_lists' => $resolvedAcls,
+            'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * @param  array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}  $accessList
+     * @param  array<string, array{name: string, invert: bool, entries: array<int, array<string, mixed>>}>  $aliases
+     * @param  array<string, array{name: string, protocol: string|null, values: array<int, string>, alg: string|null}>  $services
+     * @return array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}
+     */
+    private function resolveAccessListReferences(array $accessList, array $aliases, array $services): array
+    {
+        $warnings = $accessList['warnings'];
+        $rules = [];
+
+        foreach ($accessList['rules'] as $rule) {
+            $source = $rule['source'];
+            $destination = $rule['destination'];
+            $service = $rule['service'];
+
+            if (($source['type'] ?? null) === 'alias') {
+                $aliasName = $source['value'] ?? '';
+                if (isset($aliases[$aliasName])) {
+                    $source['resolved'] = $aliases[$aliasName];
+                } else {
+                    $source['resolved'] = null;
+                    $warnings[] = "Unresolved alias \"{$aliasName}\"";
+                }
+            }
+
+            if (($destination['type'] ?? null) === 'alias') {
+                $aliasName = $destination['value'] ?? '';
+                if (isset($aliases[$aliasName])) {
+                    $destination['resolved'] = $aliases[$aliasName];
+                } else {
+                    $destination['resolved'] = null;
+                    $warnings[] = "Unresolved alias \"{$aliasName}\"";
+                }
+            }
+
+            if (($service['type'] ?? null) === 'svc') {
+                $svcName = $service['name'] ?? '';
+                if (isset($services[$svcName])) {
+                    $service['resolved'] = $services[$svcName];
+                } else {
+                    $service['resolved'] = null;
+                    $warnings[] = "Unresolved service \"{$svcName}\"";
+                }
+            }
+
+            $rules[] = [
+                'source' => $source,
+                'destination' => $destination,
+                'service' => $service,
+                'action' => $rule['action'],
+                'other' => $rule['other'],
+            ];
+        }
+
+        return [
+            'name' => $accessList['name'],
+            'rules' => $rules,
+            'warnings' => array_values(array_unique($warnings)),
+        ];
+    }
+
+    /**
+     * @return array<string, array{name: string, protocol: string|null, values: array<int, string>, alg: string|null}>
+     */
+    private function parseNetServices(string $section): array
+    {
+        $services = [];
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = trim($line);
+
+            if (! preg_match('/^netservice\s+(\S+)\s+(.*)$/', $trimmed, $match)) {
+                continue;
+            }
+
+            $name = $match[1];
+            $rest = trim($match[2]);
+            $alg = null;
+
+            if (preg_match('/\s+ALG\s+(\S+)\s*$/i', $rest, $algMatch)) {
+                $alg = $algMatch[1];
+                $rest = trim(substr($rest, 0, -strlen($algMatch[0])));
+            }
+
+            $protocol = null;
+            $values = [];
+
+            if (preg_match('/^(tcp|udp)\s+(.*)$/i', $rest, $protoMatch)) {
+                $protocol = strtolower($protoMatch[1]);
+                $rest = trim($protoMatch[2]);
+            }
+
+            if (preg_match('/^list\s+"([^"]*)"/i', $rest, $listMatch)) {
+                $values = preg_split('/\s+/', trim($listMatch[1]), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            } elseif ($rest !== '') {
+                $values = preg_split('/\s+/', $rest, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            }
+
+            $services[$name] = [
+                'name' => $name,
+                'protocol' => $protocol,
+                'values' => array_values($values),
+                'alg' => $alg,
+            ];
+        }
+
+        return $services;
+    }
+
+    /**
+     * @return array<string, array{name: string, invert: bool, entries: array<int, array<string, mixed>>}>
+     */
+    private function parseNetDestinations(string $section): array
+    {
+        $destinations = [];
+        $currentName = null;
+        $currentInvert = false;
+        $currentEntries = [];
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^netdestination\s+(\S+)/', $trimmed, $match)) {
+                if ($currentName !== null) {
+                    $destinations[$currentName] = [
+                        'name' => $currentName,
+                        'invert' => $currentInvert,
+                        'entries' => $currentEntries,
+                    ];
+                }
+
+                $currentName = $match[1];
+                $currentInvert = false;
+                $currentEntries = [];
+
+                continue;
+            }
+
+            // Ignore IPv6 destinations; flush any open IPv4 block first.
+            if (preg_match('/^netdestination6\b/', $trimmed)) {
+                if ($currentName !== null) {
+                    $destinations[$currentName] = [
+                        'name' => $currentName,
+                        'invert' => $currentInvert,
+                        'entries' => $currentEntries,
+                    ];
+                    $currentName = null;
+                    $currentInvert = false;
+                    $currentEntries = [];
+                }
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentName !== null) {
+                $destinations[$currentName] = [
+                    'name' => $currentName,
+                    'invert' => $currentInvert,
+                    'entries' => $currentEntries,
+                ];
+                $currentName = null;
+                $currentInvert = false;
+                $currentEntries = [];
+
+                continue;
+            }
+
+            if ($currentName === null) {
+                continue;
+            }
+
+            $inner = trim($trimmed);
+
+            if ($inner === '' || str_starts_with($inner, 'ipv6')) {
+                continue;
+            }
+
+            if ($inner === 'invert') {
+                $currentInvert = true;
+
+                continue;
+            }
+
+            if (preg_match('/^host(?:\s+(\S+))?$/', $inner, $hostMatch)) {
+                $entry = ['type' => 'host'];
+                if (isset($hostMatch[1])) {
+                    $entry['value'] = $hostMatch[1];
+                }
+                $currentEntries[] = $entry;
+
+                continue;
+            }
+
+            if (preg_match('/^network\s+(\S+)\s+(\S+)/', $inner, $networkMatch)) {
+                $currentEntries[] = [
+                    'type' => 'network',
+                    'value' => $networkMatch[1],
+                    'subnet' => $networkMatch[2],
+                ];
+
+                continue;
+            }
+
+            if (preg_match('/^name\s+(\S+)/', $inner, $nameMatch)) {
+                $currentEntries[] = [
+                    'type' => 'name',
+                    'value' => $nameMatch[1],
+                ];
+            }
+        }
+
+        if ($currentName !== null) {
+            $destinations[$currentName] = [
+                'name' => $currentName,
+                'invert' => $currentInvert,
+                'entries' => $currentEntries,
+            ];
+        }
+
+        return $destinations;
+    }
+
+    /**
+     * @return array<string, array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}>
+     */
+    private function parseSessionAccessLists(string $section): array
+    {
+        $lists = [];
+        $currentName = null;
+        $currentLines = [];
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^ip access-list session\s+(\S+)/', $trimmed, $match)) {
+                if ($currentName !== null) {
+                    $lists[$currentName] = $this->parseSessionAccessListLines($currentName, $currentLines);
+                }
+
+                $currentName = $match[1];
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentName !== null) {
+                $lists[$currentName] = $this->parseSessionAccessListLines($currentName, $currentLines);
+                $currentName = null;
+                $currentLines = [];
+
+                continue;
+            }
+
+            if ($currentName !== null) {
+                $currentLines[] = $trimmed;
+            }
+        }
+
+        if ($currentName !== null) {
+            $lists[$currentName] = $this->parseSessionAccessListLines($currentName, $currentLines);
+        }
+
+        return $lists;
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     * @return array{name: string, rules: array<int, array<string, mixed>>, warnings: array<int, string>}
+     */
+    private function parseSessionAccessListLines(string $name, array $lines): array
+    {
+        $rules = [];
+        $warnings = [];
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            if ($trimmed === '') {
+                continue;
+            }
+
+            if (str_starts_with($trimmed, 'ipv6')) {
+                continue;
+            }
+
+            $rule = $this->parseAccessListRule($trimmed);
+
+            if ($rule === null) {
+                $warnings[] = "Unparsed rule: {$trimmed}";
+
+                continue;
+            }
+
+            $rules[] = $rule;
+        }
+
+        return [
+            'name' => $name,
+            'rules' => $rules,
+            'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     source: array<string, mixed>,
+     *     destination: array<string, mixed>,
+     *     service: array<string, mixed>,
+     *     action: string,
+     *     other: string
+     * }|null
+     */
+    private function parseAccessListRule(string $line): ?array
+    {
+        $tokens = preg_split('/\s+/', trim($line), -1, PREG_SPLIT_NO_EMPTY);
+
+        if ($tokens === false || $tokens === []) {
+            return null;
+        }
+
+        $index = 0;
+        $source = $this->consumeEndpoint($tokens, $index);
+
+        if ($source === null) {
+            return null;
+        }
+
+        $destination = $this->consumeEndpoint($tokens, $index);
+
+        if ($destination === null) {
+            return null;
+        }
+
+        $service = $this->consumeService($tokens, $index);
+
+        if ($service === null) {
+            return null;
+        }
+
+        if (! isset($tokens[$index])) {
+            return null;
+        }
+
+        $action = $tokens[$index];
+        $index++;
+        $otherTokens = array_slice($tokens, $index);
+
+        return [
+            'source' => $source,
+            'destination' => $destination,
+            'service' => $service,
+            'action' => $action,
+            'other' => implode(' ', $otherTokens),
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $tokens
+     * @return array<string, mixed>|null
+     */
+    private function consumeEndpoint(array $tokens, int &$index): ?array
+    {
+        if (! isset($tokens[$index])) {
+            return null;
+        }
+
+        $token = $tokens[$index];
+
+        if ($token === 'user' || $token === 'any') {
+            $index++;
+
+            return ['type' => $token];
+        }
+
+        if ($token === 'host') {
+            $index++;
+
+            if (! isset($tokens[$index])) {
+                return null;
+            }
+
+            $value = $tokens[$index];
+            $index++;
+
+            return [
+                'type' => 'host',
+                'value' => $value,
+            ];
+        }
+
+        if ($token === 'alias') {
+            $index++;
+
+            if (! isset($tokens[$index])) {
+                return null;
+            }
+
+            $value = $tokens[$index];
+            $index++;
+
+            return [
+                'type' => 'alias',
+                'value' => $value,
+                'resolved' => null,
+            ];
+        }
+
+        if ($token === 'network') {
+            $index++;
+
+            if (! isset($tokens[$index], $tokens[$index + 1])) {
+                return null;
+            }
+
+            $ip = $tokens[$index];
+            $mask = $tokens[$index + 1];
+            $index += 2;
+
+            return [
+                'type' => 'network',
+                'value' => $ip,
+                'subnet' => $mask,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, string>  $tokens
+     * @return array<string, mixed>|null
+     */
+    private function consumeService(array $tokens, int &$index): ?array
+    {
+        if (! isset($tokens[$index])) {
+            return null;
+        }
+
+        $token = $tokens[$index];
+
+        if ($token === 'any') {
+            $index++;
+
+            return ['type' => 'any'];
+        }
+
+        if ($token === 'tcp' || $token === 'udp') {
+            $index++;
+            $ports = [];
+
+            while (isset($tokens[$index]) && preg_match('/^\d+$/', $tokens[$index])) {
+                $ports[] = $tokens[$index];
+                $index++;
+            }
+
+            return [
+                'type' => $token,
+                'ports' => $ports,
+            ];
+        }
+
+        if (str_starts_with($token, 'svc-')) {
+            $index++;
+
+            return [
+                'type' => 'svc',
+                'name' => $token,
+                'resolved' => null,
+            ];
+        }
+
+        if ($token === 'app') {
+            $index++;
+
+            if (! isset($tokens[$index])) {
+                return null;
+            }
+
+            $name = $tokens[$index];
+            $index++;
+
+            return [
+                'type' => 'app',
+                'name' => $name,
+            ];
+        }
+
+        $index++;
+
+        return [
+            'type' => 'other',
+            'raw' => $token,
+        ];
     }
 
     private function extractSection(string $content, string $startPattern, ?string $endPattern): ?string

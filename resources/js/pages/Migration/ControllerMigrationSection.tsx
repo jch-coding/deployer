@@ -24,6 +24,7 @@ import AuthServersCard from '@/pages/Migration/AuthServersCard';
 import CreateDeploymentFromDevicesDialog, {
     type DeviceGroupOption,
 } from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
+import UserRolesCard from '@/pages/Migration/UserRolesCard';
 import {
     buildDeployProfilePayload,
     buildInitialDeploySteps,
@@ -75,7 +76,15 @@ export default function ControllerMigrationSection({
     deviceFunctionOptions = [],
     parsedControllers,
 }: ControllerMigrationSectionProps) {
-    const { controller_name, devices, lldp_neighbors, auth_servers = [], server_groups = [], wlan_profiles } = controller;
+    const {
+        controller_name,
+        devices,
+        lldp_neighbors,
+        auth_servers = [],
+        server_groups = [],
+        user_roles = [],
+        wlan_profiles,
+    } = controller;
 
     const [scopeId, setScopeId] = useState('');
     const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
@@ -435,6 +444,8 @@ export default function ControllerMigrationSection({
                     </table>
                 </CardContent>
             </Card>
+
+            <UserRolesCard userRoles={user_roles} />
 
             <AuthServersCard
                 authServers={auth_servers}

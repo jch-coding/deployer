@@ -645,6 +645,205 @@ CONFIG;
         ->and($profile['body']['rf-band'])->toBe('24GHZ_5GHZ');
 });
 
+it('skips the first two session access-lists on a user-role and expands the rest', function () {
+    $content = <<<'CONFIG'
+(WLC-ROLE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ROLE-001      default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERROLE001  N/A   N/A   N/A
+
+(WLC-ROLE) #show running-config
+netservice svc-https tcp 443
+netservice svc-dhcp udp 67 68 ALG dhcp
+netservice svc-web tcp list "80 443"
+netdestination printers
+    invert
+    host 10.1.1.10
+    network 10.2.0.0 255.255.0.0
+    name printers.example.com
+!
+ip access-list session global-sacl
+!
+ip access-list session apprf-wcd_printer-sacl
+!
+ip access-list session allowall
+    any any any permit
+    ipv6 any any any permit
+!
+ip access-list session printer-acl
+    user alias printers svc-https dst-nat 8081
+    network 10.48.8.0 255.255.255.0 network 10.49.10.0 255.255.255.0 tcp 3389 permit
+    any any svc-dhcp permit
+    any any svc-missing permit
+    host 255.255.255.255 any any deny
+    any alias unknown-alias any deny
+    ipv6 any any svc-https permit
+!
+user-role WCD_Printer
+    access-list session global-sacl
+    access-list session apprf-wcd_printer-sacl
+    access-list session allowall
+    access-list session printer-acl
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $roles = $parser->parse($content)[0]['user_roles'];
+    $role = collect($roles)->firstWhere('name', 'WCD_Printer');
+
+    expect($role)->not->toBeNull()
+        ->and(array_column($role['access_lists'], 'name'))->toBe(['allowall', 'printer-acl']);
+
+    $allowall = $role['access_lists'][0];
+    expect($allowall['rules'])->toHaveCount(1)
+        ->and($allowall['rules'][0])->toMatchArray([
+            'source' => ['type' => 'any'],
+            'destination' => ['type' => 'any'],
+            'service' => ['type' => 'any'],
+            'action' => 'permit',
+            'other' => '',
+        ]);
+
+    $printerAcl = $role['access_lists'][1];
+    expect($printerAcl['rules'])->toHaveCount(6);
+
+    $httpsRule = $printerAcl['rules'][0];
+    expect($httpsRule['source'])->toMatchArray(['type' => 'user'])
+        ->and($httpsRule['destination']['type'])->toBe('alias')
+        ->and($httpsRule['destination']['value'])->toBe('printers')
+        ->and($httpsRule['destination']['resolved'])->toMatchArray([
+            'name' => 'printers',
+            'invert' => true,
+            'entries' => [
+                ['type' => 'host', 'value' => '10.1.1.10'],
+                ['type' => 'network', 'value' => '10.2.0.0', 'subnet' => '255.255.0.0'],
+                ['type' => 'name', 'value' => 'printers.example.com'],
+            ],
+        ])
+        ->and($httpsRule['service']['type'])->toBe('svc')
+        ->and($httpsRule['service']['name'])->toBe('svc-https')
+        ->and($httpsRule['service']['resolved'])->toMatchArray([
+            'name' => 'svc-https',
+            'protocol' => 'tcp',
+            'values' => ['443'],
+            'alg' => null,
+        ])
+        ->and($httpsRule['action'])->toBe('dst-nat')
+        ->and($httpsRule['other'])->toBe('8081');
+
+    $networkRule = $printerAcl['rules'][1];
+    expect($networkRule)->toMatchArray([
+        'source' => [
+            'type' => 'network',
+            'value' => '10.48.8.0',
+            'subnet' => '255.255.255.0',
+        ],
+        'destination' => [
+            'type' => 'network',
+            'value' => '10.49.10.0',
+            'subnet' => '255.255.255.0',
+        ],
+        'service' => [
+            'type' => 'tcp',
+            'ports' => ['3389'],
+        ],
+        'action' => 'permit',
+        'other' => '',
+    ]);
+
+    $dhcpRule = $printerAcl['rules'][2];
+    expect($dhcpRule['service']['resolved'])->toMatchArray([
+        'name' => 'svc-dhcp',
+        'protocol' => 'udp',
+        'values' => ['67', '68'],
+        'alg' => 'dhcp',
+    ]);
+
+    $missingSvc = $printerAcl['rules'][3];
+    expect($missingSvc['service']['resolved'])->toBeNull()
+        ->and($printerAcl['warnings'])->toContain('Unresolved service "svc-missing"');
+
+    $unresolvedAlias = $printerAcl['rules'][5];
+    expect($unresolvedAlias['destination']['resolved'])->toBeNull()
+        ->and($printerAcl['warnings'])->toContain('Unresolved alias "unknown-alias"');
+});
+
+it('resolves netservice list form and parses multi-port udp rules', function () {
+    $content = <<<'CONFIG'
+(WLC-SVC) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-SVC-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERSVC001   N/A   N/A   N/A
+
+(WLC-SVC) #show running-config
+netservice svc-web tcp list "80 443"
+ip access-list session web-acl
+    any any svc-web permit queue high
+    any any udp 3478 3497 permit
+!
+user-role guest
+    access-list session global-sacl
+    access-list session apprf-guest-sacl
+    access-list session web-acl
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $role = collect($parser->parse($content)[0]['user_roles'])->firstWhere('name', 'guest');
+    $acl = $role['access_lists'][0];
+
+    expect($acl['name'])->toBe('web-acl')
+        ->and($acl['rules'][0]['service']['resolved'])->toMatchArray([
+            'name' => 'svc-web',
+            'protocol' => 'tcp',
+            'values' => ['80', '443'],
+            'alg' => null,
+        ])
+        ->and($acl['rules'][0]['other'])->toBe('queue high')
+        ->and($acl['rules'][1]['service'])->toMatchArray([
+            'type' => 'udp',
+            'ports' => ['3478', '3497'],
+        ]);
+});
+
+it('parses daytona user roles and skips global/apprf access-lists', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $roles = $parser->parse($content)[0]['user_roles'];
+
+    $printer = collect($roles)->firstWhere('name', 'WCD_Printer');
+    $voice = collect($roles)->firstWhere('name', 'voice');
+    $denyall = collect($roles)->firstWhere('name', 'denyall');
+
+    expect($printer)->not->toBeNull()
+        ->and(array_column($printer['access_lists'], 'name'))->toBe(['allowall'])
+        ->and($printer['access_lists'][0]['rules'])->toHaveCount(1)
+        ->and($printer['access_lists'][0]['rules'][0]['action'])->toBe('permit');
+
+    expect($voice)->not->toBeNull()
+        ->and(array_column($voice['access_lists'], 'name'))->toContain('ra-guard')
+        ->and(array_column($voice['access_lists'], 'name'))->toContain('sip-acl')
+        ->and(array_column($voice['access_lists'], 'name'))->not->toContain('global-sacl')
+        ->and(array_column($voice['access_lists'], 'name'))->not->toContain('apprf-voice-sacl');
+
+    expect($denyall)->not->toBeNull()
+        ->and($denyall['access_lists'])->toBe([]);
+
+    $wificallingAcl = collect($voice['access_lists'])->firstWhere('name', 'wificalling-acl');
+    expect($wificallingAcl)->not->toBeNull();
+
+    // wificalling-acl itself is simple; check a role ACL that resolves the alias.
+    $guest = collect($roles)->firstWhere('name', 'guest');
+    $httpsAcl = collect($guest['access_lists'])->firstWhere('name', 'https-acl');
+    expect($httpsAcl)->not->toBeNull()
+        ->and($httpsAcl['rules'][0]['service']['type'])->toBe('svc')
+        ->and($httpsAcl['rules'][0]['service']['resolved']['name'] ?? null)->toBe('svc-https');
+});
+
 function pairedControllerConfig(string $firstName, string $secondName): string
 {
     return <<<CONFIG
