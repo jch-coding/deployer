@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Helper\CentralAPIHelper;
 use App\Services\CentralScopeCacheService;
 use App\Services\DeviceCentralFilterBuilder;
+use App\Services\SwitchPortProfileInterfaceComparer;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -165,6 +167,30 @@ class DeviceDetailsController extends Controller
         return redirect()->route('device-details.show', [
             'serials' => [trim($serial)],
         ]);
+    }
+
+    public function compareProfiles(Request $request, SwitchPortProfileInterfaceComparer $comparer): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'message' => 'Please set current client to compare switch profiles.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serial' => ['required', 'string', 'max:16'],
+        ]);
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $comparer->compare($helper, trim($validated['serial']));
+
+        if ($result['error'] !== null) {
+            return response()->json($result, 422);
+        }
+
+        return response()->json($result);
     }
 
     /**

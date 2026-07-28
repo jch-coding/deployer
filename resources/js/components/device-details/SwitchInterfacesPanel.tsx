@@ -1,9 +1,10 @@
 import type { ColumnDef } from '@tanstack/react-table';
-import { Download } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Download, GitCompareArrows, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { csrfHeaders } from '@/lib/csrf';
 import {
     downloadSwitchInterfacesCsv,
     formatAllowedVlanIds,
@@ -16,12 +17,62 @@ import {
     hasActiveSwitchInterfacesTableFilters,
     type SwitchInterfacesTableFilters,
 } from '@/lib/switch-interfaces-table-filters';
+import { compareProfiles as compareProfilesRoute } from '@/routes/device-details';
 
 export type SwitchDetailsPayload = {
     serial: string;
     device_name: string;
     interfaces: SwitchInterfaceRow[];
     central_error: string | null;
+};
+
+type ProfileCompareStatus =
+    | 'match'
+    | 'mismatch'
+    | 'missing_profile'
+    | 'missing_interface'
+    | 'no_profile';
+
+type ProfileCompareDifference = {
+    field: string;
+    expected: unknown;
+    actual: unknown;
+};
+
+type ProfileCompareInterface = {
+    name: string;
+    sw_profile: string | null;
+    status: ProfileCompareStatus;
+    differences: ProfileCompareDifference[];
+};
+
+type ProfileCompareSummary = {
+    profiles: number;
+    matches: number;
+    mismatches: number;
+    missing_profiles: number;
+    missing_interfaces: number;
+    no_profile: number;
+};
+
+type ProfileCompareResult = {
+    serial: string;
+    profiles: Array<{
+        name: string;
+        scope_level: string | null;
+        scope_id: string | null;
+        found: boolean;
+        interface_names: string[];
+    }>;
+    interfaces: ProfileCompareInterface[];
+    summary: ProfileCompareSummary;
+    error: string | null;
+    message?: string;
+};
+
+type SwitchInterfaceRowWithCompare = SwitchInterfaceRow & {
+    profileCompareStatus?: ProfileCompareStatus | null;
+    profileCompareSwProfile?: string | null;
 };
 
 function statusBadgeClass(status: string): string {
@@ -35,6 +86,47 @@ function statusBadgeClass(status: string): string {
         default:
             return '';
     }
+}
+
+function profileCompareBadgeClass(status: ProfileCompareStatus): string {
+    switch (status) {
+        case 'match':
+            return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+        case 'mismatch':
+            return 'bg-amber-100 text-amber-900 border-amber-200';
+        case 'missing_profile':
+        case 'missing_interface':
+            return 'bg-red-100 text-red-800 border-red-200';
+        case 'no_profile':
+        default:
+            return 'bg-muted text-muted-foreground border-border';
+    }
+}
+
+function profileCompareLabel(status: ProfileCompareStatus): string {
+    switch (status) {
+        case 'match':
+            return 'Match';
+        case 'mismatch':
+            return 'Mismatch';
+        case 'missing_profile':
+            return 'Missing profile';
+        case 'missing_interface':
+            return 'Missing interface';
+        case 'no_profile':
+            return 'No profile';
+    }
+}
+
+function formatDifferenceValue(value: unknown): string {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+    if (Array.isArray(value)) {
+        return value.length === 0 ? '[]' : value.join(', ');
+    }
+
+    return String(value);
 }
 
 const selectClassName =
@@ -72,6 +164,18 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
     const [tableFilters, setTableFilters] = useState<SwitchInterfacesTableFilters>(
         emptySwitchInterfacesTableFilters,
     );
+    const [compareLoading, setCompareLoading] = useState(false);
+    const [compareError, setCompareError] = useState<string | null>(null);
+    const [compareResult, setCompareResult] = useState<ProfileCompareResult | null>(null);
+
+    const compareByName = useMemo(() => {
+        const map = new Map<string, ProfileCompareInterface>();
+        for (const item of compareResult?.interfaces ?? []) {
+            map.set(item.name, item);
+        }
+
+        return map;
+    }, [compareResult]);
 
     const filterOptions = useMemo(
         () => buildSwitchInterfaceFilterOptions(interfaces),
@@ -93,6 +197,11 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
     }, [tableFilters, pageSize, interfaces]);
 
     useEffect(() => {
+        setCompareResult(null);
+        setCompareError(null);
+    }, [serial, interfaces]);
+
+    useEffect(() => {
         setTableFilters((prev) => {
             let changed = false;
             const next = { ...prev };
@@ -109,9 +218,80 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
         });
     }, [filterOptions]);
 
-    const columns = useMemo<ColumnDef<SwitchInterfaceRow>[]>(
+    const runCompare = useCallback(async () => {
+        setCompareLoading(true);
+        setCompareError(null);
+
+        try {
+            const response = await fetch(compareProfilesRoute.url(), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...csrfHeaders(),
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ serial }),
+            });
+
+            const body = (await response.json().catch(() => null)) as ProfileCompareResult | null;
+
+            if (!response.ok) {
+                throw new Error(
+                    body?.error ??
+                        body?.message ??
+                        `Compare failed (HTTP ${response.status}).`,
+                );
+            }
+
+            if (body === null) {
+                throw new Error('Compare failed: empty response.');
+            }
+
+            if (body.error) {
+                throw new Error(body.error);
+            }
+
+            setCompareResult(body);
+        } catch (error) {
+            setCompareResult(null);
+            setCompareError(error instanceof Error ? error.message : 'Compare failed.');
+        } finally {
+            setCompareLoading(false);
+        }
+    }, [serial]);
+
+    const columns = useMemo<ColumnDef<SwitchInterfaceRowWithCompare>[]>(
         () => [
             { accessorKey: 'name', header: 'Name' },
+            {
+                id: 'profileCompare',
+                header: 'Profile check',
+                cell: ({ row }) => {
+                    const status = row.original.profileCompareStatus;
+                    if (!status) {
+                        return <span className="text-muted-foreground">—</span>;
+                    }
+
+                    return (
+                        <div className="flex flex-col gap-1">
+                            <Badge
+                                variant="outline"
+                                className={profileCompareBadgeClass(status)}
+                                data-test="device-details-profile-compare-status"
+                            >
+                                {profileCompareLabel(status)}
+                            </Badge>
+                            {row.original.profileCompareSwProfile ? (
+                                <span className="text-xs text-muted-foreground">
+                                    {row.original.profileCompareSwProfile}
+                                </span>
+                            ) : null}
+                        </div>
+                    );
+                },
+            },
             {
                 accessorKey: 'status',
                 header: 'Status',
@@ -154,8 +334,25 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
     const start = safePageIndex * pageSize;
     const end = Math.min(start + pageSize, totalFiltered);
     const pagedInterfaces = useMemo(
-        () => filteredInterfaces.slice(start, end),
-        [filteredInterfaces, end, start],
+        () =>
+            filteredInterfaces.slice(start, end).map((row) => {
+                const compare = compareByName.get(row.name);
+
+                return {
+                    ...row,
+                    profileCompareStatus: compare?.status ?? null,
+                    profileCompareSwProfile: compare?.sw_profile ?? null,
+                } satisfies SwitchInterfaceRowWithCompare;
+            }),
+        [compareByName, filteredInterfaces, end, start],
+    );
+
+    const mismatchDetails = useMemo(
+        () =>
+            (compareResult?.interfaces ?? []).filter(
+                (item) => item.status === 'mismatch' && item.differences.length > 0,
+            ),
+        [compareResult],
     );
 
     return (
@@ -177,17 +374,34 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                         </p>
                     ) : null}
                 </div>
-                <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2"
-                    disabled={filteredInterfaces.length === 0}
-                    onClick={() => downloadSwitchInterfacesCsv(filteredInterfaces, serial)}
-                    data-test="device-details-export-csv"
-                >
-                    <Download className="size-4" aria-hidden />
-                    Export CSV
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        disabled={compareLoading || Boolean(central_error)}
+                        onClick={() => void runCompare()}
+                        data-test="device-details-compare-profiles"
+                    >
+                        {compareLoading ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                        ) : (
+                            <GitCompareArrows className="size-4" aria-hidden />
+                        )}
+                        Compare switch profile interfaces
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        disabled={filteredInterfaces.length === 0}
+                        onClick={() => downloadSwitchInterfacesCsv(filteredInterfaces, serial)}
+                        data-test="device-details-export-csv"
+                    >
+                        <Download className="size-4" aria-hidden />
+                        Export CSV
+                    </Button>
+                </div>
             </div>
 
             <h3 className="mb-3 text-lg font-medium" data-test="device-details-interfaces-heading">
@@ -203,6 +417,67 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                     {central_error}
                 </div>
             )}
+
+            {compareError && (
+                <div
+                    className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                    role="alert"
+                    data-test="device-details-compare-error"
+                >
+                    {compareError}
+                </div>
+            )}
+
+            {compareResult && !compareError ? (
+                <div
+                    className="mb-4 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm"
+                    data-test="device-details-compare-summary"
+                >
+                    <p className="font-medium">Profile comparison summary</p>
+                    <p className="mt-1 text-muted-foreground">
+                        Profiles: {compareResult.summary.profiles} · Matches:{' '}
+                        {compareResult.summary.matches} · Mismatches:{' '}
+                        {compareResult.summary.mismatches} · Missing profiles:{' '}
+                        {compareResult.summary.missing_profiles} · Missing interfaces:{' '}
+                        {compareResult.summary.missing_interfaces} · No profile:{' '}
+                        {compareResult.summary.no_profile}
+                    </p>
+                    {compareResult.profiles.length > 0 ? (
+                        <ul className="mt-2 list-inside list-disc text-muted-foreground">
+                            {compareResult.profiles.map((profile) => (
+                                <li key={profile.name}>
+                                    {profile.name}
+                                    {profile.found
+                                        ? ` (found at ${profile.scope_level})`
+                                        : ' (not found in scope chain)'}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : null}
+                    {mismatchDetails.length > 0 ? (
+                        <div className="mt-3 space-y-2" data-test="device-details-compare-mismatches">
+                            <p className="font-medium">Mismatch details</p>
+                            {mismatchDetails.map((item) => (
+                                <div key={item.name} className="rounded border border-border bg-background px-3 py-2">
+                                    <p className="font-medium">
+                                        {item.name}
+                                        {item.sw_profile ? ` · ${item.sw_profile}` : ''}
+                                    </p>
+                                    <ul className="mt-1 list-inside list-disc text-muted-foreground">
+                                        {item.differences.map((diff) => (
+                                            <li key={`${item.name}-${diff.field}`}>
+                                                {diff.field}: expected{' '}
+                                                {formatDifferenceValue(diff.expected)}, actual{' '}
+                                                {formatDifferenceValue(diff.actual)}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
 
             <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filterFields.map((field) => (
@@ -276,7 +551,7 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 </div>
             </div>
 
-            <DataTable<SwitchInterfaceRow, unknown>
+            <DataTable<SwitchInterfaceRowWithCompare, unknown>
                 data={pagedInterfaces}
                 columns={columns}
                 getRowId={(row) => row.name || `${row.neighbourSerial}-${row.status}`}

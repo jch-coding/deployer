@@ -1142,6 +1142,244 @@ class CentralAPIHelper
     }
 
     /**
+     * Fetch ethernet interfaces at a LOCAL scope without requiring a persisted Device model.
+     *
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
+    public function get_ethernet_interfaces_for_scope(string $scopeId, string $deviceFunction = 'ACCESS_SWITCH')
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->withQueryParameters([
+                'view-type' => 'LOCAL',
+                'object-type' => 'LOCAL',
+                'scope-id' => $scopeId,
+                'device-function' => $deviceFunction,
+            ])
+            ->get($this->client->base_url.$this->interfaces['interface_ethernet']);
+    }
+
+    /**
+     * Resolve device / device_group / site / site_collection scope IDs for a serial via Central hierarchy.
+     *
+     * @return array{
+     *     device: string|null,
+     *     device_group: string|null,
+     *     site: string|null,
+     *     site_collection: string|null,
+     *     error: string|null
+     * }
+     */
+    public function resolveHierarchyScopeIdsForDevice(string $serial): array
+    {
+        $empty = [
+            'device' => null,
+            'device_group' => null,
+            'site' => null,
+            'site_collection' => null,
+            'error' => null,
+        ];
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return array_merge($empty, ['error' => 'failed to get access token from central.']);
+        }
+
+        $hierarchyId = $serial;
+        $switchesResult = $this->get_all_switches();
+        if (! array_key_exists('error', $switchesResult)) {
+            foreach ($switchesResult as $switch) {
+                if (! is_array($switch)) {
+                    continue;
+                }
+                if ((string) ($switch['serialNumber'] ?? '') !== $serial) {
+                    continue;
+                }
+                $stackId = trim((string) ($switch['stackId'] ?? ''));
+                if ($stackId !== '') {
+                    $hierarchyId = $stackId;
+                }
+                break;
+            }
+        }
+
+        $hierarchy = $this->get_hierarchy(['scope_id' => $hierarchyId], 'device');
+        if (array_key_exists('error', $hierarchy)) {
+            return array_merge($empty, ['error' => (string) $hierarchy['error']]);
+        }
+
+        $scopes = $this->extractScopeIdsByTypeFromHierarchy($hierarchy);
+
+        if ($scopes['site'] !== null && $scopes['site_collection'] === null) {
+            $siteHierarchy = $this->get_hierarchy(['scope_id' => $scopes['site']], 'site');
+            if (! array_key_exists('error', $siteHierarchy)) {
+                $siteScopes = $this->extractScopeIdsByTypeFromHierarchy($siteHierarchy);
+                if ($siteScopes['site_collection'] !== null) {
+                    $scopes['site_collection'] = $siteScopes['site_collection'];
+                }
+            }
+        }
+
+        if ($scopes['device'] === null) {
+            return array_merge($scopes, ['error' => 'failed to get device scope-id from central.']);
+        }
+
+        return array_merge($scopes, ['error' => null]);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $hierarchy
+     * @return array{device: string|null, device_group: string|null, site: string|null, site_collection: string|null}
+     */
+    public function extractScopeIdsByTypeFromHierarchy(array $hierarchy): array
+    {
+        $scopes = [
+            'device' => null,
+            'device_group' => null,
+            'site' => null,
+            'site_collection' => null,
+        ];
+
+        foreach ($hierarchy as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            $type = (string) ($entry['scopeType'] ?? '');
+            if (! array_key_exists($type, $scopes)) {
+                continue;
+            }
+
+            $scopeId = trim((string) ($entry['scopeId'] ?? ''));
+            if ($scopeId === '') {
+                continue;
+            }
+
+            if ($scopes[$type] === null) {
+                $scopes[$type] = $scopeId;
+            }
+        }
+
+        return $scopes;
+    }
+
+    /**
+     * Fetch a LOCAL sw-port-profile by name at a scope. Empty list responses are treated as not found.
+     *
+     * @return array{profile: array<string, mixed>|null, empty: bool, error: string|null}
+     */
+    public function fetchLocalSwPortProfile(string $profileName, string $scopeId, string $deviceFunction = 'ACCESS_SWITCH'): array
+    {
+        $response = $this->get_sw_port_profile($profileName, [
+            'view-type' => 'LOCAL',
+            'scope-id' => $scopeId,
+            'device-function' => $deviceFunction,
+        ]);
+
+        if (is_array($response) && array_key_exists('error', $response)) {
+            return [
+                'profile' => null,
+                'empty' => false,
+                'error' => (string) $response['error'],
+            ];
+        }
+
+        if (! $response->successful()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return [
+                'profile' => null,
+                'empty' => false,
+                'error' => $message !== '' ? $message : 'Failed to fetch sw-port-profile from Central.',
+            ];
+        }
+
+        $json = $response->json();
+
+        return $this->normalizeSwPortProfileResponse($json, $profileName);
+    }
+
+    /**
+     * @return array{profile: array<string, mixed>|null, empty: bool, error: string|null}
+     */
+    public function normalizeSwPortProfileResponse(mixed $json, string $profileName): array
+    {
+        if ($json === null || $json === []) {
+            return ['profile' => null, 'empty' => true, 'error' => null];
+        }
+
+        if (is_array($json) && array_is_list($json)) {
+            if ($json === []) {
+                return ['profile' => null, 'empty' => true, 'error' => null];
+            }
+
+            $matched = $this->findSwPortProfileInList($json, $profileName);
+
+            return [
+                'profile' => $matched,
+                'empty' => $matched === null,
+                'error' => null,
+            ];
+        }
+
+        if (! is_array($json)) {
+            return ['profile' => null, 'empty' => true, 'error' => null];
+        }
+
+        if (array_key_exists('profile', $json)) {
+            $profiles = $json['profile'];
+            if (! is_array($profiles) || $profiles === []) {
+                return ['profile' => null, 'empty' => true, 'error' => null];
+            }
+
+            if (array_is_list($profiles)) {
+                $matched = $this->findSwPortProfileInList($profiles, $profileName);
+
+                return [
+                    'profile' => $matched,
+                    'empty' => $matched === null,
+                    'error' => null,
+                ];
+            }
+
+            if (is_array($profiles) && isset($profiles['profile-name'])) {
+                return ['profile' => $profiles, 'empty' => false, 'error' => null];
+            }
+
+            return ['profile' => null, 'empty' => true, 'error' => null];
+        }
+
+        if (isset($json['profile-name']) || isset($json['switchport'])) {
+            return ['profile' => $json, 'empty' => false, 'error' => null];
+        }
+
+        return ['profile' => null, 'empty' => true, 'error' => null];
+    }
+
+    /**
+     * @param  list<mixed>  $profiles
+     * @return array<string, mixed>|null
+     */
+    private function findSwPortProfileInList(array $profiles, string $profileName): ?array
+    {
+        foreach ($profiles as $profile) {
+            if (! is_array($profile)) {
+                continue;
+            }
+            $name = (string) ($profile['profile-name'] ?? '');
+            if ($name === $profileName || ($name === '' && count($profiles) === 1)) {
+                return $profile;
+            }
+        }
+
+        $first = $profiles[0] ?? null;
+
+        return is_array($first) ? $first : null;
+    }
+
+    /**
      * @param  array<string, mixed>  $queryParameters  Optional limit, offset, filter, search, sort
      * @return \Illuminate\Http\Client\Response|array{error: string}
      */

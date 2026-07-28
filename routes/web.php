@@ -104,6 +104,7 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(DeviceDetailsController::class)->group(function () {
         Route::get('/device-details', 'index')->name('device-details.index');
         Route::get('/device-details/show', 'show')->name('device-details.show');
+        Route::post('/device-details/compare-profiles', 'compareProfiles')->name('device-details.compare-profiles');
         Route::get('/device-details/{serial}', 'redirectShow')->name('device-details.redirect-show');
     });
 

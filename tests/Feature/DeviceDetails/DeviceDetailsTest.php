@@ -358,3 +358,160 @@ test('device details show redirects when no current client is set', function () 
     $this->get(route('device-details.show', ['serials' => ['SN12345']]))
         ->assertRedirect(route('clients.index'));
 });
+
+test('device details compare profiles redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.compare-profiles'), ['serial' => 'SN12345'])
+        ->assertStatus(422)
+        ->assertJson([
+            'message' => 'Please set current client to compare switch profiles.',
+        ]);
+});
+
+test('device details compare profiles requires serial', function () {
+    $this->postJson(route('device-details.compare-profiles'), [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['serial']);
+});
+
+test('device details compare profiles walks scope chain and reports match and mismatch', function () {
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+        parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $query);
+
+        if (str_contains($url, 'network-monitoring/v1/switches/') && str_contains($url, '/interfaces')) {
+            return Http::response([
+                'items' => [
+                    [
+                        'name' => '1/1/1',
+                        'vlanMode' => 'Trunk',
+                        'nativeVlan' => 1,
+                        'allowedVlanIds' => [10, 20],
+                    ],
+                    [
+                        'name' => '1/1/2',
+                        'vlanMode' => 'Access',
+                        'nativeVlan' => 99,
+                        'allowedVlanIds' => [99],
+                    ],
+                    [
+                        'name' => '1/1/3',
+                        'vlanMode' => 'Access',
+                        'nativeVlan' => 1,
+                        'allowedVlanIds' => [],
+                    ],
+                ],
+                'offset' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-monitoring/v1/switches')) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'SN12345',
+                    'stackId' => 'STACK-1',
+                ]],
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-config/v1/hierarchy')) {
+            $type = $query['type'] ?? '';
+            $id = $query['id'] ?? '';
+
+            if ($type === 'device') {
+                return Http::response([
+                    'items' => [[
+                        'hierarchy' => [
+                            ['scopeName' => 'Switch-A', 'scopeType' => 'device', 'childCount' => null, 'scopeId' => 'scope-device', 'hostName' => 'Switch-A'],
+                            ['scopeName' => 'Edge', 'scopeType' => 'device_group', 'childCount' => 2, 'scopeId' => 'scope-group', 'hostName' => ''],
+                            ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                        ],
+                    ]],
+                ], 200);
+            }
+
+            if ($type === 'site' && $id === 'scope-site') {
+                return Http::response([
+                    'items' => [[
+                        'hierarchy' => [
+                            ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                            ['scopeName' => 'Retail', 'scopeType' => 'site_collection', 'childCount' => 10, 'scopeId' => 'scope-collection', 'hostName' => ''],
+                        ],
+                    ]],
+                ], 200);
+            }
+
+            return Http::response(['items' => [['hierarchy' => []]]], 200);
+        }
+
+        if (str_contains($url, 'network-config/v1alpha1/ethernet-interfaces')) {
+            expect($query['scope-id'] ?? null)->toBe('scope-device');
+            expect($query['view-type'] ?? null)->toBe('LOCAL');
+            expect($query['device-function'] ?? null)->toBe('ACCESS_SWITCH');
+
+            return Http::response([
+                'interface' => [
+                    [
+                        'name' => '1/1/1',
+                        'sw-profile' => 'trunk-profile',
+                    ],
+                    [
+                        'name' => '1/1/2',
+                        'sw-profile' => 'trunk-profile',
+                    ],
+                    [
+                        'name' => '1/1/3',
+                    ],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-config/v1alpha1/sw-port-profiles/trunk-profile')) {
+            $scopeId = $query['scope-id'] ?? null;
+            expect($query['view-type'] ?? null)->toBe('LOCAL');
+            expect($query['device-function'] ?? null)->toBe('ACCESS_SWITCH');
+
+            if (in_array($scopeId, ['scope-device', 'scope-group'], true)) {
+                return Http::response([], 200);
+            }
+
+            if ($scopeId === 'scope-site') {
+                return Http::response([
+                    'profile-name' => 'trunk-profile',
+                    'switchport' => [
+                        'interface-mode' => 'TRUNK',
+                        'native-vlan' => 1,
+                        'trunk-vlan-ranges' => [10, 20],
+                    ],
+                ], 200);
+            }
+
+            return Http::response([], 200);
+        }
+
+        return Http::response(['detail' => 'unexpected '.$url], 404);
+    });
+
+    $response = $this->postJson(route('device-details.compare-profiles'), [
+        'serial' => 'SN12345',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('serial', 'SN12345')
+        ->assertJsonPath('error', null)
+        ->assertJsonPath('summary.profiles', 1)
+        ->assertJsonPath('summary.matches', 1)
+        ->assertJsonPath('summary.mismatches', 1)
+        ->assertJsonPath('summary.no_profile', 1)
+        ->assertJsonPath('profiles.0.name', 'trunk-profile')
+        ->assertJsonPath('profiles.0.found', true)
+        ->assertJsonPath('profiles.0.scope_level', 'site');
+
+    $interfaces = collect($response->json('interfaces'));
+
+    expect($interfaces->firstWhere('name', '1/1/1')['status'])->toBe('match')
+        ->and($interfaces->firstWhere('name', '1/1/2')['status'])->toBe('mismatch')
+        ->and($interfaces->firstWhere('name', '1/1/3')['status'])->toBe('no_profile');
+});
