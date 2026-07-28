@@ -986,6 +986,121 @@ test('get_hierarchy returns error when central response has no hierarchy items',
     expect($helper->get_hierarchy(['scope_id' => 'scope-site'], 'site'))->toBe(['error' => 'failed to get hierarchy from central.']);
 });
 
+test('get_hierarchy merges hierarchy entries from all response items including device_collection', function () {
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response([
+            'items' => [
+                [
+                    'id' => 'hierarchy0',
+                    'type' => 'network-config/hierarchy',
+                    'hierarchy' => [
+                        ['scopeName' => 'Switch-A', 'scopeType' => 'device', 'childCount' => null, 'scopeId' => 'scope-device', 'hostName' => 'Switch-A'],
+                        ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                        ['scopeName' => 'Retail', 'scopeType' => 'site_collection', 'childCount' => 10, 'scopeId' => 'scope-collection', 'hostName' => ''],
+                    ],
+                ],
+                [
+                    'id' => 'hierarchy1',
+                    'type' => 'network-config/hierarchy',
+                    'hierarchy' => [
+                        ['scopeName' => 'Edge Access', 'scopeType' => 'device_collection', 'childCount' => 3, 'scopeId' => 'scope-group', 'hostName' => ''],
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_hierarchy(['scope_id' => 'scope-device'], 'device');
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(4)
+        ->and($result[0]['scopeType'])->toBe('device')
+        ->and($result[1]['scopeType'])->toBe('site')
+        ->and($result[2]['scopeType'])->toBe('site_collection')
+        ->and($result[3]['scopeType'])->toBe('device_collection')
+        ->and($result[3]['scopeId'])->toBe('scope-group');
+});
+
+test('extractScopeIdsByTypeFromHierarchy maps device_collection to device_group', function () {
+    $helper = makeCentralApiHelperForSwitches();
+
+    $scopes = $helper->extractScopeIdsByTypeFromHierarchy([
+        ['scopeName' => 'Switch-A', 'scopeType' => 'device', 'scopeId' => 'scope-device', 'childCount' => null, 'hostName' => ''],
+        ['scopeName' => 'HQ', 'scopeType' => 'site', 'scopeId' => 'scope-site', 'childCount' => 1, 'hostName' => ''],
+        ['scopeName' => 'Edge Access', 'scopeType' => 'device_collection', 'scopeId' => 'scope-group', 'childCount' => 3, 'hostName' => ''],
+    ]);
+
+    expect($scopes)->toBe([
+        'device' => 'scope-device',
+        'device_group' => 'scope-group',
+        'site' => 'scope-site',
+        'site_collection' => null,
+    ]);
+});
+
+test('resolveHierarchyScopeIdsForDevice sets device_group from device_collection item', function () {
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/switches') && ! str_contains($url, '/interfaces')) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'SN12345',
+                    'stackId' => 'STACK-1',
+                ]],
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-config/v1/hierarchy')) {
+            parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $query);
+
+            if (($query['type'] ?? '') === 'device') {
+                return Http::response([
+                    'items' => [
+                        [
+                            'id' => 'hierarchy0',
+                            'type' => 'network-config/hierarchy',
+                            'hierarchy' => [
+                                ['scopeName' => 'Switch-A', 'scopeType' => 'device', 'childCount' => null, 'scopeId' => 'scope-device', 'hostName' => 'Switch-A'],
+                                ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                            ],
+                        ],
+                        [
+                            'id' => 'hierarchy1',
+                            'type' => 'network-config/hierarchy',
+                            'hierarchy' => [
+                                ['scopeName' => 'Edge Access', 'scopeType' => 'device_collection', 'childCount' => 3, 'scopeId' => 'scope-group', 'hostName' => ''],
+                            ],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            if (($query['type'] ?? '') === 'site') {
+                return Http::response(hierarchyResponseFixture([
+                    ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                    ['scopeName' => 'Retail', 'scopeType' => 'site_collection', 'childCount' => 10, 'scopeId' => 'scope-collection', 'hostName' => ''],
+                ]), 200);
+            }
+        }
+
+        return Http::response(['detail' => 'unexpected '.$url], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->resolveHierarchyScopeIdsForDevice('SN12345');
+
+    expect($result)->toBe([
+        'device' => 'scope-device',
+        'device_group' => 'scope-group',
+        'site' => 'scope-site',
+        'site_collection' => 'scope-collection',
+        'error' => null,
+    ]);
+});
+
 test('localDeviceInterfaceQueryParameters uses LOCAL scope and string device function', function () {
     $device = Device::factory()->create([
         'scope_id' => 'scope-abc',

@@ -247,11 +247,33 @@ class CentralAPIHelper
         }
 
         $items = $response->json('items');
-        if (! is_array($items) || ! isset($items[0]['hierarchy']) || ! is_array($items[0]['hierarchy']) || $items[0]['hierarchy'] === []) {
+        if (! is_array($items) || $items === []) {
             return ['error' => 'failed to get hierarchy from central.'];
         }
 
-        return $items[0]['hierarchy'];
+        $merged = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $hierarchy = $item['hierarchy'] ?? null;
+            if (! is_array($hierarchy) || $hierarchy === []) {
+                continue;
+            }
+
+            foreach ($hierarchy as $entry) {
+                if (is_array($entry)) {
+                    $merged[] = $entry;
+                }
+            }
+        }
+
+        if ($merged === []) {
+            return ['error' => 'failed to get hierarchy from central.'];
+        }
+
+        return $merged;
     }
 
     /**
@@ -1248,6 +1270,10 @@ class CentralAPIHelper
             }
 
             $type = (string) ($entry['scopeType'] ?? '');
+            if ($type === 'device_collection') {
+                $type = 'device_group';
+            }
+
             if (! array_key_exists($type, $scopes)) {
                 continue;
             }
