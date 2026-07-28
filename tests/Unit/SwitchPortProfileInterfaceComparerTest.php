@@ -72,14 +72,54 @@ test('diffExpectedActual returns empty when values match case-insensitively', fu
     expect($comparer->diffExpectedActual($expected, $actual))->toBe([]);
 });
 
-test('mapExpected reads switchport fields from profile', function () {
+test('diffExpectedActual for ACCESS ignores allowed vlan set differences', function () {
+    $comparer = new SwitchPortProfileInterfaceComparer;
+
+    $expected = [
+        'interface_mode' => 'ACCESS',
+        'native_vlan' => 10,
+        'trunk_vlan_ids' => [],
+    ];
+    $actual = [
+        'vlan_mode' => 'Access',
+        'native_vlan' => 10,
+        'allowed_vlan_ids' => [1, 2, 3],
+    ];
+
+    expect($comparer->diffExpectedActual($expected, $actual))->toBe([]);
+});
+
+test('diffExpectedActual for ACCESS reports access vlan mismatch against nativeVlan', function () {
+    $comparer = new SwitchPortProfileInterfaceComparer;
+
+    $expected = [
+        'interface_mode' => 'ACCESS',
+        'native_vlan' => 10,
+        'trunk_vlan_ids' => [],
+    ];
+    $actual = [
+        'vlan_mode' => 'Access',
+        'native_vlan' => 99,
+        'allowed_vlan_ids' => [99],
+    ];
+
+    $differences = $comparer->diffExpectedActual($expected, $actual);
+
+    expect($differences)->toHaveCount(1)
+        ->and($differences[0]['field'])->toBe('native_vlan')
+        ->and($differences[0]['expected'])->toBe(10)
+        ->and($differences[0]['actual'])->toBe(99);
+});
+
+test('mapExpected for ACCESS uses access-vlan and empty trunk list', function () {
     $comparer = new SwitchPortProfileInterfaceComparer;
 
     $mapped = $comparer->mapExpected([
         'profile-name' => 'access-ports',
         'switchport' => [
             'interface-mode' => 'ACCESS',
-            'native-vlan' => 10,
+            'access-vlan' => 10,
+            'native-vlan' => 99,
             'trunk-vlan-ranges' => [10, 20],
         ],
     ]);
@@ -87,6 +127,25 @@ test('mapExpected reads switchport fields from profile', function () {
     expect($mapped)->toBe([
         'interface_mode' => 'ACCESS',
         'native_vlan' => 10,
+        'trunk_vlan_ids' => [],
+    ]);
+});
+
+test('mapExpected for TRUNK reads native-vlan and trunk-vlan-ranges', function () {
+    $comparer = new SwitchPortProfileInterfaceComparer;
+
+    $mapped = $comparer->mapExpected([
+        'profile-name' => 'trunk-ports',
+        'switchport' => [
+            'interface-mode' => 'TRUNK',
+            'native-vlan' => 1,
+            'trunk-vlan-ranges' => [10, 20],
+        ],
+    ]);
+
+    expect($mapped)->toBe([
+        'interface_mode' => 'TRUNK',
+        'native_vlan' => 1,
         'trunk_vlan_ids' => [10, 20],
     ]);
 });

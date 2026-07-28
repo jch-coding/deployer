@@ -282,11 +282,22 @@ class SwitchPortProfileInterfaceComparer
         }
 
         $mode = $switchport['interface-mode'] ?? null;
+        $modeString = is_string($mode) || is_numeric($mode) ? (string) $mode : null;
+        $isAccess = $modeString !== null && strcasecmp($modeString, 'ACCESS') === 0;
+
+        if ($isAccess) {
+            return [
+                'interface_mode' => $modeString,
+                'native_vlan' => $this->normalizeNativeVlan($switchport['access-vlan'] ?? null),
+                'trunk_vlan_ids' => [],
+            ];
+        }
+
         $native = $switchport['native-vlan'] ?? null;
         $ranges = $switchport['trunk-vlan-ranges'] ?? [];
 
         return [
-            'interface_mode' => is_string($mode) || is_numeric($mode) ? (string) $mode : null,
+            'interface_mode' => $modeString,
             'native_vlan' => $this->normalizeNativeVlan($native),
             'trunk_vlan_ids' => $this->normalizeVlanIdList($ranges),
         ];
@@ -338,7 +349,8 @@ class SwitchPortProfileInterfaceComparer
             ];
         }
 
-        if (! $this->vlanListsEqual($expected['trunk_vlan_ids'], $actual['allowed_vlan_ids'])) {
+        $isAccess = $expectedMode !== null && strcasecmp($expectedMode, 'ACCESS') === 0;
+        if (! $isAccess && ! $this->vlanListsEqual($expected['trunk_vlan_ids'], $actual['allowed_vlan_ids'])) {
             $differences[] = [
                 'field' => 'trunk_vlans',
                 'expected' => $expected['trunk_vlan_ids'],
