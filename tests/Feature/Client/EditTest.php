@@ -164,8 +164,10 @@ test('a user can save a classic refresh token without exchanging it with Central
     $client->refresh();
     expect($client->classic_refresh_token)->toBe('new-classic-refresh-token-input')
         ->and($client->classic_access_token)->toBe('existing-classic-access-token')
-        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHours(23))
-        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addDay());
+        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHour())
+        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addHours(2))
+        ->and($client->classic_refresh_expires_in)->toBeGreaterThan(now()->addDays(14))
+        ->and($client->classic_refresh_expires_in)->toBeLessThanOrEqual(now()->addDays(15));
 
     Http::assertNothingSent();
 });
@@ -219,8 +221,10 @@ test('a user can save a classic access token without exchanging tokens with Cent
     $client->refresh();
     expect($client->classic_access_token)->toBe('new-classic-access-token-input')
         ->and($client->classic_refresh_token)->toBe('existing-classic-refresh-token')
-        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHours(23))
-        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addDay());
+        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHour())
+        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addHours(2))
+        ->and($client->classic_refresh_expires_in)->toBeGreaterThan(now()->addDays(14))
+        ->and($client->classic_refresh_expires_in)->toBeLessThanOrEqual(now()->addDays(15));
 
     Http::assertNothingSent();
 });
@@ -242,8 +246,10 @@ test('a user can save classic refresh and access tokens together', function () {
     $client->refresh();
     expect($client->classic_access_token)->toBe('new-classic-access-token-input')
         ->and($client->classic_refresh_token)->toBe('new-classic-refresh-token-input')
-        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHours(23))
-        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addDay());
+        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHour())
+        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addHours(2))
+        ->and($client->classic_refresh_expires_in)->toBeGreaterThan(now()->addDays(14))
+        ->and($client->classic_refresh_expires_in)->toBeLessThanOrEqual(now()->addDays(15));
 
     Http::assertNothingSent();
 });

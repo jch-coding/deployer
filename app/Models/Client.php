@@ -85,6 +85,7 @@ class Client extends Model
             'classic_access_token' => 'encrypted',
             'classic_refresh_token' => 'encrypted',
             'classic_expires_in' => 'datetime',
+            'classic_refresh_expires_in' => 'datetime',
             'classic_webhook_secret' => 'encrypted',
             'classic_streaming_key' => 'encrypted',
         ];
@@ -148,49 +149,68 @@ class Client extends Model
         try {
             if (! $this->hasClassicCentralCredentials()) {
                 return false;
-            } elseif ($this->classic_refresh_token !== null && now() < $this->classic_expires_in) {
+            }
+
+            $accessValid = $this->classic_refresh_token !== null
+                && $this->classic_expires_in !== null
+                && now() < $this->classic_expires_in;
+
+            if (! $force && $accessValid) {
                 return true;
-            } elseif (($force && $this->classic_refresh_token !== null) || $this->classic_refresh_token !== null && now() > $this->classic_expires_in) {
+            }
+
+            if ($this->classic_refresh_token !== null && ! $this->classicRefreshTokenIsExpired()) {
                 $response = $this->refreshClassicCentralBearerToken();
                 if (! $response->ok()) {
                     return false;
-                } else {
-                    $this->classic_access_token = $response->json('access_token');
-                    $this->classic_refresh_token = $response->json('refresh_token');
-                    $this->classic_expires_in = now()->addSeconds($response->json('expires_in'));
-                    $this->save();
-
-                    return true;
                 }
-            } else {
-                $response = $this->authenticateClassicCentral();
-                if (! $response->ok()) {
-                    return false;
-                } else {
-                    $set_cookie = $response->headers()['Set-Cookie'];
-                    $extracted_csrftoken_and_session = $this->extractCSRFTokenAndSession($set_cookie);
-                    $response = $this->generateClassicAuthorizationCode($extracted_csrftoken_and_session['csrftoken'], $extracted_csrftoken_and_session['session']);
-                    if (! $response->ok()) {
-                        return false;
-                    } else {
-                        $authorization_code = $response->json()['auth_code'];
-                        $response = $this->acquireTokens($authorization_code);
-                        if (! $response->ok()) {
-                            return false;
-                        } else {
-                            $this->classic_access_token = $response->json('access_token');
-                            $this->classic_refresh_token = $response->json('refresh_token');
-                            $this->classic_expires_in = now()->addSeconds($response->json('expires_in'));
-                            $this->save();
 
-                            return true;
-                        }
-                    }
-                }
+                $this->classic_access_token = $response->json('access_token');
+                $this->classic_refresh_token = $response->json('refresh_token');
+                $this->classic_expires_in = now()->addSeconds((int) $response->json('expires_in'));
+                $this->classic_refresh_expires_in = now()->addDays(15);
+                $this->save();
+
+                return true;
             }
+
+            $response = $this->authenticateClassicCentral();
+            if (! $response->ok()) {
+                return false;
+            }
+
+            $set_cookie = $response->headers()['Set-Cookie'];
+            $extracted_csrftoken_and_session = $this->extractCSRFTokenAndSession($set_cookie);
+            $response = $this->generateClassicAuthorizationCode(
+                $extracted_csrftoken_and_session['csrftoken'],
+                $extracted_csrftoken_and_session['session']
+            );
+            if (! $response->ok()) {
+                return false;
+            }
+
+            $authorization_code = $response->json()['auth_code'];
+            $response = $this->acquireTokens($authorization_code);
+            if (! $response->ok()) {
+                return false;
+            }
+
+            $this->classic_access_token = $response->json('access_token');
+            $this->classic_refresh_token = $response->json('refresh_token');
+            $this->classic_expires_in = now()->addSeconds((int) $response->json('expires_in'));
+            $this->classic_refresh_expires_in = now()->addDays(15);
+            $this->save();
+
+            return true;
         } catch (RequestException|ConnectionException) {
             return false;
         }
+    }
+
+    public function classicRefreshTokenIsExpired(): bool
+    {
+        return $this->classic_refresh_expires_in === null
+            || now() >= $this->classic_refresh_expires_in;
     }
 
     public function hasClassicCentralCredentials(): bool
@@ -228,7 +248,8 @@ class Client extends Model
             return false;
         }
 
-        $this->classic_expires_in = now()->addDay();
+        $this->classic_expires_in = now()->addHours(2);
+        $this->classic_refresh_expires_in = now()->addDays(15);
         $this->save();
 
         return true;

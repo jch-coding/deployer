@@ -12,6 +12,7 @@ type Client = {
     has_classic_refresh_token?: boolean;
     has_classic_access_token?: boolean;
     classic_expires_in?: string | null;
+    classic_refresh_expires_in?: string | null;
     classic_webhook_url?: string;
     has_classic_webhook_secret?: boolean;
     classic_webhook_wid?: string | null;

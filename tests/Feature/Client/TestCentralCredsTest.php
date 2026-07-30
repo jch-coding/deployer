@@ -49,13 +49,78 @@ test('a user can validate classic credentials for their client', function () {
         'classic_password' => 'classic-password',
         'classic_base_url' => 'https://apigw-uswest4.central.arubanetworks.com/',
         'classic_refresh_token' => 'classic-refresh-token',
-        'classic_expires_in' => now()->addHour(),
+        'classic_expires_in' => now()->subMinute(),
+        'classic_refresh_expires_in' => now()->addDays(10),
+    ]);
+
+    Http::fake([
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::response([
+            'access_token' => 'refreshed-classic-access-token',
+            'refresh_token' => 'refreshed-classic-refresh-token',
+            'expires_in' => 7200,
+        ], 200),
     ]);
 
     $this->actingAs($user)
         ->post(route('clients.test_central_creds', $client), ['type' => 'classic'])
         ->assertRedirect(route('clients.index'))
         ->assertSessionHas('success', 'Classic Central credentials validated successfully.');
+
+    $client->refresh();
+    expect($client->classic_access_token)->toBe('refreshed-classic-access-token')
+        ->and($client->classic_refresh_token)->toBe('refreshed-classic-refresh-token')
+        ->and($client->classic_refresh_expires_in)->toBeGreaterThan(now()->addDays(14))
+        ->and($client->classic_refresh_expires_in)->toBeLessThanOrEqual(now()->addDays(15));
+});
+
+test('a user can validate classic credentials via OAuth when the refresh token is expired', function () {
+    $user = User::factory()->create();
+    $client = Client::factory()->recycle($user)->create([
+        'classic_client_id' => 'classic-client-id-0001',
+        'classic_client_secret' => 'classic-client-secret-0001',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'customer_id' => 'customer-id-0001',
+        'classic_base_url' => 'https://apigw-uswest4.central.arubanetworks.com/',
+        'classic_refresh_token' => 'expired-classic-refresh-token',
+        'classic_expires_in' => now()->subMinute(),
+        'classic_refresh_expires_in' => now()->subDay(),
+    ]);
+
+    Http::fake([
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/authorize/central/api/login*' => Http::response(
+            [],
+            200,
+            [
+                'Set-Cookie' => [
+                    'csrftoken=test-csrf-token; Path=/',
+                    'session=test-session-id; Path=/',
+                ],
+            ]
+        ),
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/authorize/central/api/*' => Http::response([
+            'auth_code' => 'test-auth-code',
+        ], 200),
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::response([
+            'access_token' => 'oauth-classic-access-token',
+            'refresh_token' => 'oauth-classic-refresh-token',
+            'expires_in' => 7200,
+        ], 200),
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('clients.test_central_creds', $client), ['type' => 'classic'])
+        ->assertRedirect(route('clients.index'))
+        ->assertSessionHas('success', 'Classic Central credentials validated successfully.');
+
+    $client->refresh();
+    expect($client->classic_access_token)->toBe('oauth-classic-access-token')
+        ->and($client->classic_refresh_token)->toBe('oauth-classic-refresh-token')
+        ->and($client->classic_refresh_expires_in)->toBeGreaterThan(now()->addDays(14))
+        ->and($client->classic_refresh_expires_in)->toBeLessThanOrEqual(now()->addDays(15));
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'oauth2/authorize/central/api/login'));
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), 'grant_type=refresh_token'));
 });
 
 test('a user sees an error when classic credentials are missing', function () {

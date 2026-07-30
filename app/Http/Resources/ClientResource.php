@@ -26,6 +26,7 @@ class ClientResource extends JsonResource
             'has_classic_refresh_token' => $this->classic_refresh_token !== null,
             'has_classic_access_token' => $this->classic_access_token !== null,
             'classic_expires_in' => $this->classic_expires_in?->toIso8601String(),
+            'classic_refresh_expires_in' => $this->classic_refresh_expires_in?->toIso8601String(),
             'classic_webhook_url' => $this->classicWebhookUrl(),
             'has_classic_webhook_secret' => filled($this->classic_webhook_secret),
             'classic_webhook_wid' => $this->classic_webhook_wid,

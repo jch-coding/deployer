@@ -245,7 +245,12 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                             </div>
                             {client.classic_expires_in && (
                                 <p className="text-muted-foreground text-xs">
-                                    Classic token expires {new Date(client.classic_expires_in).toLocaleString()}
+                                    Access token expires {new Date(client.classic_expires_in).toLocaleString()}
+                                </p>
+                            )}
+                            {client.classic_refresh_expires_in && (
+                                <p className="text-muted-foreground text-xs">
+                                    Refresh token expires {new Date(client.classic_refresh_expires_in).toLocaleString()}
                                 </p>
                             )}
                             <Button
