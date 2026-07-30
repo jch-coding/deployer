@@ -142,13 +142,13 @@ class ClientController extends Controller
                 if (! $client->updateClassicCentralTokens($classicRefreshToken, $classicAccessToken)) {
                     return to_route('clients.index')->with(
                         'error',
-                        'Failed to validate Classic Central tokens with Central.',
+                        'Failed to save Classic Central tokens.',
                     );
                 }
 
                 return to_route('clients.index')->with(
                     'success',
-                    'Classic Central tokens saved and validated.',
+                    'Classic Central tokens saved.',
                 );
             }
 

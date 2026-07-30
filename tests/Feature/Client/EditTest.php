@@ -148,43 +148,43 @@ function classicClientForRefreshToken(User $user, array $overrides = []): Client
     ], $overrides));
 }
 
-test('a user can save a classic refresh token and refresh classic central credentials', function () {
+test('a user can save a classic refresh token without exchanging it with Central', function () {
     $user = User::factory()->create();
-    $client = classicClientForRefreshToken($user);
-
-    Http::fake([
-        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::response([
-            'access_token' => 'new-classic-access-token',
-            'refresh_token' => 'new-classic-refresh-token',
-            'expires_in' => 3600,
-        ], 200),
+    $client = classicClientForRefreshToken($user, [
+        'classic_access_token' => 'existing-classic-access-token',
     ]);
+
+    Http::fake();
 
     $this->actingAs($user)
         ->put(route('clients.edit', $client), ['classic_refresh_token' => 'new-classic-refresh-token-input'])
         ->assertRedirect(route('clients.index'))
-        ->assertSessionHas('success', 'Classic Central tokens saved and validated.');
+        ->assertSessionHas('success', 'Classic Central tokens saved.');
 
     $client->refresh();
-    expect($client->classic_refresh_token)->toBe('new-classic-refresh-token')
-        ->and($client->classic_access_token)->toBe('new-classic-access-token')
-        ->and($client->classic_expires_in)->toBeGreaterThan(now());
+    expect($client->classic_refresh_token)->toBe('new-classic-refresh-token-input')
+        ->and($client->classic_access_token)->toBe('existing-classic-access-token')
+        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHours(23))
+        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addDay());
+
+    Http::assertNothingSent();
 });
 
-test('a user sees an error when classic refresh token validation fails but the token is still saved', function () {
+test('a user cannot save only an access token when no classic refresh token exists', function () {
     $user = User::factory()->create();
-    $client = classicClientForRefreshToken($user);
-
-    Http::fake([
-        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::response([], 401),
+    $client = classicClientForRefreshToken($user, [
+        'classic_refresh_token' => null,
+        'classic_access_token' => null,
+        'classic_expires_in' => null,
     ]);
 
     $this->actingAs($user)
-        ->put(route('clients.edit', $client), ['classic_refresh_token' => 'saved-but-invalid-refresh-token'])
+        ->put(route('clients.edit', $client), ['classic_access_token' => 'new-classic-access-token-input'])
         ->assertRedirect(route('clients.index'))
-        ->assertSessionHas('error', 'Failed to validate Classic Central tokens with Central.');
+        ->assertSessionHas('error', 'Failed to save Classic Central tokens.');
 
-    expect($client->fresh()->classic_refresh_token)->toBe('saved-but-invalid-refresh-token');
+    expect($client->fresh()->classic_access_token)->toBeNull()
+        ->and($client->fresh()->classic_refresh_token)->toBeNull();
 });
 
 test('a user cannot save an invalid classic refresh token', function (string $value) {
@@ -202,40 +202,34 @@ test('a user cannot save an invalid classic refresh token', function (string $va
     'short',
 ]);
 
-test('a user can save a classic access token and validate classic central credentials', function () {
+test('a user can save a classic access token without exchanging tokens with Central', function () {
     $user = User::factory()->create();
-    $client = classicClientForRefreshToken($user);
-
-    Http::fake([
-        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::response([
-            'access_token' => 'refreshed-classic-access-token',
-            'refresh_token' => 'refreshed-classic-refresh-token',
-            'expires_in' => 3600,
-        ], 200),
+    $client = classicClientForRefreshToken($user, [
+        'classic_access_token' => 'old-classic-access-token',
+        'classic_refresh_token' => 'existing-classic-refresh-token',
     ]);
+
+    Http::fake();
 
     $this->actingAs($user)
         ->put(route('clients.edit', $client), ['classic_access_token' => 'new-classic-access-token-input'])
         ->assertRedirect(route('clients.index'))
-        ->assertSessionHas('success', 'Classic Central tokens saved and validated.');
+        ->assertSessionHas('success', 'Classic Central tokens saved.');
 
     $client->refresh();
-    expect($client->classic_access_token)->toBe('refreshed-classic-access-token')
-        ->and($client->classic_refresh_token)->toBe('refreshed-classic-refresh-token')
-        ->and($client->classic_expires_in)->toBeGreaterThan(now());
+    expect($client->classic_access_token)->toBe('new-classic-access-token-input')
+        ->and($client->classic_refresh_token)->toBe('existing-classic-refresh-token')
+        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHours(23))
+        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addDay());
+
+    Http::assertNothingSent();
 });
 
 test('a user can save classic refresh and access tokens together', function () {
     $user = User::factory()->create();
     $client = classicClientForRefreshToken($user);
 
-    Http::fake([
-        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::response([
-            'access_token' => 'validated-classic-access-token',
-            'refresh_token' => 'validated-classic-refresh-token',
-            'expires_in' => 3600,
-        ], 200),
-    ]);
+    Http::fake();
 
     $this->actingAs($user)
         ->put(route('clients.edit', $client), [
@@ -243,11 +237,15 @@ test('a user can save classic refresh and access tokens together', function () {
             'classic_access_token' => 'new-classic-access-token-input',
         ])
         ->assertRedirect(route('clients.index'))
-        ->assertSessionHas('success', 'Classic Central tokens saved and validated.');
+        ->assertSessionHas('success', 'Classic Central tokens saved.');
 
     $client->refresh();
-    expect($client->classic_access_token)->toBe('validated-classic-access-token')
-        ->and($client->classic_refresh_token)->toBe('validated-classic-refresh-token');
+    expect($client->classic_access_token)->toBe('new-classic-access-token-input')
+        ->and($client->classic_refresh_token)->toBe('new-classic-refresh-token-input')
+        ->and($client->classic_expires_in)->toBeGreaterThan(now()->addHours(23))
+        ->and($client->classic_expires_in)->toBeLessThanOrEqual(now()->addDay());
+
+    Http::assertNothingSent();
 });
 
 test('a user cannot save an invalid classic access token', function (string $value) {

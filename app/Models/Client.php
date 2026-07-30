@@ -218,7 +218,6 @@ class Client extends Model
 
         if ($refreshToken !== null) {
             $this->classic_refresh_token = $refreshToken;
-            $this->classic_access_token = null;
         }
 
         if ($accessToken !== null) {
@@ -229,10 +228,10 @@ class Client extends Model
             return false;
         }
 
-        $this->classic_expires_in = now()->subSecond();
+        $this->classic_expires_in = now()->addDay();
         $this->save();
 
-        return $this->handleClassicBearerToken(true);
+        return true;
     }
 
     public function refreshClassicCentralBearerToken()
