@@ -1098,6 +1098,40 @@ CONFIG;
         ->and($profiles[0]['ssid_profile_name'])->toBe('CFG');
 });
 
+it('accepts MDC prompts with optional star before show ap database long', function () {
+    $content = <<<'CONFIG'
+(DAY-HUB-WLC1) [MDC] *#show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-MDC-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERMDC0001  N/A   N/A   N/A
+
+(DAY-HUB-WLC1) [MDC] #show running-config
+wlan ssid-profile "MDC_ssid_prof"
+    essid "MDCSSID"
+    wpa-passphrase "mdc-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "MDCVAP"
+    vlan DAYKIT
+    ssid-profile "MDC_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "MDCVAP"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $results = $parser->parse($content);
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['controller_name'])->toBe('DAY-HUB-WLC1')
+        ->and($results[0]['devices'])->toHaveCount(1)
+        ->and($results[0]['devices'][0]['name'])->toBe('AP-MDC-001')
+        ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('MDCSSID');
+});
+
 function pairedControllerConfig(string $firstName, string $secondName): string
 {
     return <<<CONFIG

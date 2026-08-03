@@ -127,7 +127,7 @@ class ArubaControllerConfigParser
      */
     private function splitControllerBlocks(string $content): array
     {
-        if (! preg_match_all('/\(([^)]+)\)\s*#show ap database long/i', $content, $matches, PREG_OFFSET_CAPTURE)) {
+        if (! preg_match_all('/\(([^)]+)\)(?:\s+\[MDC\])?\s*\*?#\s*show ap database long/i', $content, $matches, PREG_OFFSET_CAPTURE)) {
             return [];
         }
 

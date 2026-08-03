@@ -56,7 +56,7 @@ class MigrationController extends Controller
 
         if ($parsedControllers === []) {
             return back()->withErrors([
-                'config_file' => 'No controller sections found. Expected markers like (CONTROLLER-NAME) #show ap database long.',
+                'config_file' => 'No controller sections found. Expected markers like (CONTROLLER-NAME) #show ap database long or (CONTROLLER-NAME) [MDC] #show ap database long.',
             ]);
         }
 
