@@ -161,17 +161,15 @@ class Client extends Model
 
             if ($this->classic_refresh_token !== null && ! $this->classicRefreshTokenIsExpired()) {
                 $response = $this->refreshClassicCentralBearerToken();
-                if (! $response->ok()) {
-                    return false;
+                if ($response->ok()) {
+                    $this->classic_access_token = $response->json('access_token');
+                    $this->classic_refresh_token = $response->json('refresh_token');
+                    $this->classic_expires_in = now()->addSeconds((int) $response->json('expires_in'));
+                    $this->classic_refresh_expires_in = now()->addDays(15);
+                    $this->save();
+
+                    return true;
                 }
-
-                $this->classic_access_token = $response->json('access_token');
-                $this->classic_refresh_token = $response->json('refresh_token');
-                $this->classic_expires_in = now()->addSeconds((int) $response->json('expires_in'));
-                $this->classic_refresh_expires_in = now()->addDays(15);
-                $this->save();
-
-                return true;
             }
 
             $response = $this->authenticateClassicCentral();

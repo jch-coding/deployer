@@ -130,3 +130,52 @@ it('uses the full OAuth grant when the classic refresh token is expired', functi
     Http::assertSent(fn ($request) => str_contains($request->url(), 'oauth2/authorize/central/api/login'));
     Http::assertNotSent(fn ($request) => str_contains($request->url(), 'grant_type=refresh_token'));
 });
+
+it('falls back to full OAuth when classic refresh fails', function () {
+    $client = Client::factory()->create([
+        'classic_client_id' => 'classic-client-id-0001',
+        'classic_client_secret' => 'classic-client-secret-0001',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'customer_id' => 'customer-id-0001',
+        'classic_base_url' => 'https://apigw-uswest4.central.arubanetworks.com/',
+        'classic_refresh_token' => 'invalid-refresh-token',
+        'classic_access_token' => 'expired-access-token',
+        'classic_expires_in' => now()->subMinute(),
+        'classic_refresh_expires_in' => now()->addDays(10),
+    ]);
+
+    Http::fake([
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/authorize/central/api/login*' => Http::response(
+            [],
+            200,
+            [
+                'Set-Cookie' => [
+                    'csrftoken=test-csrf-token; Path=/',
+                    'session=test-session-id; Path=/',
+                ],
+            ]
+        ),
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/authorize/central/api/*' => Http::response([
+            'auth_code' => 'test-auth-code',
+        ], 200),
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/token/*' => Http::sequence()
+            ->push(['error' => 'invalid_grant'], 400)
+            ->push([
+                'access_token' => 'oauth-access-token',
+                'refresh_token' => 'oauth-refresh-token',
+                'expires_in' => 7200,
+            ], 200),
+    ]);
+
+    expect($client->handleClassicBearerToken())->toBeTrue();
+
+    $client->refresh();
+    expect($client->classic_access_token)->toBe('oauth-access-token')
+        ->and($client->classic_refresh_token)->toBe('oauth-refresh-token')
+        ->and($client->classic_refresh_expires_in)->toBeGreaterThan(now()->addDays(14))
+        ->and($client->classic_refresh_expires_in)->toBeLessThanOrEqual(now()->addDays(15));
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'grant_type=refresh_token'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'oauth2/authorize/central/api/login'));
+});
