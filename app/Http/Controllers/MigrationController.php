@@ -17,10 +17,19 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
-use Inertia\Response;
 
 class MigrationController extends Controller
 {
+    private const SESSION_PARSED_CONTROLLERS = 'migration.parsed_controllers';
+
+    private const SESSION_LAST_CREATED_DEPLOYMENT = 'migration.last_created_deployment';
+
+    private const SESSION_DEPLOY_RESULTS = 'migration.deploy_results';
+
+    private const SESSION_NAMED_VLAN_DEPLOY_RESULTS = 'migration.named_vlan_deploy_results';
+
+    private const SESSION_SELECTED_SCOPE_ID = 'migration.selected_scope_id';
+
     public function index(Request $request, CentralScopeCacheService $centralScopeCacheService)
     {
         $currentClient = $request->user()->currentClient();
@@ -34,10 +43,15 @@ class MigrationController extends Controller
         return Inertia::render('Migration/Index', $this->migrationPageProps(
             $currentClient,
             $centralScopeCacheService,
+            parsedControllers: $this->sessionParsedControllers(),
+            deployResults: session()->pull(self::SESSION_DEPLOY_RESULTS, []),
+            namedVlanDeployResults: session()->pull(self::SESSION_NAMED_VLAN_DEPLOY_RESULTS, []),
+            lastCreatedDeployment: session()->pull(self::SESSION_LAST_CREATED_DEPLOYMENT),
+            selectedScopeId: session()->pull(self::SESSION_SELECTED_SCOPE_ID),
         ));
     }
 
-    public function parse(Request $request, ArubaControllerConfigParser $parser, CentralScopeCacheService $centralScopeCacheService)
+    public function parse(Request $request, ArubaControllerConfigParser $parser)
     {
         $currentClient = $request->user()->currentClient();
 
@@ -55,19 +69,17 @@ class MigrationController extends Controller
         $parsedControllers = $parser->parse($content ?: '');
 
         if ($parsedControllers === []) {
-            return back()->withErrors([
+            return to_route('migrations.index')->withErrors([
                 'config_file' => 'No controller sections found. Expected markers like (CONTROLLER-NAME) #show ap database long or (CONTROLLER-NAME) [MDC] #show ap database long.',
             ]);
         }
 
-        return Inertia::render('Migration/Index', $this->migrationPageProps(
-            $currentClient,
-            $centralScopeCacheService,
-            parsedControllers: $parsedControllers,
-        ));
+        $this->storeParsedControllers($parsedControllers);
+
+        return to_route('migrations.index');
     }
 
-    public function createDeployment(Request $request, CentralScopeCacheService $centralScopeCacheService): Response|\Illuminate\Http\RedirectResponse
+    public function createDeployment(Request $request): \Illuminate\Http\RedirectResponse
     {
         $user = $request->user();
         $currentClient = $user->currentClient();
@@ -78,39 +90,46 @@ class MigrationController extends Controller
             return to_route('clients.index');
         }
 
-        $validated = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'min:3',
-                'max:255',
-                Rule::unique('deployments', 'name')->where(
-                    fn ($query) => $query->where('client_id', $currentClient->id)
-                ),
-            ],
-            'devices' => ['required', 'array', 'min:1'],
-            'devices.*.name' => ['required', 'string', 'min:3', 'max:255'],
-            'devices.*.serial' => ['required', 'string', 'min:12', 'max:255'],
-            'devices.*.mac_address' => [
-                'nullable',
-                'string',
-                'max:17',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    if (! is_string($value) || trim($value) === '') {
-                        return;
-                    }
+        try {
+            $validated = $request->validate([
+                'name' => [
+                    'required',
+                    'string',
+                    'min:3',
+                    'max:255',
+                    Rule::unique('deployments', 'name')->where(
+                        fn ($query) => $query->where('client_id', $currentClient->id)
+                    ),
+                ],
+                'devices' => ['required', 'array', 'min:1'],
+                'devices.*.name' => ['required', 'string', 'min:3', 'max:255'],
+                'devices.*.serial' => ['required', 'string', 'min:12', 'max:255'],
+                'devices.*.mac_address' => [
+                    'nullable',
+                    'string',
+                    'max:17',
+                    function (string $attribute, mixed $value, \Closure $fail): void {
+                        if (! is_string($value) || trim($value) === '') {
+                            return;
+                        }
 
-                    if (! MacAddress::isValid($value)) {
-                        $fail('The mac address format is invalid.');
-                    }
-                },
-            ],
-            'devices.*.site' => ['nullable', 'string', 'max:255'],
-            'devices.*.group' => ['nullable', 'string', 'max:255'],
-            'parsed_controllers' => ['sometimes', 'array'],
-        ]);
+                        if (! MacAddress::isValid($value)) {
+                            $fail('The mac address format is invalid.');
+                        }
+                    },
+                ],
+                'devices.*.site' => ['nullable', 'string', 'max:255'],
+                'devices.*.group' => ['nullable', 'string', 'max:255'],
+                'parsed_controllers' => ['sometimes', 'array'],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            throw $exception->redirectTo(route('migrations.index'));
+        }
 
-        $parsedControllers = $request->input('parsed_controllers', []);
+        $parsedControllers = $request->input('parsed_controllers');
+        if (is_array($parsedControllers)) {
+            $this->storeParsedControllers($parsedControllers);
+        }
 
         $result = DB::transaction(function () use ($validated, $currentClient, $user) {
             $deployment = Deployment::create([
@@ -159,15 +178,12 @@ class MigrationController extends Controller
             ];
         });
 
-        return Inertia::render('Migration/Index', $this->migrationPageProps(
-            $currentClient,
-            $centralScopeCacheService,
-            parsedControllers: is_array($parsedControllers) ? $parsedControllers : [],
-            lastCreatedDeployment: [
-                'name' => $result['deployment']->name,
-                'device_count' => $result['device_count'],
-            ],
-        ));
+        session()->flash(self::SESSION_LAST_CREATED_DEPLOYMENT, [
+            'name' => $result['deployment']->name,
+            'device_count' => $result['device_count'],
+        ]);
+
+        return to_route('migrations.index');
     }
 
     public function deployWlan(
@@ -195,16 +211,18 @@ class MigrationController extends Controller
             $isFreezer,
         );
 
-        $parsedControllers = $request->input('parsed_controllers', []);
+        $parsedControllers = $request->input('parsed_controllers');
+        if (is_array($parsedControllers)) {
+            $this->storeParsedControllers($parsedControllers);
+        }
 
-        return Inertia::render('Migration/Index', $this->migrationPageProps(
-            $currentClient,
-            $centralScopeCacheService,
-            parsedControllers: is_array($parsedControllers) ? $parsedControllers : [],
-            deployResults: $results['deploy_results'],
-            namedVlanDeployResults: $results['named_vlan_deploy_results'],
-            selectedScopeId: $validated['scope_id'],
-        ));
+        session([
+            self::SESSION_DEPLOY_RESULTS => $results['deploy_results'],
+            self::SESSION_NAMED_VLAN_DEPLOY_RESULTS => $results['named_vlan_deploy_results'],
+            self::SESSION_SELECTED_SCOPE_ID => $validated['scope_id'],
+        ]);
+
+        return to_route('migrations.index');
     }
 
     public function deployWlanStep(
@@ -471,5 +489,23 @@ class MigrationController extends Controller
 
         $site = Site::firstOrCreateForClient($device->client, $siteName);
         $device->update(['site_id' => $site->id]);
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function sessionParsedControllers(): array
+    {
+        $parsedControllers = session(self::SESSION_PARSED_CONTROLLERS, []);
+
+        return is_array($parsedControllers) ? $parsedControllers : [];
+    }
+
+    /**
+     * @param  array<int, mixed>  $parsedControllers
+     */
+    private function storeParsedControllers(array $parsedControllers): void
+    {
+        session([self::SESSION_PARSED_CONTROLLERS => $parsedControllers]);
     }
 }

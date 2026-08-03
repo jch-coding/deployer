@@ -7,6 +7,7 @@ use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\Site;
 use App\Models\User;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -20,6 +21,11 @@ beforeEach(function () {
     ]);
     $this->actingAs($this->user);
     seedCentralScopeCache($this->client);
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [],
+        ], 200),
+    ]);
 });
 
 function migrationCreateDeploymentPayload(array $overrides = []): array
@@ -68,6 +74,9 @@ test('create deployment redirects when no current client is set', function () {
 
 test('create deployment creates deployment and campus ap devices for current client', function () {
     $this->post(route('migrations.create-deployment'), migrationCreateDeploymentPayload())
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Migration/Index')
@@ -130,6 +139,9 @@ test('create deployment applies different site and group per device', function (
             ],
         ],
     ]))
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('last_created_deployment.device_count', 2));
@@ -149,6 +161,7 @@ test('create deployment rejects duplicate deployment name for the same client', 
     $this->post(route('migrations.create-deployment'), migrationCreateDeploymentPayload([
         'name' => 'Existing Deployment',
     ]))
+        ->assertRedirect(route('migrations.index'))
         ->assertSessionHasErrors('name');
 
     expect(Device::query()->count())->toBe(0);
@@ -177,6 +190,9 @@ test('create deployment upserts existing device by serial for the user', functio
             ],
         ],
     ]))
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('last_created_deployment.device_count', 1));
@@ -204,6 +220,7 @@ test('create deployment validates devices and mac address', function () {
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'))
         ->assertSessionHasErrors([
             'devices.0.name',
             'devices.0.serial',
@@ -211,16 +228,19 @@ test('create deployment validates devices and mac address', function () {
         ]);
 });
 
-test('create deployment preserves parsed controllers and does not redirect to deployment show', function () {
+test('create deployment stays on migrations page and does not redirect to deployment show', function () {
     $response = $this->post(route('migrations.create-deployment'), migrationCreateDeploymentPayload());
 
-    $response->assertOk()
+    $response->assertRedirect(route('migrations.index'));
+    expect($response->headers->get('X-Inertia-Location'))->toBeNull();
+
+    $deployment = Deployment::query()->where('name', 'Migration AP Deployment')->first();
+    expect($deployment)->not->toBeNull();
+
+    $this->get(route('migrations.index'))
+        ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Migration/Index')
-            ->has('parsed_controllers', 1));
-
-    expect($response->headers->get('X-Inertia-Location'))->toBeNull();
-    $deployment = Deployment::query()->where('name', 'Migration AP Deployment')->first();
-    expect($response->headers->get('Location'))->toBeNull();
-    expect($deployment)->not->toBeNull();
+            ->has('parsed_controllers', 1)
+            ->where('last_created_deployment.name', 'Migration AP Deployment'));
 });

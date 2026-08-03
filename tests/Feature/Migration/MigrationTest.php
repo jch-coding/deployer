@@ -68,6 +68,9 @@ test('migrations parse uploads config file and returns parsed controllers', func
     $this->post(route('migrations.parse'), [
         'config_file' => $file,
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Migration/Index')
@@ -97,6 +100,9 @@ test('migrations deploy wlan posts profiles to central with scope query paramete
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Migration/Index')
@@ -132,6 +138,9 @@ test('migrations deploy wlan posts subset of profiles when caller sends partial 
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->has('deploy_results', 1)
@@ -167,6 +176,9 @@ test('migrations deploy wlan skips profiles missing passphrase or vlan', functio
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('deploy_results.0.status', 'skipped'));
@@ -196,6 +208,9 @@ test('migrations deploy wlan allows enterprise profiles without passphrase', fun
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('deploy_results.0.status', 'success'));
@@ -224,6 +239,9 @@ test('migrations deploy wlan skips enterprise profiles missing auth-server-group
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('deploy_results.0.status', 'skipped')
@@ -257,6 +275,9 @@ test('migrations deploy wlan patches profile when post fails', function () {
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('deploy_results.0.ssid', 'DAYKIT')
@@ -311,6 +332,9 @@ test('migrations deploy wlan returns error when post and patch both fail', funct
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('deploy_results.0.ssid', 'DAYKIT')
@@ -718,6 +742,9 @@ test('migrations deploy wlan triggers named vlan offset for freezer sites', func
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->has('named_vlan_deploy_results', 1)
@@ -770,6 +797,9 @@ test('migrations deploy wlan only offsets named vlans referenced by deployed wla
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->has('named_vlan_deploy_results', 1)
@@ -800,6 +830,9 @@ test('migrations deploy wlan skips named vlan offset for non-freezer sites', fun
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('named_vlan_deploy_results', []));
@@ -829,6 +862,9 @@ test('migrations deploy wlan skips named vlan offset for hub-freezer sites', fun
         ],
         'parsed_controllers' => [],
     ])
+        ->assertRedirect(route('migrations.index'));
+
+    $this->get(route('migrations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('named_vlan_deploy_results', []));
