@@ -1,7 +1,11 @@
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { Download, Loader2, RadioTower } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import CentralScopeRefreshButtons, {
+    type CentralScopeCacheMeta,
+    type CentralScopeGroupsCacheMeta,
+} from '@/components/central/CentralScopeRefreshButtons';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -23,7 +27,7 @@ import {
     renameAp,
     renameApByMac,
 } from '@/routes/ekahau';
-import type { BreadcrumbItem } from '@/types';
+import type { BreadcrumbItem, SharedData } from '@/types';
 
 type ToolResult = {
     results: Record<string, unknown>;
@@ -35,6 +39,18 @@ type SiteResult = {
     error?: string[];
     skipped?: string[];
 };
+
+type SiteOption = {
+    siteId: string;
+    siteName: string;
+};
+
+type EkahauIndexProps = {
+    site_options: SiteOption[];
+    has_current_client: boolean;
+    central_sites_cache: CentralScopeCacheMeta;
+    central_groups_cache: CentralScopeGroupsCacheMeta;
+} & SharedData;
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Ekahau', href: ekahauIndex().url },
@@ -202,6 +218,13 @@ function PrefixFields({
 }
 
 export default function EkahauIndex() {
+    const {
+        site_options,
+        has_current_client,
+        central_sites_cache,
+        central_groups_cache,
+    } = usePage<EkahauIndexProps>().props;
+
     const [renameLoading, setRenameLoading] = useState(false);
     const [renameByMacLoading, setRenameByMacLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
@@ -215,8 +238,17 @@ export default function EkahauIndex() {
     const [renameLowercase, setRenameLowercase] = useState(false);
     const [macLowercase, setMacLowercase] = useState(false);
     const [mappingSource, setMappingSource] = useState('bssid');
+    const [selectedSiteId, setSelectedSiteId] = useState('');
     const [exportPrefixMode, setExportPrefixMode] = useState('none');
     const [prefixMode, setPrefixMode] = useState('flat');
+
+    const selectedSite = useMemo(
+        () => site_options.find((site) => site.siteId === selectedSiteId) ?? null,
+        [site_options, selectedSiteId],
+    );
+
+    const centralMappingBlocked =
+        mappingSource === 'central' && (!has_current_client || site_options.length === 0);
 
     async function handleRename(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -238,10 +270,22 @@ export default function EkahauIndex() {
 
     async function handleRenameByMac(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        if (mappingSource === 'central' && !selectedSiteId) {
+            toast.error('Select a Central site to pull BSSIDs');
+            return;
+        }
+
         const form = event.currentTarget;
         const formData = new FormData(form);
         formData.set('mapping_source', mappingSource);
         appendBoolean(formData, 'lowercase_ap_names', macLowercase);
+
+        if (mappingSource === 'central') {
+            formData.set('site_id', selectedSiteId);
+            formData.set('site_name', selectedSite?.siteName ?? '');
+            formData.delete('mapping_file');
+        }
+
         setRenameByMacLoading(true);
         setRenameByMacOutcome(null);
         try {
@@ -395,7 +439,8 @@ export default function EkahauIndex() {
                         <CardHeader>
                             <CardTitle>Rename ESX AP by MAC</CardTitle>
                             <CardDescription>
-                                Match measured AP MAC suffixes to names from a mapping file.
+                                Match measured AP MAC suffixes to names from a mapping file or
+                                Central site BSSIDs.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -423,40 +468,99 @@ export default function EkahauIndex() {
                                             </SelectItem>
                                             <SelectItem value="csv">CSV</SelectItem>
                                             <SelectItem value="excel">Installer Excel</SelectItem>
+                                            <SelectItem value="central">
+                                                Central site BSSIDs
+                                            </SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="mac-mapping">Mapping file</Label>
-                                    <Input
-                                        id="mac-mapping"
-                                        name="mapping_file"
-                                        type="file"
-                                        accept={
-                                            mappingSource === 'csv'
-                                                ? '.csv'
-                                                : '.xlsx,.xls'
-                                        }
-                                        required
-                                    />
-                                </div>
-                                {mappingSource !== 'bssid' && (
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                        {mappingSource === 'excel' && (
-                                            <div className="space-y-2 sm:col-span-2">
-                                                <Label htmlFor="mac-sheet">Sheet name</Label>
-                                                <Input id="mac-sheet" name="sheet_name" required />
-                                            </div>
+                                {mappingSource === 'central' ? (
+                                    <div className="space-y-3">
+                                        {has_current_client ? (
+                                            <CentralScopeRefreshButtons
+                                                centralSitesCache={central_sites_cache}
+                                                centralGroupsCache={central_groups_cache}
+                                                reloadOnly={[
+                                                    'site_options',
+                                                    'central_sites_cache',
+                                                    'central_groups_cache',
+                                                ]}
+                                                layout="compact"
+                                            />
+                                        ) : (
+                                            <p className="text-sm text-muted-foreground">
+                                                Set a current client to load Central sites and pull
+                                                BSSIDs.
+                                            </p>
                                         )}
                                         <div className="space-y-2">
-                                            <Label htmlFor="mac-col">MAC column</Label>
-                                            <Input id="mac-col" name="ap_mac" required />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="mac-name-col">AP name column</Label>
-                                            <Input id="mac-name-col" name="ap_name" required />
+                                            <Label htmlFor="mac-central-site">Central site</Label>
+                                            <Select
+                                                value={selectedSiteId}
+                                                onValueChange={setSelectedSiteId}
+                                                disabled={!has_current_client || site_options.length === 0}
+                                            >
+                                                <SelectTrigger id="mac-central-site">
+                                                    <SelectValue placeholder="Select a site" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {site_options.map((site) => (
+                                                        <SelectItem
+                                                            key={site.siteId}
+                                                            value={site.siteId}
+                                                        >
+                                                            {site.siteName}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
                                         </div>
                                     </div>
+                                ) : (
+                                    <>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="mac-mapping">Mapping file</Label>
+                                            <Input
+                                                id="mac-mapping"
+                                                name="mapping_file"
+                                                type="file"
+                                                accept={
+                                                    mappingSource === 'csv'
+                                                        ? '.csv'
+                                                        : '.xlsx,.xls'
+                                                }
+                                                required
+                                            />
+                                        </div>
+                                        {mappingSource !== 'bssid' && (
+                                            <div className="grid gap-3 sm:grid-cols-2">
+                                                {mappingSource === 'excel' && (
+                                                    <div className="space-y-2 sm:col-span-2">
+                                                        <Label htmlFor="mac-sheet">Sheet name</Label>
+                                                        <Input
+                                                            id="mac-sheet"
+                                                            name="sheet_name"
+                                                            required
+                                                        />
+                                                    </div>
+                                                )}
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="mac-col">MAC column</Label>
+                                                    <Input id="mac-col" name="ap_mac" required />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="mac-name-col">
+                                                        AP name column
+                                                    </Label>
+                                                    <Input
+                                                        id="mac-name-col"
+                                                        name="ap_name"
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                                 <div className="flex items-center gap-2">
                                     <Checkbox
@@ -468,7 +572,14 @@ export default function EkahauIndex() {
                                     />
                                     <Label htmlFor="mac-lowercase">Lowercase AP names</Label>
                                 </div>
-                                <Button type="submit" disabled={renameByMacLoading}>
+                                <Button
+                                    type="submit"
+                                    disabled={
+                                        renameByMacLoading ||
+                                        centralMappingBlocked ||
+                                        (mappingSource === 'central' && selectedSiteId === '')
+                                    }
+                                >
                                     {renameByMacLoading && (
                                         <Loader2 className="size-4 animate-spin" />
                                     )}

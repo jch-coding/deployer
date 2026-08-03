@@ -1,7 +1,10 @@
 <?php
 
+use App\BaseURL;
+use App\Models\Client;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -64,10 +67,32 @@ test('guests cannot view ekahau index', function () {
         ->assertRedirect(route('login'));
 });
 
-test('authenticated users can view ekahau index', function () {
+test('authenticated users can view ekahau index without a current client', function () {
     $this->get(route('ekahau.index'))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page->component('Ekahau/Index'));
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Ekahau/Index')
+            ->where('has_current_client', false)
+            ->where('site_options', []));
+});
+
+test('ekahau index includes site options when current client is set', function () {
+    $client = Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    seedCentralScopeCache($client);
+
+    $this->get(route('ekahau.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Ekahau/Index')
+            ->where('has_current_client', true)
+            ->has('site_options', 1)
+            ->where('site_options.0.siteId', 'scope-site')
+            ->where('site_options.0.siteName', 'Central Site'));
 });
 
 test('rename ap validates required uploads', function () {
@@ -103,6 +128,73 @@ test('rename ap by mac returns downloadable result', function () {
 
     $response->assertOk()
         ->assertJsonStructure(['results', 'download_url']);
+});
+
+test('rename ap by mac from central requires a site id', function () {
+    $client = Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    seedCentralScopeCache($client);
+
+    $this->postJson(route('ekahau.rename-ap-by-mac'), [
+        'esx_files' => [makeUploadedEsx()],
+        'mapping_source' => 'central',
+    ])->assertStatus(422);
+});
+
+test('rename ap by mac from central requires a current client', function () {
+    $this->postJson(route('ekahau.rename-ap-by-mac'), [
+        'esx_files' => [makeUploadedEsx()],
+        'mapping_source' => 'central',
+        'site_id' => 'scope-site',
+    ])
+        ->assertStatus(422)
+        ->assertJson([
+            'message' => 'Please set current client to pull BSSIDs from Central.',
+        ]);
+});
+
+test('rename ap by mac from central returns downloadable result', function () {
+    $client = Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    seedCentralScopeCache($client);
+
+    Http::fake([
+        '*network-monitoring/v1/bssids*' => Http::response([
+            'items' => [
+                [
+                    'deviceName' => 'MATCHED-1',
+                    'bssid' => 'aa:bb:cc:dd:ab:cd',
+                ],
+                [
+                    'deviceName' => 'MATCHED-2',
+                    'bssid' => '11:22:33:44:11:22',
+                ],
+            ],
+            'total' => 2,
+            'next' => null,
+        ], 200),
+    ]);
+
+    $response = $this->post(route('ekahau.rename-ap-by-mac'), [
+        'esx_files' => [makeUploadedEsx()],
+        'mapping_source' => 'central',
+        'site_id' => 'scope-site',
+        'site_name' => 'Central Site',
+        'lowercase_ap_names' => false,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonStructure(['results', 'download_url']);
+
+    $this->get($response->json('download_url'))->assertOk();
 });
 
 test('export aps returns downloadable xlsx', function () {

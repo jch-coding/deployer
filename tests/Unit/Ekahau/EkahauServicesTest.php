@@ -177,3 +177,47 @@ test('mac suffix normalization uses last four hex digits', function () {
     expect($reader->normalizeMacSuffix('aa:bb:cc:dd:ab:cd'))->toBe('abcd');
     expect($reader->normalizeMacSuffix('ABCD'))->toBe('abcd');
 });
+
+test('createMacSuffixToNameDictFromRows builds suffix map and drops ambiguous suffixes', function () {
+    $reader = new InstallerWorkbookReader;
+    [$suffixToName, $ambiguous] = $reader->createMacSuffixToNameDictFromRows([
+        ['mac' => 'aa:bb:cc:dd:ab:cd', 'name' => 'AP-ONE'],
+        ['mac' => '11:22:33:44:11:22', 'name' => 'AP-TWO'],
+        ['mac' => 'ff:ee:dd:cc:ab:cd', 'name' => 'AP-OTHER'],
+    ]);
+
+    expect($suffixToName)->toHaveKey('1122')
+        ->and($suffixToName['1122'])->toBe('AP-TWO')
+        ->and($suffixToName)->not->toHaveKey('abcd')
+        ->and($ambiguous)->toContain('abcd');
+});
+
+test('renameFromMacNameRows renames measured aps from in-memory rows', function () {
+    $workingEsx = sys_get_temp_dir().'/mac-rows-src-'.uniqid().'.esx';
+    $outputDir = sys_get_temp_dir().'/ekahau-mac-rows-out-'.uniqid();
+    mkdir($outputDir);
+    copy(ekahauFixturePath(), $workingEsx);
+
+    $service = new RenameEsxApByMacService(new EsxArchive, new InstallerWorkbookReader);
+    $outcome = $service->renameFromMacNameRows(
+        [$workingEsx],
+        [
+            ['mac' => 'aa:bb:cc:dd:ab:cd', 'name' => 'FROM-ROWS-1'],
+            ['mac' => '11:22:33:44:11:22', 'name' => 'FROM-ROWS-2'],
+        ],
+        false,
+        $outputDir,
+    );
+
+    $stem = pathinfo($workingEsx, PATHINFO_FILENAME);
+    expect($outcome['results'][$stem]['success'])->toContain('FROM-ROWS-1', 'FROM-ROWS-2');
+
+    $renamed = (new EsxArchive)->readAccessPoints($outcome['output_paths'][0]);
+    expect(collect($renamed)->pluck('name')->all())->toContain('FROM-ROWS-1', 'FROM-ROWS-2');
+
+    unlink($workingEsx);
+    foreach ($outcome['output_paths'] as $path) {
+        @unlink($path);
+    }
+    @rmdir($outputDir);
+});

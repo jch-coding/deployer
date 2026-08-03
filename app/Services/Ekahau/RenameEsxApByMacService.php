@@ -29,8 +29,42 @@ class RenameEsxApByMacService
             $nameColumn,
             $lowercase,
         );
-        $ambiguousSet = array_fill_keys($ambiguous, true);
 
+        return $this->renameWithSuffixMap($esxPaths, $suffixToName, $ambiguous, $outputDir);
+    }
+
+    /**
+     * @param  list<string>  $esxPaths
+     * @param  list<array{mac: string, name: string}>  $rows
+     * @return array{results: array<string, mixed>, output_paths: list<string>}
+     */
+    public function renameFromMacNameRows(
+        array $esxPaths,
+        array $rows,
+        bool $lowercase = false,
+        string $outputDir = '',
+    ): array {
+        [$suffixToName, $ambiguous] = $this->workbookReader->createMacSuffixToNameDictFromRows(
+            $rows,
+            $lowercase,
+        );
+
+        return $this->renameWithSuffixMap($esxPaths, $suffixToName, $ambiguous, $outputDir);
+    }
+
+    /**
+     * @param  list<string>  $esxPaths
+     * @param  array<string, string>  $suffixToName
+     * @param  list<string>  $ambiguous
+     * @return array{results: array<string, mixed>, output_paths: list<string>}
+     */
+    private function renameWithSuffixMap(
+        array $esxPaths,
+        array $suffixToName,
+        array $ambiguous,
+        string $outputDir,
+    ): array {
+        $ambiguousSet = array_fill_keys($ambiguous, true);
         $results = ['task' => 'rename esx ap by mac'];
         $outputPaths = [];
         $dir = $outputDir !== '' ? $outputDir : dirname($esxPaths[0] ?? '.');

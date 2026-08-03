@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Helper\CentralAPIHelper;
+use App\Services\CentralScopeCacheService;
+use App\Services\DeviceCentralFilterBuilder;
 use App\Services\Ekahau\EkahauWorkspace;
 use App\Services\Ekahau\ExportEkahauApsService;
 use App\Services\Ekahau\PrefixEsxApService;
@@ -9,16 +12,40 @@ use App\Services\Ekahau\RenameEsxApByMacService;
 use App\Services\Ekahau\RenameEsxApService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class EkahauController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request, CentralScopeCacheService $centralScopeCacheService): Response
     {
-        return Inertia::render('Ekahau/Index');
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return Inertia::render('Ekahau/Index', [
+                'site_options' => [],
+                'has_current_client' => false,
+                'central_sites_cache' => [
+                    'refreshed_at' => null,
+                    'error' => null,
+                ],
+                'central_groups_cache' => [
+                    'refreshed_at' => null,
+                    'error' => null,
+                    'classic_error' => null,
+                ],
+            ]);
+        }
+
+        return Inertia::render('Ekahau/Index', [
+            'site_options' => $centralScopeCacheService->getSiteOptions($currentClient),
+            'has_current_client' => true,
+            ...$centralScopeCacheService->getCacheMetadata($currentClient),
+        ]);
     }
 
     public function renameAp(
@@ -78,12 +105,15 @@ class EkahauController extends Controller
         Request $request,
         EkahauWorkspace $workspace,
         RenameEsxApByMacService $service,
+        DeviceCentralFilterBuilder $filterBuilder,
     ): JsonResponse {
         $validated = $request->validate([
             'esx_files' => ['required', 'array', 'min:1'],
             'esx_files.*' => ['required', 'file', 'max:102400'],
-            'mapping_source' => ['required', Rule::in(['bssid', 'csv', 'excel'])],
-            'mapping_file' => ['required', 'file', 'max:20480'],
+            'mapping_source' => ['required', Rule::in(['bssid', 'csv', 'excel', 'central'])],
+            'mapping_file' => ['required_unless:mapping_source,central', 'nullable', 'file', 'max:20480'],
+            'site_id' => ['required_if:mapping_source,central', 'nullable', 'string', 'max:255'],
+            'site_name' => ['nullable', 'string', 'max:255'],
             'sheet_name' => ['nullable', 'string', 'max:255'],
             'ap_mac' => ['nullable', 'string', 'max:255'],
             'ap_name' => ['nullable', 'string', 'max:255'],
@@ -95,20 +125,31 @@ class EkahauController extends Controller
         }
 
         $mappingSource = $validated['mapping_source'];
+        $lowercase = (bool) ($validated['lowercase_ap_names'] ?? false);
+
+        if ($mappingSource === 'central') {
+            return $this->renameApByMacFromCentral(
+                $request,
+                $workspace,
+                $service,
+                $filterBuilder,
+                $validated,
+                $lowercase,
+            );
+        }
+
         $macColumn = 'raw_mac';
         $nameColumn = 'ap_name';
         $sheetName = null;
 
-        if ($mappingSource === 'bssid') {
-            // fixed columns
-        } elseif ($mappingSource === 'csv') {
+        if ($mappingSource === 'csv') {
             $request->validate([
                 'ap_mac' => ['required', 'string', 'max:255'],
                 'ap_name' => ['required', 'string', 'max:255'],
             ]);
             $macColumn = $validated['ap_mac'] ?? '';
             $nameColumn = $validated['ap_name'] ?? '';
-        } else {
+        } elseif ($mappingSource === 'excel') {
             $request->validate([
                 'sheet_name' => ['required', 'string', 'max:255'],
                 'ap_mac' => ['required', 'string', 'max:255'],
@@ -132,7 +173,7 @@ class EkahauController extends Controller
                 $sheetName,
                 $macColumn,
                 $nameColumn,
-                (bool) ($validated['lowercase_ap_names'] ?? false),
+                $lowercase,
                 $outputDir,
             );
 
@@ -277,6 +318,86 @@ class EkahauController extends Controller
 
     /**
      * @param  array<string, mixed>  $validated
+     */
+    private function renameApByMacFromCentral(
+        Request $request,
+        EkahauWorkspace $workspace,
+        RenameEsxApByMacService $service,
+        DeviceCentralFilterBuilder $filterBuilder,
+        array $validated,
+        bool $lowercase,
+    ): JsonResponse {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient) {
+            return response()->json([
+                'message' => 'Please set current client to pull BSSIDs from Central.',
+            ], 422);
+        }
+
+        $siteId = trim((string) ($validated['site_id'] ?? ''));
+        $siteName = trim((string) ($validated['site_name'] ?? ''));
+
+        $filter = $filterBuilder->build([
+            'siteId' => $siteId,
+            'siteName' => $siteName,
+        ]);
+
+        if ($filter === null) {
+            return response()->json(['message' => 'A site ID or site name is required.'], 422);
+        }
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->get_all_bssids(['filter' => $filter]);
+
+        if (array_key_exists('error', $result)) {
+            return response()->json(['message' => (string) $result['error']], 422);
+        }
+
+        $rows = [];
+        foreach ($result as $item) {
+            $rows[] = [
+                'mac' => (string) ($item['bssid'] ?? ''),
+                'name' => (string) ($item['deviceName'] ?? ''),
+            ];
+        }
+
+        if ($rows === []) {
+            return response()->json(['message' => 'No BSSIDs returned for the selected site.'], 422);
+        }
+
+        $dir = $workspace->create();
+        try {
+            $esxPaths = $workspace->storeUploads($validated['esx_files'], $dir, 'esx');
+            $outputDir = $dir.'/output';
+            mkdir($outputDir, 0755, true);
+
+            $outcome = $service->renameFromMacNameRows(
+                $esxPaths,
+                $rows,
+                $lowercase,
+                $outputDir,
+            );
+
+            $token = $workspace->registerDownload(
+                $dir,
+                $outcome['output_paths'],
+                $outcome['results'],
+                'renamed-by-mac.zip',
+            );
+
+            return response()->json([
+                'results' => $outcome['results'],
+                'download_url' => route('ekahau.download', ['token' => $token]),
+            ]);
+        } catch (\Throwable $e) {
+            $workspace->cleanup($dir);
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
      * @return array{0: string, 1: string, 2: string}
      */
     private function resolvePrefixOptions(array $validated): array
@@ -291,11 +412,11 @@ class EkahauController extends Controller
         };
     }
 
-    private function assertEsxUpload(\Illuminate\Http\UploadedFile $file): void
+    private function assertEsxUpload(UploadedFile $file): void
     {
         $extension = strtolower($file->getClientOriginalExtension());
         if ($extension !== 'esx') {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'esx_file' => 'ESX uploads must use the .esx extension.',
             ]);
         }

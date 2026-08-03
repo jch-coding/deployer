@@ -112,11 +112,34 @@ class InstallerWorkbookReader
         $macColumn = $this->normalizeHeader($macColumn);
         $nameColumn = $this->normalizeHeader($nameColumn);
         $rows = $this->readRows($path, $sheetName);
+        $normalized = [];
+
+        foreach ($rows as $row) {
+            $name = $this->cellString($row, $nameColumn);
+            if ($name === '') {
+                continue;
+            }
+            $mac = $this->cellString($row, $macColumn);
+            if ($mac === '') {
+                continue;
+            }
+            $normalized[] = ['mac' => $mac, 'name' => $name];
+        }
+
+        return $this->createMacSuffixToNameDictFromRows($normalized, $lowercase);
+    }
+
+    /**
+     * @param  list<array{mac: string, name: string}>  $rows
+     * @return array{0: array<string, string>, 1: list<string>}
+     */
+    public function createMacSuffixToNameDictFromRows(array $rows, bool $lowercase = false): array
+    {
         $suffixToName = [];
         $ambiguous = [];
 
         foreach ($rows as $row) {
-            $name = $this->cellString($row, $nameColumn);
+            $name = trim((string) ($row['name'] ?? ''));
             if ($name === '') {
                 continue;
             }
@@ -124,7 +147,7 @@ class InstallerWorkbookReader
                 $name = mb_strtolower($name);
             }
 
-            $suffix = $this->normalizeMacSuffix($this->cellString($row, $macColumn));
+            $suffix = $this->normalizeMacSuffix((string) ($row['mac'] ?? ''));
             if ($suffix === '') {
                 continue;
             }
