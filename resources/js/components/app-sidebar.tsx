@@ -7,6 +7,7 @@ import {
     ListTodoIcon,
     Network,
     Radio,
+    RadioTower,
     ScrollText,
     Webhook,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ import { index as client_index } from '@/routes/clients'
 import { index as deployment_index } from '@/routes/deployments'
 import { index as device_details_index } from '@/routes/device-details'
 import { index as central_api_index } from '@/routes/central-api';
+import { index as ekahau_index } from '@/routes/ekahau';
 import { index as migrations_index } from '@/routes/migrations';
 import { index as streaming_index } from '@/routes/streaming';
 import { index as task_index } from '@/routes/tasks'
@@ -73,6 +75,11 @@ const mainNavItems: NavItem[] = [
         title: 'Migrations',
         href: migrations_index(),
         icon: FileUp,
+    },
+    {
+        title: 'Ekahau',
+        href: ekahau_index(),
+        icon: RadioTower,
     },
 ];
 
