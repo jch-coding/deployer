@@ -10,6 +10,7 @@ use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DeviceDetailsController;
 use App\Http\Controllers\DispatchController;
+use App\Http\Controllers\EkahauController;
 use App\Http\Controllers\LicensingController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\ProvisioningWorkflowController;
@@ -105,6 +106,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/device-details', 'index')->name('device-details.index');
         Route::get('/device-details/show', 'show')->name('device-details.show');
         Route::post('/device-details/compare-profiles', 'compareProfiles')->name('device-details.compare-profiles');
+        Route::post('/device-details/bssids', 'bssids')->name('device-details.bssids');
+        Route::post('/device-details/site-bssids', 'siteBssids')->name('device-details.site-bssids');
         Route::get('/device-details/{serial}', 'redirectShow')->name('device-details.redirect-show');
     });
 
@@ -137,6 +140,15 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/migrations/deploy-wlan/step/{step}', 'deployWlanStep')->name('migrations.deploy-wlan.step');
         Route::post('/migrations/deploy-auth-servers/step/{step}', 'deployAuthServerStep')->name('migrations.deploy-auth-servers.step');
         Route::post('/migrations/deploy-server-groups/step/{step}', 'deployServerGroupStep')->name('migrations.deploy-server-groups.step');
+    });
+
+    Route::controller(EkahauController::class)->group(function () {
+        Route::get('/ekahau', 'index')->name('ekahau.index');
+        Route::post('/ekahau/rename-ap', 'renameAp')->name('ekahau.rename-ap');
+        Route::post('/ekahau/rename-ap-by-mac', 'renameApByMac')->name('ekahau.rename-ap-by-mac');
+        Route::post('/ekahau/export-aps', 'exportAps')->name('ekahau.export-aps');
+        Route::post('/ekahau/prefix-ap', 'prefixAp')->name('ekahau.prefix-ap');
+        Route::get('/ekahau/download/{token}', 'download')->name('ekahau.download');
     });
 
     Route::controller(DispatchController::class)->group(function () {

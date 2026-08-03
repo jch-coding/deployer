@@ -22,6 +22,8 @@ import { compareProfiles as compareProfilesRoute } from '@/routes/device-details
 export type SwitchDetailsPayload = {
     serial: string;
     device_name: string;
+    device_type?: string;
+    device_function?: string;
     interfaces: SwitchInterfaceRow[];
     central_error: string | null;
 };

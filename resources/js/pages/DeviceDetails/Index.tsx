@@ -1,6 +1,6 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table';
-import { Search } from 'lucide-react';
+import { Download, Loader2, Search, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,14 @@ import CentralScopeRefreshButtons, {
     type CentralScopeGroupsCacheMeta,
 } from '@/components/central/CentralScopeRefreshButtons';
 import AppLayout from '@/layouts/app-layout';
+import { downloadSiteBssidsCsv, type SiteBssidRow } from '@/lib/bssids-csv';
+import { csrfHeaders } from '@/lib/csrf';
 import { index as clientsIndex } from '@/routes/clients';
-import { index as deviceDetailsIndex, show as deviceDetailsShow } from '@/routes/device-details';
+import {
+    index as deviceDetailsIndex,
+    show as deviceDetailsShow,
+    siteBssids as siteBssidsRoute,
+} from '@/routes/device-details';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 type SiteOption = {
@@ -143,8 +149,17 @@ export default function Index() {
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+    const [siteBssids, setSiteBssids] = useState<SiteBssidRow[] | null>(null);
+    const [siteBssidsLoading, setSiteBssidsLoading] = useState(false);
+    const [siteBssidsError, setSiteBssidsError] = useState<string | null>(null);
+    const [siteBssidsPageIndex, setSiteBssidsPageIndex] = useState(0);
+    const siteBssidsPageSize = 25;
 
     const hasActiveLocalFilters = useMemo(() => hasActiveFilters(localFilters), [localFilters]);
+    const hasSiteSelected = useMemo(
+        () => localFilters.site_id.trim() !== '' || localFilters.site_name.trim() !== '',
+        [localFilters.site_id, localFilters.site_name],
+    );
 
     const selectedSerials = useMemo(
         () =>
@@ -226,6 +241,67 @@ export default function Index() {
 
         router.get(showUrlForSerials(selectedSerials));
     }, [selectedSerials]);
+
+    const loadSiteBssids = useCallback(async () => {
+        const siteId = localFilters.site_id.trim();
+        const siteName = localFilters.site_name.trim();
+
+        if (siteId === '' && siteName === '') {
+            return;
+        }
+
+        setSiteBssidsLoading(true);
+        setSiteBssidsError(null);
+
+        try {
+            const response = await fetch(siteBssidsRoute.url(), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...csrfHeaders(),
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    site_id: siteId,
+                    site_name: siteName,
+                }),
+            });
+
+            const body = (await response.json().catch(() => null)) as {
+                bssids: SiteBssidRow[];
+                error: string | null;
+                message?: string;
+            } | null;
+
+            if (!response.ok) {
+                throw new Error(
+                    body?.error ??
+                        body?.message ??
+                        `Failed to load site BSSIDs (HTTP ${response.status}).`,
+                );
+            }
+
+            if (body === null) {
+                throw new Error('Failed to load site BSSIDs: empty response.');
+            }
+
+            if (body.error) {
+                throw new Error(body.error);
+            }
+
+            setSiteBssids(body.bssids);
+            setSiteBssidsPageIndex(0);
+        } catch (error) {
+            setSiteBssids(null);
+            setSiteBssidsError(
+                error instanceof Error ? error.message : 'Failed to load site BSSIDs.',
+            );
+        } finally {
+            setSiteBssidsLoading(false);
+        }
+    }, [localFilters.site_id, localFilters.site_name]);
 
     const columns = useMemo<ColumnDef<DeviceRow>[]>(
         () => [
@@ -311,6 +387,29 @@ export default function Index() {
         ],
         [],
     );
+
+    const siteBssidColumns = useMemo<ColumnDef<SiteBssidRow>[]>(
+        () => [
+            { accessorKey: 'ap_name', header: 'ap_name' },
+            { accessorKey: 'ap_mac', header: 'ap_mac' },
+        ],
+        [],
+    );
+
+    const siteBssidRows = siteBssids ?? [];
+    const siteBssidsTotalPages = Math.max(1, Math.ceil(siteBssidRows.length / siteBssidsPageSize));
+    const safeSiteBssidsPageIndex = Math.min(siteBssidsPageIndex, siteBssidsTotalPages - 1);
+    const siteBssidsStart = safeSiteBssidsPageIndex * siteBssidsPageSize;
+    const siteBssidsEnd = Math.min(siteBssidsStart + siteBssidsPageSize, siteBssidRows.length);
+    const pagedSiteBssids = useMemo(
+        () => siteBssidRows.slice(siteBssidsStart, siteBssidsEnd),
+        [siteBssidRows, siteBssidsEnd, siteBssidsStart],
+    );
+
+    const siteBssidsExportLabel =
+        localFilters.site_id.trim() !== ''
+            ? localFilters.site_id.trim()
+            : localFilters.site_name.trim();
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -483,7 +582,108 @@ export default function Index() {
                     >
                         View selected ({selectedSerials.length})
                     </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        disabled={!hasSiteSelected || siteBssidsLoading}
+                        onClick={() => void loadSiteBssids()}
+                        data-test="device-details-site-bssids"
+                    >
+                        {siteBssidsLoading ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                        ) : (
+                            <Wifi className="size-4" aria-hidden />
+                        )}
+                        Site BSSIDs
+                    </Button>
                 </div>
+
+                {siteBssidsError && (
+                    <div
+                        className="mt-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                        role="alert"
+                        data-test="device-details-site-bssids-error"
+                    >
+                        {siteBssidsError}
+                    </div>
+                )}
+
+                {siteBssids !== null ? (
+                    <section className="mt-6" data-test="device-details-site-bssids-section">
+                        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <h2
+                                className="text-lg font-medium"
+                                data-test="device-details-site-bssids-heading"
+                            >
+                                Site BSSIDs
+                            </h2>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="gap-2"
+                                disabled={siteBssidRows.length === 0}
+                                onClick={() =>
+                                    downloadSiteBssidsCsv(siteBssidRows, siteBssidsExportLabel)
+                                }
+                                data-test="device-details-site-bssids-export-csv"
+                            >
+                                <Download className="size-4" aria-hidden />
+                                Export CSV
+                            </Button>
+                        </div>
+                        {siteBssidRows.length === 0 ? (
+                            <p
+                                className="text-sm text-muted-foreground"
+                                data-test="device-details-site-bssids-empty"
+                            >
+                                No BSSIDs found for this site.
+                            </p>
+                        ) : (
+                            <>
+                                <p
+                                    className="mb-2 text-sm text-muted-foreground"
+                                    data-test="device-details-site-bssids-count"
+                                >
+                                    Showing {siteBssidsStart + 1}–{siteBssidsEnd} of{' '}
+                                    {siteBssidRows.length}
+                                </p>
+                                <DataTable columns={siteBssidColumns} data={pagedSiteBssids} />
+                                <div className="mt-3 flex items-center justify-center gap-3">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={safeSiteBssidsPageIndex <= 0}
+                                        onClick={() =>
+                                            setSiteBssidsPageIndex((prev) => Math.max(0, prev - 1))
+                                        }
+                                    >
+                                        Prev
+                                    </Button>
+                                    <span className="text-sm text-muted-foreground">
+                                        Page {safeSiteBssidsPageIndex + 1} of {siteBssidsTotalPages}
+                                    </span>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={
+                                            safeSiteBssidsPageIndex >= siteBssidsTotalPages - 1
+                                        }
+                                        onClick={() =>
+                                            setSiteBssidsPageIndex((prev) =>
+                                                Math.min(siteBssidsTotalPages - 1, prev + 1),
+                                            )
+                                        }
+                                    >
+                                        Next
+                                    </Button>
+                                </div>
+                            </>
+                        )}
+                    </section>
+                ) : null}
 
                 <div className="mt-4">
                     {!hasActiveLocalFilters ? (

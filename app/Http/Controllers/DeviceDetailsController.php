@@ -151,14 +151,14 @@ class DeviceDetailsController extends Controller
         }
 
         $helper = new CentralAPIHelper($currentClient);
-        $switches = [];
+        $devices = [];
 
         foreach ($serials as $serial) {
-            $switches[] = $this->buildSwitchPayload($helper, $filterBuilder, $serial);
+            $devices[] = $this->buildDevicePayload($helper, $filterBuilder, $serial);
         }
 
         return Inertia::render('DeviceDetails/Show', [
-            'switches' => $switches,
+            'devices' => $devices,
         ]);
     }
 
@@ -193,12 +193,143 @@ class DeviceDetailsController extends Controller
         return response()->json($result);
     }
 
+    public function bssids(Request $request, DeviceCentralFilterBuilder $filterBuilder): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'serial' => '',
+                'bssids' => [],
+                'error' => 'Please set current client to view BSSIDs.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serial' => ['required', 'string', 'max:16'],
+        ]);
+
+        $serial = trim($validated['serial']);
+        $helper = new CentralAPIHelper($currentClient);
+        $filter = $filterBuilder->build(['serialNumber' => $serial]);
+
+        if ($filter === null) {
+            return response()->json([
+                'serial' => $serial,
+                'bssids' => [],
+                'error' => 'A valid serial number is required.',
+            ], 422);
+        }
+
+        $result = $helper->get_all_bssids(['filter' => $filter]);
+
+        if (array_key_exists('error', $result)) {
+            return response()->json([
+                'serial' => $serial,
+                'bssids' => [],
+                'error' => (string) $result['error'],
+            ], 422);
+        }
+
+        $bssids = array_map(
+            fn (array $item): array => $this->mapBssidItem($item),
+            $result,
+        );
+
+        return response()->json([
+            'serial' => $serial,
+            'bssids' => $bssids,
+            'error' => null,
+        ]);
+    }
+
+    public function siteBssids(Request $request, DeviceCentralFilterBuilder $filterBuilder): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'site_id' => '',
+                'site_name' => '',
+                'bssids' => [],
+                'error' => 'Please set current client to view BSSIDs.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'site_id' => ['nullable', 'string', 'max:255'],
+            'site_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $siteId = trim((string) ($validated['site_id'] ?? ''));
+        $siteName = trim((string) ($validated['site_name'] ?? ''));
+
+        if ($siteId === '' && $siteName === '') {
+            return response()->json([
+                'site_id' => '',
+                'site_name' => '',
+                'bssids' => [],
+                'error' => 'A site ID or site name is required.',
+            ], 422);
+        }
+
+        $helper = new CentralAPIHelper($currentClient);
+        $filter = $filterBuilder->build([
+            'siteId' => $siteId,
+            'siteName' => $siteName,
+        ]);
+
+        if ($filter === null) {
+            return response()->json([
+                'site_id' => $siteId,
+                'site_name' => $siteName,
+                'bssids' => [],
+                'error' => 'A site ID or site name is required.',
+            ], 422);
+        }
+
+        $result = $helper->get_all_bssids(['filter' => $filter]);
+
+        if (array_key_exists('error', $result)) {
+            return response()->json([
+                'site_id' => $siteId,
+                'site_name' => $siteName,
+                'bssids' => [],
+                'error' => (string) $result['error'],
+            ], 422);
+        }
+
+        $bssids = array_map(
+            fn (array $item): array => [
+                'ap_name' => (string) ($item['deviceName'] ?? ''),
+                'ap_mac' => (string) ($item['bssid'] ?? ''),
+            ],
+            $result,
+        );
+
+        return response()->json([
+            'site_id' => $siteId,
+            'site_name' => $siteName,
+            'bssids' => $bssids,
+            'error' => null,
+        ]);
+    }
+
     /**
-     * @return array{serial: string, device_name: string, interfaces: list<array<string, mixed>>, central_error: string|null}
+     * @return array{
+     *     serial: string,
+     *     device_name: string,
+     *     device_type: string,
+     *     device_function: string,
+     *     interfaces: list<array<string, mixed>>,
+     *     central_error: string|null
+     * }
      */
-    private function buildSwitchPayload(CentralAPIHelper $helper, DeviceCentralFilterBuilder $filterBuilder, string $serial): array
+    private function buildDevicePayload(CentralAPIHelper $helper, DeviceCentralFilterBuilder $filterBuilder, string $serial): array
     {
         $deviceName = '';
+        $deviceType = '';
+        $deviceFunction = '';
         $centralError = null;
         $filter = $filterBuilder->build(['serialNumber' => $serial]);
 
@@ -212,12 +343,19 @@ class DeviceDetailsController extends Controller
                 $centralError = (string) $deviceResult['error'];
             } elseif (is_array($deviceResult) && $deviceResult !== []) {
                 $deviceName = (string) ($deviceResult[0]['deviceName'] ?? '');
+                $deviceType = (string) ($deviceResult[0]['deviceType'] ?? '');
+                $deviceFunction = (string) ($deviceResult[0]['deviceFunction'] ?? '');
             }
         }
 
+        $isAccessPoint = $this->isAccessPoint($deviceType, $deviceFunction);
+        $resolvedDeviceType = $isAccessPoint
+            ? 'ACCESS_POINT'
+            : ($deviceType !== '' ? $deviceType : 'SWITCH');
+
         $interfaces = [];
 
-        if ($centralError === null) {
+        if ($centralError === null && ! $isAccessPoint) {
             $interfacesResult = $helper->get_all_switch_interfaces($serial);
 
             if (array_key_exists('error', $interfacesResult)) {
@@ -233,8 +371,55 @@ class DeviceDetailsController extends Controller
         return [
             'serial' => $serial,
             'device_name' => $deviceName,
+            'device_type' => $resolvedDeviceType,
+            'device_function' => $deviceFunction,
             'interfaces' => $interfaces,
             'central_error' => $centralError,
+        ];
+    }
+
+    private function isAccessPoint(string $deviceType, string $deviceFunction): bool
+    {
+        if (strtoupper($deviceType) === 'ACCESS_POINT') {
+            return true;
+        }
+
+        return str_contains(strtoupper($deviceFunction), 'AP');
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{
+     *     bssid: string,
+     *     wlanName: string,
+     *     radioNumber: int|null,
+     *     radioMacAddress: string,
+     *     macAddress: string,
+     *     clientCount: int|null,
+     *     siteName: string,
+     *     siteId: string,
+     *     clusterId: string,
+     *     deviceName: string,
+     *     serialNumber: string
+     * }
+     */
+    private function mapBssidItem(array $item): array
+    {
+        $radioNumber = $item['radioNumber'] ?? null;
+        $clientCount = $item['clientCount'] ?? $item['clientcount'] ?? null;
+
+        return [
+            'bssid' => (string) ($item['bssid'] ?? ''),
+            'wlanName' => (string) ($item['wlanName'] ?? ''),
+            'radioNumber' => is_numeric($radioNumber) ? (int) $radioNumber : null,
+            'radioMacAddress' => (string) ($item['radioMacAddress'] ?? ''),
+            'macAddress' => (string) ($item['macAddress'] ?? ''),
+            'clientCount' => is_numeric($clientCount) ? (int) $clientCount : null,
+            'siteName' => (string) ($item['siteName'] ?? ''),
+            'siteId' => (string) ($item['siteId'] ?? ''),
+            'clusterId' => (string) ($item['clusterId'] ?? ''),
+            'deviceName' => (string) ($item['deviceName'] ?? ''),
+            'serialNumber' => (string) ($item['serialNumber'] ?? ''),
         ];
     }
 

@@ -711,6 +711,78 @@ test('get_all_devices paginates with limit and next until cursor is null', funct
     Http::assertSentCount(2);
 });
 
+test('get_all_bssids paginates with limit and next until cursor is null', function () {
+    Http::fake(function (Request $request) {
+        expect($request->url())->toContain('network-monitoring/v1/bssids');
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        expect($query['limit'] ?? null)->toBe('1000')
+            ->and($query['filter'] ?? null)->toBe("serialNumber eq 'AP00000001'");
+
+        if (! isset($query['next'])) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'AP00000001',
+                    'bssid' => '11:22:33:44:55:88',
+                    'wlanName' => 'wlan1',
+                ]],
+                'count' => 1,
+                'total' => 2,
+                'next' => '2',
+            ], 200);
+        }
+
+        expect($query['next'])->toBe('2');
+
+        return Http::response([
+            'items' => [[
+                'serialNumber' => 'AP00000001',
+                'bssid' => '11:22:33:44:55:99',
+                'wlanName' => 'wlan2',
+            ]],
+            'count' => 1,
+            'total' => 2,
+            'next' => null,
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_all_bssids(['filter' => "serialNumber eq 'AP00000001'"]);
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result)->toHaveCount(2)
+        ->and($result[0]['bssid'])->toBe('11:22:33:44:55:88')
+        ->and($result[1]['bssid'])->toBe('11:22:33:44:55:99');
+
+    Http::assertSentCount(2);
+});
+
+test('get_all_bssids returns error when a page request fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/bssids*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_all_bssids(['filter' => "serialNumber eq 'AP00000001'"]);
+
+    expect($result)->toBe(['error' => 'failed to get bssids from central.']);
+});
+
+test('get_bssids returns error when auth fails', function () {
+    Http::fake();
+
+    $client = mock(Client::class)->makePartial();
+    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnFalse();
+
+    $helper = new CentralAPIHelper($client);
+    $result = $helper->get_bssids();
+
+    expect($result)->toBe(['error' => 'failed to get access token from central.']);
+
+    Http::assertNothingSent();
+});
+
 test('get_all_switch_interfaces paginates with limit and offset until offset is null', function () {
     Http::fake(function (Request $request) {
         expect($request->url())->toContain('network-monitoring/v1/switches/SN123/interfaces');

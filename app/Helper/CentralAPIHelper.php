@@ -73,6 +73,7 @@ class CentralAPIHelper
 
     public array $deviceMonitoring = [
         'devices' => 'network-monitoring/v1/devices',
+        'bssids' => 'network-monitoring/v1/bssids',
     ];
 
     public array $high_availability = [
@@ -2543,6 +2544,80 @@ class CentralAPIHelper
 
             if (! $response->ok()) {
                 return ['error' => 'failed to get devices from central.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            $allItems = array_merge($allItems, $pageItems);
+
+            $next = $response->json('next');
+            if ($next === null || $next === '') {
+                break;
+            }
+        }
+
+        return $allItems;
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters  Optional OData filter/sort/limit/next
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     *
+     * @throws \Illuminate\Http\Client\ConnectionException
+     */
+    public function get_bssids(array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->withQueryParameters($queryParameters)
+            ->get($this->client->base_url.$this->deviceMonitoring['bssids']);
+
+        if (! $response->ok()) {
+            return ['error' => 'failed to get bssids from central.'];
+        }
+
+        return $response;
+    }
+
+    /**
+     * Page through all BSSIDs using cursor pagination (limit + next).
+     *
+     * @param  array<string, mixed>  $queryParameters  Optional OData filter/sort (limit and next are managed internally)
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    public function get_all_bssids(array $queryParameters = []): array
+    {
+        $allItems = [];
+        $requestedLimit = $queryParameters['limit'] ?? null;
+        unset($queryParameters['limit']);
+
+        $limit = is_numeric($requestedLimit) ? (int) $requestedLimit : 1000;
+        $next = null;
+
+        while (true) {
+            $params = array_merge($queryParameters, ['limit' => $limit]);
+            if ($next !== null && $next !== '') {
+                $params['next'] = $next;
+            }
+
+            $response = $this->get_bssids($params);
+
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch bssids from Central.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get bssids from central.'];
             }
 
             $pageItems = $response->json('items', []);

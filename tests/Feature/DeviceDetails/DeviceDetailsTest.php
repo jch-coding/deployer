@@ -173,24 +173,25 @@ test('device details show maps interface fields for a single serial', function (
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('DeviceDetails/Show')
-            ->has('switches', 1)
-            ->where('switches.0.serial', 'SN12345')
-            ->where('switches.0.device_name', 'Switch-A')
-            ->where('switches.0.central_error', null)
-            ->has('switches.0.interfaces', 1)
-            ->where('switches.0.interfaces.0.name', '1/1/1')
-            ->where('switches.0.interfaces.0.status', 'Connected')
-            ->where('switches.0.interfaces.0.operStatus', 'Up')
-            ->where('switches.0.interfaces.0.neighbour', 'AP-1')
-            ->where('switches.0.interfaces.0.neighbourSerial', 'APSN1')
-            ->where('switches.0.interfaces.0.vlanMode', 'Trunk')
-            ->where('switches.0.interfaces.0.allowedVlanIds', [10, 20])
-            ->where('switches.0.interfaces.0.nativeVlan', '1')
-            ->where('switches.0.interfaces.0.poeClass', 'Class4')
-            ->where('switches.0.interfaces.0.neighbourFamily', 'Aruba')
-            ->where('switches.0.interfaces.0.neighbourFunction', 'AP')
-            ->where('switches.0.interfaces.0.neighbourType', 'Access Point')
-            ->where('switches.0.interfaces.0.transceiverType', 'SFP'));
+            ->has('devices', 1)
+            ->where('devices.0.serial', 'SN12345')
+            ->where('devices.0.device_name', 'Switch-A')
+            ->where('devices.0.device_type', 'SWITCH')
+            ->where('devices.0.central_error', null)
+            ->has('devices.0.interfaces', 1)
+            ->where('devices.0.interfaces.0.name', '1/1/1')
+            ->where('devices.0.interfaces.0.status', 'Connected')
+            ->where('devices.0.interfaces.0.operStatus', 'Up')
+            ->where('devices.0.interfaces.0.neighbour', 'AP-1')
+            ->where('devices.0.interfaces.0.neighbourSerial', 'APSN1')
+            ->where('devices.0.interfaces.0.vlanMode', 'Trunk')
+            ->where('devices.0.interfaces.0.allowedVlanIds', [10, 20])
+            ->where('devices.0.interfaces.0.nativeVlan', '1')
+            ->where('devices.0.interfaces.0.poeClass', 'Class4')
+            ->where('devices.0.interfaces.0.neighbourFamily', 'Aruba')
+            ->where('devices.0.interfaces.0.neighbourFunction', 'AP')
+            ->where('devices.0.interfaces.0.neighbourType', 'Access Point')
+            ->where('devices.0.interfaces.0.transceiverType', 'SFP'));
 });
 
 test('device details show maps interfaces for multiple serials', function () {
@@ -201,7 +202,7 @@ test('device details show maps interfaces for multiple serials', function () {
 
             if (str_contains($filter, 'SN111')) {
                 return Http::response([
-                    'items' => [['deviceName' => 'Switch-One', 'serialNumber' => 'SN111']],
+                    'items' => [['deviceName' => 'Switch-One', 'serialNumber' => 'SN111', 'deviceType' => 'SWITCH']],
                     'next' => null,
                     'total' => 1,
                     'count' => 1,
@@ -210,7 +211,7 @@ test('device details show maps interfaces for multiple serials', function () {
 
             if (str_contains($filter, 'SN222')) {
                 return Http::response([
-                    'items' => [['deviceName' => 'Switch-Two', 'serialNumber' => 'SN222']],
+                    'items' => [['deviceName' => 'Switch-Two', 'serialNumber' => 'SN222', 'deviceType' => 'SWITCH']],
                     'next' => null,
                     'total' => 1,
                     'count' => 1,
@@ -269,21 +270,21 @@ test('device details show maps interfaces for multiple serials', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('DeviceDetails/Show')
-            ->has('switches', 2)
-            ->where('switches.0.serial', 'SN111')
-            ->where('switches.0.device_name', 'Switch-One')
-            ->where('switches.0.interfaces.0.name', '1/1/1')
-            ->where('switches.1.serial', 'SN222')
-            ->where('switches.1.device_name', 'Switch-Two')
-            ->where('switches.1.interfaces.0.name', '1/1/2')
-            ->where('switches.1.interfaces.0.allowedVlanIds', [20, 30]));
+            ->has('devices', 2)
+            ->where('devices.0.serial', 'SN111')
+            ->where('devices.0.device_name', 'Switch-One')
+            ->where('devices.0.interfaces.0.name', '1/1/1')
+            ->where('devices.1.serial', 'SN222')
+            ->where('devices.1.device_name', 'Switch-Two')
+            ->where('devices.1.interfaces.0.name', '1/1/2')
+            ->where('devices.1.interfaces.0.allowedVlanIds', [20, 30]));
 });
 
 test('device details show keeps per-switch errors isolated', function () {
     Http::fake(function (Request $request) {
         if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
             return Http::response([
-                'items' => [['deviceName' => 'Switch-A', 'serialNumber' => 'SN12345']],
+                'items' => [['deviceName' => 'Switch-A', 'serialNumber' => 'SN12345', 'deviceType' => 'SWITCH']],
                 'next' => null,
                 'total' => 1,
                 'count' => 1,
@@ -323,13 +324,48 @@ test('device details show keeps per-switch errors isolated', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('DeviceDetails/Show')
-            ->has('switches', 2)
-            ->where('switches.0.serial', 'SN12345')
-            ->where('switches.0.central_error', null)
-            ->has('switches.0.interfaces', 1)
-            ->where('switches.1.serial', 'SN999')
-            ->where('switches.1.interfaces', [])
-            ->where('switches.1.central_error', 'failed to get switch interfaces from central.'));
+            ->has('devices', 2)
+            ->where('devices.0.serial', 'SN12345')
+            ->where('devices.0.central_error', null)
+            ->has('devices.0.interfaces', 1)
+            ->where('devices.1.serial', 'SN999')
+            ->where('devices.1.interfaces', [])
+            ->where('devices.1.central_error', 'failed to get switch interfaces from central.'));
+});
+
+test('device details show skips switch interfaces for access points', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
+            return Http::response([
+                'items' => [[
+                    'deviceName' => 'AP-Lobby',
+                    'serialNumber' => 'AP00000001',
+                    'deviceType' => 'ACCESS_POINT',
+                    'deviceFunction' => 'CAMPUS_AP',
+                ]],
+                'next' => null,
+                'total' => 1,
+                'count' => 1,
+            ], 200);
+        }
+
+        return Http::response(['detail' => 'unexpected '.$request->url()], 404);
+    });
+
+    $this->get(route('device-details.show', ['serials' => ['AP00000001']]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('DeviceDetails/Show')
+            ->has('devices', 1)
+            ->where('devices.0.serial', 'AP00000001')
+            ->where('devices.0.device_name', 'AP-Lobby')
+            ->where('devices.0.device_type', 'ACCESS_POINT')
+            ->where('devices.0.device_function', 'CAMPUS_AP')
+            ->where('devices.0.interfaces', [])
+            ->where('devices.0.central_error', null));
+
+    Http::assertSentCount(1);
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), '/interfaces'));
 });
 
 test('device details legacy serial path redirects to show with serials query', function () {
@@ -514,4 +550,168 @@ test('device details compare profiles walks scope chain and reports match and mi
     expect($interfaces->firstWhere('name', '1/1/1')['status'])->toBe('match')
         ->and($interfaces->firstWhere('name', '1/1/2')['status'])->toBe('mismatch')
         ->and($interfaces->firstWhere('name', '1/1/3')['status'])->toBe('no_profile');
+});
+
+test('device details bssids returns mapped rows for a serial', function () {
+    Http::fake(function (Request $request) {
+        expect($request->url())->toContain('network-monitoring/v1/bssids');
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+        expect($query['filter'] ?? null)->toBe('serialNumber eq AP00000001');
+
+        return Http::response([
+            'items' => [[
+                'serialNumber' => 'AP00000001',
+                'deviceName' => 'AP-Lobby',
+                'macAddress' => '11:22:33:44:55:66',
+                'clusterId' => 'cluster1',
+                'radioNumber' => 0,
+                'radioMacAddress' => '11:22:33:44:55:77',
+                'bssid' => '11:22:33:44:55:88',
+                'wlanName' => 'wlan1',
+                'siteId' => '24833497',
+                'siteName' => 'site1',
+                'clientCount' => 3,
+            ]],
+            'count' => 1,
+            'total' => 1,
+            'next' => null,
+        ], 200);
+    });
+
+    $this->postJson(route('device-details.bssids'), ['serial' => 'AP00000001'])
+        ->assertOk()
+        ->assertJson([
+            'serial' => 'AP00000001',
+            'error' => null,
+            'bssids' => [[
+                'bssid' => '11:22:33:44:55:88',
+                'wlanName' => 'wlan1',
+                'radioNumber' => 0,
+                'radioMacAddress' => '11:22:33:44:55:77',
+                'macAddress' => '11:22:33:44:55:66',
+                'clientCount' => 3,
+                'siteName' => 'site1',
+                'siteId' => '24833497',
+                'clusterId' => 'cluster1',
+                'deviceName' => 'AP-Lobby',
+                'serialNumber' => 'AP00000001',
+            ]],
+        ]);
+});
+
+test('device details bssids returns error when central fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/bssids*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $this->postJson(route('device-details.bssids'), ['serial' => 'AP00000001'])
+        ->assertStatus(422)
+        ->assertJson([
+            'serial' => 'AP00000001',
+            'bssids' => [],
+            'error' => 'failed to get bssids from central.',
+        ]);
+});
+
+test('device details bssids requires serial', function () {
+    $this->postJson(route('device-details.bssids'), [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['serial']);
+});
+
+test('device details bssids redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.bssids'), ['serial' => 'AP00000001'])
+        ->assertStatus(422)
+        ->assertJson([
+            'bssids' => [],
+            'error' => 'Please set current client to view BSSIDs.',
+        ]);
+});
+
+test('device details site bssids returns mapped ap_name and ap_mac rows', function () {
+    Http::fake(function (Request $request) {
+        expect($request->url())->toContain('network-monitoring/v1/bssids');
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+        expect($query['filter'] ?? null)->toBe('siteId eq scope-site');
+
+        return Http::response([
+            'items' => [
+                [
+                    'deviceName' => 'AP-Lobby',
+                    'bssid' => '11:22:33:44:55:88',
+                    'serialNumber' => 'AP00000001',
+                ],
+                [
+                    'deviceName' => 'AP-Lobby',
+                    'bssid' => '11:22:33:44:55:99',
+                    'serialNumber' => 'AP00000001',
+                ],
+                [
+                    'deviceName' => 'AP-Cafe',
+                    'bssid' => 'aa:bb:cc:dd:ee:01',
+                    'serialNumber' => 'AP00000002',
+                ],
+            ],
+            'count' => 3,
+            'total' => 3,
+            'next' => null,
+        ], 200);
+    });
+
+    $this->postJson(route('device-details.site-bssids'), [
+        'site_id' => 'scope-site',
+        'site_name' => '',
+    ])
+        ->assertOk()
+        ->assertJson([
+            'site_id' => 'scope-site',
+            'site_name' => '',
+            'error' => null,
+            'bssids' => [
+                ['ap_name' => 'AP-Lobby', 'ap_mac' => '11:22:33:44:55:88'],
+                ['ap_name' => 'AP-Lobby', 'ap_mac' => '11:22:33:44:55:99'],
+                ['ap_name' => 'AP-Cafe', 'ap_mac' => 'aa:bb:cc:dd:ee:01'],
+            ],
+        ]);
+});
+
+test('device details site bssids requires a site id or name', function () {
+    $this->postJson(route('device-details.site-bssids'), [
+        'site_id' => '',
+        'site_name' => '',
+    ])
+        ->assertStatus(422)
+        ->assertJson([
+            'bssids' => [],
+            'error' => 'A site ID or site name is required.',
+        ]);
+});
+
+test('device details site bssids returns error when central fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/bssids*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $this->postJson(route('device-details.site-bssids'), ['site_id' => 'scope-site'])
+        ->assertStatus(422)
+        ->assertJson([
+            'site_id' => 'scope-site',
+            'bssids' => [],
+            'error' => 'failed to get bssids from central.',
+        ]);
+});
+
+test('device details site bssids redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.site-bssids'), ['site_id' => 'scope-site'])
+        ->assertStatus(422)
+        ->assertJson([
+            'bssids' => [],
+            'error' => 'Please set current client to view BSSIDs.',
+        ]);
 });

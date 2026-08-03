@@ -16,6 +16,7 @@
         "laravel/reverb": "^1.0",
         "laravel/tinker": "^2.10.1",
         "laravel/wayfinder": "^0.1.9",
+        "phpoffice/phpspreadsheet": "^5.9",
         "ratchet/pawl": "^0.4.3"
     },
     "require-dev": {
