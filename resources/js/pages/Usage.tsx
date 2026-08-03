@@ -10,11 +10,14 @@ import { index as deploymentsIndex } from '@/routes/deployments';
 import { index as ekahauIndex } from '@/routes/ekahau';
 import { index as licensingIndex } from '@/routes/licensing';
 import { index as sitesIndex } from '@/routes/sites';
+import { index as webhooksIndex } from '@/routes/webhooks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 const tocSections = [
     { id: 'introduction', label: 'Introduction' },
     { id: 'add-a-client', label: 'Add a client' },
+    { id: 'cloudflare-tunnels', label: 'Cloudflare tunnels' },
+    { id: 'configure-webhooks', label: 'Configure webhooks' },
     { id: 'create-a-deployment', label: 'Create a deployment' },
     { id: 'add-devices', label: 'Add devices' },
     { id: 'sites-page', label: 'Sites page' },
@@ -211,6 +214,9 @@ export default function Usage() {
 
     const body = 'text-[15px] leading-relaxed text-foreground/90';
     const h2 = 'scroll-mt-24 text-xl font-semibold tracking-tight text-foreground';
+    const h3 = 'mt-8 text-base font-semibold tracking-tight text-foreground';
+    const pre =
+        'mt-3 overflow-x-auto rounded-lg border border-border bg-muted/40 px-4 py-3 font-mono text-[13px] leading-relaxed text-foreground/90';
     const linkClass =
         'text-primary font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
@@ -222,9 +228,9 @@ export default function Usage() {
                     <header className="border-b border-border pb-8">
                         <h1 className="text-3xl font-semibold tracking-tight">Usage</h1>
                         <p className="text-muted-foreground mt-3 max-w-2xl text-[15px] leading-relaxed">
-                            End-to-end flow for connecting Aruba Central, organizing deployments, loading
-                            devices, and running automation tasks. CSV column requirements are documented
-                            separately.
+                            End-to-end flow for connecting Aruba Central, exposing the app for Classic
+                            webhooks, organizing deployments, loading devices, and running automation tasks.
+                            CSV column requirements are documented separately.
                         </p>
                     </header>
 
@@ -272,6 +278,254 @@ export default function Usage() {
                                 you are ready to work with its deployments.
                             </li>
                         </ol>
+                    </section>
+
+                    <section id="cloudflare-tunnels" className="border-b border-border py-10">
+                        <h2 className={h2}>Cloudflare tunnels</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            Aruba Central must reach Deployer over the public internet to deliver Classic webhook
+                            alerts. When you run the app locally (for example with Laravel Sail on port{' '}
+                            <code>80</code>), use Cloudflare Tunnel (<code>cloudflared</code>) to expose it.
+                            Webhook URLs are built from <code>APP_URL</code>, so that value must match the
+                            hostname Central will call.
+                        </p>
+                        <p className={cn(body, 'mt-4')}>
+                            Prerequisites: Sail (or another local server) listening on the port you will
+                            forward—typically <code>http://localhost:80</code> when{' '}
+                            <code>APP_PORT</code> is unset—and <code>cloudflared</code> installed (
+                            <code>brew install cloudflared</code> on macOS).
+                        </p>
+
+                        <h3 className={h3}>Temporary (quick) tunnel</h3>
+                        <p className={cn(body, 'mt-3')}>
+                            Quick tunnels are ideal for a short test. The hostname changes every time you
+                            restart <code>cloudflared</code>, so you must update <code>APP_URL</code> and the
+                            webhook URL in Central after each run.
+                        </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Start the app (for example <code>./vendor/bin/sail up -d</code>).
+                            </li>
+                            <li>
+                                In a separate terminal, start a quick tunnel pointed at Sail:
+                                <pre className={pre}>
+                                    <code>{`cloudflared tunnel --url http://localhost:80`}</code>
+                                </pre>
+                            </li>
+                            <li>
+                                Copy the generated HTTPS hostname (for example{' '}
+                                <code>https://random-words.trycloudflare.com</code>).
+                            </li>
+                            <li>
+                                Set it in <code>.env</code> and clear config cache:
+                                <pre className={pre}>
+                                    <code>{`APP_URL=https://random-words.trycloudflare.com`}</code>
+                                </pre>
+                                <pre className={pre}>
+                                    <code>{`./vendor/bin/sail artisan config:clear`}</code>
+                                </pre>
+                            </li>
+                            <li>
+                                Refresh the Clients page so the displayed webhook URL uses the new host.
+                                Update the webhook destination in Classic Central to match.
+                            </li>
+                        </ol>
+                        <div className={cn(body, 'mt-4 rounded-lg border border-border bg-muted/40 px-4 py-3')}>
+                            <p className="font-medium text-foreground">Keep the tunnel process running</p>
+                            <p className="mt-2">
+                                Closing the <code>cloudflared</code> terminal tears down the temporary
+                                hostname. Leave that process up for as long as Central needs to reach the
+                                app.
+                            </p>
+                        </div>
+
+                        <h3 className={h3}>Permanent (named) tunnel</h3>
+                        <p className={cn(body, 'mt-3')}>
+                            A named tunnel with a DNS hostname you control keeps a stable URL across
+                            restarts—preferred for ongoing webhook delivery.
+                        </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Authenticate once with your Cloudflare account:
+                                <pre className={pre}>
+                                    <code>{`cloudflared tunnel login`}</code>
+                                </pre>
+                            </li>
+                            <li>
+                                Create a named tunnel (name is arbitrary; <code>deployer</code> is fine):
+                                <pre className={pre}>
+                                    <code>{`cloudflared tunnel create deployer`}</code>
+                                </pre>
+                                Note the tunnel UUID printed by that command. Credentials are written under{' '}
+                                <code>~/.cloudflared/&lt;TUNNEL_UUID&gt;.json</code>.
+                            </li>
+                            <li>
+                                Route a hostname on a zone in your Cloudflare account to the tunnel:
+                                <pre className={pre}>
+                                    <code>{`cloudflared tunnel route dns deployer deployer.example.com`}</code>
+                                </pre>
+                            </li>
+                            <li>
+                                Create <code>~/.cloudflared/config.yml</code> with ingress to Sail. Replace the
+                                UUID, credentials path, and hostname with yours:
+                                <pre className={pre}>
+                                    <code>{`tunnel: <TUNNEL_UUID>
+credentials-file: /Users/<you>/.cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: deployer.example.com
+    service: http://localhost:80
+  - service: http_status:404`}</code>
+                                </pre>
+                                Point <code>service</code> at the same host/port Sail publishes (
+                                <code>APP_PORT</code>, default <code>80</code>).
+                            </li>
+                            <li>
+                                Run the tunnel (foreground) or install it as a system service:
+                                <pre className={pre}>
+                                    <code>{`cloudflared tunnel run deployer
+# or, to start at login / boot:
+cloudflared service install
+sudo cloudflared service start`}</code>
+                                </pre>
+                            </li>
+                            <li>
+                                Point the app at the stable hostname in <code>.env</code>:
+                                <pre className={pre}>
+                                    <code>{`APP_URL=https://deployer.example.com`}</code>
+                                </pre>
+                                Then run <code>./vendor/bin/sail artisan config:clear</code>. Client webhook
+                                URLs become{' '}
+                                <code>https://deployer.example.com/webhooks/central/{'{clientId}'}</code>.
+                            </li>
+                        </ol>
+
+                        <h3 className={h3}>Related .env settings</h3>
+                        <ul className={cn(body, 'mt-4 list-disc space-y-2 pl-5')}>
+                            <li>
+                                <code>APP_URL</code> — must be the public HTTPS origin Central and browsers
+                                use (tunnel hostname). This drives webhook URL generation via Laravel&apos;s{' '}
+                                <code>url()</code> helper.
+                            </li>
+                            <li>
+                                <code>APP_PORT</code> — host port published by Sail (default <code>80</code>).
+                                The tunnel <code>service</code> line must match.
+                            </li>
+                            <li>
+                                Proxies are already trusted (<code>trustProxies(at: &apos;*&apos;)</code>) and{' '}
+                                <code>webhooks/central/*</code> is CSRF-exempt, so no extra Laravel changes are
+                                required for tunnel ingress.
+                            </li>
+                            <li>
+                                When the UI is served over HTTPS via a tunnel, browsers may block{' '}
+                                <code>ws://localhost</code> for Reverb. The{' '}
+                                <Link href={webhooksIndex().url} prefetch className={linkClass}>
+                                    Webhook
+                                </Link>{' '}
+                                and Streaming monitor pages fall back to polling about every 5 seconds, so
+                                live tables still update without changing <code>VITE_REVERB_*</code>.
+                            </li>
+                        </ul>
+                    </section>
+
+                    <section id="configure-webhooks" className="border-b border-border py-10">
+                        <h2 className={h2}>Configure webhooks</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            Classic Central webhooks wake provisioning workflows that wait for devices to come
+                            online (<strong>Webhook</strong> online-detection mode). Each client has its own
+                            endpoint: <code>/webhooks/central/{'{clientId}'}</code>. Requests must include a
+                            valid HMAC signature using the shared secret saved on that client.
+                        </p>
+
+                        <h3 className={h3}>1. Expose Deployer and set APP_URL</h3>
+                        <p className={cn(body, 'mt-3')}>
+                            Complete a temporary or permanent Cloudflare tunnel as above and ensure{' '}
+                            <code>APP_URL</code> matches the public HTTPS hostname. Confirm Sail is up and
+                            the tunnel process (or service) is running.
+                        </p>
+
+                        <h3 className={h3}>2. Save the secret on the client in Deployer</h3>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Open{' '}
+                                <Link href={clientsIndex().url} prefetch className={linkClass}>
+                                    Clients
+                                </Link>{' '}
+                                and expand <strong>Classic Central webhook</strong> on the client card.
+                            </li>
+                            <li>
+                                Copy the read-only <strong>Webhook URL</strong> (derived from{' '}
+                                <code>APP_URL</code>).
+                            </li>
+                            <li>
+                                Paste the <strong>Shared secret / token</strong> that Classic Central will use
+                                to sign payloads, optionally set <strong>Webhook ID (wid)</strong>, then click{' '}
+                                <strong>Save</strong>.
+                            </li>
+                        </ol>
+                        <p className={cn(body, 'mt-4')}>
+                            Without a saved secret, the endpoint returns <code>401 Unauthorized</code>. Use{' '}
+                            <strong>Clear secret</strong> if you need to rotate or remove it.
+                        </p>
+
+                        <h3 className={h3}>3. Create the webhook in Classic Central</h3>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                In Classic Central, open the webhooks / alerts configuration for the tenant
+                                that matches this client.
+                            </li>
+                            <li>
+                                Create a webhook whose destination URL is the Deployer URL from the client
+                                card (for example{' '}
+                                <code>https://deployer.example.com/webhooks/central/1</code>).
+                            </li>
+                            <li>
+                                Set the same shared secret / token you saved in Deployer.
+                            </li>
+                            <li>
+                                Enable <strong>New AP Detected</strong> and{' '}
+                                <strong>New Switch Connected</strong> with webhook notification—these are the
+                                online-wake alerts Deployer accepts.
+                            </li>
+                        </ol>
+
+                        <h3 className={h3}>4. Verify delivery</h3>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Set the client as current, then open{' '}
+                                <Link href={webhooksIndex().url} prefetch className={linkClass}>
+                                    Webhook
+                                </Link>{' '}
+                                in the sidebar.
+                            </li>
+                            <li>
+                                Trigger Central&apos;s webhook test, or wait for a real New AP / New Switch
+                                event. Accepted and ignored HMAC-valid payloads appear in the table (
+                                <code>accepted</code> when the alert is an online wake with a serial; otherwise{' '}
+                                <code>ignored</code>).
+                            </li>
+                            <li>
+                                On a deployment provisioning workflow, choose <strong>Webhook</strong> as the
+                                online-detection mode only after the client has a saved secret; otherwise the
+                                option stays disabled.
+                            </li>
+                        </ol>
+                        <div className={cn(body, 'mt-4 rounded-lg border border-border bg-muted/40 px-4 py-3')}>
+                            <p className="font-medium text-foreground">Checklist</p>
+                            <ul className="mt-2 list-disc space-y-1 pl-5">
+                                <li>
+                                    Tunnel running and forwarding to Sail (<code>http://localhost:80</code> by
+                                    default)
+                                </li>
+                                <li>
+                                    <code>APP_URL=https://&lt;your-tunnel-host&gt;</code> and{' '}
+                                    <code>config:clear</code> applied
+                                </li>
+                                <li>Client secret saved in Deployer and identical in Central</li>
+                                <li>Central alerts: New AP Detected and New Switch Connected → webhook</li>
+                                <li>Queue workers running so accepted wakes can advance workflows</li>
+                            </ul>
+                        </div>
                     </section>
 
                     <section id="create-a-deployment" className="border-b border-border py-10">
