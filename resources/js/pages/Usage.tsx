@@ -7,6 +7,7 @@ import { documentation, usage } from '@/routes';
 import { index as centralApiIndex } from '@/routes/central-api';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as deploymentsIndex } from '@/routes/deployments';
+import { index as ekahauIndex } from '@/routes/ekahau';
 import { index as licensingIndex } from '@/routes/licensing';
 import { index as sitesIndex } from '@/routes/sites';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -19,6 +20,7 @@ const tocSections = [
     { id: 'sites-page', label: 'Sites page' },
     { id: 'licensing-page', label: 'Licensing page' },
     { id: 'central-api-page', label: 'Central API page' },
+    { id: 'ekahau-page', label: 'Ekahau page' },
     { id: 'how-deployment-tasks-work', label: 'How tasks work' },
     { id: 'task-expiry-and-failed-status', label: 'Task expiry and failed status' },
     { id: 'stopping-tasks-and-clearing-queue', label: 'Stopping tasks and queue behavior' },
@@ -238,9 +240,11 @@ export default function Usage() {
                         <p className={cn(body, 'mt-4')}>
                             Beyond deployments, the sidebar also provides <strong>Sites</strong> (search
                             Central inventory by site and device attributes), <strong>Licensing</strong>{' '}
-                            (GreenLake subscription inventory and assign/unassign actions), and{' '}
+                            (GreenLake subscription inventory and assign/unassign actions),{' '}
                             <strong>Central API</strong> (an interactive explorer for New Central
-                            Configuration API endpoints).
+                            Configuration API endpoints), and <strong>Ekahau</strong> (local tools for
+                            renaming, prefixing, and exporting access points in Ekahau <code>.esx</code>{' '}
+                            project files).
                         </p>
                     </section>
 
@@ -424,6 +428,92 @@ export default function Usage() {
                                 Fill in parameters, run the request, and review status, timing, headers, and
                                 response body in the results panel. Use the <strong>Developer Hub</strong>{' '}
                                 link for official Aruba API reference material.
+                            </li>
+                            </ol>
+                    </section>
+
+                    <section id="ekahau-page" className="border-b border-border py-10">
+                        <h2 className={h2}>Ekahau page</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            The{' '}
+                            <Link href={ekahauIndex().url} prefetch className={linkClass}>
+                                Ekahau
+                            </Link>{' '}
+                            page provides local file tools for Ekahau <code>.esx</code> projects. Each
+                            card accepts uploads, runs the transformation on temporary copies, and returns a
+                            downloadable result (a single file, or a zip when you process multiple{' '}
+                            <code>.esx</code> files). These tools do not push configuration to Central by
+                            themselves; use them to prepare survey files before or alongside a Mist/Central
+                            rollout.
+                        </p>
+                        <p className={cn(body, 'mt-4')}>
+                            File-only tools work without a current client. Pulling BSSIDs from Central for
+                            MAC-based rename requires a current client with valid Central credentials and a
+                            refreshed site list.
+                        </p>
+                        <ul className={cn(body, 'mt-4 list-disc space-y-3 pl-5')}>
+                            <li>
+                                <strong>Rename ESX AP</strong> — Upload an <code>.esx</code> file and an
+                                installer Excel workbook. Provide the sheet name and column headers for the
+                                drawing/location name, the target AP name, and (when names repeat across
+                                floors) the site/floor column. When drawing names are unique, APs are renamed
+                                directly. When they are not, renaming is floor-dependent using floor plans in
+                                the project and the result is delivered as a <code>* - Copy.esx</code> style
+                                file. Optionally lowercase the new names.
+                            </li>
+                            <li>
+                                <strong>Rename ESX AP by MAC</strong> — Upload one or more <code>.esx</code>{' '}
+                                files whose measured APs are named like <code>Measured AP-xx:xx</code>. Map
+                                the last four hex digits of a MAC/BSSID to the final AP name. Choose a mapping
+                                source:
+                                <ul className="mt-2 list-disc space-y-1 pl-5">
+                                    <li>
+                                        <strong>BSSID Excel</strong> with fixed <code>raw_mac</code> and{' '}
+                                        <code>ap_name</code> columns
+                                    </li>
+                                    <li>
+                                        <strong>CSV</strong> or <strong>installer Excel</strong> with custom
+                                        MAC and name column headers (and sheet name for Excel)
+                                    </li>
+                                    <li>
+                                        <strong>Central site BSSIDs</strong> — select a Central site; Deployer
+                                        fetches site BSSIDs for the current client and uses{' '}
+                                        <code>deviceName</code> / <code>bssid</code> as the mapping. Refresh
+                                        sites from the card if the list is empty or stale.
+                                    </li>
+                                </ul>
+                                Ambiguous MAC suffixes (or duplicate measured suffixes in the ESX) are skipped
+                                and listed in the result summary.
+                            </li>
+                            <li>
+                                <strong>Export Ekahau APs</strong> — Read APs from one or more{' '}
+                                <code>.esx</code> files and download an Excel workbook with{' '}
+                                <strong>AP Name</strong>, <strong>Model</strong>, and <strong>Serial</strong>{' '}
+                                columns (<strong>Serial</strong> is left blank for manual fill). Optionally
+                                apply a flat prefix or a template using <code>{'{filename}'}</code>,{' '}
+                                <code>{'{floor}'}</code>, and <code>{'{custom}'}</code> when building exported
+                                names. The original ESX files are not modified.
+                            </li>
+                            <li>
+                                <strong>Prefix ESX AP</strong> — Prepend a flat prefix or the same template
+                                placeholders to AP names inside the uploaded <code>.esx</code> file(s). Names
+                                that already start with the resolved prefix are skipped (idempotent). Download
+                                the modified project when finished.
+                            </li>
+                        </ul>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Open <strong>Ekahau</strong> from the sidebar and choose the tool card that
+                                matches your workflow.
+                            </li>
+                            <li>
+                                Upload the required <code>.esx</code> (and workbook/CSV when needed), fill in
+                                sheet/column or prefix fields, then run the tool.
+                            </li>
+                            <li>
+                                Review the on-page success, skipped, and error counts, then use{' '}
+                                <strong>Download result</strong> to retrieve the modified ESX or export
+                                workbook.
                             </li>
                         </ol>
                     </section>
