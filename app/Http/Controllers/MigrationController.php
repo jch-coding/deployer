@@ -103,7 +103,7 @@ class MigrationController extends Controller
                 ],
                 'devices' => ['required', 'array', 'min:1'],
                 'devices.*.name' => ['required', 'string', 'min:3', 'max:255'],
-                'devices.*.serial' => ['required', 'string', 'min:12', 'max:255'],
+                'devices.*.serial' => ['required', 'string', 'min:10', 'max:255'],
                 'devices.*.mac_address' => [
                     'nullable',
                     'string',

@@ -228,6 +228,24 @@ test('create deployment validates devices and mac address', function () {
         ]);
 });
 
+test('create deployment accepts serials that are at least 10 characters', function () {
+    $this->post(route('migrations.create-deployment'), migrationCreateDeploymentPayload([
+        'devices' => [
+            [
+                'name' => 'AP-Ten-Chars',
+                'serial' => 'CN12345678',
+                'mac_address' => 'aa:bb:cc:dd:ee:01',
+                'site' => null,
+                'group' => null,
+            ],
+        ],
+    ]))
+        ->assertRedirect(route('migrations.index'))
+        ->assertSessionDoesntHaveErrors();
+
+    expect(Device::query()->where('serial', 'CN12345678')->exists())->toBeTrue();
+});
+
 test('create deployment stays on migrations page and does not redirect to deployment show', function () {
     $response = $this->post(route('migrations.create-deployment'), migrationCreateDeploymentPayload());
 
