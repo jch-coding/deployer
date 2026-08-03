@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import LaravelPaginator from '@/components/ui/LaravelPaginator';
+import { useInertiaPoll } from '@/hooks/use-inertia-poll';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as webhooksIndex } from '@/routes/webhooks';
@@ -62,6 +63,9 @@ export default function Index() {
         onWebhookReceived,
         [current_client?.id, onWebhookReceived],
     );
+
+    // Fallback when Echo/Reverb is unreachable (HTTPS tunnel + local ws://).
+    useInertiaPoll(['events'], 5000);
 
     const columns = useMemo<ColumnDef<WebhookEventRow>[]>(
         () => [
