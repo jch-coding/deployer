@@ -4,9 +4,11 @@ namespace App\Services;
 
 class ArubaControllerConfigParser
 {
-    private const AP_ROW_PATTERN = '/^(\S+)\s+.*?([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s+(\S+)/i';
+    private const AP_ROW_PATTERN = '/^(\S+)\s+(\S+)\s+.*?([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s+(\S+)/i';
 
     private const LLDP_ROW_PATTERN = '/^(\S+)\s+\S+\s+\d+\s+(\S+)\s+(\S+)\s+/';
+
+    private const RUNNING_CONFIG_PATTERN = '/#show running-config(?:uration)?/i';
 
     /** @var array<int, string> */
     private const PERSONAL_OPMODE_TOKENS = [
@@ -26,40 +28,49 @@ class ArubaControllerConfigParser
             return [];
         }
 
+        $sharedRunningConfig = $this->findSharedRunningConfig($content);
         $parsedControllers = [];
 
         foreach ($controllerBlocks as $block) {
+            $blockContent = $this->withRunningConfig($block['content'], $sharedRunningConfig);
             $parsedNames = array_column($parsedControllers, 'controller_name');
             $pairedName = $this->findParsedPair($block['name'], $parsedNames);
 
             if ($pairedName !== null) {
                 $pairedIndex = array_search($pairedName, $parsedNames, true);
+                $partnerDevices = $this->parseApDatabase($blockContent);
+                $partnerApGroups = $this->uniqueApGroups($partnerDevices);
+
                 $parsedControllers[$pairedIndex]['lldp_neighbors'] = $this->mergeLldpNeighbors(
                     $parsedControllers[$pairedIndex]['lldp_neighbors'],
-                    $this->parseLldpNeighbors($block['content']),
+                    $this->parseLldpNeighbors($blockContent),
                 );
-                $partnerWlanProfiles = $this->parseWlanProfiles($block['content']);
+                $partnerWlanProfiles = $this->parseWlanProfiles($blockContent, $partnerApGroups);
                 $parsedControllers[$pairedIndex]['wlan_profiles'] = $this->mergeWlanProfiles(
                     $parsedControllers[$pairedIndex]['wlan_profiles'],
                     $partnerWlanProfiles,
                 );
+                $parsedControllers[$pairedIndex]['radio_profiles'] = $this->mergeRadioProfiles(
+                    $parsedControllers[$pairedIndex]['radio_profiles'],
+                    $this->parseRadioProfiles($blockContent, $partnerApGroups),
+                );
                 $parsedControllers[$pairedIndex]['auth_servers'] = $this->mergeAuthServers(
                     $parsedControllers[$pairedIndex]['auth_servers'],
-                    $this->parseAuthServers($block['content']),
+                    $this->parseAuthServers($blockContent),
                 );
                 $parsedControllers[$pairedIndex]['server_groups'] = $this->mergeServerGroups(
                     $parsedControllers[$pairedIndex]['server_groups'],
-                    $this->parseServerGroups($block['content'], $partnerWlanProfiles),
+                    $this->parseServerGroups($blockContent, $partnerWlanProfiles),
                 );
                 $parsedControllers[$pairedIndex]['user_roles'] = $this->mergeUserRoles(
                     $parsedControllers[$pairedIndex]['user_roles'],
-                    $this->parseUserRoles($block['content']),
+                    $this->parseUserRoles($blockContent),
                 );
 
                 continue;
             }
 
-            $parsedControllers[] = $this->parseControllerBlock($block['name'], $block['content']);
+            $parsedControllers[] = $this->parseControllerBlock($block['name'], $blockContent);
         }
 
         return $parsedControllers;
@@ -138,7 +149,7 @@ class ArubaControllerConfigParser
     /**
      * @return array{
      *     controller_name: string,
-     *     devices: array<int, array{name: string, serial: string, mac: string}>,
+     *     devices: array<int, array{name: string, serial: string, mac: string, group: string}>,
      *     lldp_neighbors: array<int, array{switch: string, ports: array<int, string>}>,
      *     auth_servers: array<int, array{
      *         name: string,
@@ -158,8 +169,16 @@ class ArubaControllerConfigParser
      *         ssid_profile_name: string,
      *         raw_vlan: string|null,
      *         vlan_name: string|null,
+     *         enabled: bool,
      *         body: array<string, mixed>,
      *         warnings: array<int, string>
+     *     }>,
+     *     radio_profiles: array<int, array{
+     *         ap_group: string,
+     *         profile_name: string,
+     *         band: string,
+     *         eirp_min: int|null,
+     *         eirp_max: int|null
      *     }>,
      *     user_roles: array<int, array{
      *         name: string,
@@ -174,21 +193,72 @@ class ArubaControllerConfigParser
      */
     private function parseControllerBlock(string $controllerName, string $content): array
     {
-        $wlanProfiles = $this->deduplicateWlanProfiles($this->parseWlanProfiles($content));
+        $devices = $this->parseApDatabase($content);
+        $apGroups = $this->uniqueApGroups($devices);
+        $wlanProfiles = $this->deduplicateWlanProfiles($this->parseWlanProfiles($content, $apGroups));
 
         return [
             'controller_name' => $controllerName,
-            'devices' => $this->parseApDatabase($content),
+            'devices' => $devices,
             'lldp_neighbors' => $this->parseLldpNeighbors($content),
             'auth_servers' => $this->deduplicateAuthServers($this->parseAuthServers($content)),
             'server_groups' => $this->deduplicateServerGroups($this->parseServerGroups($content, $wlanProfiles)),
             'wlan_profiles' => $wlanProfiles,
+            'radio_profiles' => $this->deduplicateRadioProfiles($this->parseRadioProfiles($content, $apGroups)),
             'user_roles' => $this->deduplicateUserRoles($this->parseUserRoles($content)),
         ];
     }
 
     /**
-     * @return array<int, array{name: string, serial: string, mac: string}>
+     * When the dump has exactly one running-config section, return it for reuse across controllers.
+     */
+    private function findSharedRunningConfig(string $content): ?string
+    {
+        if (! preg_match_all(self::RUNNING_CONFIG_PATTERN, $content, $matches, PREG_OFFSET_CAPTURE)) {
+            return null;
+        }
+
+        if (count($matches[0]) !== 1) {
+            return null;
+        }
+
+        return $this->extractSection($content, self::RUNNING_CONFIG_PATTERN, null);
+    }
+
+    private function withRunningConfig(string $blockContent, ?string $sharedRunningConfig): string
+    {
+        if ($this->extractSection($blockContent, self::RUNNING_CONFIG_PATTERN, null) !== null) {
+            return $blockContent;
+        }
+
+        if ($sharedRunningConfig === null) {
+            return $blockContent;
+        }
+
+        return rtrim($blockContent)."\n\n".$sharedRunningConfig;
+    }
+
+    /**
+     * @param  array<int, array{name: string, serial: string, mac: string, group: string}>  $devices
+     * @return array<int, string>
+     */
+    private function uniqueApGroups(array $devices): array
+    {
+        $groups = [];
+
+        foreach ($devices as $device) {
+            $group = $device['group'] ?? '';
+
+            if ($group !== '') {
+                $groups[$group] = true;
+            }
+        }
+
+        return array_keys($groups);
+    }
+
+    /**
+     * @return array<int, array{name: string, serial: string, mac: string, group: string}>
      */
     private function parseApDatabase(string $content): array
     {
@@ -213,7 +283,7 @@ class ArubaControllerConfigParser
             }
 
             if (preg_match(self::AP_ROW_PATTERN, $line, $match)) {
-                $serial = $match[3];
+                $serial = $match[4];
 
                 if (isset($seenSerials[$serial])) {
                     continue;
@@ -222,7 +292,8 @@ class ArubaControllerConfigParser
                 $seenSerials[$serial] = true;
                 $devices[] = [
                     'name' => $match[1],
-                    'mac' => strtolower($match[2]),
+                    'group' => $match[2],
+                    'mac' => strtolower($match[3]),
                     'serial' => $serial,
                 ];
             }
@@ -236,7 +307,7 @@ class ArubaControllerConfigParser
      */
     private function parseLldpNeighbors(string $content): array
     {
-        $section = $this->extractSection($content, '/#show ap lldp neighbors/i', '/(?:#show running-config|\([^)]+\) #)/i');
+        $section = $this->extractSection($content, '/#show ap lldp neighbors/i', '/(?:#show running-config(?:uration)?|\([^)]+\) #)/i');
 
         if ($section === null) {
             return [];
@@ -288,6 +359,7 @@ class ArubaControllerConfigParser
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }>  $primaryProfiles
@@ -295,6 +367,7 @@ class ArubaControllerConfigParser
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }>  $partnerProfiles
@@ -302,6 +375,7 @@ class ArubaControllerConfigParser
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }>
@@ -309,6 +383,42 @@ class ArubaControllerConfigParser
     private function mergeWlanProfiles(array $primaryProfiles, array $partnerProfiles): array
     {
         return $this->deduplicateWlanProfiles(array_merge($primaryProfiles, $partnerProfiles));
+    }
+
+    /**
+     * @param  array<int, array{ap_group: string, profile_name: string, band: string, eirp_min: int|null, eirp_max: int|null}>  $primaryProfiles
+     * @param  array<int, array{ap_group: string, profile_name: string, band: string, eirp_min: int|null, eirp_max: int|null}>  $partnerProfiles
+     * @return array<int, array{ap_group: string, profile_name: string, band: string, eirp_min: int|null, eirp_max: int|null}>
+     */
+    private function mergeRadioProfiles(array $primaryProfiles, array $partnerProfiles): array
+    {
+        return $this->deduplicateRadioProfiles(array_merge($primaryProfiles, $partnerProfiles));
+    }
+
+    /**
+     * @param  array<int, array{ap_group: string, profile_name: string, band: string, eirp_min: int|null, eirp_max: int|null}>  $profiles
+     * @return array<int, array{ap_group: string, profile_name: string, band: string, eirp_min: int|null, eirp_max: int|null}>
+     */
+    private function deduplicateRadioProfiles(array $profiles): array
+    {
+        $byKey = [];
+
+        foreach ($profiles as $profile) {
+            $key = $profile['ap_group']."\0".$profile['band']."\0".$profile['profile_name'];
+            $byKey[$key] = $profile;
+        }
+
+        $deduplicated = array_values($byKey);
+        usort(
+            $deduplicated,
+            function (array $a, array $b): int {
+                return strcmp($a['ap_group'], $b['ap_group'])
+                    ?: strcmp($a['band'], $b['band'])
+                    ?: strcmp($a['profile_name'], $b['profile_name']);
+            },
+        );
+
+        return $deduplicated;
     }
 
     /**
@@ -659,6 +769,7 @@ class ArubaControllerConfigParser
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }>  $profiles
@@ -666,6 +777,7 @@ class ArubaControllerConfigParser
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }>
@@ -700,6 +812,7 @@ class ArubaControllerConfigParser
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }  $first
@@ -707,6 +820,7 @@ class ArubaControllerConfigParser
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }  $second
@@ -714,6 +828,7 @@ class ArubaControllerConfigParser
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }
@@ -777,7 +892,7 @@ class ArubaControllerConfigParser
      */
     private function parseAuthServers(string $content): array
     {
-        $section = $this->extractSection($content, '/#show running-config/i', null);
+        $section = $this->extractSection($content, self::RUNNING_CONFIG_PATTERN, null);
 
         if ($section === null) {
             return [];
@@ -1020,7 +1135,7 @@ class ArubaControllerConfigParser
      */
     private function parseServerGroups(string $content, array $wlanProfiles): array
     {
-        $section = $this->extractSection($content, '/#show running-config/i', null);
+        $section = $this->extractSection($content, self::RUNNING_CONFIG_PATTERN, null);
 
         if ($section === null) {
             return [];
@@ -1144,33 +1259,83 @@ class ArubaControllerConfigParser
     }
 
     /**
+     * @param  array<int, string>  $apGroupNames
      * @return array<int, array{
      *     ssid_profile_name: string,
      *     raw_vlan: string|null,
      *     vlan_name: string|null,
+     *     enabled: bool,
      *     body: array<string, mixed>,
      *     warnings: array<int, string>
      * }>
      */
-    private function parseWlanProfiles(string $content): array
+    private function parseWlanProfiles(string $content, array $apGroupNames): array
     {
-        $section = $this->extractSection($content, '/#show running-config/i', null);
+        $section = $this->extractSection($content, self::RUNNING_CONFIG_PATTERN, null);
 
-        if ($section === null) {
+        if ($section === null || $apGroupNames === []) {
             return [];
         }
 
         $ssidProfiles = $this->parseSsidProfileBlocks($section);
-        $virtualApBySsidProfile = $this->parseVirtualApMap($section);
+        $virtualApsByName = $this->parseVirtualApBlocks($section);
+        $apGroups = $this->parseApGroupBlocks($section);
         $aaaProfiles = $this->parseAaaProfileBlocks($section);
+
+        /** @var array<string, array{vlan: ?string, allowed_band: ?string, aaa_profile: ?string, vap_enabled: bool}> $virtualApBySsidProfile */
+        $virtualApBySsidProfile = [];
+
+        foreach ($apGroupNames as $groupName) {
+            $group = $apGroups[$groupName] ?? null;
+
+            if ($group === null) {
+                continue;
+            }
+
+            foreach ($group['virtual_aps'] as $vapName) {
+                $vap = $virtualApsByName[$vapName] ?? null;
+
+                if ($vap === null || $vap['ssid_profile'] === null) {
+                    continue;
+                }
+
+                $ssidProfileName = $vap['ssid_profile'];
+                $candidate = [
+                    'vlan' => $vap['vlan'],
+                    'allowed_band' => $vap['allowed_band'],
+                    'aaa_profile' => $vap['aaa_profile'],
+                    'vap_enabled' => $vap['vap_enabled'],
+                ];
+
+                if (! isset($virtualApBySsidProfile[$ssidProfileName])) {
+                    $virtualApBySsidProfile[$ssidProfileName] = $candidate;
+
+                    continue;
+                }
+
+                $existing = $virtualApBySsidProfile[$ssidProfileName];
+
+                if ($existing['vlan'] === null && $candidate['vlan'] !== null) {
+                    $virtualApBySsidProfile[$ssidProfileName] = $candidate;
+                } elseif ($candidate['vap_enabled'] && ! $existing['vap_enabled']) {
+                    $virtualApBySsidProfile[$ssidProfileName] = $candidate;
+                }
+            }
+        }
 
         $profiles = [];
 
-        foreach ($ssidProfiles as $profileName => $ssidData) {
-            $virtualApData = $virtualApBySsidProfile[$profileName] ?? null;
+        foreach ($virtualApBySsidProfile as $profileName => $virtualApData) {
+            $ssidData = $ssidProfiles[$profileName] ?? null;
+
+            if ($ssidData === null) {
+                continue;
+            }
+
             $rawVlan = $virtualApData['vlan'] ?? null;
             $allowedBand = $virtualApData['allowed_band'] ?? null;
             $aaaProfileName = $virtualApData['aaa_profile'] ?? null;
+            $enabled = $virtualApData['vap_enabled'];
             $deployName = ($ssidData['essid'] !== null && $ssidData['essid'] !== '')
                 ? $ssidData['essid']
                 : $profileName;
@@ -1187,16 +1352,190 @@ class ArubaControllerConfigParser
                 'ssid_profile_name' => $deployName,
                 'raw_vlan' => $rawVlan,
                 'vlan_name' => $vlanName,
+                'enabled' => $enabled,
                 'body' => $this->buildWlanSsidProfileBody(
                     $deployName,
                     $ssidData,
                     $vlanName,
                     $allowedBand,
                     $security,
+                    $enabled,
                 ),
                 'warnings' => $warnings,
             ];
         }
+
+        return $profiles;
+    }
+
+    /**
+     * @param  array<int, string>  $apGroupNames
+     * @return array<int, array{ap_group: string, profile_name: string, band: string, eirp_min: int|null, eirp_max: int|null}>
+     */
+    private function parseRadioProfiles(string $content, array $apGroupNames): array
+    {
+        $section = $this->extractSection($content, self::RUNNING_CONFIG_PATTERN, null);
+
+        if ($section === null || $apGroupNames === []) {
+            return [];
+        }
+
+        $apGroups = $this->parseApGroupBlocks($section);
+        $rfProfiles = $this->parseRfRadioProfileBlocks($section);
+        $profiles = [];
+
+        foreach ($apGroupNames as $groupName) {
+            $group = $apGroups[$groupName] ?? null;
+
+            if ($group === null) {
+                continue;
+            }
+
+            foreach (['a', 'g'] as $band) {
+                $profileName = $group['dot11'.$band.'_radio_profile'] ?? null;
+
+                if ($profileName === null) {
+                    continue;
+                }
+
+                $rfKey = $band."\0".$profileName;
+                $rfData = $rfProfiles[$rfKey] ?? ['eirp_min' => null, 'eirp_max' => null];
+
+                $profiles[] = [
+                    'ap_group' => $groupName,
+                    'profile_name' => $profileName,
+                    'band' => $band,
+                    'eirp_min' => $rfData['eirp_min'],
+                    'eirp_max' => $rfData['eirp_max'],
+                ];
+            }
+        }
+
+        return $profiles;
+    }
+
+    /**
+     * @return array<string, array{
+     *     virtual_aps: array<int, string>,
+     *     dot11a_radio_profile: string|null,
+     *     dot11g_radio_profile: string|null
+     * }>
+     */
+    private function parseApGroupBlocks(string $section): array
+    {
+        $groups = [];
+        $currentName = null;
+        $currentVirtualAps = [];
+        $currentDot11a = null;
+        $currentDot11g = null;
+
+        $flush = function () use (&$groups, &$currentName, &$currentVirtualAps, &$currentDot11a, &$currentDot11g): void {
+            if ($currentName === null) {
+                return;
+            }
+
+            $groups[$currentName] = [
+                'virtual_aps' => $currentVirtualAps,
+                'dot11a_radio_profile' => $currentDot11a,
+                'dot11g_radio_profile' => $currentDot11g,
+            ];
+        };
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^ap-group "([^"]+)"/', $trimmed, $match)) {
+                $flush();
+                $currentName = $match[1];
+                $currentVirtualAps = [];
+                $currentDot11a = null;
+                $currentDot11g = null;
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentName !== null) {
+                $flush();
+                $currentName = null;
+                $currentVirtualAps = [];
+                $currentDot11a = null;
+                $currentDot11g = null;
+
+                continue;
+            }
+
+            if ($currentName === null) {
+                continue;
+            }
+
+            if (preg_match('/^\s+virtual-ap "([^"]+)"/', $trimmed, $match)) {
+                $currentVirtualAps[] = $match[1];
+            } elseif (preg_match('/^\s+dot11a-radio-profile "([^"]+)"/', $trimmed, $match)) {
+                $currentDot11a = $match[1];
+            } elseif (preg_match('/^\s+dot11g-radio-profile "([^"]+)"/', $trimmed, $match)) {
+                $currentDot11g = $match[1];
+            }
+        }
+
+        $flush();
+
+        return $groups;
+    }
+
+    /**
+     * @return array<string, array{eirp_min: int|null, eirp_max: int|null}>
+     */
+    private function parseRfRadioProfileBlocks(string $section): array
+    {
+        $profiles = [];
+        $currentKey = null;
+        $currentMin = null;
+        $currentMax = null;
+
+        $flush = function () use (&$profiles, &$currentKey, &$currentMin, &$currentMax): void {
+            if ($currentKey === null) {
+                return;
+            }
+
+            $profiles[$currentKey] = [
+                'eirp_min' => $currentMin,
+                'eirp_max' => $currentMax,
+            ];
+        };
+
+        foreach (explode("\n", $section) as $line) {
+            $trimmed = rtrim($line);
+
+            if (preg_match('/^rf dot11([ag])-radio-profile "([^"]+)"/', $trimmed, $match)) {
+                $flush();
+                $currentKey = $match[1]."\0".$match[2];
+                $currentMin = null;
+                $currentMax = null;
+
+                continue;
+            }
+
+            if ($trimmed === '!' && $currentKey !== null) {
+                $flush();
+                $currentKey = null;
+                $currentMin = null;
+                $currentMax = null;
+
+                continue;
+            }
+
+            if ($currentKey === null) {
+                continue;
+            }
+
+            if (preg_match('/^\s+eirp-min\s+(\d+)/', $trimmed, $match)) {
+                $currentMin = (int) $match[1];
+            } elseif (preg_match('/^\s+eirp-max\s+(\d+)/', $trimmed, $match)) {
+                $currentMax = (int) $match[1];
+            }
+        }
+
+        $flush();
 
         return $profiles;
     }
@@ -1313,52 +1652,74 @@ class ArubaControllerConfigParser
     }
 
     /**
-     * @return array<string, array{vlan: ?string, allowed_band: ?string, aaa_profile: ?string}>
+     * @return array<string, array{
+     *     ssid_profile: string|null,
+     *     vlan: string|null,
+     *     allowed_band: string|null,
+     *     aaa_profile: string|null,
+     *     vap_enabled: bool
+     * }>
      */
-    private function parseVirtualApMap(string $section): array
+    private function parseVirtualApBlocks(string $section): array
     {
         $map = [];
+        $currentName = null;
         $currentSsidProfile = null;
         $currentVlan = null;
         $currentAllowedBand = null;
         $currentAaaProfile = null;
+        $currentVapEnabled = true;
 
-        $flush = function () use (&$map, &$currentSsidProfile, &$currentVlan, &$currentAllowedBand, &$currentAaaProfile): void {
-            if ($currentSsidProfile === null) {
+        $flush = function () use (
+            &$map,
+            &$currentName,
+            &$currentSsidProfile,
+            &$currentVlan,
+            &$currentAllowedBand,
+            &$currentAaaProfile,
+            &$currentVapEnabled,
+        ): void {
+            if ($currentName === null) {
                 return;
             }
 
-            if ($currentVlan === null && $currentAaaProfile === null && $currentAllowedBand === null) {
-                return;
-            }
-
-            $map[$currentSsidProfile] = [
+            $map[$currentName] = [
+                'ssid_profile' => $currentSsidProfile,
                 'vlan' => $currentVlan,
                 'allowed_band' => $currentAllowedBand,
                 'aaa_profile' => $currentAaaProfile,
+                'vap_enabled' => $currentVapEnabled,
             ];
         };
 
         foreach (explode("\n", $section) as $line) {
             $trimmed = rtrim($line);
 
-            if (preg_match('/^wlan virtual-ap "/', $trimmed)) {
+            if (preg_match('/^wlan virtual-ap "([^"]+)"/', $trimmed, $match)) {
                 $flush();
+                $currentName = $match[1];
                 $currentSsidProfile = null;
                 $currentVlan = null;
                 $currentAllowedBand = null;
                 $currentAaaProfile = null;
+                $currentVapEnabled = true;
 
                 continue;
             }
 
-            if ($trimmed === '!' && $currentSsidProfile !== null) {
+            if ($trimmed === '!' && $currentName !== null) {
                 $flush();
+                $currentName = null;
                 $currentSsidProfile = null;
                 $currentVlan = null;
                 $currentAllowedBand = null;
                 $currentAaaProfile = null;
+                $currentVapEnabled = true;
 
+                continue;
+            }
+
+            if ($currentName === null) {
                 continue;
             }
 
@@ -1370,6 +1731,10 @@ class ArubaControllerConfigParser
                 $currentAllowedBand = $match[1];
             } elseif (preg_match('/^\s+aaa-profile "([^"]+)"/', $trimmed, $match)) {
                 $currentAaaProfile = $match[1];
+            } elseif (preg_match('/^\s+no vap-enable\b/', $trimmed)) {
+                $currentVapEnabled = false;
+            } elseif (preg_match('/^\s+vap-enable\b/', $trimmed)) {
+                $currentVapEnabled = true;
             }
         }
 
@@ -1586,10 +1951,11 @@ class ArubaControllerConfigParser
         ?string $vlanName,
         ?string $allowedBand,
         array $security,
+        bool $enabled = true,
     ): array {
         $body = [
             'ssid' => $ssidName,
-            'enable' => true,
+            'enable' => $enabled,
             'forward-mode' => 'FORWARD_MODE_BRIDGE',
             'dmo' => [
                 'enable' => false,
@@ -1807,7 +2173,7 @@ class ArubaControllerConfigParser
      */
     private function parseUserRoles(string $content): array
     {
-        $section = $this->extractSection($content, '/#show running-config/i', null);
+        $section = $this->extractSection($content, self::RUNNING_CONFIG_PATTERN, null);
 
         if ($section === null) {
             return [];

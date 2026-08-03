@@ -52,6 +52,7 @@ function migrationCreateDeploymentPayload(array $overrides = []): array
                 'auth_servers' => [],
                 'server_groups' => [],
                 'wlan_profiles' => [],
+                'radio_profiles' => [],
                 'user_roles' => [],
             ],
         ],

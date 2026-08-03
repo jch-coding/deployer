@@ -2,6 +2,7 @@ export type MigrationDevice = {
     name: string;
     serial: string;
     mac: string;
+    group?: string;
     controller?: string;
 };
 
@@ -54,17 +55,31 @@ export function downloadMigrationDevicesCsv(
     controllerName?: string,
 ): void {
     const includeControllerColumn = devices.some((device) => device.controller !== undefined);
+    const includeGroupColumn = devices.some(
+        (device) => device.group !== undefined && device.group !== '',
+    );
+
+    const headers = ['name', 'serial', 'mac'];
+    if (includeGroupColumn) {
+        headers.push('group');
+    }
+    if (includeControllerColumn) {
+        headers.push('controller');
+    }
 
     downloadCsv(
         csvFilename('migration-devices', controllerName),
-        includeControllerColumn
-            ? ['name', 'serial', 'mac', 'controller']
-            : ['name', 'serial', 'mac'],
-        devices.map((device) =>
-            includeControllerColumn
-                ? [device.name, device.serial, device.mac, device.controller ?? '']
-                : [device.name, device.serial, device.mac],
-        ),
+        headers,
+        devices.map((device) => {
+            const row = [device.name, device.serial, device.mac];
+            if (includeGroupColumn) {
+                row.push(device.group ?? '');
+            }
+            if (includeControllerColumn) {
+                row.push(device.controller ?? '');
+            }
+            return row;
+        }),
     );
 }
 

@@ -25,6 +25,7 @@ import ControllerMigrationSection from '@/pages/Migration/ControllerMigrationSec
 import CreateDeploymentFromDevicesDialog, {
     type DeviceGroupOption,
 } from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
+import RadioProfilesCard from '@/pages/Migration/RadioProfilesCard';
 import UserRolesCard from '@/pages/Migration/UserRolesCard';
 import {
     buildDeployProfilePayload,
@@ -170,6 +171,12 @@ export default function Index() {
 
     const allWlanProfiles = useMemo(
         () => parsed_controllers.flatMap((controller) => controller.wlan_profiles),
+        [parsed_controllers],
+    );
+
+    const allRadioProfiles = useMemo(
+        () =>
+            parsed_controllers.flatMap((controller) => controller.radio_profiles ?? []),
         [parsed_controllers],
     );
 
@@ -578,6 +585,7 @@ export default function Index() {
                                     <thead>
                                         <tr className="border-b text-left">
                                             <th className="px-2 py-2 font-medium">Name</th>
+                                            <th className="px-2 py-2 font-medium">Group</th>
                                             <th className="px-2 py-2 font-medium">Serial</th>
                                             <th className="px-2 py-2 font-medium">MAC</th>
                                             <th className="px-2 py-2 font-medium">Controller</th>
@@ -587,6 +595,9 @@ export default function Index() {
                                         {allDevices.map((device) => (
                                             <tr key={`${device.controller}-${device.serial}`} className="border-b">
                                                 <td className="px-2 py-2">{device.name}</td>
+                                                <td className="px-2 py-2 font-mono text-xs">
+                                                    {device.group ?? '—'}
+                                                </td>
                                                 <td className="px-2 py-2 font-mono text-xs">
                                                     {device.serial}
                                                 </td>
@@ -712,6 +723,7 @@ export default function Index() {
                                                 </th>
                                                 <th className="px-2 py-2 font-medium">Profile</th>
                                                 <th className="px-2 py-2 font-medium">ESSID</th>
+                                                <th className="px-2 py-2 font-medium">Status</th>
                                                 <th className="px-2 py-2 font-medium">Opmode</th>
                                                 <th className="px-2 py-2 font-medium">VLAN</th>
                                                 <th className="px-2 py-2 font-medium">Passphrase</th>
@@ -764,6 +776,11 @@ export default function Index() {
                                                             </label>
                                                         </td>
                                                         <td className="px-2 py-2">{essid || '—'}</td>
+                                                        <td className="px-2 py-2">
+                                                            {profile.enabled !== false
+                                                                ? 'ENABLED'
+                                                                : 'DISABLED'}
+                                                        </td>
                                                         <td className="px-2 py-2 font-mono text-xs">
                                                             {opmode || '—'}
                                                         </td>
@@ -977,6 +994,8 @@ export default function Index() {
                                 )}
                             </CardContent>
                         </Card>
+
+                        <RadioProfilesCard radioProfiles={allRadioProfiles} />
                     </>
                 )}
             </div>

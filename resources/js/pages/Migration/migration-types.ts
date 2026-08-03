@@ -32,8 +32,17 @@ export type WlanProfile = {
     ssid_profile_name: string;
     raw_vlan: string | null;
     vlan_name: string | null;
+    enabled: boolean;
     body: Record<string, unknown>;
     warnings: string[];
+};
+
+export type RadioProfile = {
+    ap_group: string;
+    profile_name: string;
+    band: string;
+    eirp_min: number | null;
+    eirp_max: number | null;
 };
 
 export type NetDestinationEntry = {
@@ -97,6 +106,7 @@ export type ParsedController = {
     auth_servers: AuthServer[];
     server_groups: ServerGroup[];
     wlan_profiles: WlanProfile[];
+    radio_profiles: RadioProfile[];
     user_roles: UserRole[];
 };
 

@@ -78,6 +78,7 @@ test('migrations parse uploads config file and returns parsed controllers', func
             ->has('parsed_controllers.0.auth_servers')
             ->has('parsed_controllers.0.server_groups')
             ->has('parsed_controllers.0.wlan_profiles')
+            ->has('parsed_controllers.0.radio_profiles')
             ->has('parsed_controllers.0.user_roles'));
 });
 

@@ -32,6 +32,7 @@ it('parses ap device fields from daytona fixture', function () {
 
     expect($first)->toMatchArray([
         'name' => 'DAY-H-IDF02-021',
+        'group' => 'DAY-Hub-AGV',
         'mac' => '50:e4:e0:c3:bb:6a',
         'serial' => 'PHS2KD006J',
     ]);
@@ -180,19 +181,38 @@ it('builds wlan profile body for DAYRF with both band legacy rates', function ()
         ->and($dayrf['body']['g-legacy-rates']['tx-rates'])->toBe(['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB']);
 });
 
-it('applies default legacy rates to WCD_PI profile when config has no rates', function () {
-    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+it('applies default legacy rates when config has no rates', function () {
+    $content = <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+
+(WLC-ONE) #show running-config
+wlan ssid-profile "NORATE_ssid_prof"
+    essid "NoRate"
+    wpa-passphrase "norate-passphrase-123"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "NORATE"
+    vlan DAYKIT
+    ssid-profile "NORATE_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "NORATE"
+!
+CONFIG;
+
     $parser = new ArubaControllerConfigParser;
-    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+    $profile = $parser->parse($content)[0]['wlan_profiles'][0];
 
-    $wcdPi = collect($profiles)->firstWhere('ssid_profile_name', 'WCD_PI');
-
-    expect($wcdPi)->not->toBeNull()
-        ->and($wcdPi['body']['g-legacy-rates'])->toBe([
-            'basic-rates' => ['RATE_12MB', 'RATE_24MB'],
-            'tx-rates' => ['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB'],
-        ])
-        ->and($wcdPi['body']['a-legacy-rates'])->toBe([
+    expect($profile['body']['g-legacy-rates'])->toBe([
+        'basic-rates' => ['RATE_12MB', 'RATE_24MB'],
+        'tx-rates' => ['RATE_12MB', 'RATE_18MB', 'RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB'],
+    ])
+        ->and($profile['body']['a-legacy-rates'])->toBe([
             'basic-rates' => ['RATE_12MB', 'RATE_24MB'],
             'tx-rates' => ['RATE_24MB', 'RATE_36MB', 'RATE_48MB', 'RATE_54MB'],
         ]);
@@ -211,38 +231,133 @@ it('maps DAYWCD vlan to WCD_WLAN for DAYWCD profile', function () {
         ->and($daywcd['body']['vlan-name'])->toBe('WCD_WLAN');
 });
 
-it('keeps WCD_PI vlan unchanged for WCD_PI profile', function () {
+it('excludes SSIDs not referenced by AP groups in use', function () {
     $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
     $parser = new ArubaControllerConfigParser;
     $profiles = $parser->parse($content)[0]['wlan_profiles'];
+    $names = collect($profiles)->pluck('ssid_profile_name')->all();
 
-    $wcdPi = collect($profiles)->firstWhere('ssid_profile_name', 'WCD_PI');
-
-    expect($wcdPi)->not->toBeNull()
-        ->and($wcdPi['raw_vlan'])->toBe('WCD_PI')
-        ->and($wcdPi['vlan_name'])->toBe('WCD_PI')
-        ->and($wcdPi['body']['vlan-name'])->toBe('WCD_PI');
+    expect($names)->not->toContain('TJs')
+        ->and($names)->not->toContain('WCD_PI')
+        ->and($names)->toContain('DAYKIT')
+        ->and($names)->toContain('WCD_AGV');
 });
 
-it('builds enterprise wlan profile for TJs without personal-security', function () {
+it('sets enabled false when virtual-ap has no vap-enable', function () {
     $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
     $parser = new ArubaControllerConfigParser;
     $profiles = $parser->parse($content)[0]['wlan_profiles'];
 
-    $tjs = collect($profiles)->firstWhere('ssid_profile_name', 'TJs');
+    $wcdAgv = collect($profiles)->firstWhere('ssid_profile_name', 'WCD_AGV');
+    $daykit = collect($profiles)->firstWhere('ssid_profile_name', 'DAYKIT');
+
+    expect($wcdAgv)->not->toBeNull()
+        ->and($wcdAgv['enabled'])->toBeFalse()
+        ->and($wcdAgv['body']['enable'])->toBeFalse()
+        ->and($daykit)->not->toBeNull()
+        ->and($daykit['enabled'])->toBeTrue()
+        ->and($daykit['body']['enable'])->toBeTrue();
+});
+
+it('parses radio profiles with eirp from ap-group bindings', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $radios = $parser->parse($content)[0]['radio_profiles'];
+
+    $hubG = collect($radios)->first(
+        fn (array $row): bool => $row['ap_group'] === 'DAY-Hub-AGV' && $row['band'] === 'g',
+    );
+    $hubA = collect($radios)->first(
+        fn (array $row): bool => $row['ap_group'] === 'DAY-Hub-AGV' && $row['band'] === 'a',
+    );
+    $officeG = collect($radios)->first(
+        fn (array $row): bool => $row['ap_group'] === 'DAY-OFFICE' && $row['band'] === 'g',
+    );
+
+    expect($hubG)->toMatchArray([
+        'ap_group' => 'DAY-Hub-AGV',
+        'profile_name' => 'DAY-Hub-g',
+        'band' => 'g',
+        'eirp_min' => 12,
+        'eirp_max' => 15,
+    ])
+        ->and($hubA)->toMatchArray([
+            'ap_group' => 'DAY-Hub-AGV',
+            'profile_name' => 'DAY-Hub-a',
+            'band' => 'a',
+            'eirp_min' => 18,
+            'eirp_max' => null,
+        ])
+        ->and($officeG)->toMatchArray([
+            'ap_group' => 'DAY-OFFICE',
+            'profile_name' => 'DAY-Hub-g',
+            'band' => 'g',
+            'eirp_min' => 12,
+            'eirp_max' => 15,
+        ]);
+});
+
+it('keeps WCD_AGV vlan mapping for WCD_AGV profile', function () {
+    $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    $wcdAgv = collect($profiles)->firstWhere('ssid_profile_name', 'WCD_AGV');
+
+    expect($wcdAgv)->not->toBeNull()
+        ->and($wcdAgv['raw_vlan'])->toBe('DAYAGV')
+        ->and($wcdAgv['vlan_name'])->toBe('WCD_AGV')
+        ->and($wcdAgv['body']['vlan-name'])->toBe('WCD_AGV');
+});
+
+it('builds enterprise wlan profile when virtual-ap is in an in-use ap-group', function () {
+    $content = <<<'CONFIG'
+(WLC-ENT) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ENT-001       Office       514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERENT001   N/A   N/A   N/A
+
+(WLC-ENT) #show running-config
+aaa authentication-server radius "WCPPM"
+    host "10.0.0.1"
+    key "secret"
+!
+aaa server-group "CPPM-West-preferred-svr-group"
+    auth-server WCPPM position 1
+!
+aaa profile "TJs-dot1x-aaa-prof"
+    dot1x-server-group "CPPM-West-preferred-svr-group"
+!
+wlan ssid-profile "TJs-SSID-profile"
+    essid "TJs"
+    opmode wpa3-aes-ccm-128
+!
+wlan virtual-ap "TJs-vap-prof"
+    aaa-profile "TJs-dot1x-aaa-prof"
+    ssid-profile "TJs-SSID-profile"
+!
+ap-group "Office"
+    virtual-ap "TJs-vap-prof"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $result = $parser->parse($content)[0];
+    $tjs = collect($result['wlan_profiles'])->firstWhere('ssid_profile_name', 'TJs');
+    $west = collect($result['server_groups'])->firstWhere('name', 'CPPM-West-preferred-svr-group');
 
     expect($tjs)->not->toBeNull()
         ->and($tjs['body']['opmode'])->toBe('WPA3_AES_CCM_128')
         ->and($tjs['body']['dot1x'])->toBeTrue()
         ->and($tjs['body']['auth-server-group'])->toBe('CPPM-West-preferred-svr-group')
         ->and($tjs['body'])->not->toHaveKey('personal-security')
-        ->and($tjs['body'])->not->toHaveKey('acct-server-group')
-        ->and($tjs['body'])->not->toHaveKey('radius-accounting')
-        ->and($tjs['warnings'])->not->toContain('Missing wpa-passphrase')
-        ->and($tjs['warnings'])->toContain('Missing vlan from virtual-ap');
+        ->and($tjs['warnings'])->toContain('Missing vlan from virtual-ap')
+        ->and($west['associated_essids'])->toBe(['TJs']);
 });
 
-it('parses server groups and associates enterprise essids', function () {
+it('parses server groups and associates enterprise essids from filtered wlans', function () {
     $content = file_get_contents(base_path('tests/fixtures/daytona_config.txt'));
     $parser = new ArubaControllerConfigParser;
     $groups = $parser->parse($content)[0]['server_groups'];
@@ -262,7 +377,7 @@ it('parses server groups and associates enterprise essids', function () {
                 ['server-name' => 'ECPPM', 'position' => 2],
             ],
         ])
-        ->and($west['associated_essids'])->toBe(['TJs']);
+        ->and($west['associated_essids'])->toBe([]);
 });
 
 it('maps personal opmode wpa2-psk-aes to WPA2_PERSONAL', function () {
@@ -293,6 +408,9 @@ wlan ssid-profile "OPEN_ssid_prof"
 wlan virtual-ap "OPEN"
     vlan DAYKIT
     ssid-profile "OPEN_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "OPEN"
 !
 CONFIG;
 
@@ -338,6 +456,9 @@ wlan virtual-ap "ENT"
     vlan DAYKIT
     ssid-profile "ENT_ssid_prof"
 !
+ap-group "default"
+    virtual-ap "ENT"
+!
 CONFIG;
 
     $parser = new ArubaControllerConfigParser;
@@ -375,6 +496,9 @@ wlan virtual-ap "SAE"
     vlan DAYKIT
     ssid-profile "SAE_ssid_prof"
 !
+ap-group "default"
+    virtual-ap "SAE"
+!
 CONFIG;
 
     $parser = new ArubaControllerConfigParser;
@@ -409,6 +533,10 @@ wlan ssid-profile "ONEKIT_ssid_prof"
 wlan virtual-ap "ONEKIT"
     vlan ONEKIT
     ssid-profile "ONEKIT_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "ONEKIT"
+!
 
 (WLC-TWO) #show ap database long
 AP Database
@@ -433,6 +561,10 @@ wlan ssid-profile "TWOKIT_ssid_prof"
 wlan virtual-ap "TWOKIT"
     vlan TWOKIT
     ssid-profile "TWOKIT_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "TWOKIT"
+!
 CONFIG;
 
     $parser = new ArubaControllerConfigParser;
@@ -550,6 +682,9 @@ wlan virtual-ap "DAYKIT"
     vlan DAYKIT
     ssid-profile "DAYKIT_ssid_prof"
 !
+ap-group "default"
+    virtual-ap "DAYKIT"
+!
 CONFIG;
 
     $parser = new ArubaControllerConfigParser;
@@ -608,6 +743,9 @@ wlan virtual-ap "G24"
     ssid-profile "G24_ssid_prof"
     allowed-band g
 !
+ap-group "default"
+    virtual-ap "G24"
+!
 CONFIG;
 
     $parser = new ArubaControllerConfigParser;
@@ -635,6 +773,9 @@ wlan virtual-ap "UNK"
     vlan DAYUNK
     ssid-profile "UNK_ssid_prof"
     allowed-band n
+!
+ap-group "default"
+    virtual-ap "UNK"
 !
 CONFIG;
 
@@ -844,6 +985,119 @@ it('parses daytona user roles and skips global/apprf access-lists', function () 
         ->and($httpsAcl['rules'][0]['service']['resolved']['name'] ?? null)->toBe('svc-https');
 });
 
+it('shares a single running-config across controllers and filters by each AP group', function () {
+    $content = <<<'CONFIG'
+(SITE-ALPHA) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-A-001         Group-A      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERA000001  N/A   N/A   N/A
+
+(SITE-BRAVO) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-B-001         Group-B      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERB000001  N/A   N/A   N/A
+
+(SITE-ALPHA) #show running-config
+aaa authentication-server radius "SharedRAD"
+    host "10.9.9.9"
+    key "shared-secret"
+!
+rf dot11a-radio-profile "A-radio"
+    eirp-min 10
+    eirp-max 14
+!
+rf dot11g-radio-profile "B-radio"
+    eirp-min 8
+    eirp-max 12
+!
+wlan ssid-profile "A_ssid_prof"
+    essid "SSID-A"
+    wpa-passphrase "passphrase-aaaaaaa"
+    opmode wpa2-psk-aes
+!
+wlan ssid-profile "B_ssid_prof"
+    essid "SSID-B"
+    wpa-passphrase "passphrase-bbbbbbb"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "VAP-A"
+    vlan DAYKIT
+    ssid-profile "A_ssid_prof"
+!
+wlan virtual-ap "VAP-B"
+    vlan DAYRF
+    ssid-profile "B_ssid_prof"
+!
+ap-group "Group-A"
+    virtual-ap "VAP-A"
+    dot11a-radio-profile "A-radio"
+!
+ap-group "Group-B"
+    virtual-ap "VAP-B"
+    dot11g-radio-profile "B-radio"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $results = $parser->parse($content);
+
+    expect($results)->toHaveCount(2)
+        ->and(collect($results[0]['auth_servers'])->pluck('name')->all())->toBe(['SharedRAD'])
+        ->and(collect($results[1]['auth_servers'])->pluck('name')->all())->toBe(['SharedRAD'])
+        ->and(collect($results[0]['wlan_profiles'])->pluck('ssid_profile_name')->all())->toBe(['SSID-A'])
+        ->and(collect($results[1]['wlan_profiles'])->pluck('ssid_profile_name')->all())->toBe(['SSID-B'])
+        ->and($results[0]['radio_profiles'])->toHaveCount(1)
+        ->and($results[0]['radio_profiles'][0])->toMatchArray([
+            'ap_group' => 'Group-A',
+            'profile_name' => 'A-radio',
+            'band' => 'a',
+            'eirp_min' => 10,
+            'eirp_max' => 14,
+        ])
+        ->and($results[1]['radio_profiles'][0])->toMatchArray([
+            'ap_group' => 'Group-B',
+            'profile_name' => 'B-radio',
+            'band' => 'g',
+            'eirp_min' => 8,
+            'eirp_max' => 12,
+        ]);
+});
+
+it('accepts show running-configuration as a section marker', function () {
+    $content = <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+
+(WLC-ONE) #show running-configuration
+wlan ssid-profile "CFG_ssid_prof"
+    essid "CFG"
+    wpa-passphrase "cfg-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "CFG"
+    vlan DAYKIT
+    ssid-profile "CFG_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "CFG"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    expect($profiles)->toHaveCount(1)
+        ->and($profiles[0]['ssid_profile_name'])->toBe('CFG');
+});
+
 function pairedControllerConfig(string $firstName, string $secondName): string
 {
     return <<<CONFIG
@@ -870,6 +1124,10 @@ wlan ssid-profile "FIRST_ssid_prof"
 wlan virtual-ap "FIRST"
     vlan FIRST
     ssid-profile "FIRST_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "FIRST"
+!
 
 ({$secondName}) #show ap database long
 AP Database
@@ -896,6 +1154,10 @@ wlan ssid-profile "SECOND_ssid_prof"
 wlan virtual-ap "SECOND"
     vlan SECOND
     ssid-profile "SECOND_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "SECOND"
+!
 CONFIG;
 }
 
@@ -922,6 +1184,8 @@ wlan ssid-profile "DAYKIT_ssid_prof"
     wpa-passphrase "daykit-passphrase-12345"
     opmode wpa2-psk-aes
 !
+ap-group "default"
+!
 
 ({$secondName}) #show ap database long
 AP Database
@@ -946,6 +1210,9 @@ wlan ssid-profile "DAYKIT_ssid_prof"
 wlan virtual-ap "DAYKIT"
     vlan DAYKIT
     ssid-profile "DAYKIT_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "DAYKIT"
 !
 CONFIG;
 }
@@ -977,6 +1244,9 @@ wlan virtual-ap "DAYKIT"
     vlan DAYKIT
     ssid-profile "DAYKIT_ssid_prof"
 !
+ap-group "default"
+    virtual-ap "DAYKIT"
+!
 
 ({$secondName}) #show ap database long
 AP Database
@@ -1001,6 +1271,9 @@ wlan ssid-profile "DAYKIT_ssid_prof"
 wlan virtual-ap "DAYKIT"
     vlan DAYKIT
     ssid-profile "DAYKIT_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "DAYKIT"
 !
 CONFIG;
 }
