@@ -42,6 +42,8 @@ test('check greenlake inventory step 0 syncs and reports progress', function () 
             'model' => 'AP-515',
             'device_type' => 'IAP',
             'licensed' => false,
+            'application_id' => 'app-central',
+            'region' => 'us-west',
         ]],
     );
 
@@ -52,10 +54,11 @@ test('check greenlake inventory step 0 syncs and reports progress', function () 
         ->assertJsonPath('progress.message', 'Syncing GreenLake inventory...')
         ->assertJsonPath('done', false)
         ->assertJsonPath('partial.missing_from_inventory', [])
-        ->assertJsonPath('partial.missing_mac', []);
+        ->assertJsonPath('partial.missing_mac', [])
+        ->assertJsonPath('partial.missing_service', []);
 });
 
-test('check greenlake inventory steps succeed when all devices are present', function () {
+test('check greenlake inventory steps succeed when all devices are present with service', function () {
     $device = Device::factory()->create([
         'client_id' => $this->client->id,
         'user_id' => $this->user->id,
@@ -72,6 +75,8 @@ test('check greenlake inventory steps succeed when all devices are present', fun
             'model' => 'AP-515',
             'device_type' => 'IAP',
             'licensed' => false,
+            'application_id' => 'app-central',
+            'region' => 'us-west',
         ]],
     );
 
@@ -86,12 +91,72 @@ test('check greenlake inventory steps succeed when all devices are present', fun
         ->assertJsonPath('done', true)
         ->assertJsonPath('partial.missing_from_inventory', [])
         ->assertJsonPath('partial.missing_mac', [])
+        ->assertJsonPath('partial.missing_service', [])
         ->assertJsonPath('summary.ok', true)
         ->assertJsonPath('summary.passed_count', 1)
         ->assertJsonPath('summary.failed_devices', [])
+        ->assertJsonPath('summary.in_inventory_count', 1)
+        ->assertJsonPath('summary.service_assigned_count', 1)
+        ->assertJsonPath('summary.missing_service', [])
         ->assertJsonPath(
             'summary.message',
-            'All deployment devices are present in GreenLake inventory.',
+            'All deployment devices are present in GreenLake inventory. The device in inventory has a service assigned.',
+        );
+});
+
+test('check greenlake inventory reports devices missing a service assignment', function () {
+    Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'name' => 'No-Service-AP',
+        'serial' => 'SN-NO-SVC-001',
+        'mac_address' => 'aa:bb:cc:dd:ee:07',
+    ]);
+    Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'name' => 'With-Service-AP',
+        'serial' => 'SN-WITH-SVC-001',
+        'mac_address' => 'aa:bb:cc:dd:ee:08',
+    ]);
+
+    fakeLicensingCentralApis(
+        devices: [
+            [
+                'serial' => 'SN-NO-SVC-001',
+                'mac' => 'aa:bb:cc:dd:ee:07',
+                'model' => 'AP-515',
+                'device_type' => 'IAP',
+                'licensed' => false,
+            ],
+            [
+                'serial' => 'SN-WITH-SVC-001',
+                'mac' => 'aa:bb:cc:dd:ee:08',
+                'model' => 'AP-515',
+                'device_type' => 'IAP',
+                'licensed' => false,
+                'application_id' => 'app-central',
+                'region' => 'us-west',
+            ],
+        ],
+    );
+
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 0]))
+        ->assertOk();
+
+    $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 2]))
+        ->assertOk()
+        ->assertJsonPath('done', true)
+        ->assertJsonPath('summary.ok', true)
+        ->assertJsonPath('summary.passed_count', 2)
+        ->assertJsonPath('summary.in_inventory_count', 2)
+        ->assertJsonPath('summary.service_assigned_count', 1)
+        ->assertJsonPath('summary.missing_service', ['SN-NO-SVC-001'])
+        ->assertJsonPath(
+            'summary.message',
+            'All deployment devices are present in GreenLake inventory. Devices missing a service assignment: SN-NO-SVC-001.',
         );
 });
 
@@ -120,6 +185,8 @@ test('check greenlake inventory steps report devices missing from inventory', fu
             'model' => 'AP-515',
             'device_type' => 'IAP',
             'licensed' => false,
+            'application_id' => 'app-central',
+            'region' => 'us-west',
         ]],
     );
 
@@ -129,6 +196,7 @@ test('check greenlake inventory steps report devices missing from inventory', fu
     $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 1]))
         ->assertOk()
         ->assertJsonPath('partial.missing_from_inventory', ['SN-MISSING-001'])
+        ->assertJsonPath('partial.missing_service', [])
         ->assertJsonPath('done', false);
 
     $this->getJson(route('tasks.check_greenlake_inventory.step', [$this->deployment, 2]))
@@ -139,9 +207,12 @@ test('check greenlake inventory steps report devices missing from inventory', fu
         ->assertJsonPath('summary.ok', false)
         ->assertJsonPath('summary.passed_count', 1)
         ->assertJsonPath('summary.failed_devices', ['SN-MISSING-001'])
+        ->assertJsonPath('summary.in_inventory_count', 1)
+        ->assertJsonPath('summary.service_assigned_count', 1)
+        ->assertJsonPath('summary.missing_service', [])
         ->assertJsonPath(
             'summary.message',
-            'These devices were not found in GreenLake inventory: SN-MISSING-001.',
+            'These devices were not found in GreenLake inventory: SN-MISSING-001. The device in inventory has a service assigned.',
         );
 });
 
@@ -161,6 +232,8 @@ test('check greenlake inventory notes devices missing mac_address', function () 
             'model' => 'AP-515',
             'device_type' => 'IAP',
             'licensed' => false,
+            'application_id' => 'app-central',
+            'region' => 'us-west',
         ]],
     );
 
@@ -174,9 +247,10 @@ test('check greenlake inventory notes devices missing mac_address', function () 
         ->assertJsonPath('summary.ok', true)
         ->assertJsonPath('summary.passed_count', 1)
         ->assertJsonPath('summary.failed_devices', [])
+        ->assertJsonPath('summary.service_assigned_count', 1)
         ->assertJsonPath(
             'summary.message',
-            'All deployment devices are present in GreenLake inventory. Devices missing mac_address: SN-NO-MAC-001.',
+            'All deployment devices are present in GreenLake inventory. The device in inventory has a service assigned. Devices missing mac_address: SN-NO-MAC-001.',
         );
 });
 

@@ -2147,6 +2147,7 @@ class TaskController extends Controller
                 'partial' => [
                     'missing_from_inventory' => [],
                     'missing_mac' => [],
+                    'missing_service' => [],
                 ],
                 'done' => false,
             ]);
@@ -2154,8 +2155,11 @@ class TaskController extends Controller
 
         /** @var Device $device */
         $device = $devices[$step - 1];
-        $inventorySerials = $this->greenLakeInventorySerials((int) $currentClient->id);
-        [$missingFromInventory, $missingMac] = $this->greenLakeDeviceCheckPartials($device, $inventorySerials);
+        $inventoryBySerial = $this->greenLakeInventoryBySerial((int) $currentClient->id);
+        [$missingFromInventory, $missingMac, $missingService] = $this->greenLakeDeviceCheckPartials(
+            $device,
+            $inventoryBySerial,
+        );
 
         $payload = [
             'progress' => [
@@ -2167,6 +2171,7 @@ class TaskController extends Controller
             'partial' => [
                 'missing_from_inventory' => $missingFromInventory,
                 'missing_mac' => $missingMac,
+                'missing_service' => $missingService,
             ],
             'done' => $done,
         ];
@@ -2174,19 +2179,22 @@ class TaskController extends Controller
         if ($done) {
             $allMissingFromInventory = [];
             $allMissingMac = [];
+            $allMissingService = [];
             foreach ($devices as $deploymentDevice) {
-                [$deviceMissingInventory, $deviceMissingMac] = $this->greenLakeDeviceCheckPartials(
+                [$deviceMissingInventory, $deviceMissingMac, $deviceMissingService] = $this->greenLakeDeviceCheckPartials(
                     $deploymentDevice,
-                    $inventorySerials,
+                    $inventoryBySerial,
                 );
                 array_push($allMissingFromInventory, ...$deviceMissingInventory);
                 array_push($allMissingMac, ...$deviceMissingMac);
+                array_push($allMissingService, ...$deviceMissingService);
             }
 
             $payload['summary'] = $this->buildGreenLakeInventorySummary(
                 $devices->count(),
                 $allMissingFromInventory,
                 $allMissingMac,
+                $allMissingService,
             );
         }
 
@@ -2194,17 +2202,26 @@ class TaskController extends Controller
     }
 
     /**
-     * @return Collection<string, int>
+     * @return Collection<string, array{application_id: string, application_region: string}>
      */
-    protected function greenLakeInventorySerials(int $clientId): Collection
+    protected function greenLakeInventoryBySerial(int $clientId): Collection
     {
         return LicensingInventoryDevice::query()
             ->where('client_id', $clientId)
-            ->pluck('serial')
-            ->map(fn ($serial) => trim((string) $serial))
-            ->filter(fn (string $serial): bool => $serial !== '')
-            ->unique()
-            ->flip();
+            ->get(['serial', 'application_id', 'application_region'])
+            ->mapWithKeys(function (LicensingInventoryDevice $row): array {
+                $serial = trim((string) $row->serial);
+                if ($serial === '') {
+                    return [];
+                }
+
+                return [
+                    $serial => [
+                        'application_id' => trim((string) ($row->application_id ?? '')),
+                        'application_region' => trim((string) ($row->application_region ?? '')),
+                    ],
+                ];
+            });
     }
 
     protected function greenLakeDeviceLabel(Device $device): string
@@ -2227,19 +2244,26 @@ class TaskController extends Controller
     }
 
     /**
-     * @param  Collection<string, int>  $inventorySerials
-     * @return array{0: list<string>, 1: list<string>}
+     * @param  Collection<string, array{application_id: string, application_region: string}>  $inventoryBySerial
+     * @return array{0: list<string>, 1: list<string>, 2: list<string>}
      */
-    protected function greenLakeDeviceCheckPartials(Device $device, Collection $inventorySerials): array
+    protected function greenLakeDeviceCheckPartials(Device $device, Collection $inventoryBySerial): array
     {
         $label = $this->greenLakeDeviceLabel($device);
         $missingFromInventory = [];
         $missingMac = [];
+        $missingService = [];
 
         $serial = trim((string) ($device->serial ?? ''));
-        if ($serial === '' || ! $inventorySerials->has($serial)) {
+        $inInventory = $serial !== '' && $inventoryBySerial->has($serial);
+        if (! $inInventory) {
             if ($label !== '') {
                 $missingFromInventory[] = $label;
+            }
+        } else {
+            $applicationId = (string) ($inventoryBySerial->get($serial)['application_id'] ?? '');
+            if ($applicationId === '' && $label !== '') {
+                $missingService[] = $label;
             }
         }
 
@@ -2249,46 +2273,62 @@ class TaskController extends Controller
             }
         }
 
-        return [$missingFromInventory, $missingMac];
+        return [$missingFromInventory, $missingMac, $missingService];
     }
 
     /**
      * @param  list<string>  $missingFromInventory
      * @param  list<string>  $missingMac
-     * @return array{ok: bool, message: string, passed_count: int, failed_devices: list<string>}
+     * @param  list<string>  $missingService
+     * @return array{
+     *     ok: bool,
+     *     message: string,
+     *     passed_count: int,
+     *     failed_devices: list<string>,
+     *     in_inventory_count: int,
+     *     service_assigned_count: int,
+     *     missing_service: list<string>
+     * }
      */
     protected function buildGreenLakeInventorySummary(
         int $deviceCount,
         array $missingFromInventory,
         array $missingMac,
+        array $missingService = [],
     ): array {
         $failedDevices = array_values($missingFromInventory);
         $passedCount = max(0, $deviceCount - count($failedDevices));
+        $inInventoryCount = $passedCount;
+        $serviceAssignedCount = max(0, $inInventoryCount - count($missingService));
 
         if ($failedDevices === []) {
             $message = 'All deployment devices are present in GreenLake inventory.';
-            if ($missingMac !== []) {
-                $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
-            }
-
-            return [
-                'ok' => true,
-                'message' => $message,
-                'passed_count' => $passedCount,
-                'failed_devices' => [],
-            ];
+        } else {
+            $message = 'These devices were not found in GreenLake inventory: '.implode(', ', $failedDevices).'.';
         }
 
-        $message = 'These devices were not found in GreenLake inventory: '.implode(', ', $failedDevices).'.';
+        if ($missingService === []) {
+            if ($inInventoryCount > 0) {
+                $message .= $inInventoryCount === 1
+                    ? ' The device in inventory has a service assigned.'
+                    : " All {$inInventoryCount} devices in inventory have a service assigned.";
+            }
+        } else {
+            $message .= ' Devices missing a service assignment: '.implode(', ', $missingService).'.';
+        }
+
         if ($missingMac !== []) {
             $message .= ' Devices missing mac_address: '.implode(', ', $missingMac).'.';
         }
 
         return [
-            'ok' => false,
+            'ok' => $failedDevices === [],
             'message' => $message,
             'passed_count' => $passedCount,
             'failed_devices' => $failedDevices,
+            'in_inventory_count' => $inInventoryCount,
+            'service_assigned_count' => $serviceAssignedCount,
+            'missing_service' => array_values($missingService),
         ];
     }
 

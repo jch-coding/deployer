@@ -17,6 +17,8 @@ class LicensingInventoryDeviceFactory extends Factory
         return [
             'client_id' => Client::factory(),
             'serial' => $serial,
+            'application_id' => null,
+            'application_region' => null,
             'model' => 'AP-515',
             'mac' => fake()->macAddress(),
             'device_type' => 'IAP',

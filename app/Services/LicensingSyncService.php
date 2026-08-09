@@ -230,6 +230,8 @@ class LicensingSyncService
                     'client_id' => $client->id,
                     'serial' => $serial,
                     'greenlake_device_id' => (string) ($item['greenlake_device_id'] ?? ''),
+                    'application_id' => trim((string) ($item['application_id'] ?? '')) ?: null,
+                    'application_region' => trim((string) ($item['application_region'] ?? '')) ?: null,
                     'model' => (string) ($item['model'] ?? ''),
                     'mac' => (string) ($item['mac'] ?? $item['macaddr'] ?? ''),
                     'device_type' => (string) ($item['device_type'] ?? ''),

@@ -131,6 +131,9 @@ export default function TaskCard({
     const [greenLakeCheckResult, setGreenLakeCheckResult] = useState<{
         passedCount: number;
         failedDevices: string[];
+        inInventoryCount: number;
+        serviceAssignedCount: number;
+        missingService: string[];
         error?: string;
     } | null>(null);
     const [greenLakeTags, setGreenLakeTags] = useState<GreenLakeTagRow[]>([]);
@@ -411,6 +414,7 @@ export default function TaskCard({
             partial: {
                 missing_from_inventory: string[];
                 missing_mac: string[];
+                missing_service: string[];
             };
             done: boolean;
             summary?: {
@@ -418,6 +422,9 @@ export default function TaskCard({
                 message: string;
                 passed_count: number;
                 failed_devices: string[];
+                in_inventory_count: number;
+                service_assigned_count: number;
+                missing_service: string[];
             };
         };
 
@@ -474,11 +481,17 @@ export default function TaskCard({
                 setGreenLakeCheckResult({
                     passedCount: summary.passed_count,
                     failedDevices: summary.failed_devices,
+                    inInventoryCount: summary.in_inventory_count,
+                    serviceAssignedCount: summary.service_assigned_count,
+                    missingService: summary.missing_service,
                 });
             } else {
                 setGreenLakeCheckResult({
                     passedCount: 0,
                     failedDevices: [],
+                    inInventoryCount: 0,
+                    serviceAssignedCount: 0,
+                    missingService: [],
                     error: 'Check finished without a summary.',
                 });
             }
@@ -486,6 +499,9 @@ export default function TaskCard({
             setGreenLakeCheckResult({
                 passedCount: 0,
                 failedDevices: [],
+                inInventoryCount: 0,
+                serviceAssignedCount: 0,
+                missingService: [],
                 error:
                     error instanceof Error
                         ? error.message
@@ -1768,31 +1784,62 @@ export default function TaskCard({
                                                 </p>
                                             ) : (
                                                 <>
-                                                    <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                                                        {greenLakeCheckResult?.passedCount ?? 0}{' '}
-                                                        {(greenLakeCheckResult?.passedCount ??
-                                                            0) === 1
-                                                            ? 'device'
-                                                            : 'devices'}{' '}
-                                                        passed
-                                                    </p>
-                                                    {(greenLakeCheckResult?.failedDevices
-                                                        .length ?? 0) > 0 && (
-                                                        <div className="flex flex-col gap-2">
-                                                            <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                                                                Failed devices
-                                                            </p>
-                                                            <ul className="list-inside list-disc space-y-1 text-sm text-red-600 dark:text-red-400">
-                                                                {greenLakeCheckResult?.failedDevices.map(
-                                                                    (device) => (
-                                                                        <li key={device}>
-                                                                            {device}
-                                                                        </li>
-                                                                    ),
-                                                                )}
-                                                            </ul>
-                                                        </div>
-                                                    )}
+                                                    <div className="flex flex-col gap-1">
+                                                        <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                                                            {greenLakeCheckResult?.inInventoryCount ??
+                                                                0}{' '}
+                                                            {(greenLakeCheckResult?.inInventoryCount ??
+                                                                0) === 1
+                                                                ? 'device'
+                                                                : 'devices'}{' '}
+                                                            in GreenLake inventory
+                                                        </p>
+                                                        {(greenLakeCheckResult?.failedDevices
+                                                            .length ?? 0) > 0 && (
+                                                            <div className="flex flex-col gap-2">
+                                                                <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                                                                    Missing from inventory
+                                                                </p>
+                                                                <ul className="list-inside list-disc space-y-1 text-sm text-red-600 dark:text-red-400">
+                                                                    {greenLakeCheckResult?.failedDevices.map(
+                                                                        (device) => (
+                                                                            <li key={device}>
+                                                                                {device}
+                                                                            </li>
+                                                                        ),
+                                                                    )}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                                                            {greenLakeCheckResult?.serviceAssignedCount ??
+                                                                0}{' '}
+                                                            {(greenLakeCheckResult?.serviceAssignedCount ??
+                                                                0) === 1
+                                                                ? 'device has'
+                                                                : 'devices have'}{' '}
+                                                            a service assigned
+                                                        </p>
+                                                        {(greenLakeCheckResult?.missingService
+                                                            .length ?? 0) > 0 && (
+                                                            <div className="flex flex-col gap-2">
+                                                                <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                                                                    No service assigned
+                                                                </p>
+                                                                <ul className="list-inside list-disc space-y-1 text-sm text-amber-600 dark:text-amber-400">
+                                                                    {greenLakeCheckResult?.missingService.map(
+                                                                        (device) => (
+                                                                            <li key={device}>
+                                                                                {device}
+                                                                            </li>
+                                                                        ),
+                                                                    )}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </>
                                             )}
                                         </div>

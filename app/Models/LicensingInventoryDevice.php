@@ -15,6 +15,8 @@ class LicensingInventoryDevice extends Model
         'client_id',
         'serial',
         'greenlake_device_id',
+        'application_id',
+        'application_region',
         'model',
         'mac',
         'device_type',

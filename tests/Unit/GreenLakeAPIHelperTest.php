@@ -355,7 +355,43 @@ test('normalizeGreenLakeDevice maps serial and subscription from device payload'
         ->and($normalized['greenlake_device_id'])->toBe('dev-uuid-1')
         ->and($normalized['subscription_key'])->toBe('KEY-ABC')
         ->and($normalized['licensed'])->toBeTrue()
-        ->and($normalized['assigned_services'])->toContain('advanced_switch');
+        ->and($normalized['assigned_services'])->toContain('advanced_switch')
+        ->and($normalized['application_id'])->toBe('')
+        ->and($normalized['application_region'])->toBe('');
+});
+
+test('normalizeGreenLakeDevice maps application assignment from device payload', function () {
+    $client = Client::factory()->create();
+    $helper = new GreenLakeAPIHelper($client);
+
+    $normalized = $helper->normalizeGreenLakeDevice([
+        'id' => 'dev-uuid-2',
+        'serialNumber' => 'SN002',
+        'macAddress' => '00:11:22:33:44:66',
+        'model' => 'AP-515',
+        'deviceType' => 'IAP',
+        'application' => ['id' => 'app-central'],
+        'region' => 'us-west',
+    ]);
+
+    expect($normalized['serial'])->toBe('SN002')
+        ->and($normalized['application_id'])->toBe('app-central')
+        ->and($normalized['application_region'])->toBe('us-west');
+});
+
+test('normalizeGreenLakeDevice treats missing application as empty assignment', function () {
+    $client = Client::factory()->create();
+    $helper = new GreenLakeAPIHelper($client);
+
+    $normalized = $helper->normalizeGreenLakeDevice([
+        'id' => 'dev-uuid-3',
+        'serialNumber' => 'SN003',
+        'application' => null,
+        'region' => null,
+    ]);
+
+    expect($normalized['application_id'])->toBe('')
+        ->and($normalized['application_region'])->toBe('');
 });
 
 test('addNetworkDevices polls Location header when it differs from transactionId', function () {

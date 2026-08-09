@@ -227,6 +227,14 @@ function fakeLicensingCentralApis(
         if ($subscriptionKey !== '') {
             $payload['subscription'] = [['key' => $subscriptionKey]];
         }
+        $applicationId = trim((string) ($device['application_id'] ?? ''));
+        if ($applicationId !== '') {
+            $payload['application'] = ['id' => $applicationId];
+        }
+        $region = trim((string) ($device['region'] ?? $device['application_region'] ?? ''));
+        if ($region !== '') {
+            $payload['region'] = $region;
+        }
 
         return $payload;
     }, $devices);

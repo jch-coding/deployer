@@ -1799,6 +1799,12 @@ class GreenLakeAPIHelper
         }
 
         $deviceType = (string) ($device['deviceType'] ?? $device['type'] ?? '');
+        $applicationId = '';
+        $application = $device['application'] ?? null;
+        if (is_array($application)) {
+            $applicationId = trim((string) ($application['id'] ?? ''));
+        }
+        $applicationRegion = trim((string) ($device['region'] ?? ''));
 
         return [
             'serial' => $serial,
@@ -1810,6 +1816,8 @@ class GreenLakeAPIHelper
             'assigned_services' => array_values(array_unique($assignedServices)),
             'subscription_key' => $subscriptionKey,
             'greenlake_device_id' => $greenlakeDeviceId,
+            'application_id' => $applicationId,
+            'application_region' => $applicationRegion,
         ];
     }
 }
