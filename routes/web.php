@@ -127,6 +127,7 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(CentralApiExplorerController::class)->group(function () {
         Route::get('/central-api', 'index')->name('central-api.index');
         Route::post('/central-api/execute', 'execute')->name('central-api.execute');
+        Route::post('/central-api/device-context', 'deviceContext')->name('central-api.device-context');
     });
 
     Route::get('/webhooks', [CentralWebhookEventController::class, 'index'])->name('webhooks.index');
