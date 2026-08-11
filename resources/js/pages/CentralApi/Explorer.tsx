@@ -1,6 +1,6 @@
 import { Head, usePage } from '@inertiajs/react';
 import { Braces, ExternalLink, Loader2, Play, Search } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -165,6 +165,7 @@ export default function Explorer() {
     );
     const [bodyError, setBodyError] = useState<string | null>(null);
     const [selectedSerial, setSelectedSerial] = useState<string>('');
+    const [deviceSearch, setDeviceSearch] = useState('');
     const [isApplyingDeviceContext, setIsApplyingDeviceContext] = useState(false);
     const [deviceContextError, setDeviceContextError] = useState<string | null>(null);
     const [isExecuting, setIsExecuting] = useState(false);
@@ -221,6 +222,35 @@ export default function Explorer() {
         setBodyError(null);
         setResponse(null);
     }, []);
+
+    const filteredDevices = useMemo(() => {
+        const needle = deviceSearch.trim().toLowerCase();
+
+        if (needle === '') {
+            return device_options;
+        }
+
+        return device_options.filter((device) => {
+            const needleMatch = (value: string) => value.toLowerCase().includes(needle);
+
+            return (
+                needleMatch(device.name) ||
+                needleMatch(device.serial) ||
+                needleMatch(device.device_function)
+            );
+        });
+    }, [deviceSearch, device_options]);
+
+    useEffect(() => {
+        if (selectedSerial === '') {
+            return;
+        }
+
+        if (!filteredDevices.some((device) => device.serial === selectedSerial)) {
+            setSelectedSerial('');
+            setDeviceContextError(null);
+        }
+    }, [filteredDevices, selectedSerial]);
 
     const selectedDevice = useMemo(
         () => device_options.find((d) => d.serial === selectedSerial) ?? null,
@@ -519,42 +549,57 @@ export default function Explorer() {
 
                                 <div className="rounded-md border p-4">
                                     <h3 className="mb-3 text-sm font-medium">Device context</h3>
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                                        <div className="flex-1 space-y-1">
-                                            <Label htmlFor="device-select">Central device</Label>
-                                            <select
-                                                id="device-select"
-                                                className="border-input h-9 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
-                                                value={selectedSerial}
-                                                onChange={(e) => {
-                                                    setSelectedSerial(e.target.value);
-                                                    setDeviceContextError(null);
-                                                }}
+                                    <div className="flex flex-col gap-3">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="device-search">Filter devices</Label>
+                                            <Input
+                                                id="device-search"
+                                                placeholder="Search by name, serial, or device function…"
+                                                value={deviceSearch}
+                                                onChange={(e) => setDeviceSearch(e.target.value)}
                                                 disabled={device_options.length === 0}
-                                            >
-                                                <option value="">Select a device…</option>
-                                                {device_options.map((device) => (
-                                                    <option key={device.serial} value={device.serial}>
-                                                        {device.name !== ''
-                                                            ? `${device.name} (${device.serial})`
-                                                            : device.serial}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            />
                                         </div>
-                                        <Button
-                                            type="button"
-                                            variant="secondary"
-                                            disabled={!selectedDevice || isApplyingDeviceContext}
-                                            onClick={() => {
-                                                void applyDeviceContext();
-                                            }}
-                                        >
-                                            {isApplyingDeviceContext && (
-                                                <Loader2 className="mr-2 size-4 animate-spin" />
-                                            )}
-                                            Apply device context
-                                        </Button>
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                                            <div className="flex-1 space-y-1">
+                                                <Label htmlFor="device-select">Central device</Label>
+                                                <select
+                                                    id="device-select"
+                                                    className="border-input h-9 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
+                                                    value={selectedSerial}
+                                                    onChange={(e) => {
+                                                        setSelectedSerial(e.target.value);
+                                                        setDeviceContextError(null);
+                                                    }}
+                                                    disabled={device_options.length === 0}
+                                                >
+                                                    <option value="">Select a device…</option>
+                                                    {filteredDevices.map((device) => (
+                                                        <option
+                                                            key={device.serial}
+                                                            value={device.serial}
+                                                        >
+                                                            {device.name !== ''
+                                                                ? `${device.name} (${device.serial})`
+                                                                : device.serial}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="secondary"
+                                                disabled={!selectedDevice || isApplyingDeviceContext}
+                                                onClick={() => {
+                                                    void applyDeviceContext();
+                                                }}
+                                            >
+                                                {isApplyingDeviceContext && (
+                                                    <Loader2 className="mr-2 size-4 animate-spin" />
+                                                )}
+                                                Apply device context
+                                            </Button>
+                                        </div>
                                     </div>
                                     {device_options_error && (
                                         <p className="text-muted-foreground mt-3 text-sm">
