@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\DeviceFunction;
 use App\Helper\CentralAPIHelper;
-use App\Models\Device;
 use App\Services\CentralApiProxyService;
 use App\Services\CentralOpenApiRegistry;
 use App\Services\CentralScopeCacheService;
@@ -36,32 +35,18 @@ class CentralApiExplorerController extends Controller
 
         ksort($operationsByTag);
 
-        $deviceOptions = Device::query()
-            ->where('client_id', $currentClient->id)
-            ->orderBy('name')
-            ->get(['id', 'serial', 'name', 'scope_id', 'device_function'])
-            ->map(fn (Device $device): array => [
-                'id' => $device->id,
-                'serial' => $device->serial,
-                'name' => $device->name,
-                'scope_id' => $device->scope_id,
-                'device_function' => $device->device_function instanceof \BackedEnum
-                    ? $device->device_function->value
-                    : (string) $device->device_function,
-            ])
-            ->values()
-            ->all();
-
+        $centralApiHelper = new CentralAPIHelper($currentClient);
+        $deviceOptionsPayload = $centralApiHelper->collectCentralDeviceOptions();
         $sitesPayload = $centralScopeCacheService->getSites($currentClient);
         $groupsPayload = $centralScopeCacheService->getGroups($currentClient);
-        $siteCollectionsPayload = (new CentralAPIHelper($currentClient))
-            ->collectScopeManagementSiteCollections();
+        $siteCollectionsPayload = $centralApiHelper->collectScopeManagementSiteCollections();
         $cacheMetadata = $centralScopeCacheService->getCacheMetadata($currentClient);
 
         return Inertia::render('CentralApi/Explorer', [
             'tags' => $registry->tags(),
             'operations_by_tag' => $operationsByTag,
-            'device_options' => $deviceOptions,
+            'device_options' => $deviceOptionsPayload['devices'],
+            'device_options_error' => $deviceOptionsPayload['error'],
             'scope_sites' => $sitesPayload['sites'],
             'scope_groups' => $groupsPayload['central_device_groups'],
             'scope_site_collections' => $siteCollectionsPayload['site_collections'],
@@ -111,5 +96,30 @@ class CentralApiExplorerController extends Controller
             'request_url' => $result['request_url'],
             'error' => $result['error'],
         ]);
+    }
+
+    public function deviceContext(Request $request): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json(['message' => 'No current client selected.'], 403);
+        }
+
+        $validated = $request->validate([
+            'serial' => ['required', 'string', 'max:255'],
+            'device_function' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $result = (new CentralAPIHelper($currentClient))->resolveCentralDeviceContext(
+            $validated['serial'],
+            (string) ($validated['device_function'] ?? ''),
+        );
+
+        if (array_key_exists('error', $result)) {
+            return response()->json(['message' => $result['error']], 422);
+        }
+
+        return response()->json($result);
     }
 }

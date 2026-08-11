@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\Site;
+use App\Services\DeviceCentralFilterBuilder;
 use App\Support\TrunkVlanRanges;
 use App\VsxRole;
 use Illuminate\Http\Client\ConnectionException;
@@ -451,6 +452,110 @@ class CentralAPIHelper
                 'error' => 'Could not load site collections from Central.',
             ];
         }
+    }
+
+    /**
+     * @return array{
+     *     devices: array<int, array{serial: string, name: string, device_function: string}>,
+     *     error: string|null
+     * }
+     */
+    public function collectCentralDeviceOptions(): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'devices' => [],
+                'error' => 'Could not authenticate with Central to load devices.',
+            ];
+        }
+
+        try {
+            $result = $this->get_all_devices();
+            if (array_key_exists('error', $result)) {
+                return [
+                    'devices' => [],
+                    'error' => 'Could not load devices from Central.',
+                ];
+            }
+
+            $devices = [];
+            $seenSerials = [];
+
+            foreach ($result as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $serial = trim((string) ($item['serialNumber'] ?? ''));
+                if ($serial === '' || isset($seenSerials[$serial])) {
+                    continue;
+                }
+
+                $seenSerials[$serial] = true;
+                $devices[] = [
+                    'serial' => $serial,
+                    'name' => (string) ($item['deviceName'] ?? ''),
+                    'device_function' => (string) ($item['deviceFunction'] ?? ''),
+                ];
+            }
+
+            usort($devices, function (array $a, array $b): int {
+                $nameComparison = strcasecmp($a['name'], $b['name']);
+                if ($nameComparison !== 0) {
+                    return $nameComparison;
+                }
+
+                return strcasecmp($a['serial'], $b['serial']);
+            });
+
+            return [
+                'devices' => $devices,
+                'error' => null,
+            ];
+        } catch (RequestException|ConnectionException) {
+            return [
+                'devices' => [],
+                'error' => 'Could not load devices from Central.',
+            ];
+        }
+    }
+
+    /**
+     * @return array{serial: string, scope_id: string, device_function: string}|array{error: string}
+     */
+    public function resolveCentralDeviceContext(string $serial, string $fallbackDeviceFunction = ''): array
+    {
+        $scopes = $this->resolveHierarchyScopeIdsForDevice($serial);
+        if ($scopes['error'] !== null) {
+            return ['error' => (string) $scopes['error']];
+        }
+
+        $scopeId = trim((string) ($scopes['device'] ?? ''));
+        if ($scopeId === '') {
+            return ['error' => 'failed to get device scope-id from central.'];
+        }
+
+        $deviceFunction = $fallbackDeviceFunction;
+        $filter = (new DeviceCentralFilterBuilder)->build(['serialNumber' => $serial]);
+        if ($filter !== null) {
+            $deviceResult = $this->get_all_devices([
+                'filter' => $filter,
+                'limit' => 1,
+            ]);
+
+            if (! array_key_exists('error', $deviceResult) && $deviceResult !== []) {
+                $fromCentral = trim((string) ($deviceResult[0]['deviceFunction'] ?? ''));
+                if ($fromCentral !== '') {
+                    $deviceFunction = $fromCentral;
+                }
+            }
+        }
+
+        return [
+            'serial' => $serial,
+            'scope_id' => $scopeId,
+            'device_function' => $deviceFunction,
+        ];
     }
 
     /**

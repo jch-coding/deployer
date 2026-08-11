@@ -27,10 +27,8 @@ export type CentralApiTag = {
 };
 
 export type CentralApiDeviceOption = {
-    id: number;
     serial: string;
     name: string;
-    scope_id: string | null;
     device_function: string;
 };
 

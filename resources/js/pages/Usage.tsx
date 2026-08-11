@@ -674,9 +674,9 @@ sudo cloudflared service start`}</code>
                                 endpoint to view its method, path, summary, and parameter list.
                             </li>
                             <li>
-                                Optionally pick a saved device and click <strong>Apply device context</strong>{' '}
-                                to pre-fill common query parameters such as serial, scope ID, and device
-                                function.
+                                Optionally pick a Central inventory device and click{' '}
+                                <strong>Apply device context</strong> to pre-fill common query parameters
+                                such as serial, scope ID, and device function.
                             </li>
                             <li>
                                 Fill in parameters, run the request, and review status, timing, headers, and

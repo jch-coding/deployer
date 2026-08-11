@@ -20,7 +20,11 @@ import type {
     CentralScopeGroupsCacheMeta,
 } from '@/components/central/CentralScopeRefreshButtons';
 import { index as clientsIndex } from '@/routes/clients';
-import { execute as centralApiExecute, index as centralApiIndex } from '@/routes/central-api';
+import {
+    deviceContext as centralApiDeviceContext,
+    execute as centralApiExecute,
+    index as centralApiIndex,
+} from '@/routes/central-api';
 import type {
     CentralApiDeviceOption,
     CentralApiExecuteResponse,
@@ -35,6 +39,7 @@ type ExplorerProps = {
     tags: CentralApiTag[];
     operations_by_tag: Record<string, CentralApiOperation[]>;
     device_options: CentralApiDeviceOption[];
+    device_options_error: string | null;
     scope_sites: CentralApiScopeOption[];
     scope_groups: CentralApiScopeOption[];
     scope_site_collections: CentralApiScopeOption[];
@@ -129,6 +134,7 @@ export default function Explorer() {
         tags,
         operations_by_tag,
         device_options,
+        device_options_error,
         scope_sites,
         scope_groups,
         scope_site_collections,
@@ -158,7 +164,9 @@ export default function Explorer() {
         buildInitialBody(allOperations[0] ?? null),
     );
     const [bodyError, setBodyError] = useState<string | null>(null);
-    const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+    const [selectedSerial, setSelectedSerial] = useState<string>('');
+    const [isApplyingDeviceContext, setIsApplyingDeviceContext] = useState(false);
+    const [deviceContextError, setDeviceContextError] = useState<string | null>(null);
     const [isExecuting, setIsExecuting] = useState(false);
     const [response, setResponse] = useState<CentralApiExecuteResponse | null>(null);
 
@@ -215,23 +223,66 @@ export default function Explorer() {
     }, []);
 
     const selectedDevice = useMemo(
-        () => device_options.find((d) => String(d.id) === selectedDeviceId) ?? null,
-        [device_options, selectedDeviceId],
+        () => device_options.find((d) => d.serial === selectedSerial) ?? null,
+        [device_options, selectedSerial],
     );
 
-    const applyDeviceContext = useCallback(() => {
+    const applyDeviceContext = useCallback(async () => {
         if (!selectedDevice) {
             return;
         }
 
-        setParamValues((prev) => ({
-            ...prev,
-            serial: selectedDevice.serial,
-            'scope-id': selectedDevice.scope_id ?? '',
-            'device-function': selectedDevice.device_function,
-            'view-type': 'LOCAL',
-            'object-type': 'LOCAL',
-        }));
+        setIsApplyingDeviceContext(true);
+        setDeviceContextError(null);
+
+        try {
+            const res = await fetch(centralApiDeviceContext.url(), {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...csrfHeaders(),
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    serial: selectedDevice.serial,
+                    device_function: selectedDevice.device_function,
+                }),
+            });
+
+            const parsed = (await res.json()) as {
+                serial?: string;
+                scope_id?: string;
+                device_function?: string;
+                message?: string;
+                errors?: Record<string, string[]>;
+            };
+
+            if (!res.ok) {
+                setDeviceContextError(
+                    parsed.message ??
+                        (parsed.errors
+                            ? Object.values(parsed.errors).flat().join(' ')
+                            : 'Could not resolve device context.'),
+                );
+
+                return;
+            }
+
+            setParamValues((prev) => ({
+                ...prev,
+                serial: parsed.serial ?? selectedDevice.serial,
+                'scope-id': parsed.scope_id ?? '',
+                'device-function': parsed.device_function ?? selectedDevice.device_function,
+                'view-type': 'LOCAL',
+                'object-type': 'LOCAL',
+            }));
+        } catch {
+            setDeviceContextError('Could not resolve device context.');
+        } finally {
+            setIsApplyingDeviceContext(false);
+        }
     }, [selectedDevice]);
 
     const applyScopeContext = useCallback((scopeId: string) => {
@@ -470,17 +521,23 @@ export default function Explorer() {
                                     <h3 className="mb-3 text-sm font-medium">Device context</h3>
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                                         <div className="flex-1 space-y-1">
-                                            <Label htmlFor="device-select">Saved device</Label>
+                                            <Label htmlFor="device-select">Central device</Label>
                                             <select
                                                 id="device-select"
                                                 className="border-input h-9 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
-                                                value={selectedDeviceId}
-                                                onChange={(e) => setSelectedDeviceId(e.target.value)}
+                                                value={selectedSerial}
+                                                onChange={(e) => {
+                                                    setSelectedSerial(e.target.value);
+                                                    setDeviceContextError(null);
+                                                }}
+                                                disabled={device_options.length === 0}
                                             >
                                                 <option value="">Select a device…</option>
                                                 {device_options.map((device) => (
-                                                    <option key={device.id} value={String(device.id)}>
-                                                        {device.name} ({device.serial})
+                                                    <option key={device.serial} value={device.serial}>
+                                                        {device.name !== ''
+                                                            ? `${device.name} (${device.serial})`
+                                                            : device.serial}
                                                     </option>
                                                 ))}
                                             </select>
@@ -488,12 +545,25 @@ export default function Explorer() {
                                         <Button
                                             type="button"
                                             variant="secondary"
-                                            disabled={!selectedDevice}
-                                            onClick={applyDeviceContext}
+                                            disabled={!selectedDevice || isApplyingDeviceContext}
+                                            onClick={() => {
+                                                void applyDeviceContext();
+                                            }}
                                         >
+                                            {isApplyingDeviceContext && (
+                                                <Loader2 className="mr-2 size-4 animate-spin" />
+                                            )}
                                             Apply device context
                                         </Button>
                                     </div>
+                                    {device_options_error && (
+                                        <p className="text-muted-foreground mt-3 text-sm">
+                                            {device_options_error}
+                                        </p>
+                                    )}
+                                    {deviceContextError && (
+                                        <p className="text-destructive mt-3 text-sm">{deviceContextError}</p>
+                                    )}
                                 </div>
 
                                 {operationHasScopeId && (

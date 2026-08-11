@@ -2,7 +2,6 @@
 
 use App\BaseURL;
 use App\Models\Client;
-use App\Models\Device;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -44,6 +43,13 @@ test('central api index redirects when no current client', function () {
 });
 
 test('central api index renders explorer page', function () {
+    Http::fake([
+        '*network-monitoring/v1/devices*' => Http::response([
+            'items' => [],
+            'next' => null,
+        ], 200),
+    ]);
+
     $this->get(route('central-api.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
@@ -211,20 +217,164 @@ test('execute proxies deletePortchannel with path and query parameters', functio
         ->assertJsonPath('status', 204);
 });
 
-test('explorer includes device options for current client', function () {
-    Device::factory()->for($this->client)->for($this->user)->create([
-        'serial' => 'DEVICE-SERIAL-1',
-        'name' => 'Switch-1',
+test('explorer includes device options from Central', function () {
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope'],
+            ],
+        ], 200),
+        '*network-monitoring/v1/devices*' => Http::response([
+            'items' => [
+                [
+                    'serialNumber' => 'CN123',
+                    'deviceName' => 'Core-SW1',
+                    'deviceFunction' => 'CORE_SWITCH',
+                ],
+                [
+                    'serialNumber' => 'AP456',
+                    'deviceName' => 'Lobby-AP',
+                    'deviceFunction' => 'CAMPUS_AP',
+                ],
+            ],
+            'next' => null,
+        ], 200),
     ]);
 
     $this->get(route('central-api.index'))
+        ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->has('device_options', 1)
-            ->where('device_options.0.serial', 'DEVICE-SERIAL-1'));
+            ->has('device_options', 2)
+            ->where('device_options.0.serial', 'CN123')
+            ->where('device_options.0.name', 'Core-SW1')
+            ->where('device_options.0.device_function', 'CORE_SWITCH')
+            ->where('device_options.1.serial', 'AP456')
+            ->where('device_options_error', null));
+});
+
+test('explorer includes device options error when Central devices request fails', function () {
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope'],
+            ],
+        ], 200),
+        '*network-monitoring/v1/devices*' => Http::response([], 500),
+    ]);
+
+    $this->get(route('central-api.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('device_options', 0)
+            ->where('device_options_error', 'Could not load devices from Central.'));
+});
+
+test('device context resolves scope id from Central hierarchy', function () {
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/switches') && ! str_contains($url, '/interfaces')) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'SN12345',
+                    'stackId' => 'STACK-1',
+                ]],
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-monitoring/v1/devices')) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'SN12345',
+                    'deviceName' => 'Switch-A',
+                    'deviceFunction' => 'CORE_SWITCH',
+                ]],
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-config/v1/hierarchy')) {
+            parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $query);
+
+            if (($query['type'] ?? '') === 'device') {
+                return Http::response([
+                    'items' => [
+                        [
+                            'id' => 'hierarchy0',
+                            'type' => 'network-config/hierarchy',
+                            'hierarchy' => [
+                                ['scopeName' => 'Switch-A', 'scopeType' => 'device', 'childCount' => null, 'scopeId' => 'scope-device', 'hostName' => 'Switch-A'],
+                                ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                            ],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            if (($query['type'] ?? '') === 'site') {
+                return Http::response([
+                    'items' => [
+                        [
+                            'id' => 'hierarchy0',
+                            'type' => 'network-config/hierarchy',
+                            'hierarchy' => [
+                                ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                                ['scopeName' => 'Retail', 'scopeType' => 'site_collection', 'childCount' => 10, 'scopeId' => 'scope-collection', 'hostName' => ''],
+                            ],
+                        ],
+                    ],
+                ], 200);
+            }
+        }
+
+        return Http::response(['detail' => 'unexpected '.$url], 404);
+    });
+
+    $this->postJson(route('central-api.device-context'), [
+        'serial' => 'SN12345',
+        'device_function' => 'ACCESS_SWITCH',
+    ])
+        ->assertOk()
+        ->assertJsonPath('serial', 'SN12345')
+        ->assertJsonPath('scope_id', 'scope-device')
+        ->assertJsonPath('device_function', 'CORE_SWITCH');
+});
+
+test('device context returns error when hierarchy lookup fails', function () {
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/switches')) {
+            return Http::response([
+                'items' => [],
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-config/v1/hierarchy')) {
+            return Http::response(['detail' => 'not found'], 404);
+        }
+
+        return Http::response(['detail' => 'unexpected '.$url], 404);
+    });
+
+    $this->postJson(route('central-api.device-context'), [
+        'serial' => 'MISSING-SERIAL',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('message', 'failed to get hierarchy from central.');
 });
 
 test('explorer includes scope options from cache and live site collections', function () {
     seedCentralScopeCache($this->client);
+
+    Http::fake([
+        '*network-monitoring/v1/devices*' => Http::response([
+            'items' => [],
+            'next' => null,
+        ], 200),
+    ]);
 
     $this->get(route('central-api.index'))
         ->assertOk()
@@ -240,7 +390,8 @@ test('explorer includes scope options from cache and live site collections', fun
             ->where('scope_site_collections.0.scopeId', 'wcd-scope')
             ->where('scope_sites_error', null)
             ->where('scope_groups_error', null)
-            ->where('scope_site_collections_error', null));
+            ->where('scope_site_collections_error', null)
+            ->where('device_options_error', null));
 
     Http::assertSent(fn (Request $request) => str_contains($request->url(), 'site-collections'));
 });

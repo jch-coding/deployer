@@ -1173,6 +1173,107 @@ test('resolveHierarchyScopeIdsForDevice sets device_group from device_collection
     ]);
 });
 
+test('resolveCentralDeviceContext returns scope id and device function from Central', function () {
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/switches') && ! str_contains($url, '/interfaces')) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'SN12345',
+                    'stackId' => 'STACK-1',
+                ]],
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-monitoring/v1/devices')) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'SN12345',
+                    'deviceName' => 'Switch-A',
+                    'deviceFunction' => 'CORE_SWITCH',
+                ]],
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-config/v1/hierarchy')) {
+            parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $query);
+
+            if (($query['type'] ?? '') === 'device') {
+                return Http::response([
+                    'items' => [
+                        [
+                            'id' => 'hierarchy0',
+                            'type' => 'network-config/hierarchy',
+                            'hierarchy' => [
+                                ['scopeName' => 'Switch-A', 'scopeType' => 'device', 'childCount' => null, 'scopeId' => 'scope-device', 'hostName' => 'Switch-A'],
+                                ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                            ],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            if (($query['type'] ?? '') === 'site') {
+                return Http::response(hierarchyResponseFixture([
+                    ['scopeName' => 'HQ', 'scopeType' => 'site', 'childCount' => 5, 'scopeId' => 'scope-site', 'hostName' => ''],
+                    ['scopeName' => 'Retail', 'scopeType' => 'site_collection', 'childCount' => 10, 'scopeId' => 'scope-collection', 'hostName' => ''],
+                ]), 200);
+            }
+        }
+
+        return Http::response(['detail' => 'unexpected '.$url], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->resolveCentralDeviceContext('SN12345', 'ACCESS_SWITCH');
+
+    expect($result)->toBe([
+        'serial' => 'SN12345',
+        'scope_id' => 'scope-device',
+        'device_function' => 'CORE_SWITCH',
+    ]);
+});
+
+test('resolveCentralDeviceContext falls back to posted device function when devices lookup fails', function () {
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/switches') && ! str_contains($url, '/interfaces')) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'SN12345',
+                    'stackId' => '',
+                ]],
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-monitoring/v1/devices')) {
+            return Http::response([], 500);
+        }
+
+        if (str_contains($url, 'network-config/v1/hierarchy')) {
+            return Http::response(hierarchyResponseFixture([
+                ['scopeName' => 'Switch-A', 'scopeType' => 'device', 'childCount' => null, 'scopeId' => 'scope-device', 'hostName' => 'Switch-A'],
+            ]), 200);
+        }
+
+        return Http::response(['detail' => 'unexpected '.$url], 404);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->resolveCentralDeviceContext('SN12345', 'ACCESS_SWITCH');
+
+    expect($result)->toBe([
+        'serial' => 'SN12345',
+        'scope_id' => 'scope-device',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+});
+
 test('localDeviceInterfaceQueryParameters uses LOCAL scope and string device function', function () {
     $device = Device::factory()->create([
         'scope_id' => 'scope-abc',
@@ -2310,4 +2411,50 @@ test('collectScopeManagementSiteCollections maps site collections from Central',
             ['scopeName' => 'WCD', 'scopeId' => 'wcd-scope'],
             ['scopeName' => 'Regional', 'scopeId' => 'regional-scope'],
         ]);
+});
+
+test('collectCentralDeviceOptions maps and sorts devices from Central', function () {
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    Http::fake([
+        '*network-monitoring/v1/devices*' => Http::response([
+            'items' => [
+                ['serialNumber' => 'SN-2', 'deviceName' => 'Lobby-AP', 'deviceFunction' => 'CAMPUS_AP'],
+                ['serialNumber' => '', 'deviceName' => 'Missing-Serial', 'deviceFunction' => 'ACCESS_SWITCH'],
+                ['deviceName' => 'No-Serial-Key', 'deviceFunction' => 'ACCESS_SWITCH'],
+                ['serialNumber' => 'SN-1', 'deviceName' => 'Core-SW1', 'deviceFunction' => 'CORE_SWITCH'],
+                ['serialNumber' => 'SN-1', 'deviceName' => 'Duplicate', 'deviceFunction' => 'CORE_SWITCH'],
+            ],
+            'next' => null,
+        ], 200),
+    ]);
+
+    $result = (new CentralAPIHelper($client))->collectCentralDeviceOptions();
+
+    expect($result['error'])->toBeNull()
+        ->and($result['devices'])->toBe([
+            ['serial' => 'SN-1', 'name' => 'Core-SW1', 'device_function' => 'CORE_SWITCH'],
+            ['serial' => 'SN-2', 'name' => 'Lobby-AP', 'device_function' => 'CAMPUS_AP'],
+        ]);
+});
+
+test('collectCentralDeviceOptions returns error when devices request fails', function () {
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    Http::fake([
+        '*network-monitoring/v1/devices*' => Http::response([], 500),
+    ]);
+
+    $result = (new CentralAPIHelper($client))->collectCentralDeviceOptions();
+
+    expect($result['devices'])->toBe([])
+        ->and($result['error'])->toBe('Could not load devices from Central.');
 });
