@@ -65,12 +65,27 @@ class MigrationController extends Controller
             'config_file' => ['required', 'file', 'mimes:txt,log', 'max:20480'],
         ]);
 
-        $content = file_get_contents($validated['config_file']->getPathname());
-        $parsedControllers = $parser->parse($content ?: '');
+        $content = file_get_contents($validated['config_file']->getPathname()) ?: '';
+
+        try {
+            $parsedControllers = $parser->parse($content);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return to_route('migrations.index')->withErrors([
+                'config_file' => 'Failed to parse config file. '.$exception->getMessage(),
+            ]);
+        }
 
         if ($parsedControllers === []) {
             return to_route('migrations.index')->withErrors([
                 'config_file' => 'No controller sections found. Expected markers like (CONTROLLER-NAME) #show ap database long or (CONTROLLER-NAME) [MDC] #show ap database long.',
+            ]);
+        }
+
+        if (! $parser->hasRunningConfigSection($content)) {
+            return to_route('migrations.index')->withErrors([
+                'config_file' => "Failed to find the section 'running-configuration'. Expected a line like #show run, #show running, #show running-config, or #show running-configuration.",
             ]);
         }
 

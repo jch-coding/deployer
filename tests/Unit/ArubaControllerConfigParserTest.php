@@ -1098,6 +1098,70 @@ CONFIG;
         ->and($profiles[0]['ssid_profile_name'])->toBe('CFG');
 });
 
+it('accepts show run as a section marker', function () {
+    $content = <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+
+(WLC-ONE) #show run
+wlan ssid-profile "CFG_ssid_prof"
+    essid "CFG"
+    wpa-passphrase "cfg-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "CFG"
+    vlan DAYKIT
+    ssid-profile "CFG_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "CFG"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    expect($profiles)->toHaveCount(1)
+        ->and($profiles[0]['ssid_profile_name'])->toBe('CFG')
+        ->and($parser->hasRunningConfigSection($content))->toBeTrue();
+});
+
+it('accepts show running as a section marker', function () {
+    $content = <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+
+(WLC-ONE) #show running
+wlan ssid-profile "CFG_ssid_prof"
+    essid "CFG"
+    wpa-passphrase "cfg-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "CFG"
+    vlan DAYKIT
+    ssid-profile "CFG_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "CFG"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profiles = $parser->parse($content)[0]['wlan_profiles'];
+
+    expect($profiles)->toHaveCount(1)
+        ->and($profiles[0]['ssid_profile_name'])->toBe('CFG')
+        ->and($parser->hasRunningConfigSection($content))->toBeTrue();
+});
+
 it('accepts MDC prompts with optional star before show ap database long', function () {
     $content = <<<'CONFIG'
 (DAY-HUB-WLC1) [MDC] *#show ap database long

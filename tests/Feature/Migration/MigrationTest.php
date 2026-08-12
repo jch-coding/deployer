@@ -85,6 +85,53 @@ test('migrations parse uploads config file and returns parsed controllers', func
             ->has('parsed_controllers.0.user_roles'));
 });
 
+test('migrations parse soft-fails when running-configuration section is missing', function () {
+    $path = tempnam(sys_get_temp_dir(), 'missing-rc-');
+    file_put_contents($path, <<<'CONFIG'
+(WLC-ONE) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-ONE-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERONE001   N/A   N/A   N/A
+CONFIG);
+    $file = new UploadedFile($path, 'missing-rc.txt', 'text/plain', null, true);
+
+    $this->from(route('migrations.index'))
+        ->post(route('migrations.parse'), [
+            'config_file' => $file,
+        ])
+        ->assertRedirect(route('migrations.index'))
+        ->assertSessionHasErrors([
+            'config_file' => "Failed to find the section 'running-configuration'. Expected a line like #show run, #show running, #show running-config, or #show running-configuration.",
+        ]);
+
+    $this->get(route('migrations.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Migration/Index')
+            ->where('parsed_controllers', []));
+});
+
+test('migrations parse soft-fails when no controller sections are found', function () {
+    $path = tempnam(sys_get_temp_dir(), 'empty-cfg-');
+    file_put_contents($path, "no controller markers here\n");
+    $file = new UploadedFile($path, 'empty.txt', 'text/plain', null, true);
+
+    $this->from(route('migrations.index'))
+        ->post(route('migrations.parse'), [
+            'config_file' => $file,
+        ])
+        ->assertRedirect(route('migrations.index'))
+        ->assertSessionHasErrors('config_file');
+
+    $this->get(route('migrations.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Migration/Index')
+            ->where('parsed_controllers', []));
+});
+
 test('migrations deploy wlan posts profiles to central with scope query parameters', function () {
     Http::fake(['*' => Http::response(['ok' => true], 200)]);
 

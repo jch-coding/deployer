@@ -240,7 +240,14 @@ export default function Index() {
         parseForm.post(migrationsParse().url, {
             forceFormData: true,
             onSuccess: () => toast.success('Config file parsed successfully'),
-            onError: () => toast.error('Failed to parse config file'),
+            onError: (errors) => {
+                const firstError = Object.values(errors)[0];
+                toast.error(
+                    typeof firstError === 'string'
+                        ? firstError
+                        : 'Failed to parse config file',
+                );
+            },
         });
     };
 

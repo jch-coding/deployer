@@ -8,7 +8,7 @@ class ArubaControllerConfigParser
 
     private const LLDP_ROW_PATTERN = '/^(\S+)\s+\S+\s+\d+\s+(\S+)\s+(\S+)\s+/';
 
-    private const RUNNING_CONFIG_PATTERN = '/#show running-config(?:uration)?/i';
+    private const RUNNING_CONFIG_PATTERN = '/#show run(?:ning(?:-config(?:uration)?)?)?/i';
 
     /** @var array<int, string> */
     private const PERSONAL_OPMODE_TOKENS = [
@@ -18,6 +18,13 @@ class ArubaControllerConfigParser
         'wpa2-psk-aes',
         'wpa3-sae-aes',
     ];
+
+    public function hasRunningConfigSection(string $content): bool
+    {
+        $content = str_replace("\r\n", "\n", $content);
+
+        return (bool) preg_match(self::RUNNING_CONFIG_PATTERN, $content);
+    }
 
     public function parse(string $content): array
     {
@@ -307,7 +314,7 @@ class ArubaControllerConfigParser
      */
     private function parseLldpNeighbors(string $content): array
     {
-        $section = $this->extractSection($content, '/#show ap lldp neighbors/i', '/(?:#show running-config(?:uration)?|\([^)]+\) #)/i');
+        $section = $this->extractSection($content, '/#show ap lldp neighbors/i', '/(?:#show run(?:ning(?:-config(?:uration)?)?)?|\([^)]+\) #)/i');
 
         if ($section === null) {
             return [];
