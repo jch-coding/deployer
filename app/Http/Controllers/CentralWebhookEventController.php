@@ -3,13 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\CentralWebhookEvent;
+use App\Services\Cloudflare\CloudflaredTunnelService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CentralWebhookEventController extends Controller
 {
-    public function index(Request $request): Response|\Illuminate\Http\RedirectResponse
+    public function index(Request $request, CloudflaredTunnelService $tunnels): Response|\Illuminate\Http\RedirectResponse
     {
         $currentClient = $request->user()->currentClient();
 
@@ -27,6 +28,7 @@ class CentralWebhookEventController extends Controller
 
         return Inertia::render('Webhook/Index', [
             'events' => $events,
+            'cloudflare_tunnel' => $tunnels->status(),
         ]);
     }
 }

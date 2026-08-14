@@ -342,7 +342,19 @@ export default function Usage() {
                         <h3 className={h3}>Permanent (named) tunnel</h3>
                         <p className={cn(body, 'mt-3')}>
                             A named tunnel with a DNS hostname you control keeps a stable URL across
-                            restarts—preferred for ongoing webhook delivery.
+                            restarts—preferred for ongoing webhook delivery. From the{' '}
+                            <Link href={webhooksIndex().url} prefetch className={linkClass}>
+                                Webhook
+                            </Link>{' '}
+                            page you can <strong>Start</strong> an existing named tunnel or use{' '}
+                            <strong>Create tunnel</strong> for a guided login → create → DNS → run
+                            wizard (runs <code>cloudflared</code> inside Sail with your host{' '}
+                            <code>~/.cloudflared</code> mounted). The CLI steps below remain valid.
+                        </p>
+                        <p className={cn(body, 'mt-3')}>
+                            After adding the Sail volume mount, recreate containers with{' '}
+                            <code>./vendor/bin/sail up -d</code> so credentials are visible inside{' '}
+                            <code>laravel.test</code>.
                         </p>
                         <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
                             <li>

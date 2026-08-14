@@ -184,13 +184,29 @@ it('shows webhook events for the current client on the webhook index page', func
         'created_at' => now(),
     ]);
 
+    $this->mock(\App\Services\Cloudflare\CloudflaredTunnelService::class, function ($mock) {
+        $mock->shouldReceive('status')->andReturn([
+            'binary' => true,
+            'binary_path' => '/usr/local/bin/cloudflared',
+            'logged_in' => true,
+            'name' => 'deployer',
+            'hostname' => null,
+            'running' => false,
+            'pid' => null,
+            'message' => null,
+            'available' => true,
+        ]);
+    });
+
     $this->actingAs($ctx['user'])
         ->get(route('webhooks.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('Webhook/Index')
             ->has('events.data', 1)
-            ->where('events.data.0.serial', $ctx['device']->serial));
+            ->has('cloudflare_tunnel')
+            ->where('events.data.0.serial', $ctx['device']->serial)
+            ->where('cloudflare_tunnel.name', 'deployer'));
 });
 
 it('redirects webhook index when no current client is set', function () {

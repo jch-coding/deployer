@@ -6,6 +6,7 @@ use App\Http\Controllers\CentralStreamEventController;
 use App\Http\Controllers\CentralWebhookController;
 use App\Http\Controllers\CentralWebhookEventController;
 use App\Http\Controllers\ClientController;
+use App\Http\Controllers\CloudflareTunnelController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DeviceDetailsController;
@@ -132,6 +133,16 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/webhooks', [CentralWebhookEventController::class, 'index'])->name('webhooks.index');
     Route::get('/streaming', [CentralStreamEventController::class, 'index'])->name('streaming.index');
+
+    Route::controller(CloudflareTunnelController::class)->prefix('webhooks/cloudflare-tunnel')->group(function () {
+        Route::post('/start', 'start')->name('webhooks.cloudflare_tunnel.start');
+        Route::post('/stop', 'stop')->name('webhooks.cloudflare_tunnel.stop');
+        Route::post('/login', 'login')->name('webhooks.cloudflare_tunnel.login');
+        Route::get('/login-status', 'loginStatus')->name('webhooks.cloudflare_tunnel.login_status');
+        Route::post('/create', 'create')->name('webhooks.cloudflare_tunnel.create');
+        Route::post('/dns', 'dns')->name('webhooks.cloudflare_tunnel.dns');
+        Route::post('/run', 'run')->name('webhooks.cloudflare_tunnel.run');
+    });
 
     Route::controller(MigrationController::class)->group(function () {
         Route::get('/migrations', 'index')->name('migrations.index');

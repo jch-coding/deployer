@@ -60,6 +60,8 @@ services:
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
         volumes:
             - '.:/var/www/html'
+            # Host cloudflared credentials/config for Webhook tunnel GUI controls.
+            - '${HOME}/.cloudflared:/home/sail/.cloudflared'
         networks:
             - sail
         depends_on:
