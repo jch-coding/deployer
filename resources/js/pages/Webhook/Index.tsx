@@ -228,11 +228,11 @@ export default function Index() {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <div className="relative mx-auto max-w-7xl px-4">
+            <div className="relative">
                 <div className="absolute top-3 right-3 z-10 flex max-w-[min(100%,28rem)] flex-col items-end gap-2">
                     <div className="flex flex-wrap items-center justify-end gap-2">
                         <Input
-                            className="h-8 w-36"
+                            className="h-8 w-36 bg-background"
                             value={tunnelName}
                             onChange={(e) => setTunnelName(e.target.value)}
                             placeholder="tunnel name"
@@ -276,33 +276,37 @@ export default function Index() {
                         )}
                     </div>
                     {cloudflare_tunnel.message && (
-                        <p className="max-w-sm text-right text-xs text-amber-700 dark:text-amber-300">
+                        <p className="max-w-sm rounded-md bg-background/90 text-right text-xs text-amber-700 dark:text-amber-300">
                             {cloudflare_tunnel.message}
                         </p>
                     )}
                 </div>
 
-                <h1 className="text-center text-3xl font-semibold">Webhook</h1>
-                <p className="mt-2 text-center text-sm text-muted-foreground">
-                    Classic Central webhook payloads for the current client
-                </p>
+                <div className="mx-auto max-w-7xl px-4">
+                    <div className="pt-14 sm:px-56 sm:pt-2">
+                        <h1 className="text-center text-3xl font-semibold">Webhook</h1>
+                        <p className="mt-2 text-center text-sm text-muted-foreground">
+                            Classic Central webhook payloads for the current client
+                        </p>
+                    </div>
 
-                <div className="mt-6">
-                    <DataTable<WebhookEventRow, unknown>
-                        data={rows}
-                        columns={columns}
-                        getRowId={(row) => String(row.id)}
-                    />
-                    {expandedId !== null && (
-                        <pre className="mt-4 max-h-96 overflow-auto rounded-md border bg-muted/40 p-4 text-xs">
-                            {JSON.stringify(
-                                rows.find((row) => row.id === expandedId)?.payload ?? {},
-                                null,
-                                2,
-                            )}
-                        </pre>
-                    )}
-                    {events.total > events.per_page && <LaravelPaginator TPaginator={events} />}
+                    <div className="mt-6">
+                        <DataTable<WebhookEventRow, unknown>
+                            data={rows}
+                            columns={columns}
+                            getRowId={(row) => String(row.id)}
+                        />
+                        {expandedId !== null && (
+                            <pre className="mt-4 max-h-96 overflow-auto rounded-md border bg-muted/40 p-4 text-xs">
+                                {JSON.stringify(
+                                    rows.find((row) => row.id === expandedId)?.payload ?? {},
+                                    null,
+                                    2,
+                                )}
+                            </pre>
+                        )}
+                        {events.total > events.per_page && <LaravelPaginator TPaginator={events} />}
+                    </div>
                 </div>
             </div>
         </AppLayout>
