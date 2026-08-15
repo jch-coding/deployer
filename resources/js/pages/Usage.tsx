@@ -342,19 +342,109 @@ export default function Usage() {
                         <h3 className={h3}>Permanent (named) tunnel</h3>
                         <p className={cn(body, 'mt-3')}>
                             A named tunnel with a DNS hostname you control keeps a stable URL across
-                            restarts—preferred for ongoing webhook delivery. From the{' '}
+                            restarts—preferred for ongoing webhook delivery. Prefer the{' '}
+                            <a href="#webhook-tunnel-gui" className={linkClass}>
+                                Webhook page GUI
+                            </a>{' '}
+                            below for day-to-day start/stop and first-time create; the CLI steps remain
+                            valid if you want to manage tunnels outside the app.
+                        </p>
+
+                        <h3 id="webhook-tunnel-gui" className={h3}>
+                            Webhook page GUI (start / create)
+                        </h3>
+                        <p className={cn(body, 'mt-3')}>
+                            The{' '}
                             <Link href={webhooksIndex().url} prefetch className={linkClass}>
                                 Webhook
                             </Link>{' '}
-                            page you can <strong>Start</strong> an existing named tunnel or use{' '}
-                            <strong>Create tunnel</strong> for a guided login → create → DNS → run
-                            wizard (runs <code>cloudflared</code> inside Sail with your host{' '}
-                            <code>~/.cloudflared</code> mounted). The CLI steps below remain valid.
+                            page can <strong>Start</strong> / <strong>Stop</strong> an existing named
+                            tunnel or open <strong>Create tunnel</strong> for a guided login → create →
+                            DNS → run wizard. The app runs <code>cloudflared</code> inside the{' '}
+                            <code>laravel.test</code> Sail container and uses your host{' '}
+                            <code>~/.cloudflared</code> credentials via a volume mount.
                         </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Ensure the domain you will use (for example{' '}
+                                <code>deployer.example.com</code>) is on a Cloudflare zone in the same
+                                account you will log into. If the account has more than one zone, plan to
+                                set <code>CLOUDFLARE_API_TOKEN</code> (step 4) so DNS is created in the
+                                correct zone.
+                            </li>
+                            <li>
+                                Confirm <code>compose.yaml</code> mounts host credentials into Sail
+                                (already present in this project):
+                                <pre className={pre}>
+                                    <code>{`# under laravel.test → volumes:
+- '\${HOME}/.cloudflared:/home/sail/.cloudflared'`}</code>
+                                </pre>
+                                Recreate containers so the mount applies:
+                                <pre className={pre}>
+                                    <code>{`./vendor/bin/sail up -d`}</code>
+                                </pre>
+                            </li>
+                            <li>
+                                Start Sail and open the Webhook page with a current client selected.
+                            </li>
+                            <li>
+                                Optional but recommended for multi-zone accounts—add Cloudflare settings
+                                to <code>.env</code> (see also{' '}
+                                <code>.env.example</code>):
+                                <pre className={pre}>
+                                    <code>{`# Public URL Central and browsers will call (set after you choose a hostname,
+# or let the Create tunnel wizard update it when "Set APP_URL" is checked)
+APP_URL=https://deployer.example.com
+
+# Optional overrides (defaults work under Sail with the volume mount above)
+# CLOUDFLARED_BIN=/usr/local/bin/cloudflared
+# CLOUDFLARED_CONFIG_DIR=/home/sail/.cloudflared
+
+# Optional: DNS via Cloudflare API (avoids cloudflared login-zone nesting)
+CLOUDFLARE_API_TOKEN=your_api_token_here`}</code>
+                                </pre>
+                                Create the API token in the Cloudflare dashboard with Zone → DNS → Edit
+                                (and Zone → Zone → Read) for the zones you will use, then clear config:
+                                <pre className={pre}>
+                                    <code>{`./vendor/bin/sail artisan config:clear`}</code>
+                                </pre>
+                            </li>
+                            <li>
+                                To create a tunnel from scratch: click <strong>Create tunnel</strong> and
+                                follow the wizard—login (authorize the zone in the browser if needed),
+                                enter a tunnel name (for example <code>deployer</code>), enter the public
+                                hostname, then start the tunnel (leave <strong>Set APP_URL</strong> checked
+                                unless you already set it).
+                            </li>
+                            <li>
+                                To reuse an existing named tunnel: type its name in the top-right field and
+                                click <strong>Start</strong>. Use <strong>Stop</strong> to end the process
+                                the GUI started. Status (running / stopped / unavailable) updates about
+                                every 5 seconds with the page poll.
+                            </li>
+                            <li>
+                                Refresh Clients so webhook URLs show the tunnel host, then point Classic
+                                Central at that URL (see{' '}
+                                <a href="#configure-webhooks" className={linkClass}>
+                                    Configure webhooks
+                                </a>
+                                ).
+                            </li>
+                        </ol>
+                        <div className={cn(body, 'mt-4 rounded-lg border border-border bg-muted/40 px-4 py-3')}>
+                            <p className="font-medium text-foreground">GUI vs host CLI</p>
+                            <p className="mt-2">
+                                Do not run the same named tunnel from both the Webhook GUI and a host{' '}
+                                <code>cloudflared tunnel run</code> at the same time. If status shows{' '}
+                                <strong>unavailable</strong>, recreate Sail so{' '}
+                                <code>~/.cloudflared</code> is mounted, or set{' '}
+                                <code>CLOUDFLARED_CONFIG_DIR</code> / <code>CLOUDFLARED_BIN</code>.
+                            </p>
+                        </div>
+
+                        <h3 className={h3}>Permanent (named) tunnel via CLI</h3>
                         <p className={cn(body, 'mt-3')}>
-                            After adding the Sail volume mount, recreate containers with{' '}
-                            <code>./vendor/bin/sail up -d</code> so credentials are visible inside{' '}
-                            <code>laravel.test</code>.
+                            Manual alternative if you prefer not to use the Webhook page controls.
                         </p>
                         <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
                             <li>
@@ -424,6 +514,24 @@ sudo cloudflared service start`}</code>
                                 The tunnel <code>service</code> line must match.
                             </li>
                             <li>
+                                <code>CLOUDFLARED_BIN</code> — optional path to the <code>cloudflared</code>{' '}
+                                binary used by the Webhook page tunnel controls (default: search{' '}
+                                <code>PATH</code>, then download linux-amd64 into{' '}
+                                <code>storage/app/cloudflared/</code> under Sail).
+                            </li>
+                            <li>
+                                <code>CLOUDFLARED_CONFIG_DIR</code> — optional directory for{' '}
+                                <code>cert.pem</code>, credentials, and <code>config.yml</code> (default:{' '}
+                                <code>~/.cloudflared</code>; under Sail this is{' '}
+                                <code>/home/sail/.cloudflared</code>, mounted from the host).
+                            </li>
+                            <li>
+                                <code>CLOUDFLARE_API_TOKEN</code> — optional Cloudflare API token for the
+                                create-tunnel DNS step. Prefer this when the account has multiple zones so
+                                the CNAME is created in the correct zone (avoids the{' '}
+                                <code>cloudflared tunnel route dns</code> login-zone nesting bug).
+                            </li>
+                            <li>
                                 Proxies are already trusted (<code>trustProxies(at: &apos;*&apos;)</code>) and{' '}
                                 <code>webhooks/central/*</code> is CSRF-exempt, so no extra Laravel changes are
                                 required for tunnel ingress.
@@ -451,9 +559,13 @@ sudo cloudflared service start`}</code>
 
                         <h3 className={h3}>1. Expose Deployer and set APP_URL</h3>
                         <p className={cn(body, 'mt-3')}>
-                            Complete a temporary or permanent Cloudflare tunnel as above and ensure{' '}
-                            <code>APP_URL</code> matches the public HTTPS hostname. Confirm Sail is up and
-                            the tunnel process (or service) is running.
+                            Complete a temporary tunnel, the{' '}
+                            <a href="#webhook-tunnel-gui" className={linkClass}>
+                                Webhook page GUI
+                            </a>
+                            , or a CLI named tunnel as above and ensure <code>APP_URL</code> matches the
+                            public HTTPS hostname. Confirm Sail is up and the tunnel process (or service) is
+                            running.
                         </p>
 
                         <h3 className={h3}>2. Save the secret on the client in Deployer</h3>
