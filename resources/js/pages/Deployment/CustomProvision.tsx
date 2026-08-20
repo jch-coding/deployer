@@ -199,6 +199,7 @@ export default function CustomProvision() {
     const [onlineDetectionMode, setOnlineDetectionMode] = useState<
         'poll' | 'webhook' | 'stream'
     >('poll');
+    const [queryCentralForOnline, setQueryCentralForOnline] = useState(false);
     const [licensingMode, setLicensingMode] = useState<'uniform' | 'per_device'>(
         'uniform',
     );
@@ -361,6 +362,10 @@ export default function CustomProvision() {
                 ? Number(selectedTemplateId)
                 : undefined,
         };
+
+        if (includesWaitOnline) {
+            payload.query_central_for_online = queryCentralForOnline;
+        }
 
         if (needsLicensingDialog && licensingMode === 'uniform') {
             payload.license_tag = uniformLicenseTag;
@@ -895,6 +900,29 @@ export default function CustomProvision() {
                                                 Stream
                                             </option>
                                         </select>
+                                        <label className="flex items-start gap-2 text-sm">
+                                            <input
+                                                type="checkbox"
+                                                className="mt-1"
+                                                checked={queryCentralForOnline}
+                                                onChange={(e) =>
+                                                    setQueryCentralForOnline(
+                                                        e.target.checked,
+                                                    )
+                                                }
+                                                data-test="query-central-for-online"
+                                            />
+                                            <span>
+                                                Query Central for devices
+                                                already online
+                                                <span className="block text-xs text-muted-foreground">
+                                                    Devices Central reports as
+                                                    Up skip wait for online.
+                                                    Stored wake webhooks are
+                                                    always used.
+                                                </span>
+                                            </span>
+                                        </label>
                                     </div>
                                 ) : null}
 

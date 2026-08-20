@@ -194,6 +194,7 @@ export default function Provision() {
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10);
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(1);
     const [onlineDetectionMode, setOnlineDetectionMode] = useState<'poll' | 'webhook' | 'stream'>('poll');
+    const [queryCentralForOnline, setQueryCentralForOnline] = useState(false);
     const [licensingMode, setLicensingMode] = useState<'uniform' | 'per_device'>('uniform');
     const [uniformLicenseTag, setUniformLicenseTag] = useState('');
     const [uniformLicenseType, setUniformLicenseType] = useState<LicenseTypeOption | ''>('');
@@ -234,6 +235,10 @@ export default function Provision() {
     const startStepOrder = startStepMeta?.order ?? 1;
     const canCheckSkipped = startStepOrder > (availableSteps[0]?.order ?? 1);
     const omittableSteps = availableSteps.filter((step) => step.order > startStepOrder);
+    const waitForOnlineOrder =
+        availableSteps.find((step) => step.step_key === 'wait_for_online')?.order ?? 4;
+    const includesWaitOnline =
+        startStepOrder <= waitForOnlineOrder && !omitSteps.includes('wait_for_online');
 
     const needsLicensingDialog = selectedDevices.some(
         (d) => !d.license_tag || !d.license_type,
@@ -287,6 +292,10 @@ export default function Provision() {
             start_step: startStep,
             omit_steps: omitSteps,
         };
+
+        if (includesWaitOnline) {
+            payload.query_central_for_online = queryCentralForOnline;
+        }
 
         if (needsLicensingDialog) {
             if (licensingMode === 'uniform') {
@@ -635,6 +644,26 @@ export default function Provision() {
                                                 Streaming API
                                             </label>
                                         </div>
+                                        {includesWaitOnline ? (
+                                            <label className="flex items-start gap-2 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    className="mt-1"
+                                                    checked={queryCentralForOnline}
+                                                    onChange={(e) =>
+                                                        setQueryCentralForOnline(e.target.checked)
+                                                    }
+                                                    data-test="query-central-for-online"
+                                                />
+                                                <span>
+                                                    Query Central for devices already online
+                                                    <span className="block text-xs text-muted-foreground">
+                                                        Devices Central reports as Up skip wait for
+                                                        online. Stored wake webhooks are always used.
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        ) : null}
                                     </div>
                                     <div
                                         className={cn(

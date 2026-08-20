@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\Provisioning\ProvisioningStepResult;
 use App\Services\Provisioning\ProvisioningWorkflowOrchestrator;
 use App\Services\Provisioning\ProvisioningWorkflowService;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -903,4 +904,261 @@ it('keeps the diva path unchanged when steps are omitted', function () {
     expect($workflow->steps)->toBeNull()
         ->and($workflow->name)->toBeNull()
         ->and($workflow->workflowDevices()->first()->steps)->toHaveCount(14);
+});
+
+it('skips wait_for_online when an accepted webhook exists for the device', function () {
+    Queue::fake();
+
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'SNWEBHOOK1',
+        'device_function' => \App\DeviceFunction::CAMPUS_AP->name,
+    ]);
+
+    \App\Models\CentralWebhookEvent::query()->create([
+        'client_id' => $this->client->id,
+        'payload' => [
+            'alert_type' => 'New AP detected',
+            'details' => ['serial' => 'SNWEBHOOK1'],
+        ],
+        'alert_type' => 'New AP detected',
+        'serial' => 'SNWEBHOOK1',
+        'disposition' => 'accepted',
+        'created_at' => now(),
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::WaitForOnline->value,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    $waitStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->first();
+
+    expect($waitStep->status)->toBe('skipped')
+        ->and($waitStep->message)->toBe('Already online (webhook).')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::AssociateSite->value);
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) {
+        return $job->stepKey === ProvisioningStep::AssociateSite->value;
+    });
+});
+
+it('does not skip wait_for_online for ignored webhooks or other serials', function () {
+    Queue::fake();
+
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'SNDEVICE1',
+        'device_function' => \App\DeviceFunction::CAMPUS_AP->name,
+    ]);
+
+    \App\Models\CentralWebhookEvent::query()->create([
+        'client_id' => $this->client->id,
+        'payload' => ['alert_type' => 'AP Disconnected'],
+        'alert_type' => 'AP Disconnected',
+        'serial' => 'SNDEVICE1',
+        'disposition' => 'ignored',
+        'created_at' => now(),
+    ]);
+
+    \App\Models\CentralWebhookEvent::query()->create([
+        'client_id' => $this->client->id,
+        'payload' => ['alert_type' => 'New AP detected'],
+        'alert_type' => 'New AP detected',
+        'serial' => 'OTHERSERIAL',
+        'disposition' => 'accepted',
+        'created_at' => now(),
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::WaitForOnline->value,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    $waitStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->first();
+
+    expect($waitStep->status)->toBe('in_progress')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::WaitForOnline->value);
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) {
+        return $job->stepKey === ProvisioningStep::WaitForOnline->value;
+    });
+});
+
+it('does not look up webhooks when a custom workflow omits wait_for_online', function () {
+    Queue::fake();
+
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'SNNOWAIT1',
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    \App\Models\CentralWebhookEvent::query()->create([
+        'client_id' => $this->client->id,
+        'payload' => ['alert_type' => 'New Switch Connected'],
+        'alert_type' => 'New Switch Connected',
+        'serial' => 'SNNOWAIT1',
+        'disposition' => 'accepted',
+        'created_at' => now(),
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::ConfigureEthernetInterfaces->value,
+        ],
+        'name' => 'No wait online',
+    ])->assertRedirect(route('deployments.custom_provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    expect($workflowDevice->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->exists())->toBeFalse()
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::AssociateSite->value);
+});
+
+it('skips wait_for_online when query_central_for_online finds the device up', function () {
+    Queue::fake();
+
+    $this->client->update([
+        'classic_base_url' => \App\ClassicBaseUrl::US_WEST4,
+        'classic_client_id' => 'classic-client-id',
+        'classic_client_secret' => 'classic-client-secret',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'classic_refresh_token' => 'refresh-token',
+        'classic_access_token' => 'access-token',
+        'classic_expires_in' => now()->addHour(),
+    ]);
+
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'SNAPUP1',
+        'device_function' => \App\DeviceFunction::CAMPUS_AP->name,
+    ]);
+
+    Http::fake([
+        '*monitoring/v2/aps*' => Http::response([
+            'aps' => [
+                ['serial' => 'SNAPUP1', 'status' => 'Up'],
+            ],
+        ], 200),
+        '*monitoring/v1/switches*' => Http::response(['switches' => []], 200),
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::WaitForOnline->value,
+        'query_central_for_online' => true,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    $waitStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->first();
+
+    expect($waitStep->status)->toBe('skipped')
+        ->and($waitStep->message)->toBe('Already online in Central (Up).')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::AssociateSite->value);
+});
+
+it('does not skip wait_for_online from central when query_central_for_online is off', function () {
+    Queue::fake();
+
+    $this->client->update([
+        'classic_base_url' => \App\ClassicBaseUrl::US_WEST4,
+        'classic_client_id' => 'classic-client-id',
+        'classic_client_secret' => 'classic-client-secret',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'classic_refresh_token' => 'refresh-token',
+        'classic_access_token' => 'access-token',
+        'classic_expires_in' => now()->addHour(),
+    ]);
+
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'SNAPUP2',
+        'device_function' => \App\DeviceFunction::CAMPUS_AP->name,
+    ]);
+
+    Http::fake([
+        '*monitoring/v2/aps*' => Http::response([
+            'aps' => [
+                ['serial' => 'SNAPUP2', 'status' => 'Up'],
+            ],
+        ], 200),
+        '*monitoring/v1/switches*' => Http::response(['switches' => []], 200),
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::WaitForOnline->value,
+        'query_central_for_online' => false,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    $waitStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->first();
+
+    expect($waitStep->status)->toBe('in_progress')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::WaitForOnline->value);
+
+    Http::assertNothingSent();
+});
+
+it('still starts when query_central_for_online is on but central errors', function () {
+    Queue::fake();
+
+    $this->client->update([
+        'classic_base_url' => \App\ClassicBaseUrl::US_WEST4,
+        'classic_client_id' => 'classic-client-id',
+        'classic_client_secret' => 'classic-client-secret',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'classic_refresh_token' => 'refresh-token',
+        'classic_access_token' => 'access-token',
+        'classic_expires_in' => now()->addHour(),
+    ]);
+
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'serial' => 'SNERR1',
+        'device_function' => \App\DeviceFunction::CAMPUS_AP->name,
+    ]);
+
+    Http::fake([
+        '*monitoring/v2/aps*' => Http::response(['error' => 'boom'], 500),
+        '*monitoring/v1/switches*' => Http::response(['error' => 'boom'], 500),
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::WaitForOnline->value,
+        'query_central_for_online' => true,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->first();
+    $waitStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->first();
+
+    expect($waitStep->status)->toBe('in_progress')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::WaitForOnline->value)
+        ->and(ProvisioningWorkflow::query()->count())->toBe(1);
 });

@@ -26,6 +26,7 @@ class ProvisioningWorkflowService
         private readonly ProvisioningWorkflowOrchestrator $orchestrator,
         private readonly LicensingInventoryService $licensingInventoryService,
         private readonly LicensingPoolResolver $licensingPoolResolver,
+        private readonly DeviceAlreadyOnlineResolver $deviceAlreadyOnlineResolver,
     ) {}
 
     /**
@@ -96,6 +97,15 @@ class ProvisioningWorkflowService
             $templateId = null;
         }
 
+        $alreadyOnlineReasons = [];
+        if ($this->includesWaitForOnline($isCustom, $customSteps, $startStep, $omitSteps)) {
+            $alreadyOnlineReasons = $this->deviceAlreadyOnlineResolver->resolve(
+                $deployment->client,
+                $devices,
+                (bool) ($options['query_central_for_online'] ?? false),
+            );
+        }
+
         return DB::transaction(function () use (
             $deployment,
             $user,
@@ -114,6 +124,7 @@ class ProvisioningWorkflowService
             $stepKeys,
             $workflowName,
             $templateId,
+            $alreadyOnlineReasons,
         ): ProvisioningWorkflow {
             $workflow = ProvisioningWorkflow::query()->create([
                 'deployment_id' => $deployment->id,
@@ -139,6 +150,8 @@ class ProvisioningWorkflowService
                     'status_message' => 'Starting '.$startStep->label().'...',
                 ]);
 
+                $alreadyOnlineReason = $alreadyOnlineReasons[(int) $device->id] ?? null;
+
                 if ($isCustom) {
                     $order = 1;
                     foreach ($customSteps as $step) {
@@ -147,6 +160,12 @@ class ProvisioningWorkflowService
                             $device,
                             $stepContext,
                         );
+                        if ($status === 'pending'
+                            && $step === ProvisioningStep::WaitForOnline
+                            && $alreadyOnlineReason !== null) {
+                            $status = 'skipped';
+                            $message = $alreadyOnlineReason;
+                        }
                         ProvisioningWorkflowDeviceStep::query()->create([
                             'provisioning_workflow_device_id' => $workflowDevice->id,
                             'step_key' => $step->value,
@@ -157,7 +176,6 @@ class ProvisioningWorkflowService
                         ]);
                         $order++;
                     }
-                    $firstStep = $this->firstRunnableStepFromSequence($device, $stepContext, $customSteps);
                 } else {
                     foreach (ProvisioningStep::ordered() as $step) {
                         [$status, $message] = $this->initialStepStatus(
@@ -168,6 +186,12 @@ class ProvisioningWorkflowService
                             $omitSteps,
                             $preflightResults[(string) $device->id][$step->value] ?? null,
                         );
+                        if ($status === 'pending'
+                            && $step === ProvisioningStep::WaitForOnline
+                            && $alreadyOnlineReason !== null) {
+                            $status = 'skipped';
+                            $message = $alreadyOnlineReason;
+                        }
                         ProvisioningWorkflowDeviceStep::query()->create([
                             'provisioning_workflow_device_id' => $workflowDevice->id,
                             'step_key' => $step->value,
@@ -177,12 +201,16 @@ class ProvisioningWorkflowService
                             'completed_at' => $status === 'skipped' ? now() : null,
                         ]);
                     }
-                    $firstStep = $this->firstRunnableStep($device, $stepContext, $startStep, $omitSteps);
                 }
 
-                if ($firstStep !== null) {
-                    $firstStepRow = $workflowDevice->steps()->where('step_key', $firstStep->value)->first();
-                    $firstStepRow?->markInProgress($firstStep->label().'...');
+                $firstStepRow = $workflowDevice->steps()
+                    ->where('status', 'pending')
+                    ->orderBy('step_order')
+                    ->first();
+
+                if ($firstStepRow !== null) {
+                    $firstStep = ProvisioningStep::from($firstStepRow->step_key);
+                    $firstStepRow->markInProgress($firstStep->label().'...');
                     $workflowDevice->update([
                         'current_step_key' => $firstStep->value,
                         'status_message' => $firstStep->label().'...',
@@ -588,44 +616,30 @@ class ProvisioningWorkflowService
     }
 
     /**
+     * @param  list<ProvisioningStep>|null  $customSteps
      * @param  list<string>  $omitSteps
      */
-    private function firstRunnableStep(
-        Device $device,
-        ProvisioningStepContext $context,
+    private function includesWaitForOnline(
+        bool $isCustom,
+        ?array $customSteps,
         ProvisioningStep $startStep,
-        array $omitSteps = [],
-    ): ?ProvisioningStep {
-        foreach (ProvisioningStep::ordered() as $step) {
-            if ($step->order() < $startStep->order()) {
-                continue;
+        array $omitSteps,
+    ): bool {
+        if ($isCustom) {
+            foreach ($customSteps ?? [] as $step) {
+                if ($step === ProvisioningStep::WaitForOnline) {
+                    return true;
+                }
             }
-            if (in_array($step->value, $omitSteps, true)) {
-                continue;
-            }
-            if (! $step->shouldSkipForDevice($device, $context)) {
-                return $step;
-            }
+
+            return false;
         }
 
-        return null;
-    }
-
-    /**
-     * @param  list<ProvisioningStep>  $steps
-     */
-    private function firstRunnableStepFromSequence(
-        Device $device,
-        ProvisioningStepContext $context,
-        array $steps,
-    ): ?ProvisioningStep {
-        foreach ($steps as $step) {
-            if (! $step->shouldSkipForDevice($device, $context)) {
-                return $step;
-            }
+        if (in_array(ProvisioningStep::WaitForOnline->value, $omitSteps, true)) {
+            return false;
         }
 
-        return null;
+        return $startStep->order() <= ProvisioningStep::WaitForOnline->order();
     }
 
     /**
