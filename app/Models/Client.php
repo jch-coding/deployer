@@ -11,7 +11,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class Client extends Model
 {
@@ -148,6 +151,8 @@ class Client extends Model
     {
         try {
             if (! $this->hasClassicCentralCredentials()) {
+                $this->logClassicOAuthFailure('missing_credentials');
+
                 return false;
             }
 
@@ -170,26 +175,49 @@ class Client extends Model
 
                     return true;
                 }
+
+                $this->logClassicOAuthFailure('refresh_token', $response);
             }
 
             $response = $this->authenticateClassicCentral();
             if (! $response->ok()) {
+                $this->logClassicOAuthFailure('login', $response);
+
                 return false;
             }
 
-            $set_cookie = $response->headers()['Set-Cookie'];
+            $set_cookie = $response->headers()['Set-Cookie'] ?? $response->headers()['set-cookie'] ?? null;
+            if (! is_array($set_cookie) || $set_cookie === []) {
+                $this->logClassicOAuthFailure('login_cookies', $response, context: [
+                    'set_cookie_header_type' => get_debug_type($set_cookie),
+                    'response_header_keys' => array_keys($response->headers()),
+                ]);
+
+                return false;
+            }
+
             $extracted_csrftoken_and_session = $this->extractCSRFTokenAndSession($set_cookie);
             $response = $this->generateClassicAuthorizationCode(
                 $extracted_csrftoken_and_session['csrftoken'],
                 $extracted_csrftoken_and_session['session']
             );
             if (! $response->ok()) {
+                $this->logClassicOAuthFailure('authorization_code', $response);
+
                 return false;
             }
 
-            $authorization_code = $response->json()['auth_code'];
+            $authorization_code = $response->json('auth_code');
+            if (blank($authorization_code)) {
+                $this->logClassicOAuthFailure('authorization_code_missing', $response);
+
+                return false;
+            }
+
             $response = $this->acquireTokens($authorization_code);
             if (! $response->ok()) {
+                $this->logClassicOAuthFailure('acquire_tokens', $response);
+
                 return false;
             }
 
@@ -200,9 +228,44 @@ class Client extends Model
             $this->save();
 
             return true;
-        } catch (RequestException|ConnectionException) {
+        } catch (Throwable $exception) {
+            $this->logClassicOAuthFailure('exception', exception: $exception);
+
             return false;
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function logClassicOAuthFailure(
+        string $step,
+        ?Response $response = null,
+        ?Throwable $exception = null,
+        array $context = [],
+    ): void {
+        $payload = array_merge([
+            'step' => $step,
+            'client_db_id' => $this->id,
+            'classic_client_id' => $this->classic_client_id,
+            'classic_base_url' => $this->classicBaseUrlString(),
+            'customer_id' => $this->customer_id,
+            'classic_username' => $this->classic_username,
+            'has_classic_refresh_token' => $this->classic_refresh_token !== null,
+            'classic_refresh_expires_in' => $this->classic_refresh_expires_in?->toIso8601String(),
+        ], $context);
+
+        if ($response !== null) {
+            $payload['status'] = $response->status();
+            $payload['body'] = $response->body();
+        }
+
+        if ($exception !== null) {
+            $payload['exception_class'] = $exception::class;
+            $payload['exception'] = $exception->getMessage();
+        }
+
+        Log::error('Classic Central OAuth failed.', $payload);
     }
 
     public function classicRefreshTokenIsExpired(): bool

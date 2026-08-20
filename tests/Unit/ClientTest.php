@@ -3,6 +3,7 @@
 use App\Models\Client;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 it('has a name', function () {
     $this->withoutExceptionHandling();
@@ -34,8 +35,8 @@ it('has one user relationship', function () {
 });
 
 it('has an fqdn as a url string when the base_url attribute is accessed', function () {
-   $client = Client::factory()->create(['base_url' => 'us5']);
-   expect($client->base_url)->toBe('https://us5.api.central.arubanetworks.com/');
+    $client = Client::factory()->create(['base_url' => 'us5']);
+    expect($client->base_url)->toBe('https://us5.api.central.arubanetworks.com/');
 });
 
 it('has a current attribute that is a boolean and is false by default', function () {
@@ -178,4 +179,39 @@ it('falls back to full OAuth when classic refresh fails', function () {
 
     Http::assertSent(fn ($request) => str_contains($request->url(), 'grant_type=refresh_token'));
     Http::assertSent(fn ($request) => str_contains($request->url(), 'oauth2/authorize/central/api/login'));
+});
+
+it('logs the failing Classic OAuth step with status and body', function () {
+    Log::spy();
+
+    $client = Client::factory()->create([
+        'classic_client_id' => 'classic-client-id-0001',
+        'classic_client_secret' => 'classic-client-secret-0001',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'customer_id' => 'customer-id-0001',
+        'classic_base_url' => 'https://apigw-uswest4.central.arubanetworks.com/',
+        'classic_refresh_token' => 'expired-refresh-token',
+        'classic_access_token' => 'expired-access-token',
+        'classic_expires_in' => now()->subMinute(),
+        'classic_refresh_expires_in' => now()->subDay(),
+    ]);
+
+    Http::fake([
+        'https://apigw-uswest4.central.arubanetworks.com/oauth2/authorize/central/api/login*' => Http::response(
+            ['status' => false, 'message' => 'Invalid username or password'],
+            401,
+        ),
+    ]);
+
+    expect($client->handleClassicBearerToken())->toBeFalse();
+
+    Log::shouldHaveReceived('error')
+        ->once()
+        ->withArgs(function (string $message, array $context): bool {
+            return $message === 'Classic Central OAuth failed.'
+                && ($context['step'] ?? null) === 'login'
+                && ($context['status'] ?? null) === 401
+                && str_contains((string) ($context['body'] ?? ''), 'Invalid username or password');
+        });
 });
