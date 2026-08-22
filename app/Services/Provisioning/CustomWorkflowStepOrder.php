@@ -8,14 +8,19 @@ use Illuminate\Validation\ValidationException;
 class CustomWorkflowStepOrder
 {
     /**
-     * Partial-order gate ranks. Free steps share rank 3 and may appear in any order
-     * relative to each other, but must follow any selected lower-rank gates.
+     * Partial-order gate ranks. Free steps (including associate_site and
+     * wait_for_online) share rank 2 and may appear in any order relative to
+     * each other, but must follow any selected lower-rank gates.
+     *
+     * Associate-to-site is intentionally free so custom runs can match the
+     * full Diva order (wait for online → associate to site).
      */
     private const GATE_RANKS = [
         'verify_licensing' => 0,
         'preprovision_group' => 1,
-        'associate_site' => 2,
     ];
+
+    private const FREE_RANK = 2;
 
     /**
      * @param  list<mixed>  $rawSteps
@@ -56,7 +61,7 @@ class CustomWorkflowStepOrder
             if ($rank < $previousRank) {
                 $currentLabel = $step->label();
                 throw ValidationException::withMessages([
-                    'steps' => self::violationMessage($previousLabel ?? '', $currentLabel, $previousRank, $rank),
+                    'steps' => self::violationMessage($previousLabel ?? '', $currentLabel),
                 ]);
             }
             $previousRank = $rank;
@@ -82,12 +87,12 @@ class CustomWorkflowStepOrder
 
     public static function rank(ProvisioningStep $step): int
     {
-        return self::GATE_RANKS[$step->value] ?? 3;
+        return self::GATE_RANKS[$step->value] ?? self::FREE_RANK;
     }
 
-    private static function violationMessage(string $previousLabel, string $currentLabel, int $previousRank, int $currentRank): string
+    private static function violationMessage(string $previousLabel, string $currentLabel): string
     {
-        $gateOrder = 'licensing → preprovisioning → site/group → other steps';
+        $gateOrder = 'licensing → preprovisioning → other steps';
 
         return "Invalid step order: \"{$currentLabel}\" cannot appear after \"{$previousLabel}\". Required partial order: {$gateOrder}.";
     }

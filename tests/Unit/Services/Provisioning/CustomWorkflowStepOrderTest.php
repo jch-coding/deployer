@@ -32,6 +32,30 @@ it('allows free reorder among post-gate steps', function () {
     ]);
 });
 
+it('allows wait for online before associate to site', function () {
+    $steps = CustomWorkflowStepOrder::validate([
+        ProvisioningStep::WaitForOnline->value,
+        ProvisioningStep::AssociateSite->value,
+    ]);
+
+    expect(array_map(fn ($step) => $step->value, $steps))->toBe([
+        ProvisioningStep::WaitForOnline->value,
+        ProvisioningStep::AssociateSite->value,
+    ]);
+});
+
+it('allows associate to site before wait for online', function () {
+    $steps = CustomWorkflowStepOrder::validate([
+        ProvisioningStep::AssociateSite->value,
+        ProvisioningStep::WaitForOnline->value,
+    ]);
+
+    expect(array_map(fn ($step) => $step->value, $steps))->toBe([
+        ProvisioningStep::AssociateSite->value,
+        ProvisioningStep::WaitForOnline->value,
+    ]);
+});
+
 it('rejects site before licensing', function () {
     expect(fn () => CustomWorkflowStepOrder::validate([
         ProvisioningStep::AssociateSite->value,

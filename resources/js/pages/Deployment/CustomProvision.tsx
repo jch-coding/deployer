@@ -495,8 +495,8 @@ export default function CustomProvision() {
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             Choose steps in order (licensing → preprovision →
-                            site/group → anything else), name the run, and
-                            optionally save it as a reusable template.
+                            anything else), name the run, and optionally save
+                            it as a reusable template.
                         </p>
                     </div>
                     <div className="flex gap-2">
@@ -656,8 +656,9 @@ export default function CustomProvision() {
                                 ) : (
                                     <p className="text-xs text-muted-foreground">
                                         Order must respect licensing →
-                                        preprovision → site/group before other
-                                        steps. Free steps can be rearranged.
+                                        preprovision before other steps. Free
+                                        steps (including wait for online and
+                                        associate to site) can be rearranged.
                                     </p>
                                 )}
                                 <div

@@ -1,15 +1,17 @@
 /**
  * Client-side mirror of CustomWorkflowStepOrder partial-order ranks.
- * Gate steps must appear in non-decreasing rank order; free steps share rank 3.
+ * Gate steps must appear in non-decreasing rank order; free steps share rank 2.
+ * Associate-to-site is free so wait-for-online → associate-to-site (Diva order) is allowed.
  */
 const GATE_RANKS: Record<string, number> = {
     verify_licensing: 0,
     preprovision_group: 1,
-    associate_site: 2,
 };
 
+const FREE_RANK = 2;
+
 export function customWorkflowStepRank(stepKey: string): number {
-    return GATE_RANKS[stepKey] ?? 3;
+    return GATE_RANKS[stepKey] ?? FREE_RANK;
 }
 
 export function validateCustomWorkflowStepOrder(
@@ -33,7 +35,7 @@ export function validateCustomWorkflowStepOrder(
         const rank = customWorkflowStepRank(key);
         const label = labelsByKey[key] ?? key;
         if (rank < previousRank) {
-            return `Invalid step order: "${label}" cannot appear after "${previousLabel}". Required partial order: licensing → preprovisioning → site/group → other steps.`;
+            return `Invalid step order: "${label}" cannot appear after "${previousLabel}". Required partial order: licensing → preprovisioning → other steps.`;
         }
         previousRank = rank;
         previousLabel = label;
