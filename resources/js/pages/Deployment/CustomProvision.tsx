@@ -432,6 +432,11 @@ export default function CustomProvision() {
             const payload = (await response.json()) as PreflightPayload;
             setPreflightResult(payload);
             setPreflightOpen(true);
+            if (payload.has_warnings) {
+                toast.warning(
+                    'Preflight found issues. Review checks before continuing.',
+                );
+            }
             return payload;
         } catch {
             toast.error('Preflight checks failed.');
@@ -457,9 +462,24 @@ export default function CustomProvision() {
 
         setSubmitting(true);
         router.post(storeProvision(deployment.id).url, buildWorkflowPayload() as never, {
+            onSuccess: () => {
+                setPreflightOpen(false);
+            },
+            onError: (errors) => {
+                const message = Object.values(errors)
+                    .flat()
+                    .find(
+                        (value) =>
+                            typeof value === 'string' && value.trim() !== '',
+                    );
+                toast.error(
+                    message
+                        ? String(message)
+                        : 'Failed to start custom workflow.',
+                );
+            },
             onFinish: () => {
                 setSubmitting(false);
-                setPreflightOpen(false);
             },
         });
     };
