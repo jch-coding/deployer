@@ -98,7 +98,7 @@ class ProvisioningWorkflowController extends Controller
         $validated = $request->validate([
             'device_ids' => ['required', 'array', 'min:1'],
             'device_ids.*' => ['integer'],
-            'deployment_time' => ['required', 'integer', 'min:1', 'max:1440'],
+            'deployment_time' => ['required', 'integer', 'min:1'],
             'wait_time' => ['required', 'integer', 'min:1', 'max:60'],
             'online_detection_mode' => ['nullable', Rule::in(array_map(
                 fn (OnlineDetectionMode $mode) => $mode->value,

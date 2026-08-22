@@ -1,4 +1,4 @@
-import { Link, router, usePage, usePoll } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { AlertCircle, CheckCircle2, Loader2, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -219,7 +219,15 @@ export default function Provision() {
     const [remediationLaunching, setRemediationLaunching] = useState(false);
 
     const shouldPoll = workflow !== null && !workflow.is_terminal;
-    usePoll(shouldPoll ? 2000 : 0);
+    useEffect(() => {
+        if (!shouldPoll) {
+            return;
+        }
+
+        const { stop } = router.poll(2000);
+
+        return () => stop();
+    }, [shouldPoll]);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);

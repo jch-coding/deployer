@@ -1,4 +1,4 @@
-import { Link, router, usePage, usePoll } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowDown,
     ArrowUp,
@@ -230,7 +230,15 @@ export default function CustomProvision() {
     }, [flash]);
 
     const shouldPoll = Boolean(workflow && !workflow.is_terminal);
-    usePoll(shouldPoll ? 2000 : 0);
+    useEffect(() => {
+        if (!shouldPoll) {
+            return;
+        }
+
+        const { stop } = router.poll(2000);
+
+        return () => stop();
+    }, [shouldPoll]);
 
     const selectedDevices = useMemo(
         () =>
