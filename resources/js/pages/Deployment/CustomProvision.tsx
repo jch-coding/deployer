@@ -218,6 +218,7 @@ export default function CustomProvision() {
     const [preflightResult, setPreflightResult] =
         useState<PreflightPayload | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     useEffect(() => {
         if (flash?.success) {
@@ -431,6 +432,7 @@ export default function CustomProvision() {
 
             const payload = (await response.json()) as PreflightPayload;
             setPreflightResult(payload);
+            setSubmitError(null);
             setPreflightOpen(true);
             if (payload.has_warnings) {
                 toast.warning(
@@ -444,6 +446,11 @@ export default function CustomProvision() {
         } finally {
             setPreflightLoading(false);
         }
+    };
+
+    const reportSubmitFailure = (message: string) => {
+        setSubmitError(message);
+        toast.error(message);
     };
 
     const submitWorkflow = () => {
@@ -461,25 +468,38 @@ export default function CustomProvision() {
         }
 
         setSubmitting(true);
+        setSubmitError(null);
+        let didSucceed = false;
+        let didValidationError = false;
+        let wasCancelled = false;
         router.post(storeProvision(deployment.id).url, buildWorkflowPayload() as never, {
             onSuccess: () => {
+                didSucceed = true;
+                setSubmitError(null);
                 setPreflightOpen(false);
             },
             onError: (errors) => {
+                didValidationError = true;
                 const message = Object.values(errors)
                     .flat()
                     .find(
                         (value) =>
                             typeof value === 'string' && value.trim() !== '',
                     );
-                toast.error(
+                reportSubmitFailure(
                     message
                         ? String(message)
                         : 'Failed to start custom workflow.',
                 );
             },
+            onCancel: () => {
+                wasCancelled = true;
+            },
             onFinish: () => {
                 setSubmitting(false);
+                if (!didSucceed && !didValidationError && !wasCancelled) {
+                    reportSubmitFailure('Failed to start custom workflow.');
+                }
             },
         });
     };
@@ -1284,12 +1304,28 @@ export default function CustomProvision() {
                 ) : null}
             </div>
 
-            <Dialog open={preflightOpen} onOpenChange={setPreflightOpen}>
+            <Dialog
+                open={preflightOpen}
+                onOpenChange={(open) => {
+                    setPreflightOpen(open);
+                    if (!open) {
+                        setSubmitError(null);
+                    }
+                }}
+            >
                 <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
                     <DialogTitle>Preflight results</DialogTitle>
                     <DialogDescription>
                         Checks for the steps in your custom workflow.
                     </DialogDescription>
+                    {submitError ? (
+                        <div
+                            className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100"
+                            data-test="custom-workflow-submit-error"
+                        >
+                            {submitError}
+                        </div>
+                    ) : null}
                     {preflightResult?.has_warnings ? (
                         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
                             One or more checks failed or were not verified. You
@@ -1343,12 +1379,14 @@ export default function CustomProvision() {
                     </div>
                     <DialogFooter>
                         <Button
+                            type="button"
                             variant="outline"
                             onClick={() => setPreflightOpen(false)}
                         >
                             Cancel
                         </Button>
                         <Button
+                            type="button"
                             onClick={submitWorkflow}
                             disabled={submitting}
                             data-test="continue-custom-after-preflight"
