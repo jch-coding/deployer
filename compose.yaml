@@ -60,6 +60,8 @@ services:
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
         volumes:
             - '.:/var/www/html'
+            # Keep Linux-native packages for Sail separate from host (macOS) node_modules.
+            - 'sail-node-modules:/var/www/html/node_modules'
             # Host cloudflared credentials/config for Webhook tunnel GUI controls.
             - '${HOME}/.cloudflared:/home/sail/.cloudflared'
         networks:
@@ -194,4 +196,6 @@ volumes:
     sail-pgsql:
         driver: local
     sail-redis:
+        driver: local
+    sail-node-modules:
         driver: local

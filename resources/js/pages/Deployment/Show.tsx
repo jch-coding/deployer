@@ -465,6 +465,16 @@ export default function Show() {
         allFilteredSelected ||
         (selectedCount > 0 && selectedCount === filteredDevices.length);
 
+    // "Select all filtered" clears rowSelection, so Diva/custom links must
+    // use filteredDevices — not selectedIds — when that mode is active.
+    const provisionDeviceIds = useMemo(
+        () =>
+            isAllFilteredSelected
+                ? filteredDevices.map((device) => device.id)
+                : selectedIds,
+        [filteredDevices, isAllFilteredSelected, selectedIds],
+    );
+
     const allPageRowsSelected =
         paginatedDevices.length > 0 &&
         paginatedDevices.every((device) => rowSelection[String(device.id)]);
@@ -992,8 +1002,8 @@ export default function Show() {
                             >
                                 <a
                                     href={
-                                        selectedIds.length > 0
-                                            ? `${provisionDeployment(deploymentId).url}?device_ids=${selectedIds.join(',')}`
+                                        provisionDeviceIds.length > 0
+                                            ? `${provisionDeployment(deploymentId).url}?device_ids=${provisionDeviceIds.join(',')}`
                                             : provisionDeployment(
                                                   deploymentId,
                                               ).url
@@ -1006,8 +1016,8 @@ export default function Show() {
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                            {selectedIds.length > 0
-                                ? `Run full provisioning for ${selectedCount} selected device(s).`
+                            {provisionDeviceIds.length > 0
+                                ? `Run full provisioning for ${provisionDeviceIds.length} selected device(s).`
                                 : 'Open the provisioning workflow page for this deployment.'}
                         </TooltipContent>
                     </Tooltip>
@@ -1016,8 +1026,8 @@ export default function Show() {
                             <Button asChild variant="outline">
                                 <a
                                     href={
-                                        selectedIds.length > 0
-                                            ? `${customProvisionDeployment(deploymentId).url}?device_ids=${selectedIds.join(',')}`
+                                        provisionDeviceIds.length > 0
+                                            ? `${customProvisionDeployment(deploymentId).url}?device_ids=${provisionDeviceIds.join(',')}`
                                             : customProvisionDeployment(
                                                   deploymentId,
                                               ).url
@@ -1030,8 +1040,8 @@ export default function Show() {
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                            {selectedIds.length > 0
-                                ? `Build a custom step sequence for ${selectedCount} selected device(s).`
+                            {provisionDeviceIds.length > 0
+                                ? `Build a custom step sequence for ${provisionDeviceIds.length} selected device(s).`
                                 : 'Build a named custom provisioning workflow for this deployment.'}
                         </TooltipContent>
                     </Tooltip>
