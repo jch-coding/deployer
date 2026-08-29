@@ -221,3 +221,34 @@ test('check central sites does not call modern Central when local scope_id is al
     Http::assertSentCount(2);
     Http::assertSent(fn ($request) => str_contains($request->url(), 'central/v2/sites'));
 });
+
+test('check central sites accepts create and update site task types', function () {
+    Http::fake([
+        '*central/v2/sites*' => Http::sequence()
+            ->push(['sites' => [['site_id' => '1', 'site_name' => 'MySite']]], 200)
+            ->push(['sites' => []], 200)
+            ->push(['sites' => [['site_id' => '1', 'site_name' => 'MySite']]], 200)
+            ->push(['sites' => []], 200),
+    ]);
+
+    $site = Site::factory()->for($this->client)->create(['name' => 'MySite']);
+
+    Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'site_id' => $site->id,
+    ]);
+
+    $this->post(route('tasks.check_central_sites', $this->deployment), [
+        'task_type' => 'CREATE_SITE',
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success', 'All site names exist in Central.');
+
+    $this->post(route('tasks.check_central_sites', $this->deployment), [
+        'task_type' => 'UPDATE_SITE',
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success', 'All site names exist in Central.');
+});

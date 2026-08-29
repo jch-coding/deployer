@@ -21,6 +21,7 @@ class Task extends Model
         'remediation_context' => 'array',
         'greenlake_tags' => 'array',
         'central_static_tags' => 'array',
+        'site_details' => 'array',
         'mirror_fallback_mode' => 'boolean',
     ];
 
@@ -170,6 +171,8 @@ class Task extends Model
             'ASSIGN_DEVICE_FUNCTION',
             'ASSOCIATE_DEVICE_TO_SITE',
             'ASSOCIATE_SITE_AND_NAME',
+            'CREATE_SITE',
+            'UPDATE_SITE',
             'CREATE_VSF_PROFILE',
             'CREATE_VSX_PROFILE',
             'UPDATE_SYSTEM_INFO',
@@ -239,6 +242,10 @@ class Task extends Model
                 return 'Associate Devices to Site';
             case 'ASSOCIATE_SITE_AND_NAME':
                 return 'Associate Devices to Site and Name';
+            case 'CREATE_SITE':
+                return 'Create Sites';
+            case 'UPDATE_SITE':
+                return 'Update Sites';
             case 'PREPROVISION_DEVICE_TO_GROUP':
                 return 'Preprovision Devices to Group';
             case 'MOVE_DEVICE_TO_GROUP':
@@ -291,6 +298,10 @@ class Task extends Model
                 return 'Associate devices to a site';
             case 'ASSOCIATE_SITE_AND_NAME':
                 return 'Associate devices to sites and name them';
+            case 'CREATE_SITE':
+                return 'Create Classic Central sites for deployment site names with address details (geolocation optional).';
+            case 'UPDATE_SITE':
+                return 'Update Classic Central sites for deployment site names. Current Central values are loaded into the form; the PATCH sends the full body.';
             case 'PREPROVISION_DEVICE_TO_GROUP':
                 return 'Preprovision devices to a group';
             case 'CREATE_VSF_PROFILE':
@@ -363,6 +374,9 @@ class Task extends Model
                 return ['name', 'serial', 'device_function', 'site'];
             case 'ASSOCIATE_SITE_AND_NAME':
                 return ['name', 'serial', 'device_function', 'site', 'name'];
+            case 'CREATE_SITE':
+            case 'UPDATE_SITE':
+                return ['site'];
             case 'PREPROVISION_DEVICE_TO_GROUP':
                 return ['name', 'serial', 'device_function', 'group'];
             case 'MOVE_DEVICE_TO_GROUP':

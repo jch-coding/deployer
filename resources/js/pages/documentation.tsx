@@ -798,6 +798,46 @@ export default function documentation() {
                     </DocCard>
 
                     <DocCard
+                        title="Create Sites"
+                        badge={
+                            <Badge variant="outline" className="w-fit shrink-0 font-normal">
+                                Classic Central API
+                            </Badge>
+                        }
+                        defaultOpen
+                    >
+                        <div className="space-y-4">
+                            <p>
+                                Choose site names from this deployment (derived from device site
+                                columns). Fill address details for each selected site and launch
+                                the task to POST new sites to Classic Central. Geolocation is
+                                optional.
+                            </p>
+                            <ColumnPair required={['site']} optional={[]} />
+                        </div>
+                    </DocCard>
+
+                    <DocCard
+                        title="Update Sites"
+                        badge={
+                            <Badge variant="outline" className="w-fit shrink-0 font-normal">
+                                Classic Central API
+                            </Badge>
+                        }
+                        defaultOpen
+                    >
+                        <div className="space-y-4">
+                            <p>
+                                Choose site names from this deployment. Current Classic Central
+                                address and geolocation values are loaded into the form. Edit any
+                                fields as needed; the PATCH sends the full body for each selected
+                                site, not just changed fields.
+                            </p>
+                            <ColumnPair required={['site']} optional={[]} />
+                        </div>
+                    </DocCard>
+
+                    <DocCard
                         title="Preprovision Devices to Group"
                         badge={
                             <Badge variant="outline" className="w-fit shrink-0 font-normal">

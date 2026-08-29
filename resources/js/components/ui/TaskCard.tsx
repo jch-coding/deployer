@@ -71,6 +71,52 @@ type GreenLakeServiceRegionOption = {
     name: string;
 };
 
+type SiteAddressFields = {
+    address: string;
+    city: string;
+    state: string;
+    country: string;
+    zipcode: string;
+};
+
+type SiteGeolocationFields = {
+    latitude: string;
+    longitude: string;
+};
+
+type SiteFormEntry = {
+    selected: boolean;
+    site_id?: string | number;
+    in_central: boolean;
+    site_address: SiteAddressFields;
+    geolocation: SiteGeolocationFields;
+};
+
+type ClassicSiteOption = {
+    site_id?: string | number;
+    site_name: string;
+    site_address: SiteAddressFields;
+    geolocation: SiteGeolocationFields;
+};
+
+function emptySiteForm(inCentral = false): SiteFormEntry {
+    return {
+        selected: false,
+        in_central: inCentral,
+        site_address: {
+            address: '',
+            city: '',
+            state: '',
+            country: '',
+            zipcode: '',
+        },
+        geolocation: {
+            latitude: '',
+            longitude: '',
+        },
+    };
+}
+
 type TaskCardProps = {
     task: string;
     task_friendly_name: string;
@@ -85,6 +131,7 @@ type TaskCardProps = {
     license_type_options?: LicenseTypeOption[];
     cx_firmware_versions?: string[];
     central_firmware_error?: string | null;
+    deployment_sites?: string[];
 };
 
 const selectClassName =
@@ -104,6 +151,7 @@ export default function TaskCard({
     license_type_options = [],
     cx_firmware_versions = [],
     central_firmware_error = null,
+    deployment_sites = [],
 }: TaskCardProps) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [isLaunching, setIsLaunching] = useState(false)
@@ -157,6 +205,9 @@ export default function TaskCard({
         percent: 0,
         message: 'Starting GreenLake inventory check...',
     });
+    const [siteForms, setSiteForms] = useState<Record<string, SiteFormEntry>>({});
+    const [classicSitesLoading, setClassicSitesLoading] = useState(false);
+    const [classicSitesError, setClassicSitesError] = useState<string | null>(null);
 
     const isAssignSubscription = task === 'ASSIGN_SUBSCRIPTION';
     const isUnassignSubscription = task === 'UNASSIGN_SUBSCRIPTION';
@@ -169,6 +220,110 @@ export default function TaskCard({
     const needsGreenLakeLocations = isAddToGreenLakeInventory || isAddLocationToGreenLake;
     const needsGreenLakeServiceRegions = isAddToGreenLakeInventory || isAssignServiceToGreenLake;
     const needsMacAddressGate = isAddToGreenLakeInventory || isExportMacToCentral;
+    const isCreateSite = task === 'CREATE_SITE';
+    const isUpdateSite = task === 'UPDATE_SITE';
+    const isSiteTask = isCreateSite || isUpdateSite;
+
+    useEffect(() => {
+        if (!isSiteTask) {
+            return;
+        }
+
+        const initialForms = Object.fromEntries(
+            deployment_sites.map((siteName) => [siteName, emptySiteForm(isUpdateSite)]),
+        );
+        setSiteForms(initialForms);
+    }, [deployment_sites, isSiteTask, isUpdateSite, task]);
+
+    useEffect(() => {
+        if (!isUpdateSite) {
+            return;
+        }
+
+        let cancelled = false;
+        setClassicSitesLoading(true);
+        setClassicSitesError(null);
+
+        fetch(`/tasks/deployment/${deployment.id}/classic-sites`, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        })
+            .then(async (response) => {
+                const data = (await response.json().catch(() => ({}))) as {
+                    sites?: ClassicSiteOption[];
+                    message?: string;
+                };
+                if (!response.ok) {
+                    throw new Error(
+                        data.message ?? 'Failed to load Classic Central sites.',
+                    );
+                }
+
+                return data.sites ?? [];
+            })
+            .then((sites) => {
+                if (cancelled) {
+                    return;
+                }
+
+                setSiteForms((prev) => {
+                    const next = { ...prev };
+                    for (const siteName of deployment_sites) {
+                        if (!next[siteName]) {
+                            next[siteName] = emptySiteForm(false);
+                        }
+                    }
+
+                    for (const centralSite of sites) {
+                        const siteName = centralSite.site_name?.trim();
+                        if (!siteName || !next[siteName]) {
+                            continue;
+                        }
+
+                        next[siteName] = {
+                            selected: next[siteName].selected,
+                            site_id: centralSite.site_id,
+                            in_central: true,
+                            site_address: {
+                                address: centralSite.site_address?.address ?? '',
+                                city: centralSite.site_address?.city ?? '',
+                                state: centralSite.site_address?.state ?? '',
+                                country: centralSite.site_address?.country ?? '',
+                                zipcode: centralSite.site_address?.zipcode ?? '',
+                            },
+                            geolocation: {
+                                latitude: centralSite.geolocation?.latitude ?? '',
+                                longitude: centralSite.geolocation?.longitude ?? '',
+                            },
+                        };
+                    }
+
+                    return next;
+                });
+            })
+            .catch((error: unknown) => {
+                if (cancelled) {
+                    return;
+                }
+                setClassicSitesError(
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to load Classic Central sites.',
+                );
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setClassicSitesLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [deployment.id, deployment_sites, isUpdateSite]);
 
     const devicesWithMac = useMemo(
         () =>
@@ -860,6 +1015,122 @@ export default function TaskCard({
         );
     };
 
+    const buildSitesPayload = () => {
+        const selectedSites = deployment_sites.filter((siteName) => siteForms[siteName]?.selected);
+
+        return selectedSites.map((siteName) => {
+            const form = siteForms[siteName];
+            const latitude = form.geolocation.latitude.trim();
+            const longitude = form.geolocation.longitude.trim();
+            const payload: {
+                site_name: string;
+                site_id?: string | number;
+                site_address: SiteAddressFields;
+                geolocation?: SiteGeolocationFields;
+            } = {
+                site_name: siteName,
+                site_address: {
+                    address: form.site_address.address.trim(),
+                    city: form.site_address.city.trim(),
+                    state: form.site_address.state.trim(),
+                    country: form.site_address.country.trim(),
+                    zipcode: form.site_address.zipcode.trim(),
+                },
+            };
+
+            if (isUpdateSite && form.site_id !== undefined) {
+                payload.site_id = form.site_id;
+            }
+
+            if (latitude !== '' && longitude !== '') {
+                payload.geolocation = { latitude, longitude };
+            }
+
+            return payload;
+        });
+    };
+
+    const dispatch_site_task = () => {
+        const selectedSiteNames = deployment_sites.filter(
+            (siteName) => siteForms[siteName]?.selected,
+        );
+
+        if (selectedSiteNames.length === 0) {
+            toast.error('Select at least one site.');
+
+            return;
+        }
+
+        for (const siteName of selectedSiteNames) {
+            const form = siteForms[siteName];
+            const requiredAddressFields: (keyof SiteAddressFields)[] = [
+                'address',
+                'city',
+                'state',
+                'country',
+                'zipcode',
+            ];
+
+            for (const field of requiredAddressFields) {
+                if (form.site_address[field].trim() === '') {
+                    toast.error(`Complete all address fields for ${siteName}.`);
+
+                    return;
+                }
+            }
+
+            const latitude = form.geolocation.latitude.trim();
+            const longitude = form.geolocation.longitude.trim();
+            if ((latitude !== '' && longitude === '') || (latitude === '' && longitude !== '')) {
+                toast.error(`Provide both latitude and longitude for ${siteName}, or leave both empty.`);
+
+                return;
+            }
+
+            if (isUpdateSite) {
+                if (!form.in_central || form.site_id === undefined) {
+                    toast.error(`${siteName} was not found in Classic Central and cannot be updated.`);
+
+                    return;
+                }
+            }
+        }
+
+        setIsLaunching(true);
+        const deploymentTimeTotalMinutes = deploymentTimeHours * 60 + deploymentTimeMinutes;
+
+        router.post(
+            store(deployment.id).url,
+            {
+                task_type: task,
+                deployment_time: deploymentTimeTotalMinutes,
+                wait_time: waitTimeMinutes,
+                sites: buildSitesPayload(),
+            },
+            {
+                onError: (errors) => {
+                    setIsLaunching(false);
+                    const message = Object.values(errors)
+                        .flat()
+                        .find((value) => typeof value === 'string' && value.trim() !== '');
+                    if (message) {
+                        toast.error(message);
+                    }
+                },
+            },
+        );
+    };
+
+    const updateSiteForm = (
+        siteName: string,
+        updater: (current: SiteFormEntry) => SiteFormEntry,
+    ) => {
+        setSiteForms((prev) => ({
+            ...prev,
+            [siteName]: updater(prev[siteName] ?? emptySiteForm(isUpdateSite)),
+        }));
+    };
+
     return (
         <Card className="h-full w-96">
             <CardHeader className="relative pr-10">
@@ -928,6 +1199,150 @@ export default function TaskCard({
                                 ) : null}
                             </div>
                         ) : null}
+                    </div>
+                ) : null}
+                {isSiteTask ? (
+                    <div className="mt-3 space-y-3">
+                        {deployment_sites.length === 0 ? (
+                            <p className="text-muted-foreground text-sm">
+                                No sites are set on devices in this deployment. Add a site column to device rows first.
+                            </p>
+                        ) : (
+                            <>
+                                {isUpdateSite ? (
+                                    <p className="text-muted-foreground text-xs">
+                                        {classicSitesLoading
+                                            ? 'Loading site details from Classic Central…'
+                                            : 'Address fields are prefilled from Classic Central when the site exists there.'}
+                                    </p>
+                                ) : null}
+                                {classicSitesError ? (
+                                    <p className="text-destructive text-xs">{classicSitesError}</p>
+                                ) : null}
+                                {deployment_sites.map((siteName) => {
+                                    const form = siteForms[siteName] ?? emptySiteForm(isUpdateSite);
+                                    const updateDisabled =
+                                        isUpdateSite &&
+                                        !classicSitesLoading &&
+                                        !form.in_central;
+
+                                    return (
+                                        <fieldset
+                                            key={siteName}
+                                            className="space-y-2 rounded-md border p-3"
+                                            data-test={`site-form-${siteName}`}
+                                        >
+                                            <div className="flex items-start gap-2">
+                                                <Checkbox
+                                                    id={`site-select-${siteName}`}
+                                                    checked={form.selected}
+                                                    disabled={updateDisabled}
+                                                    onCheckedChange={(checked) =>
+                                                        updateSiteForm(siteName, (current) => ({
+                                                            ...current,
+                                                            selected: checked === true,
+                                                        }))
+                                                    }
+                                                />
+                                                <div className="space-y-1">
+                                                    <label
+                                                        htmlFor={`site-select-${siteName}`}
+                                                        className="text-sm font-medium"
+                                                    >
+                                                        {siteName}
+                                                    </label>
+                                                    {updateDisabled ? (
+                                                        <p className="text-muted-foreground text-xs">
+                                                            Not found in Classic Central.
+                                                        </p>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                            {form.selected ? (
+                                                <div className="grid gap-2 sm:grid-cols-2">
+                                                    {(
+                                                        [
+                                                            ['address', 'Address'],
+                                                            ['city', 'City'],
+                                                            ['state', 'State'],
+                                                            ['country', 'Country'],
+                                                            ['zipcode', 'Zip code'],
+                                                        ] as const
+                                                    ).map(([field, label]) => (
+                                                        <div key={field} className="space-y-1">
+                                                            <label
+                                                                htmlFor={`site-${siteName}-${field}`}
+                                                                className="text-xs font-medium"
+                                                            >
+                                                                {label}
+                                                            </label>
+                                                            <Input
+                                                                id={`site-${siteName}-${field}`}
+                                                                value={form.site_address[field]}
+                                                                onChange={(e) =>
+                                                                    updateSiteForm(siteName, (current) => ({
+                                                                        ...current,
+                                                                        site_address: {
+                                                                            ...current.site_address,
+                                                                            [field]: e.target.value,
+                                                                        },
+                                                                    }))
+                                                                }
+                                                                autoComplete="off"
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                    <div className="space-y-1">
+                                                        <label
+                                                            htmlFor={`site-${siteName}-latitude`}
+                                                            className="text-xs font-medium"
+                                                        >
+                                                            Latitude (optional)
+                                                        </label>
+                                                        <Input
+                                                            id={`site-${siteName}-latitude`}
+                                                            value={form.geolocation.latitude}
+                                                            onChange={(e) =>
+                                                                updateSiteForm(siteName, (current) => ({
+                                                                    ...current,
+                                                                    geolocation: {
+                                                                        ...current.geolocation,
+                                                                        latitude: e.target.value,
+                                                                    },
+                                                                }))
+                                                            }
+                                                            autoComplete="off"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label
+                                                            htmlFor={`site-${siteName}-longitude`}
+                                                            className="text-xs font-medium"
+                                                        >
+                                                            Longitude (optional)
+                                                        </label>
+                                                        <Input
+                                                            id={`site-${siteName}-longitude`}
+                                                            value={form.geolocation.longitude}
+                                                            onChange={(e) =>
+                                                                updateSiteForm(siteName, (current) => ({
+                                                                    ...current,
+                                                                    geolocation: {
+                                                                        ...current.geolocation,
+                                                                        longitude: e.target.value,
+                                                                    },
+                                                                }))
+                                                            }
+                                                            autoComplete="off"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                        </fieldset>
+                                    );
+                                })}
+                            </>
+                        )}
                     </div>
                 ) : null}
                 {isAddToGreenLakeInventory ||
@@ -1307,6 +1722,7 @@ export default function TaskCard({
                         </DialogClose>
                     }
                 />
+                {!isSiteTask ? (
                 <Dialog>
                     <Tooltip>
                         <TooltipTrigger asChild>
@@ -1376,6 +1792,7 @@ export default function TaskCard({
                             </div>
                     </DialogContent>
                 </Dialog>
+                ) : null}
                 {isLicensingTask ? (
                     <Dialog>
                         <Tooltip>
@@ -1623,7 +2040,24 @@ export default function TaskCard({
                     </Dialog>
                 ) : null}
                 <Dialog open={isLaunching}>
-                    {taskDevices.length > 0 &&
+                    {isSiteTask ? (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    className="rounded-full"
+                                    aria-label="Deploy selected sites"
+                                    onClick={() => dispatch_site_task()}
+                                >
+                                    <BoltIcon className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Deploy selected sites</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    ) : taskDevices.length > 0 &&
                     taskDevices.length < devices.length &&
                     !isAddVlansWithPrefix ? (
                             <Tooltip>
@@ -1892,7 +2326,9 @@ export default function TaskCard({
                         </Tooltip>
                     </div>
                 )}
-                {task === 'ASSOCIATE_SITE_AND_NAME' && (
+                {(task === 'ASSOCIATE_SITE_AND_NAME' ||
+                    task === 'CREATE_SITE' ||
+                    task === 'UPDATE_SITE') && (
                     <div className="ml-auto flex shrink-0 items-center gap-1">
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -1916,6 +2352,7 @@ export default function TaskCard({
                                 <p>Verify sites in Central</p>
                             </TooltipContent>
                         </Tooltip>
+                        {task === 'ASSOCIATE_SITE_AND_NAME' ? (
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -1938,6 +2375,7 @@ export default function TaskCard({
                                 <p>Force update site scope IDs</p>
                             </TooltipContent>
                         </Tooltip>
+                        ) : null}
                     </div>
                 )}
                 {(task === 'CONFIGURE_LAG_INTERFACE' ||

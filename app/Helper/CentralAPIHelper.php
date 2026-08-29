@@ -2829,6 +2829,48 @@ class CentralAPIHelper
         return ['sites' => array_values($sitesById)];
     }
 
+    public function classic_get_site(int|string $siteId)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->classic_access_token)
+            ->get($this->classicApiUrl($this->classic_monitoring['sites'].'/'.$siteId));
+
+        return $response;
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     */
+    public function classic_create_site(array $body)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->classic_access_token)
+            ->post($this->classicApiUrl($this->classic_monitoring['sites']), $body);
+
+        return $response;
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     */
+    public function classic_update_site(int|string $siteId, array $body)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->classic_access_token)
+            ->patch($this->classicApiUrl($this->classic_monitoring['sites'].'/'.$siteId), $body);
+
+        return $response;
+    }
+
     public function classic_associate_devices_to_site($device_to_site_body)
     {
         if (! $this->client->handleClassicBearerToken()) {

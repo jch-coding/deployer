@@ -20,6 +20,7 @@ use App\Jobs\ConfigureLagInterfaceJob;
 use App\Jobs\ConfigureMirrorSessionJob;
 use App\Jobs\ConfigureVlanInterfaceJob;
 use App\Jobs\CreateNewCentralCXGroup;
+use App\Jobs\CreateSiteJob;
 use App\Jobs\CreateVSFProfileJob;
 use App\Jobs\CreateVsxProfileJob;
 use App\Jobs\ExportMacAddressesToCentralJob;
@@ -32,6 +33,7 @@ use App\Jobs\RemoveLocalOverrideStaticRouteJob;
 use App\Jobs\RemoveLocalOverrideVlansJob;
 use App\Jobs\SetCxFirmwareComplianceForGroup;
 use App\Jobs\UnassignSubscriptionJob;
+use App\Jobs\UpdateSiteJob;
 use App\Jobs\UpdateSystemInfo;
 use App\LicenseType;
 use App\Models\Deployment;
@@ -52,6 +54,7 @@ use App\Services\LicensingSyncService;
 use App\Services\RelaunchFailedCriticalConfigService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
+use App\Support\ClassicSiteTaskPayload;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -811,12 +814,27 @@ class TaskController extends Controller
             'greenlake_location_id' => ['nullable', 'string', 'max:255'],
             'greenlake_application_id' => ['nullable', 'string', 'max:255'],
             'greenlake_application_region' => ['nullable', 'string', 'max:255'],
+            'sites' => ['nullable', 'array'],
+            'sites.*.site_name' => ['required_with:sites', 'string', 'max:255'],
+            'sites.*.site_id' => ['nullable'],
+            'sites.*.site_address' => ['required_with:sites', 'array'],
+            'sites.*.site_address.address' => ['required_with:sites', 'string', 'max:255'],
+            'sites.*.site_address.city' => ['required_with:sites', 'string', 'max:255'],
+            'sites.*.site_address.state' => ['required_with:sites', 'string', 'max:255'],
+            'sites.*.site_address.country' => ['required_with:sites', 'string', 'max:255'],
+            'sites.*.site_address.zipcode' => ['required_with:sites', 'string', 'max:255'],
+            'sites.*.geolocation' => ['nullable', 'array'],
+            'sites.*.geolocation.latitude' => ['nullable', 'string', 'max:255'],
+            'sites.*.geolocation.longitude' => ['nullable', 'string', 'max:255'],
         ]);
 
         $isAddVlans = $validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP';
+        $isSiteTask = in_array($validated['task_type'], ['CREATE_SITE', 'UPDATE_SITE'], true);
         $vlanSitePrefix = trim((string) ($validated['vlan_site_prefix'] ?? ''));
 
-        if (! $isAddVlans) {
+        if ($isSiteTask) {
+            // Site tasks validate selected sites later in normalizeSiteTaskDetails().
+        } elseif (! $isAddVlans) {
             if (! isset($validated['devices']) || $validated['devices'] === []) {
                 return back()->withErrors(['devices' => 'Select at least one device.']);
             }
@@ -1664,6 +1682,26 @@ class TaskController extends Controller
             if ($batchId !== null) {
                 $task->forceFill(['batch_id' => $batchId])->save();
             }
+        } elseif ($isSiteTask) {
+            $siteDetails = $this->normalizeSiteTaskDetails(
+                $validated['sites'] ?? [],
+                $this->uniqueDeploymentSiteNames($deployment),
+                $validated['task_type'] === 'UPDATE_SITE',
+            );
+
+            $task = $deployment->tasks()->create([
+                'task_type' => $validated['task_type'],
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+                'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+                'site_details' => $siteDetails,
+            ]);
+
+            $batchId = $this->dispatchJob($task);
+            if ($batchId !== null) {
+                $task->forceFill(['batch_id' => $batchId])->save();
+            }
         } else {
             $task = $deployment->tasks()->create([
                 'task_type' => $validated['task_type'],
@@ -1964,7 +2002,7 @@ class TaskController extends Controller
     public function checkCentralSites(Request $request, Deployment $deployment)
     {
         $request->validate([
-            'task_type' => ['required', Rule::in(['ASSOCIATE_DEVICE_TO_SITE', 'ASSOCIATE_SITE_AND_NAME'])],
+            'task_type' => ['required', Rule::in(['ASSOCIATE_DEVICE_TO_SITE', 'ASSOCIATE_SITE_AND_NAME', 'CREATE_SITE', 'UPDATE_SITE'])],
         ]);
 
         $currentClient = $request->user()->currentClient();
@@ -2070,6 +2108,61 @@ class TaskController extends Controller
 
         return response()->json([
             'locations' => $locations,
+        ]);
+    }
+
+    public function classicSites(Request $request, Deployment $deployment)
+    {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            return response()->json([
+                'message' => 'Please set current client to match this deployment before loading Classic Central sites.',
+            ], 403);
+        }
+
+        $deploymentSiteNames = $this->uniqueDeploymentSiteNames($deployment);
+        if ($deploymentSiteNames === []) {
+            return response()->json(['sites' => []]);
+        }
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->classic_collect_all_sites();
+        if (isset($result['error'])) {
+            return response()->json([
+                'message' => 'Could not load sites from Classic Central.',
+            ], 422);
+        }
+
+        $sitesByName = [];
+        foreach ($result['sites'] as $centralSite) {
+            if (! is_array($centralSite)) {
+                continue;
+            }
+
+            $siteName = trim((string) ($centralSite['site_name'] ?? ''));
+            if ($siteName === '' || ! in_array($siteName, $deploymentSiteNames, true)) {
+                continue;
+            }
+
+            $normalized = ClassicSiteTaskPayload::normalizeClassicSiteForForm($centralSite);
+            $address = $normalized['site_address'];
+            $hasAddress = collect($address)->contains(fn (mixed $value): bool => trim((string) $value) !== '');
+
+            if (! $hasAddress && ($normalized['site_id'] ?? null) !== null) {
+                $detailResponse = $helper->classic_get_site($normalized['site_id']);
+                if ($detailResponse instanceof \Illuminate\Http\Client\Response && $detailResponse->ok()) {
+                    $detailSite = $detailResponse->json();
+                    if (is_array($detailSite)) {
+                        $normalized = ClassicSiteTaskPayload::normalizeClassicSiteForForm($detailSite);
+                    }
+                }
+            }
+
+            $sitesByName[$siteName] = $normalized;
+        }
+
+        return response()->json([
+            'sites' => array_values($sitesByName),
         ]);
     }
 
@@ -2383,7 +2476,7 @@ class TaskController extends Controller
     public function forceUpdateSiteScopeIds(Request $request, Deployment $deployment)
     {
         $request->validate([
-            'task_type' => ['required', Rule::in(['ASSOCIATE_DEVICE_TO_SITE', 'ASSOCIATE_SITE_AND_NAME'])],
+            'task_type' => ['required', Rule::in(['ASSOCIATE_DEVICE_TO_SITE', 'ASSOCIATE_SITE_AND_NAME', 'CREATE_SITE', 'UPDATE_SITE'])],
         ]);
 
         $currentClient = $request->user()->currentClient();
@@ -3076,6 +3169,28 @@ class TaskController extends Controller
                     );
                 }
                 break;
+            case 'CREATE_SITE':
+            case 'UPDATE_SITE':
+                $siteDetails = is_array($task->site_details) ? $task->site_details : [];
+                $pendingSites = array_values(array_filter(
+                    $siteDetails,
+                    fn (mixed $site): bool => is_array($site) && ($site['status'] ?? 'PENDING') !== 'COMPLETED',
+                ));
+                $siteJobs = [];
+                foreach ($pendingSites as $siteDetail) {
+                    if (! is_array($siteDetail)) {
+                        continue;
+                    }
+                    if ($task->task_type === 'CREATE_SITE') {
+                        $siteJobs[] = new CreateSiteJob($siteDetail, $task, $centralAPIHelper);
+                    } else {
+                        $siteJobs[] = new UpdateSiteJob($siteDetail, $task, $centralAPIHelper);
+                    }
+                }
+                if ($siteJobs !== []) {
+                    $jobs[] = $siteJobs;
+                }
+                break;
         }
 
         $pendingBatches = [];
@@ -3146,5 +3261,111 @@ class TaskController extends Controller
 
         return app(LicensingInventoryService::class)
             ->buildFromCache($task->deployment->client, [])['devices'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function uniqueDeploymentSiteNames(Deployment $deployment): array
+    {
+        return Device::query()
+            ->where('deployment_id', $deployment->id)
+            ->with('site')
+            ->get()
+            ->map(fn (Device $device): string => trim((string) ($device->site?->name ?? '')))
+            ->filter(fn (string $name): bool => $name !== '')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, mixed>  $submittedSites
+     * @param  list<string>  $allowedSiteNames
+     * @return list<array<string, mixed>>
+     */
+    protected function normalizeSiteTaskDetails(array $submittedSites, array $allowedSiteNames, bool $requiresClassicSiteId): array
+    {
+        if ($submittedSites === []) {
+            throw ValidationException::withMessages([
+                'sites' => 'Select at least one site.',
+            ]);
+        }
+
+        $normalized = [];
+
+        foreach ($submittedSites as $index => $site) {
+            if (! is_array($site)) {
+                throw ValidationException::withMessages([
+                    "sites.{$index}" => 'Each site entry must be an object.',
+                ]);
+            }
+
+            $siteName = trim((string) ($site['site_name'] ?? ''));
+            if ($siteName === '') {
+                throw ValidationException::withMessages([
+                    "sites.{$index}.site_name" => 'Site name is required.',
+                ]);
+            }
+
+            if (! in_array($siteName, $allowedSiteNames, true)) {
+                throw ValidationException::withMessages([
+                    "sites.{$index}.site_name" => 'Site name is not on this deployment.',
+                ]);
+            }
+
+            $address = is_array($site['site_address'] ?? null) ? $site['site_address'] : [];
+            $requiredAddressFields = ['address', 'city', 'state', 'country', 'zipcode'];
+            foreach ($requiredAddressFields as $field) {
+                if (trim((string) ($address[$field] ?? '')) === '') {
+                    throw ValidationException::withMessages([
+                        "sites.{$index}.site_address.{$field}" => 'This field is required.',
+                    ]);
+                }
+            }
+
+            $geo = is_array($site['geolocation'] ?? null) ? $site['geolocation'] : [];
+            $latitude = trim((string) ($geo['latitude'] ?? ''));
+            $longitude = trim((string) ($geo['longitude'] ?? ''));
+            if (($latitude !== '' && $longitude === '') || ($latitude === '' && $longitude !== '')) {
+                throw ValidationException::withMessages([
+                    "sites.{$index}.geolocation" => 'Provide both latitude and longitude, or leave both empty.',
+                ]);
+            }
+
+            $siteId = $site['site_id'] ?? null;
+            if ($requiresClassicSiteId && ($siteId === null || trim((string) $siteId) === '')) {
+                throw ValidationException::withMessages([
+                    "sites.{$index}.site_id" => 'Classic Central site_id is required for update.',
+                ]);
+            }
+
+            $entry = [
+                'site_name' => $siteName,
+                'site_address' => [
+                    'address' => trim((string) $address['address']),
+                    'city' => trim((string) $address['city']),
+                    'state' => trim((string) $address['state']),
+                    'country' => trim((string) $address['country']),
+                    'zipcode' => trim((string) $address['zipcode']),
+                ],
+                'status' => 'PENDING',
+            ];
+
+            if ($latitude !== '' && $longitude !== '') {
+                $entry['geolocation'] = [
+                    'latitude' => $latitude,
+                    'longitude' => $longitude,
+                ];
+            }
+
+            if ($requiresClassicSiteId) {
+                $entry['site_id'] = $siteId;
+            }
+
+            $normalized[] = $entry;
+        }
+
+        return $normalized;
     }
 }

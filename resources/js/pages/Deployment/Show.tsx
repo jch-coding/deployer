@@ -276,7 +276,15 @@ export default function Show() {
                 serial: d.serial,
                 mac_address: d.mac_address ?? null,
                 in_greenlake_inventory: Boolean(d.in_greenlake_inventory),
+                site: d.site ?? null,
             })),
+        [devices],
+    );
+
+    const deploymentSites = useMemo(
+        () =>
+            [...new Set(devices.map((d) => d.site).filter((site): site is string => Boolean(site?.trim())))]
+                .sort((a, b) => a.localeCompare(b)),
         [devices],
     );
     const { setData, post, progress, errors } = useForm<{
@@ -324,6 +332,8 @@ export default function Show() {
     const classicCentralTaskTypes = new Set([
         'ASSOCIATE_DEVICE_TO_SITE',
         'ASSOCIATE_SITE_AND_NAME',
+        'CREATE_SITE',
+        'UPDATE_SITE',
         'PREPROVISION_DEVICE_TO_GROUP',
         'MOVE_DEVICE_TO_GROUP',
         'ADD_VLANS_TO_DEVICE_GROUP',
@@ -636,6 +646,8 @@ export default function Show() {
         'PREPROVISION_DEVICE_TO_GROUP',
         'MOVE_DEVICE_TO_GROUP',
         'ASSOCIATE_SITE_AND_NAME',
+        'CREATE_SITE',
+        'UPDATE_SITE',
         'CREATE_VSF_PROFILE',
         'CREATE_VSX_PROFILE',
         'CONFIGURE_MIRROR_SESSION',
@@ -735,6 +747,12 @@ export default function Show() {
                 central_firmware_error={
                     task.task_type === 'ADD_VLANS_TO_DEVICE_GROUP'
                         ? central_firmware_error
+                        : undefined
+                }
+                deployment_sites={
+                    task.task_type === 'CREATE_SITE' ||
+                    task.task_type === 'UPDATE_SITE'
+                        ? deploymentSites
                         : undefined
                 }
             />
