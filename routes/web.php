@@ -179,6 +179,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/tasks/deployment/{deployment}/check-vlan-ip-addresses', 'checkVlanIpAddresses')->name('tasks.check_vlan_ip_addresses');
         Route::get('/tasks/deployment/{deployment}/check-greenlake-inventory/step/{step}', 'checkGreenLakeInventoryStep')->name('tasks.check_greenlake_inventory.step');
         Route::get('/tasks/deployment/{deployment}/greenlake-locations', 'greenlakeLocations')->name('tasks.greenlake_locations');
+        Route::get('/tasks/deployment/{deployment}/classic-sites', 'classicSites')->name('tasks.classic_sites');
         Route::get('/tasks/deployment/{deployment}/greenlake-service-regions', 'greenlakeServiceRegions')->name('tasks.greenlake_service_regions');
         Route::post('/tasks/deployment/{deployment}/force-update-site-scope-ids', 'forceUpdateSiteScopeIds')->name('tasks.force_update_site_scope_ids');
         Route::post('/tasks/deployment/{deployment}', 'store')->name('tasks.store');
