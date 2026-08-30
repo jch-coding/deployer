@@ -60,6 +60,21 @@ class ProvisioningWorkflow extends Model
         return in_array($this->status, ['completed', 'cancelled'], true);
     }
 
+    public function isHalted(): bool
+    {
+        return in_array($this->status, ['completed', 'cancelled', 'paused'], true);
+    }
+
+    public function isResumable(): bool
+    {
+        return in_array($this->status, ['cancelled', 'paused'], true);
+    }
+
+    public function canPause(): bool
+    {
+        return $this->status === 'running';
+    }
+
     /**
      * @return array{in_progress: int, completed: int, failed: int}
      */
@@ -79,7 +94,7 @@ class ProvisioningWorkflow extends Model
 
     public function refreshOverallStatus(): void
     {
-        if ($this->isTerminal()) {
+        if ($this->status !== 'running') {
             return;
         }
 

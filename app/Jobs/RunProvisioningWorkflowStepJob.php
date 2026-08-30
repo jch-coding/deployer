@@ -37,7 +37,7 @@ class RunProvisioningWorkflowStepJob implements ShouldQueue
         }
 
         $workflow = $workflowDevice->workflow;
-        if ($workflow->isTerminal() || $workflowDevice->isTerminal()) {
+        if ($workflow->isHalted() || $workflowDevice->isTerminal()) {
             return;
         }
 

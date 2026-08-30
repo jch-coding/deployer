@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
+import WorkflowDeviceStatusList from '@/components/Deployment/WorkflowDeviceStatusList';
 import { csrfHeaders } from '@/lib/csrf';
 import { validateCustomWorkflowStepOrder } from '@/lib/custom-workflow-step-order';
 import {
@@ -41,7 +42,11 @@ import {
     store as storeProvision,
 } from '@/routes/deployments/provision';
 import { destroy as destroyTemplate } from '@/routes/provisioning_workflow_templates';
-import { cancel as cancelWorkflow } from '@/routes/provisioning_workflows';
+import {
+    cancel as cancelWorkflow,
+    pause as pauseWorkflow,
+    resume as resumeWorkflow,
+} from '@/routes/provisioning_workflows';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 type DeploymentDevice = {
@@ -98,6 +103,8 @@ type WorkflowPayload = {
     summary: { in_progress: number; completed: number; failed: number };
     devices: WorkflowDeviceCard[];
     is_terminal: boolean;
+    can_pause: boolean;
+    can_resume: boolean;
 };
 
 type PreflightStepResult = {
@@ -229,7 +236,7 @@ export default function CustomProvision() {
         }
     }, [flash]);
 
-    const shouldPoll = Boolean(workflow && !workflow.is_terminal);
+    const shouldPoll = workflow?.status === 'running';
     useEffect(() => {
         if (!shouldPoll) {
             return;
@@ -553,14 +560,36 @@ export default function CustomProvision() {
                                 Back to deployment
                             </Link>
                         </Button>
-                        {workflow && !workflow.is_terminal ? (
+                        {workflow?.can_pause ? (
+                            <Button
+                                variant="outline"
+                                onClick={() =>
+                                    router.post(pauseWorkflow(workflow.id).url)
+                                }
+                                data-test="pause-custom-workflow"
+                            >
+                                Pause workflow
+                            </Button>
+                        ) : null}
+                        {workflow?.can_pause ? (
                             <Button
                                 variant="destructive"
                                 onClick={() =>
                                     router.post(cancelWorkflow(workflow.id).url)
                                 }
+                                data-test="cancel-custom-workflow"
                             >
                                 Cancel workflow
+                            </Button>
+                        ) : null}
+                        {workflow?.can_resume ? (
+                            <Button
+                                onClick={() =>
+                                    router.post(resumeWorkflow(workflow.id).url)
+                                }
+                                data-test="resume-custom-workflow"
+                            >
+                                Resume workflow
                             </Button>
                         ) : null}
                         <Button
@@ -1268,45 +1297,7 @@ export default function CustomProvision() {
                                 {workflow.summary.completed} · failed{' '}
                                 {workflow.summary.failed}
                             </p>
-                            <div className="grid gap-3 md:grid-cols-2">
-                                {workflow.devices.map((device) => (
-                                    <div
-                                        key={device.id}
-                                        className="rounded-md border p-3"
-                                    >
-                                        <p className="text-sm font-medium">
-                                            {formatDeviceLabel(
-                                                device.name,
-                                                device.serial,
-                                            )}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            {device.status_message}
-                                        </p>
-                                        <div className="mt-2 space-y-1">
-                                            {device.steps.map((step) => (
-                                                <div
-                                                    key={step.step_key}
-                                                    className="flex items-center gap-2 text-xs"
-                                                >
-                                                    <span
-                                                        className={cn(
-                                                            'size-2 rounded-full',
-                                                            statusColor(
-                                                                step.status,
-                                                            ),
-                                                        )}
-                                                    />
-                                                    <span>{step.label}</span>
-                                                    <span className="uppercase text-muted-foreground">
-                                                        {step.status}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                            <WorkflowDeviceStatusList devices={workflow.devices} />
                         </CardContent>
                     </Card>
                 ) : null}

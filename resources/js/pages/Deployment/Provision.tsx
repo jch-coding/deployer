@@ -32,7 +32,7 @@ import {
     preflight as preflightProvision,
     store as storeProvision,
 } from '@/routes/deployments/provision';
-import { cancel as cancelWorkflow } from '@/routes/provisioning_workflows';
+import { cancel as cancelWorkflow, pause as pauseWorkflow, resume as resumeWorkflow } from '@/routes/provisioning_workflows';
 import { restart as restartWorkflowDevice } from '@/routes/provisioning_workflow_devices';
 import { store as storeTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -95,6 +95,8 @@ type WorkflowPayload = {
     }>;
     devices: WorkflowDeviceCard[];
     is_terminal: boolean;
+    can_pause: boolean;
+    can_resume: boolean;
 };
 
 type PreflightStepResult = {
@@ -218,7 +220,7 @@ export default function Provision() {
     >({});
     const [remediationLaunching, setRemediationLaunching] = useState(false);
 
-    const shouldPoll = workflow !== null && !workflow.is_terminal;
+    const shouldPoll = workflow?.status === 'running';
     useEffect(() => {
         if (!shouldPoll) {
             return;
@@ -527,14 +529,36 @@ export default function Provision() {
                         <Button variant="outline" asChild>
                             <Link href={showDeployment(deployment.id).url}>Back to deployment</Link>
                         </Button>
-                        {workflow && !workflow.is_terminal ? (
+                        {workflow?.can_pause ? (
+                            <Button
+                                variant="outline"
+                                onClick={() =>
+                                    router.post(pauseWorkflow(workflow.id).url)
+                                }
+                                data-test="pause-workflow"
+                            >
+                                Pause workflow
+                            </Button>
+                        ) : null}
+                        {workflow?.can_pause ? (
                             <Button
                                 variant="destructive"
                                 onClick={() =>
                                     router.post(cancelWorkflow(workflow.id).url)
                                 }
+                                data-test="cancel-workflow"
                             >
                                 Cancel workflow
+                            </Button>
+                        ) : null}
+                        {workflow?.can_resume ? (
+                            <Button
+                                onClick={() =>
+                                    router.post(resumeWorkflow(workflow.id).url)
+                                }
+                                data-test="resume-workflow"
+                            >
+                                Resume workflow
                             </Button>
                         ) : null}
                         <Dialog open={startDialogOpen} onOpenChange={setStartDialogOpen}>

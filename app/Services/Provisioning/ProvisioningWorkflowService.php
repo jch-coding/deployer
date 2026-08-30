@@ -342,7 +342,7 @@ class ProvisioningWorkflowService
 
     public function cancel(ProvisioningWorkflow $workflow): void
     {
-        if ($workflow->isTerminal()) {
+        if ($workflow->status !== 'running') {
             return;
         }
 
@@ -351,6 +351,70 @@ class ProvisioningWorkflowService
             'completed_at' => now(),
             'classic_poller_active' => false,
         ]);
+    }
+
+    public function pause(ProvisioningWorkflow $workflow): void
+    {
+        if (! $workflow->canPause()) {
+            return;
+        }
+
+        $workflow->update([
+            'status' => 'paused',
+            'classic_poller_active' => false,
+        ]);
+    }
+
+    public function resume(ProvisioningWorkflow $workflow): void
+    {
+        if (! $workflow->isResumable()) {
+            throw ValidationException::withMessages([
+                'workflow' => 'Only paused or cancelled workflows can be resumed.',
+            ]);
+        }
+
+        $workflow->loadMissing(['workflowDevices.device', 'workflowDevices.steps']);
+
+        $workflow->update([
+            'status' => 'running',
+            'completed_at' => null,
+        ]);
+
+        foreach ($workflow->workflowDevices as $workflowDevice) {
+            if ($workflowDevice->overall_status === 'completed') {
+                continue;
+            }
+
+            $nextStepRow = $workflowDevice->steps
+                ->sortBy('step_order')
+                ->first(fn (ProvisioningWorkflowDeviceStep $row) => ! in_array($row->status, ['completed', 'skipped'], true));
+
+            if ($nextStepRow === null) {
+                $workflowDevice->update([
+                    'overall_status' => 'completed',
+                    'current_step_key' => null,
+                    'failed_step_key' => null,
+                    'status_message' => 'Workflow completed successfully.',
+                ]);
+
+                continue;
+            }
+
+            $nextStep = ProvisioningStep::from($nextStepRow->step_key);
+
+            $workflowDevice->update([
+                'overall_status' => 'in_progress',
+                'failed_step_key' => null,
+                'vsx_wait_state' => null,
+                'current_step_key' => $nextStep->value,
+                'status_message' => 'Resuming '.$nextStep->label().'...',
+            ]);
+
+            $nextStepRow->markInProgress($nextStep->label().'...');
+            $this->orchestrator->dispatchStep($workflowDevice, $nextStep);
+        }
+
+        $workflow->refreshOverallStatus();
     }
 
     public function restartFromStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $fromStep): void
@@ -476,6 +540,8 @@ class ProvisioningWorkflowService
             'licensing_failures' => $licensingFailures,
             'devices' => $deviceCards,
             'is_terminal' => $workflow->isTerminal(),
+            'can_pause' => $workflow->canPause(),
+            'can_resume' => $workflow->isResumable(),
         ];
     }
 

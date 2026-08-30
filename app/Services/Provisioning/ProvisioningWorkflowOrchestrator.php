@@ -21,7 +21,7 @@ class ProvisioningWorkflowOrchestrator
     public function dispatchStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $step): void
     {
         $workflow = $workflowDevice->workflow;
-        if ($workflow->isTerminal() || $workflowDevice->isTerminal()) {
+        if ($workflow->isHalted() || $workflowDevice->isTerminal()) {
             return;
         }
 
@@ -37,7 +37,7 @@ class ProvisioningWorkflowOrchestrator
         $workflowDevice->loadMissing('workflow', 'steps', 'device');
         $stepRow = $workflowDevice->steps->firstWhere('step_key', $step->value);
 
-        if ($stepRow === null) {
+        if ($stepRow === null || $workflowDevice->workflow->isHalted()) {
             return;
         }
 
@@ -104,7 +104,7 @@ class ProvisioningWorkflowOrchestrator
         $workflowDevice->refresh();
         $workflowDevice->loadMissing('steps', 'device', 'workflow');
 
-        if ($workflowDevice->isTerminal()) {
+        if ($workflowDevice->isTerminal() || $workflowDevice->workflow->isHalted()) {
             return;
         }
 
@@ -144,7 +144,7 @@ class ProvisioningWorkflowOrchestrator
             return;
         }
 
-        if ($workflow->classic_poller_active || $workflow->isTerminal()) {
+        if ($workflow->classic_poller_active || $workflow->isHalted()) {
             return;
         }
 

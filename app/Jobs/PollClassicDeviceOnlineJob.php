@@ -30,7 +30,7 @@ class PollClassicDeviceOnlineJob implements ShouldQueue
             ->with(['deployment.client', 'workflowDevices.device', 'workflowDevices.steps'])
             ->find($this->workflowId);
 
-        if ($workflow === null || $workflow->isTerminal()) {
+        if ($workflow === null || $workflow->isHalted()) {
             return;
         }
 
@@ -75,7 +75,7 @@ class PollClassicDeviceOnlineJob implements ShouldQueue
             ]);
         }
 
-        if ($anyWaiting && ! $workflow->isTerminal()) {
+        if ($anyWaiting && ! $workflow->isHalted()) {
             $this->release(max(60, $workflow->wait_time * 60));
 
             return;

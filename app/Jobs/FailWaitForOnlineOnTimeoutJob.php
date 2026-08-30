@@ -28,7 +28,7 @@ class FailWaitForOnlineOnTimeoutJob implements ShouldQueue
         }
 
         $workflow = $workflowDevice->workflow;
-        if ($workflow === null || $workflow->isTerminal()) {
+        if ($workflow === null || $workflow->isHalted()) {
             return;
         }
 

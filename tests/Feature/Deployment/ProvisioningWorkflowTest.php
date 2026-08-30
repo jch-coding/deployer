@@ -1162,3 +1162,250 @@ it('still starts when query_central_for_online is on but central errors', functi
         ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::WaitForOnline->value)
         ->and(ProvisioningWorkflow::query()->count())->toBe(1);
 });
+
+it('pauses a running workflow and halts further step dispatch', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'classic_poller_active' => true,
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+        'status_message' => 'Associate to site...',
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.pause', $workflow))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $workflow->refresh();
+    expect($workflow->status)->toBe('paused')
+        ->and($workflow->classic_poller_active)->toBeFalse();
+
+    app(ProvisioningWorkflowOrchestrator::class)->dispatchStep(
+        $workflowDevice->fresh(['workflow']),
+        ProvisioningStep::AssociateSite,
+    );
+
+    Queue::assertNothingPushed();
+});
+
+it('resumes a cancelled custom workflow and skips completed steps', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'cancelled',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::ConfigureVlanInterfaces->value,
+        ],
+        'completed_at' => now(),
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'status_message' => 'Cancelled mid-run.',
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'completed_at' => now(),
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'step_order' => 2,
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.resume', $workflow))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $workflow->refresh();
+    $workflowDevice->refresh();
+
+    expect($workflow->status)->toBe('running')
+        ->and($workflow->completed_at)->toBeNull()
+        ->and($workflowDevice->overall_status)->toBe('in_progress')
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('status'))->toBe('completed')
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::ConfigureVlanInterfaces->value)->value('status'))->toBe('in_progress');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($workflowDevice) {
+        return $job->workflowDeviceId === $workflowDevice->id
+            && $job->stepKey === ProvisioningStep::ConfigureVlanInterfaces->value;
+    });
+});
+
+it('resumes a paused workflow', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'paused',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+        'status_message' => 'Paused mid-run.',
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.resume', $workflow))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect($workflow->fresh()->status)->toBe('running');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('resumes a failed device workflow by clearing failed state and dispatching the incomplete step', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'cancelled',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::ConfigureVlanInterfaces->value,
+        ],
+        'completed_at' => now(),
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'failed',
+        'failed_step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'current_step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'status_message' => 'VLAN configuration failed.',
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'completed_at' => now(),
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'step_order' => 2,
+        'status' => 'failed',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.resume', $workflow))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $workflowDevice->refresh();
+
+    expect($workflowDevice->overall_status)->toBe('in_progress')
+        ->and($workflowDevice->failed_step_key)->toBeNull();
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($workflowDevice) {
+        return $job->workflowDeviceId === $workflowDevice->id
+            && $job->stepKey === ProvisioningStep::ConfigureVlanInterfaces->value;
+    });
+});
+
+it('does not resume a running workflow', function () {
+    Queue::fake();
+
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.resume', $workflow))
+        ->assertRedirect()
+        ->assertSessionHasErrors('workflow');
+
+    Queue::assertNothingPushed();
+});
+
+it('serializes pause and resume flags for the UI', function () {
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'paused',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+    ]);
+
+    $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    $payload = app(ProvisioningWorkflowService::class)->serializeForUi($workflow);
+
+    expect($payload['can_pause'])->toBeFalse()
+        ->and($payload['can_resume'])->toBeTrue()
+        ->and($payload['status'])->toBe('paused');
+});

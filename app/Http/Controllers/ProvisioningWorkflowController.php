@@ -230,6 +230,27 @@ class ProvisioningWorkflowController extends Controller
         return back()->with('success', 'Provisioning workflow cancelled.');
     }
 
+    public function pause(Request $request, ProvisioningWorkflow $workflow, ProvisioningWorkflowService $workflowService)
+    {
+        $this->authorizeWorkflow($request, $workflow);
+        $workflowService->pause($workflow);
+
+        return back()->with('success', 'Provisioning workflow paused.');
+    }
+
+    public function resume(Request $request, ProvisioningWorkflow $workflow, ProvisioningWorkflowService $workflowService)
+    {
+        $this->authorizeWorkflow($request, $workflow);
+
+        try {
+            $workflowService->resume($workflow);
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->errors());
+        }
+
+        return back()->with('success', 'Provisioning workflow resumed.');
+    }
+
     public function restart(Request $request, ProvisioningWorkflowDevice $workflowDevice, ProvisioningWorkflowService $workflowService)
     {
         $workflowDevice->loadMissing('workflow.deployment');
