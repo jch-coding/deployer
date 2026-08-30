@@ -75,6 +75,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/deployments/{deployment}/provision', 'store')->name('deployments.provision.store');
         Route::post('/deployments/{deployment}/provision/preflight', 'preflight')->name('deployments.provision.preflight');
         Route::post('/provisioning-workflows/{workflow}/cancel', 'cancel')->name('provisioning_workflows.cancel');
+        Route::post('/provisioning-workflows/{workflow}/pause', 'pause')->name('provisioning_workflows.pause');
+        Route::post('/provisioning-workflows/{workflow}/resume', 'resume')->name('provisioning_workflows.resume');
         Route::post('/provisioning-workflow-devices/{workflowDevice}/restart', 'restart')->name('provisioning_workflow_devices.restart');
     });
 

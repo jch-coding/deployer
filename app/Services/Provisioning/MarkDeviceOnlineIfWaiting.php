@@ -58,7 +58,7 @@ class MarkDeviceOnlineIfWaiting
                 ->where('serial', $serial)
                 ->where('client_id', $clientId))
             ->whereHas('workflow', fn ($query) => $query
-                ->whereNotIn('status', ['completed', 'cancelled'])
+                ->whereNotIn('status', ['completed', 'cancelled', 'paused'])
                 ->where('online_detection_mode', $mode->value))
             ->with(['device', 'steps', 'workflow.deployment.client'])
             ->get();
