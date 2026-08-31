@@ -200,14 +200,13 @@ class CentralAPIHelper
 
     public function extractScopeIdFromHierarchyResponse(array $response)
     {
-        if (! array_key_exists('items', $response)) {
+        if (! array_key_exists('items', $response) || ! isset($response['items'][0]['hierarchy']) || ! is_array($response['items'][0]['hierarchy'])) {
             return ['error' => 'failed to get scope-id from central.'];
-        } else {
-            $items = $response['items'];
-            $hierarchy = $items[0]['hierarchy'];
-
-            return array_filter($hierarchy, fn ($item) => $item['childCount'] === null && $item['scopeType'] === 'device');
         }
+
+        $hierarchy = $response['items'][0]['hierarchy'];
+
+        return array_filter($hierarchy, fn ($item) => ($item['childCount'] ?? null) === null && ($item['scopeType'] ?? null) === 'device');
     }
 
     /**

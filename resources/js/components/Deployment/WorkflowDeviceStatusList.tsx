@@ -1,5 +1,6 @@
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown, RotateCcw, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
@@ -13,6 +14,15 @@ import {
 } from '@/lib/device-label';
 import { workflowDeviceMatchesSearch } from '@/lib/workflow-device-search';
 import { cn } from '@/lib/utils';
+import { restart as restartWorkflowDevice } from '@/routes/provisioning_workflow_devices';
+
+const selectClassName =
+    'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
+
+export type WorkflowDeviceRestartableStep = {
+    step_key: string;
+    label: string;
+};
 
 export type WorkflowDeviceStatusStep = {
     step_key: string;
@@ -31,6 +41,7 @@ export type WorkflowDeviceStatusRow = {
     current_step_label: string | null;
     status_message: string | null;
     steps: WorkflowDeviceStatusStep[];
+    restartable_steps?: WorkflowDeviceRestartableStep[];
 };
 
 function statusColor(status: string): string {
@@ -80,12 +91,18 @@ function deviceCurrentStepSummary(device: WorkflowDeviceStatusRow): string {
 function WorkflowDeviceRow({
     device,
     forceOpen,
+    showRestartControls,
 }: {
     device: WorkflowDeviceStatusRow;
     forceOpen: boolean;
+    showRestartControls: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const isOpen = forceOpen || open;
+    const restartableSteps = device.restartable_steps ?? [];
+    const [restartStep, setRestartStep] = useState(
+        restartableSteps[0]?.step_key ?? '',
+    );
 
     return (
         <Collapsible
@@ -157,6 +174,39 @@ function WorkflowDeviceRow({
                         </div>
                     ))}
                 </div>
+                {showRestartControls && restartableSteps.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+                        <select
+                            className={cn(selectClassName, 'max-w-[220px]')}
+                            value={restartStep}
+                            onChange={(event) =>
+                                setRestartStep(event.target.value)
+                            }
+                        >
+                            {restartableSteps.map((step) => (
+                                <option
+                                    key={step.step_key}
+                                    value={step.step_key}
+                                >
+                                    {step.label}
+                                </option>
+                            ))}
+                        </select>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                                router.post(
+                                    restartWorkflowDevice(device.id).url,
+                                    { from_step: restartStep },
+                                )
+                            }
+                        >
+                            <RotateCcw className="mr-1 size-3" />
+                            Restart from step
+                        </Button>
+                    </div>
+                ) : null}
             </CollapsibleContent>
         </Collapsible>
     );
@@ -164,8 +214,10 @@ function WorkflowDeviceRow({
 
 export default function WorkflowDeviceStatusList({
     devices,
+    showRestartControls = false,
 }: {
     devices: WorkflowDeviceStatusRow[];
+    showRestartControls?: boolean;
 }) {
     const [search, setSearch] = useState('');
 
@@ -205,6 +257,7 @@ export default function WorkflowDeviceStatusList({
                             key={device.id}
                             device={device}
                             forceOpen={forceOpen}
+                            showRestartControls={showRestartControls}
                         />
                     ))}
                 </div>

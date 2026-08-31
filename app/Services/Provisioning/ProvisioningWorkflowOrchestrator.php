@@ -16,6 +16,7 @@ class ProvisioningWorkflowOrchestrator
 {
     public function __construct(
         private readonly ProvisioningStepRunner $stepRunner,
+        private readonly ProvisioningWorkflowTaskSync $taskSync,
     ) {}
 
     public function dispatchStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $step): void
@@ -116,6 +117,7 @@ class ProvisioningWorkflowOrchestrator
                 'status_message' => 'Workflow completed successfully.',
             ]);
             $workflowDevice->workflow->refreshOverallStatus();
+            $this->syncLinkedTask($workflowDevice->workflow);
 
             return;
         }
@@ -191,6 +193,14 @@ class ProvisioningWorkflowOrchestrator
         if ($step === ProvisioningStep::VerifyLicensing) {
             Log::info('Provisioning licensing gate failed for device '.$workflowDevice->device_id.': '.$message);
         }
+
+        $this->syncLinkedTask($workflowDevice->workflow);
+    }
+
+    private function syncLinkedTask(ProvisioningWorkflow $workflow): void
+    {
+        $workflow->refresh();
+        $this->taskSync->syncFromWorkflow($workflow->load('workflowDevices'));
     }
 
     private function nextApplicableStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $after): ?ProvisioningStep

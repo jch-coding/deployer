@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
-import WorkflowDeviceStatusList from '@/components/Deployment/WorkflowDeviceStatusList';
 import { csrfHeaders } from '@/lib/csrf';
 import { validateCustomWorkflowStepOrder } from '@/lib/custom-workflow-step-order';
 import {
@@ -42,11 +41,6 @@ import {
     store as storeProvision,
 } from '@/routes/deployments/provision';
 import { destroy as destroyTemplate } from '@/routes/provisioning_workflow_templates';
-import {
-    cancel as cancelWorkflow,
-    pause as pauseWorkflow,
-    resume as resumeWorkflow,
-} from '@/routes/provisioning_workflows';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 type DeploymentDevice = {
@@ -71,40 +65,21 @@ type WorkflowTemplate = {
     steps: string[];
 };
 
-type WorkflowStep = {
-    step_key: string;
-    label: string;
-    status: string;
-    message: string | null;
-    order: number;
-};
-
-type WorkflowDeviceCard = {
-    id: number;
-    device_id: number;
-    name: string;
-    serial: string;
-    overall_status: string;
-    current_step_key: string | null;
-    current_step_label: string | null;
-    failed_step_key: string | null;
-    status_message: string | null;
-    progress_percent: number;
-    completed_steps: number;
-    applicable_steps: number;
-    steps: WorkflowStep[];
-};
-
-type WorkflowPayload = {
-    id: number;
-    name: string | null;
-    status: string;
-    steps: string[] | null;
-    summary: { in_progress: number; completed: number; failed: number };
-    devices: WorkflowDeviceCard[];
-    is_terminal: boolean;
-    can_pause: boolean;
-    can_resume: boolean;
+type CustomProvisionPageProps = SharedData & {
+    deployment: {
+        id: number;
+        name: string;
+        devices: DeploymentDevice[];
+    };
+    available_steps: AvailableStep[];
+    templates: WorkflowTemplate[];
+    license_tags: string[];
+    available_subscriptions: AvailableSubscription[];
+    license_type_options: LicenseTypeOption[];
+    licensing_error: string | null;
+    selected_device_ids?: number[];
+    has_classic_webhook_secret?: boolean;
+    has_classic_streaming_credentials?: boolean;
 };
 
 type PreflightStepResult = {
@@ -124,24 +99,6 @@ type PreflightDeviceResult = {
 type PreflightPayload = {
     has_warnings: boolean;
     devices: PreflightDeviceResult[];
-};
-
-type CustomProvisionPageProps = SharedData & {
-    deployment: {
-        id: number;
-        name: string;
-        devices: DeploymentDevice[];
-    };
-    workflow: WorkflowPayload | null;
-    available_steps: AvailableStep[];
-    templates: WorkflowTemplate[];
-    license_tags: string[];
-    available_subscriptions: AvailableSubscription[];
-    license_type_options: LicenseTypeOption[];
-    licensing_error: string | null;
-    selected_device_ids?: number[];
-    has_classic_webhook_secret?: boolean;
-    has_classic_streaming_credentials?: boolean;
 };
 
 const selectClassName =
@@ -170,7 +127,6 @@ export default function CustomProvision() {
     const {
         current_client,
         deployment,
-        workflow,
         available_steps: availableSteps = [],
         templates = [],
         license_tags,
@@ -235,17 +191,6 @@ export default function CustomProvision() {
             toast.error(flash.error);
         }
     }, [flash]);
-
-    const shouldPoll = workflow?.status === 'running';
-    useEffect(() => {
-        if (!shouldPoll) {
-            return;
-        }
-
-        const { stop } = router.poll(2000);
-
-        return () => stop();
-    }, [shouldPoll]);
 
     const selectedDevices = useMemo(
         () =>
@@ -560,38 +505,6 @@ export default function CustomProvision() {
                                 Back to deployment
                             </Link>
                         </Button>
-                        {workflow?.can_pause ? (
-                            <Button
-                                variant="outline"
-                                onClick={() =>
-                                    router.post(pauseWorkflow(workflow.id).url)
-                                }
-                                data-test="pause-custom-workflow"
-                            >
-                                Pause workflow
-                            </Button>
-                        ) : null}
-                        {workflow?.can_pause ? (
-                            <Button
-                                variant="destructive"
-                                onClick={() =>
-                                    router.post(cancelWorkflow(workflow.id).url)
-                                }
-                                data-test="cancel-custom-workflow"
-                            >
-                                Cancel workflow
-                            </Button>
-                        ) : null}
-                        {workflow?.can_resume ? (
-                            <Button
-                                onClick={() =>
-                                    router.post(resumeWorkflow(workflow.id).url)
-                                }
-                                data-test="resume-custom-workflow"
-                            >
-                                Resume workflow
-                            </Button>
-                        ) : null}
                         <Button
                             onClick={() => void startWorkflow()}
                             disabled={
@@ -1281,26 +1194,6 @@ export default function CustomProvision() {
                     </div>
                 </div>
 
-                {workflow?.steps ? (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="text-base">
-                                {workflow.name
-                                    ? `Latest run: ${workflow.name}`
-                                    : 'Latest custom run'}
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <p className="text-sm text-muted-foreground">
-                                Status: {workflow.status} · in progress{' '}
-                                {workflow.summary.in_progress} · completed{' '}
-                                {workflow.summary.completed} · failed{' '}
-                                {workflow.summary.failed}
-                            </p>
-                            <WorkflowDeviceStatusList devices={workflow.devices} />
-                        </CardContent>
-                    </Card>
-                ) : null}
             </div>
 
             <Dialog

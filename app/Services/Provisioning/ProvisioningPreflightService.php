@@ -400,11 +400,10 @@ class ProvisioningPreflightService
             }
         }
 
-        return [
-            'status' => 'warn',
-            'message' => 'Scope ID not available yet. Re-run checks after the device appears in New Central.',
-            'remediation' => null,
-        ];
+        // Device is not in New Central yet — skip this preflight check rather than blocking.
+        return $this->unchecked(
+            'Device not found in New Central yet. Scope ID check skipped; continue after the device appears.',
+        );
     }
 
     /**
@@ -423,11 +422,8 @@ class ProvisioningPreflightService
         }
 
         if (! filled($device->scope_id)) {
-            return $this->warn(
-                'Cannot verify hostname without a scope ID.',
-                'UPDATE_SYSTEM_INFO',
-                'Update system info',
-                [],
+            return $this->unchecked(
+                'Hostname check skipped: device has no scope ID (not in New Central yet).',
             );
         }
 
@@ -611,6 +607,18 @@ class ProvisioningPreflightService
     {
         return [
             'status' => 'ok',
+            'message' => $message,
+            'remediation' => null,
+        ];
+    }
+
+    /**
+     * @return array{status: string, message: string, remediation: null}
+     */
+    private function unchecked(string $message): array
+    {
+        return [
+            'status' => 'unchecked',
             'message' => $message,
             'remediation' => null,
         ];

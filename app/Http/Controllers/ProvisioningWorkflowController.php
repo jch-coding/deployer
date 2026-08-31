@@ -213,12 +213,19 @@ class ProvisioningWorkflowController extends Controller
             $validated,
         );
 
-        $redirectRoute = isset($validated['steps'])
-            ? 'deployments.custom_provision'
-            : 'deployments.provision';
+        if (isset($validated['steps'])) {
+            $task = $workflowService->taskForWorkflow($workflow);
+            if ($task === null) {
+                abort(500, 'Custom workflow task was not created.');
+            }
+
+            return redirect()
+                ->route('tasks.show', $task)
+                ->with('success', 'Provisioning workflow started for '.$workflow->workflowDevices()->count().' device(s).');
+        }
 
         return redirect()
-            ->route($redirectRoute, $deployment)
+            ->route('deployments.provision', $deployment)
             ->with('success', 'Provisioning workflow started for '.$workflow->workflowDevices()->count().' device(s).');
     }
 

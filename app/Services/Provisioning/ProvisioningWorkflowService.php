@@ -12,6 +12,7 @@ use App\Models\Device;
 use App\Models\ProvisioningWorkflow;
 use App\Models\ProvisioningWorkflowDevice;
 use App\Models\ProvisioningWorkflowDeviceStep;
+use App\Models\Task;
 use App\Models\User;
 use App\Services\LicensingInventoryService;
 use App\Services\LicensingPoolResolver;
@@ -27,6 +28,7 @@ class ProvisioningWorkflowService
         private readonly LicensingInventoryService $licensingInventoryService,
         private readonly LicensingPoolResolver $licensingPoolResolver,
         private readonly DeviceAlreadyOnlineResolver $deviceAlreadyOnlineResolver,
+        private readonly ProvisioningWorkflowTaskSync $taskSync,
     ) {}
 
     /**
@@ -227,7 +229,11 @@ class ProvisioningWorkflowService
 
             $workflow->refreshOverallStatus();
 
-            return $workflow->load(['workflowDevices.device', 'workflowDevices.steps']);
+            if ($isCustom) {
+                $this->taskSync->createForWorkflow($workflow, $deployment);
+            }
+
+            return $workflow->load(['workflowDevices.device', 'workflowDevices.steps', 'task']);
         });
     }
 
@@ -351,6 +357,8 @@ class ProvisioningWorkflowService
             'completed_at' => now(),
             'classic_poller_active' => false,
         ]);
+
+        $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 
     public function pause(ProvisioningWorkflow $workflow): void
@@ -363,6 +371,8 @@ class ProvisioningWorkflowService
             'status' => 'paused',
             'classic_poller_active' => false,
         ]);
+
+        $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 
     public function resume(ProvisioningWorkflow $workflow): void
@@ -415,6 +425,7 @@ class ProvisioningWorkflowService
         }
 
         $workflow->refreshOverallStatus();
+        $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 
     public function restartFromStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $fromStep): void
@@ -464,6 +475,14 @@ class ProvisioningWorkflowService
         $stepRow = $workflowDevice->steps->firstWhere('step_key', $fromStep->value);
         $stepRow?->markInProgress('Restarting...');
         $this->orchestrator->dispatchStep($workflowDevice, $fromStep);
+        $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
+    }
+
+    public function taskForWorkflow(ProvisioningWorkflow $workflow): ?Task
+    {
+        return Task::query()
+            ->where('provisioning_workflow_id', $workflow->id)
+            ->first();
     }
 
     public function latestForDeployment(Deployment $deployment): ?ProvisioningWorkflow

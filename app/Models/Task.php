@@ -100,6 +100,11 @@ class Task extends Model
         return $this->belongsTo(Deployment::class);
     }
 
+    public function provisioningWorkflow(): BelongsTo
+    {
+        return $this->belongsTo(ProvisioningWorkflow::class);
+    }
+
     public function centralGroupCreationTask(): BelongsTo
     {
         return $this->belongsTo(self::class, 'central_group_creation_task_id');
@@ -193,6 +198,7 @@ class Task extends Model
             'ADD_VLANS_FOR_DEVICE_GROUP',
             'CREATE_NEW_CENTRAL_CX_GROUP',
             'CONFIGURE_MIRROR_SESSION',
+            'CUSTOM_PROVISION',
         ];
 
         if (in_array($task_type, $interface_based, true)) {
@@ -272,9 +278,33 @@ class Task extends Model
                 return 'Add VLANs to device group (single group)';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
                 return 'Create Central CX device group';
+            case 'CUSTOM_PROVISION':
+                return 'Custom Task.';
             default:
                 return 'Unknown Task';
         }
+    }
+
+    public static function getTaskDisplayName(self $task): string
+    {
+        if ($task->task_type !== 'CUSTOM_PROVISION') {
+            $displayType = $task->composite_kind ?? $task->task_type;
+
+            return self::getTaskFriendlyName($displayType);
+        }
+
+        $workflow = $task->relationLoaded('provisioningWorkflow')
+            ? $task->provisioningWorkflow
+            : $task->provisioningWorkflow()->first();
+
+        $base = self::getTaskFriendlyName('CUSTOM_PROVISION');
+        $runName = trim((string) ($workflow?->name ?? ''));
+
+        if ($runName === '') {
+            return $base;
+        }
+
+        return $base.' — '.$runName;
     }
 
     public static function getTaskFriendlyDescription($task_type): string

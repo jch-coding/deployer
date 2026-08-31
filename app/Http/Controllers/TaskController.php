@@ -51,7 +51,7 @@ use App\Services\LicensingInventoryService;
 use App\Services\LicensingPoolResolver;
 use App\Services\LicensingSyncException;
 use App\Services\LicensingSyncService;
-use App\Services\RelaunchFailedCriticalConfigService;
+use App\Services\Provisioning\ProvisioningWorkflowService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
 use App\Support\ClassicSiteTaskPayload;
@@ -266,7 +266,7 @@ class TaskController extends Controller
         $status = trim((string) $request->query('status', ''));
 
         $tasksQuery = Task::query()
-            ->with(['deployment.client'])
+            ->with(['deployment.client', 'provisioningWorkflow'])
             ->withCount(['devices', 'deviceInterfaces'])
             ->where(function ($query) {
                 $query->whereNull('composite_group_id')
@@ -288,6 +288,7 @@ class TaskController extends Controller
         }
 
         if ($taskName !== '') {
+            $needle = mb_strtolower($taskName);
             $availableTypes = Task::query()
                 ->when(
                     $currentClient,
@@ -301,14 +302,44 @@ class TaskController extends Controller
 
             $matchingTypes = array_values(array_filter(
                 $availableTypes,
-                fn (string $taskType) => str_contains(mb_strtolower(Task::getTaskFriendlyName($taskType)), mb_strtolower($taskName))
+                fn (string $taskType) => str_contains(mb_strtolower(Task::getTaskFriendlyName($taskType)), $needle)
             ));
 
-            if ($matchingTypes === []) {
-                $tasksQuery->whereRaw('1 = 0');
-            } else {
-                $tasksQuery->whereIn('task_type', $matchingTypes);
-            }
+            $customBaseMatches = str_contains(mb_strtolower(Task::getTaskFriendlyName('CUSTOM_PROVISION')), $needle);
+
+            $tasksQuery->where(function ($query) use ($matchingTypes, $needle, $customBaseMatches) {
+                $matched = false;
+
+                if ($matchingTypes !== []) {
+                    $query->whereIn('task_type', $matchingTypes);
+                    $matched = true;
+                }
+
+                if ($customBaseMatches) {
+                    if ($matched) {
+                        $query->orWhere('task_type', 'CUSTOM_PROVISION');
+                    } else {
+                        $query->where('task_type', 'CUSTOM_PROVISION');
+                    }
+                    $matched = true;
+                }
+
+                $workflowNameMatcher = function ($workflowQuery) use ($needle) {
+                    $workflowQuery->whereRaw('lower(name) LIKE ?', ['%'.$needle.'%']);
+                };
+
+                if ($matched) {
+                    $query->orWhere(function ($customQuery) use ($workflowNameMatcher) {
+                        $customQuery->where('task_type', 'CUSTOM_PROVISION')
+                            ->whereHas('provisioningWorkflow', $workflowNameMatcher);
+                    });
+                } else {
+                    $query->where(function ($customQuery) use ($workflowNameMatcher) {
+                        $customQuery->where('task_type', 'CUSTOM_PROVISION')
+                            ->whereHas('provisioningWorkflow', $workflowNameMatcher);
+                    });
+                }
+            });
         }
 
         $statusOptions = Task::query()
@@ -345,7 +376,7 @@ class TaskController extends Controller
 
                 return [
                     'id' => $task->id,
-                    'task_name' => Task::getTaskFriendlyName($displayType),
+                    'task_name' => Task::getTaskDisplayName($task),
                     'deployment_name' => $task->deployment?->name,
                     'client_name' => $task->deployment?->client?->name,
                     'status' => $task->status,
@@ -370,9 +401,27 @@ class TaskController extends Controller
         ]);
     }
 
-    public function show(Task $task)
+    public function show(Task $task, ProvisioningWorkflowService $workflowService)
     {
         $task->loadMissing('deployment');
+
+        if ($task->task_type === 'CUSTOM_PROVISION') {
+            $task->loadMissing('provisioningWorkflow');
+            $workflow = $task->provisioningWorkflow;
+
+            if ($workflow === null) {
+                abort(404);
+            }
+
+            return Inertia::render('Task/CustomProvisionTask', [
+                'task' => $task->only(['id', 'status', 'deployment_time', 'wait_time']),
+                'deployment' => [
+                    'id' => $task->deployment->id,
+                    'name' => $task->deployment->name,
+                ],
+                'workflow' => $workflowService->serializeForUi($workflow),
+            ]);
+        }
 
         if ($task->composite_group_id !== null && $task->composite_kind !== null) {
             $siblings = Task::query()

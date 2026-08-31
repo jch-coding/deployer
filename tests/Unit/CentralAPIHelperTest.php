@@ -935,8 +935,21 @@ test('getScopeIdFromCentral resolves stack_id from a later switches page', funct
     });
 });
 
-/**
- * @return array<string, mixed>
+test('extractScopeIdFromHierarchyResponse returns error when items is empty', function () {
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->extractScopeIdFromHierarchyResponse(['items' => []]))
+        ->toBe(['error' => 'failed to get scope-id from central.']);
+});
+
+test('extractScopeIdFromHierarchyResponse returns error when hierarchy key is missing', function () {
+    $helper = makeCentralApiHelperForSwitches();
+
+    expect($helper->extractScopeIdFromHierarchyResponse(['items' => [['id' => 'hierarchy0']]]))
+        ->toBe(['error' => 'failed to get scope-id from central.']);
+});
+
+/** * @return array<string, mixed>
  */
 function hierarchyResponseFixture(array $hierarchy): array
 {

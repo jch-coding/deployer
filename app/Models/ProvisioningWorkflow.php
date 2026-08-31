@@ -43,6 +43,11 @@ class ProvisioningWorkflow extends Model
         return $this->hasMany(ProvisioningWorkflowDevice::class);
     }
 
+    public function task(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(Task::class);
+    }
+
     /**
      * @return list<string>|null
      */

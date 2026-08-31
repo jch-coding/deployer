@@ -12,10 +12,12 @@ use App\Models\Device;
 use App\Models\LicensingInventoryDevice;
 use App\Models\ProvisioningWorkflow;
 use App\Models\ProvisioningWorkflowDevice;
+use App\Models\Task;
 use App\Models\User;
 use App\Services\Provisioning\ProvisioningStepResult;
 use App\Services\Provisioning\ProvisioningWorkflowOrchestrator;
 use App\Services\Provisioning\ProvisioningWorkflowService;
+use App\Services\Provisioning\ProvisioningWorkflowTaskSync;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -613,6 +615,42 @@ it('marks interface steps before start as unchecked in preflight', function () {
         ->and($steps->firstWhere('step_key', ProvisioningStep::ConfigureLagInterfaces->value)['status'])->toBe('unchecked');
 });
 
+it('skips scope and hostname preflight when the device is not in New Central', function () {
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'device_function' => 'CAMPUS_AP',
+        'scope_id' => null,
+        'name' => 'ap-a',
+        'serial' => 'APNOTINCNTRL',
+    ]);
+
+    $this->client->update([
+        'expires_at' => now()->addHour(),
+        'bearer_token' => 'test-bearer-token',
+        'base_url' => \App\BaseURL::US1->value,
+    ]);
+
+    // APs skip the switches lookup and hit hierarchy directly — empty items used to throw.
+    Http::fake([
+        '*network-config/v1/hierarchy*' => Http::response(['items' => []], 200),
+    ]);
+
+    $this->actingAs($this->user);
+
+    $response = $this->postJson(route('deployments.provision.preflight', $this->deployment), [
+        'device_ids' => [$device->id],
+        'steps' => [
+            ProvisioningStep::ResolveScopeId->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+    ]);
+
+    $response->assertOk();
+
+    $steps = collect($response->json('devices.0.steps'));
+    expect($steps->firstWhere('step_key', ProvisioningStep::ResolveScopeId->value)['status'])->toBe('unchecked')
+        ->and($steps->firstWhere('step_key', ProvisioningStep::NameDevice->value)['status'])->toBe('unchecked');
+});
+
 it('splits VSF and VSX stack profile remediations by device', function () {
     $vsf = provisionLicensedDevice($this->deployment, $this->client, [
         'serial' => 'VSFDEVICE001',
@@ -795,7 +833,7 @@ it('starts a custom workflow with only selected steps in custom order', function
         ProvisioningStep::ConfigureVlanInterfaces->value,
     ];
 
-    $this->post(route('deployments.provision.store', $this->deployment), [
+    $response = $this->post(route('deployments.provision.store', $this->deployment), [
         'device_ids' => [$device->id],
         'deployment_time' => 10,
         'wait_time' => 1,
@@ -803,7 +841,10 @@ it('starts a custom workflow with only selected steps in custom order', function
         'name' => 'Site then interfaces',
         'save_as_template' => true,
         'template_name' => 'Site then interfaces',
-    ])->assertRedirect(route('deployments.custom_provision', $this->deployment));
+    ]);
+
+    $task = Task::query()->where('task_type', 'CUSTOM_PROVISION')->latest('id')->first();
+    $response->assertRedirect(route('tasks.show', $task));
 
     $workflow = ProvisioningWorkflow::query()->first();
     expect($workflow)->not->toBeNull()
@@ -834,7 +875,7 @@ it('advances a custom workflow in the user-defined step order', function () {
     ]);
     $this->actingAs($this->user);
 
-    $this->post(route('deployments.provision.store', $this->deployment), [
+    $response = $this->post(route('deployments.provision.store', $this->deployment), [
         'device_ids' => [$device->id],
         'deployment_time' => 10,
         'wait_time' => 1,
@@ -844,7 +885,10 @@ it('advances a custom workflow in the user-defined step order', function () {
             ProvisioningStep::NameDevice->value,
         ],
         'name' => 'Free reorder',
-    ])->assertRedirect(route('deployments.custom_provision', $this->deployment));
+    ]);
+
+    $task = Task::query()->where('task_type', 'CUSTOM_PROVISION')->latest('id')->first();
+    $response->assertRedirect(route('tasks.show', $task));
 
     $workflowDevice = ProvisioningWorkflowDevice::query()->first();
     $orchestrator = app(ProvisioningWorkflowOrchestrator::class);
@@ -875,13 +919,16 @@ it('launches a custom workflow from a saved template', function () {
         'steps' => [ProvisioningStep::PreprovisionGroup->value],
     ]);
 
-    $this->post(route('deployments.provision.store', $this->deployment), [
+    $response = $this->post(route('deployments.provision.store', $this->deployment), [
         'device_ids' => [$device->id],
         'deployment_time' => 10,
         'wait_time' => 1,
         'template_id' => $template->id,
         'name' => 'From template',
-    ])->assertRedirect(route('deployments.custom_provision', $this->deployment));
+    ]);
+
+    $task = Task::query()->where('task_type', 'CUSTOM_PROVISION')->latest('id')->first();
+    $response->assertRedirect(route('tasks.show', $task));
 
     $workflow = ProvisioningWorkflow::query()->first();
     expect($workflow->steps)->toBe([ProvisioningStep::PreprovisionGroup->value])
@@ -1012,7 +1059,7 @@ it('does not look up webhooks when a custom workflow omits wait_for_online', fun
 
     $this->actingAs($this->user);
 
-    $this->post(route('deployments.provision.store', $this->deployment), [
+    $response = $this->post(route('deployments.provision.store', $this->deployment), [
         'device_ids' => [$device->id],
         'deployment_time' => 10,
         'wait_time' => 1,
@@ -1021,7 +1068,10 @@ it('does not look up webhooks when a custom workflow omits wait_for_online', fun
             ProvisioningStep::ConfigureEthernetInterfaces->value,
         ],
         'name' => 'No wait online',
-    ])->assertRedirect(route('deployments.custom_provision', $this->deployment));
+    ]);
+
+    $task = Task::query()->where('task_type', 'CUSTOM_PROVISION')->latest('id')->first();
+    $response->assertRedirect(route('tasks.show', $task));
 
     $workflowDevice = ProvisioningWorkflowDevice::query()->first();
     expect($workflowDevice->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->exists())->toBeFalse()
@@ -1408,4 +1458,186 @@ it('serializes pause and resume flags for the UI', function () {
     expect($payload['can_pause'])->toBeFalse()
         ->and($payload['can_resume'])->toBeTrue()
         ->and($payload['status'])->toBe('paused');
+});
+
+it('creates a linked custom provision task when starting a custom workflow', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'name' => 'Run alpha',
+    ])->assertRedirect();
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    $task = Task::query()->where('provisioning_workflow_id', $workflow->id)->first();
+
+    expect($task)->not->toBeNull()
+        ->and($task->task_type)->toBe('CUSTOM_PROVISION')
+        ->and($task->status)->toBe('IN_PROGRESS')
+        ->and($task->deployment_id)->toBe($this->deployment->id)
+        ->and($task->devices()->pluck('devices.id')->all())->toBe([$device->id])
+        ->and($task->devices()->first()->pivot->status)->toBe('IN_PROGRESS');
+});
+
+it('lists custom provision tasks with display names on the tasks index', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'name' => 'Named run',
+    ]);
+
+    $this->get(route('tasks.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Task/Index')
+            ->where('tasks.data.0.task_name', 'Custom Task. — Named run')
+        );
+});
+
+it('renders the custom provision task detail page with workflow data', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'name' => 'Detail run',
+    ]);
+
+    $task = Task::query()->where('task_type', 'CUSTOM_PROVISION')->latest('id')->first();
+
+    $this->get(route('tasks.show', $task))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Task/CustomProvisionTask')
+            ->where('task.id', $task->id)
+            ->where('deployment.id', $this->deployment->id)
+            ->where('workflow.name', 'Detail run')
+            ->has('workflow.devices', 1)
+        );
+});
+
+it('syncs linked task status when a custom workflow is cancelled', function () {
+    Queue::fake();
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'name' => 'Cancel me',
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+
+    $task = app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+
+    $this->actingAs($this->user);
+    $this->post(route('provisioning_workflows.cancel', $workflow))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect($task->fresh()->status)->toBe('CANCELLED');
+});
+
+it('syncs linked task status when a custom workflow is paused', function () {
+    Queue::fake();
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'classic_poller_active' => true,
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+
+    $task = app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+
+    $this->actingAs($this->user);
+    $this->post(route('provisioning_workflows.pause', $workflow))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect($task->fresh()->status)->toBe('IN_PROGRESS');
+});
+
+it('syncs device pivot status from workflow device progress', function () {
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'completed',
+        'current_step_key' => null,
+        'status_message' => 'Done',
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+    ]);
+
+    $task = app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+
+    expect($task->devices()->first()->pivot->status)->toBe('COMPLETED');
 });

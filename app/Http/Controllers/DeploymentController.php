@@ -53,7 +53,7 @@ class DeploymentController extends Controller
     ) {
         $finalizeExpiredTasks->run((int) $deployment->id);
 
-        $latest_tasks = $deployment->tasks()->withCount('devices')->latest()->take(6)->get()
+        $latest_tasks = $deployment->tasks()->withCount('devices')->with('provisioningWorkflow')->latest()->take(6)->get()
             ->map(function ($task) {
                 if ($task->status !== 'COMPLETED') {
                     $task_completed = $task->processTaskStatus();
@@ -68,7 +68,7 @@ class DeploymentController extends Controller
             ->map(function ($task) {
                 $task->human_created_at = Carbon::parse($task->created_at)->diffForHumans();
                 $task->human_updated_at = Carbon::parse($task->updated_at)->diffForHumans();
-                $task->friendly_name = Task::getTaskFriendlyName($task->task_type);
+                $task->friendly_name = Task::getTaskDisplayName($task);
 
                 return $task;
             });
