@@ -39,7 +39,6 @@ type RebootResponse = {
 type RebootAccessPointsDialogProps = {
     serials: string[];
     trigger: ReactNode;
-    disabled?: boolean;
 };
 
 function formatScheduledAt(iso: string): string {
@@ -76,7 +75,6 @@ function minCustomDateTime(): string {
 export default function RebootAccessPointsDialog({
     serials,
     trigger,
-    disabled = false,
 }: RebootAccessPointsDialogProps) {
     const [open, setOpen] = useState(false);
     const [when, setWhen] = useState<RebootWhen>('now');
@@ -234,9 +232,7 @@ export default function RebootAccessPointsDialog({
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogTrigger asChild disabled={disabled || uniqueSerials.length === 0}>
-                {trigger}
-            </DialogTrigger>
+            <DialogTrigger asChild>{trigger}</DialogTrigger>
             <DialogContent data-test="device-details-reboot-dialog">
                 <DialogTitle>Reboot access point{uniqueSerials.length === 1 ? '' : 's'}</DialogTitle>
                 <DialogDescription>

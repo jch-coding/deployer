@@ -100,7 +100,8 @@ class DeviceDetailsController extends Controller
                         fn (array $item): array => [
                             'deviceName' => (string) ($item['deviceName'] ?? ''),
                             'serialNumber' => (string) ($item['serialNumber'] ?? ''),
-                            'deviceFunction' => (string) ($item['deviceFunction'] ?? ''),
+                            'deviceType' => (string) ($item['deviceType'] ?? ''),
+                            'deviceFunction' => (string) ($item['deviceFunction'] ?? $item['persona'] ?? ''),
                             'model' => (string) ($item['model'] ?? ''),
                             'ipv4' => (string) ($item['ipv4'] ?? ''),
                             'status' => (string) ($item['status'] ?? ''),
@@ -406,6 +407,7 @@ class DeviceDetailsController extends Controller
         $deviceName = '';
         $deviceType = '';
         $deviceFunction = '';
+        $model = '';
         $centralError = null;
         $filter = $filterBuilder->build(['serialNumber' => $serial]);
 
@@ -420,11 +422,12 @@ class DeviceDetailsController extends Controller
             } elseif (is_array($deviceResult) && $deviceResult !== []) {
                 $deviceName = (string) ($deviceResult[0]['deviceName'] ?? '');
                 $deviceType = (string) ($deviceResult[0]['deviceType'] ?? '');
-                $deviceFunction = (string) ($deviceResult[0]['deviceFunction'] ?? '');
+                $deviceFunction = (string) ($deviceResult[0]['deviceFunction'] ?? $deviceResult[0]['persona'] ?? '');
+                $model = (string) ($deviceResult[0]['model'] ?? '');
             }
         }
 
-        $isAccessPoint = $this->isAccessPoint($deviceType, $deviceFunction);
+        $isAccessPoint = $this->isAccessPoint($deviceType, $deviceFunction, $model);
         $resolvedDeviceType = $isAccessPoint
             ? 'ACCESS_POINT'
             : ($deviceType !== '' ? $deviceType : 'SWITCH');
@@ -454,13 +457,30 @@ class DeviceDetailsController extends Controller
         ];
     }
 
-    private function isAccessPoint(string $deviceType, string $deviceFunction): bool
+    private function isAccessPoint(string $deviceType, string $deviceFunction, string $model = ''): bool
     {
-        if (strtoupper($deviceType) === 'ACCESS_POINT') {
+        $normalizedType = strtoupper(trim($deviceType));
+        if (in_array($normalizedType, ['ACCESS_POINT', 'AP', 'IAP'], true)) {
             return true;
         }
 
-        return str_contains(strtoupper($deviceFunction), 'AP');
+        $normalizedFunction = strtoupper(trim($deviceFunction));
+        if ($normalizedFunction !== '') {
+            if (str_contains($normalizedFunction, 'AP')) {
+                return true;
+            }
+
+            if (in_array($normalizedFunction, ['CAMPUS', 'MICROBRANCH'], true)) {
+                return true;
+            }
+        }
+
+        $normalizedModel = strtoupper(trim($model));
+        if (str_starts_with($normalizedModel, 'AP-') || str_starts_with($normalizedModel, 'IAP-')) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

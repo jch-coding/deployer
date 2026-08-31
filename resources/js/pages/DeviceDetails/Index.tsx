@@ -1,7 +1,8 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table';
-import { Download, Loader2, Search, Wifi } from 'lucide-react';
+import { Download, Loader2, RotateCcw, Search, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import RebootAccessPointsDialog from '@/components/device-details/RebootAccessPointsDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -14,6 +15,7 @@ import CentralScopeRefreshButtons, {
 import AppLayout from '@/layouts/app-layout';
 import { downloadSiteBssidsCsv, type SiteBssidRow } from '@/lib/bssids-csv';
 import { csrfHeaders } from '@/lib/csrf';
+import { isAccessPointDevice } from '@/lib/is-access-point';
 import { index as clientsIndex } from '@/routes/clients';
 import {
     index as deviceDetailsIndex,
@@ -30,6 +32,7 @@ type SiteOption = {
 type DeviceRow = {
     deviceName: string;
     serialNumber: string;
+    deviceType: string;
     deviceFunction: string;
     model: string;
     ipv4: string;
@@ -168,6 +171,22 @@ export default function Index() {
                 .map((serial) => serial),
         [rowSelection],
     );
+
+    const selectedAccessPointSerials = useMemo(() => {
+        const selected = new Set(selectedSerials);
+
+        return devices
+            .filter(
+                (device) =>
+                    selected.has(device.serialNumber) &&
+                    isAccessPointDevice({
+                        device_type: device.deviceType,
+                        device_function: device.deviceFunction,
+                        model: device.model,
+                    }),
+            )
+            .map((device) => device.serialNumber);
+    }, [devices, selectedSerials]);
 
     useEffect(() => {
         setLocalFilters(filters);
@@ -582,6 +601,22 @@ export default function Index() {
                     >
                         View selected ({selectedSerials.length})
                     </Button>
+                    {selectedAccessPointSerials.length > 0 ? (
+                        <RebootAccessPointsDialog
+                            serials={selectedAccessPointSerials}
+                            trigger={
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="gap-2"
+                                    data-test="device-details-reboot-selected-index"
+                                >
+                                    <RotateCcw className="size-4" aria-hidden />
+                                    Reboot selected APs ({selectedAccessPointSerials.length})
+                                </Button>
+                            }
+                        />
+                    ) : null}
                     <Button
                         type="button"
                         variant="outline"

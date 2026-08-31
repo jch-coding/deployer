@@ -157,12 +157,12 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
                     </Button>
                     <RebootAccessPointsDialog
                         serials={[serial]}
-                        disabled={Boolean(central_error)}
                         trigger={
                             <Button
                                 type="button"
                                 variant="outline"
                                 className="gap-2"
+                                disabled={Boolean(central_error)}
                                 data-test="device-details-reboot"
                             >
                                 <RotateCcw className="size-4" aria-hidden />

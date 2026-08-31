@@ -11,6 +11,7 @@ import SwitchInterfacesPanel, {
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { downloadAllSwitchInterfacesCsv } from '@/lib/switch-interfaces-csv';
+import { isAccessPointDevice } from '@/lib/is-access-point';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as deviceDetailsIndex } from '@/routes/device-details';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -29,7 +30,7 @@ function deviceDisplayName(device: DeviceDetailsPayload): string {
 }
 
 function isAccessPoint(device: DeviceDetailsPayload): boolean {
-    return device.device_type === 'ACCESS_POINT';
+    return isAccessPointDevice(device);
 }
 
 export default function Show() {
@@ -136,7 +137,7 @@ export default function Show() {
                                 Export All CSV
                             </Button>
                         ) : null}
-                        {accessPoints.length >= 2 ? (
+                        {accessPoints.length >= 1 ? (
                             <RebootAccessPointsDialog
                                 serials={accessPointSerials}
                                 trigger={
@@ -147,7 +148,9 @@ export default function Show() {
                                         data-test="device-details-reboot-selected"
                                     >
                                         <RotateCcw className="size-4" aria-hidden />
-                                        Reboot selected APs
+                                        {accessPoints.length === 1
+                                            ? 'Reboot AP'
+                                            : 'Reboot selected APs'}
                                     </Button>
                                 }
                             />
