@@ -1,9 +1,10 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Download } from 'lucide-react';
+import { Download, RotateCcw } from 'lucide-react';
 import { useMemo } from 'react';
 import AccessPointDetailsPanel, {
     type AccessPointDetailsPayload,
 } from '@/components/device-details/AccessPointDetailsPanel';
+import RebootAccessPointsDialog from '@/components/device-details/RebootAccessPointsDialog';
 import SwitchInterfacesPanel, {
     type SwitchDetailsPayload,
 } from '@/components/device-details/SwitchInterfacesPanel';
@@ -77,6 +78,11 @@ export default function Show() {
         [switches],
     );
 
+    const accessPointSerials = useMemo(
+        () => accessPoints.map((device) => device.serial),
+        [accessPoints],
+    );
+
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: current_client?.name ?? 'Clients',
@@ -129,6 +135,22 @@ export default function Show() {
                                 <Download className="size-4" aria-hidden />
                                 Export All CSV
                             </Button>
+                        ) : null}
+                        {accessPoints.length >= 2 ? (
+                            <RebootAccessPointsDialog
+                                serials={accessPointSerials}
+                                trigger={
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="gap-2"
+                                        data-test="device-details-reboot-selected"
+                                    >
+                                        <RotateCcw className="size-4" aria-hidden />
+                                        Reboot selected APs
+                                    </Button>
+                                }
+                            />
                         ) : null}
                     </div>
                 </div>

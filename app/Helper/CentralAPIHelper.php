@@ -77,6 +77,10 @@ class CentralAPIHelper
         'bssids' => 'network-monitoring/v1/bssids',
     ];
 
+    public array $troubleshooting = [
+        'ap_reboot' => 'network-troubleshooting/v1/aps',
+    ];
+
     public array $high_availability = [
         'switch_stack' => 'network-config/v1alpha1/stacks',
         'vsx' => 'network-config/v1alpha1/vsx-profiles',
@@ -2742,6 +2746,44 @@ class CentralAPIHelper
         }
 
         return $allItems;
+    }
+
+    /**
+     * @return array{ok: true, status: int, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function reboot_ap(string $serial): array
+    {
+        $serial = trim($serial);
+
+        if ($serial === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->post($this->client->base_url.$this->troubleshooting['ap_reboot'].'/'.$serial.'/reboot');
+
+        if ($response->status() === 202) {
+            $body = $response->json();
+            if (! is_array($body)) {
+                $body = [];
+            }
+
+            return ['ok' => true, 'status' => 202, 'body' => $body];
+        }
+
+        $message = $response->json('message');
+        if (! is_string($message) || $message === '') {
+            $message = $response->json('errorCode');
+        }
+        if (! is_string($message) || $message === '') {
+            $message = 'failed to reboot access point from central.';
+        }
+
+        return ['ok' => false, 'status' => $response->status(), 'error' => $message];
     }
 
     public function get_local_management_profiles($queryParameters = ['view-type' => 'LIBRARY'])

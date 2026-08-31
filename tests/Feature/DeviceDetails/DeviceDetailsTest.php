@@ -5,6 +5,7 @@ use App\Models\Client;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -713,5 +714,145 @@ test('device details site bssids redirects gate when no current client is set', 
         ->assertJson([
             'bssids' => [],
             'error' => 'Please set current client to view BSSIDs.',
+        ]);
+});
+
+test('device details reboot initiates immediate reboot for one access point', function () {
+    Http::fake(function (Request $request) {
+        expect($request->method())->toBe('POST')
+            ->and($request->url())->toContain('network-troubleshooting/v1/aps/AP00000001/reboot');
+
+        return Http::response([
+            'startTime' => '2025-06-25T08:31:15.380079232Z',
+            'status' => 'INITIATED',
+        ], 202);
+    });
+
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => ['AP00000001'],
+        'when' => 'now',
+    ])
+        ->assertOk()
+        ->assertJsonPath('scheduled', false)
+        ->assertJsonPath('results.0.serial', 'AP00000001')
+        ->assertJsonPath('results.0.ok', true)
+        ->assertJsonPath('results.0.error', null)
+        ->assertJsonPath('results.0.status', 202);
+});
+
+test('device details reboot returns per serial results for bulk immediate reboot', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'AP00000001/reboot')) {
+            return Http::response(['status' => 'INITIATED'], 202);
+        }
+
+        if (str_contains($request->url(), 'AP00000002/reboot')) {
+            return Http::response(['message' => 'Device not found: AP00000002'], 404);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => ['AP00000001', 'AP00000002'],
+        'when' => 'now',
+    ])
+        ->assertOk()
+        ->assertJsonPath('scheduled', false)
+        ->assertJsonPath('results.0.serial', 'AP00000001')
+        ->assertJsonPath('results.0.ok', true)
+        ->assertJsonPath('results.1.serial', 'AP00000002')
+        ->assertJsonPath('results.1.ok', false)
+        ->assertJsonPath('results.1.status', 404)
+        ->assertJsonPath('results.1.error', 'Device not found: AP00000002');
+});
+
+test('device details reboot schedules delayed jobs without calling central immediately', function () {
+    Queue::fake();
+
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => ['AP00000001', 'AP00000002'],
+        'when' => 'in_10_minutes',
+    ])
+        ->assertOk()
+        ->assertJsonPath('scheduled', true)
+        ->assertJsonPath('serials', ['AP00000001', 'AP00000002'])
+        ->assertJsonPath('results', []);
+
+    Queue::assertPushed(\App\Jobs\RebootAccessPointJob::class, 2);
+    Queue::assertPushed(\App\Jobs\RebootAccessPointJob::class, function (\App\Jobs\RebootAccessPointJob $job): bool {
+        return $job->clientId === $this->client->id
+            && in_array($job->serial, ['AP00000001', 'AP00000002'], true);
+    });
+
+    Http::assertNothingSent();
+});
+
+test('device details reboot schedules custom datetime reboot', function () {
+    Queue::fake();
+
+    $scheduledAt = now()->addHour()->startOfMinute();
+
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => ['AP00000001'],
+        'when' => 'at',
+        'reboot_at' => $scheduledAt->toIso8601String(),
+    ])
+        ->assertOk()
+        ->assertJsonPath('scheduled', true)
+        ->assertJsonPath('serials', ['AP00000001']);
+
+    Queue::assertPushed(\App\Jobs\RebootAccessPointJob::class, 1);
+    Http::assertNothingSent();
+});
+
+test('device details reboot requires serials', function () {
+    $this->postJson(route('device-details.reboot'), [
+        'when' => 'now',
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['serials']);
+});
+
+test('device details reboot validates when option', function () {
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => ['AP00000001'],
+        'when' => 'invalid',
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['when']);
+});
+
+test('device details reboot requires reboot_at for custom schedule', function () {
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => ['AP00000001'],
+        'when' => 'at',
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['reboot_at']);
+});
+
+test('device details reboot rejects reboot_at in the past', function () {
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => ['AP00000001'],
+        'when' => 'at',
+        'reboot_at' => now()->subMinute()->toIso8601String(),
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['reboot_at']);
+});
+
+test('device details reboot redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => ['AP00000001'],
+        'when' => 'now',
+    ])
+        ->assertStatus(422)
+        ->assertJson([
+            'scheduled' => false,
+            'results' => [],
+            'error' => 'Please set current client to reboot access points.',
         ]);
 });

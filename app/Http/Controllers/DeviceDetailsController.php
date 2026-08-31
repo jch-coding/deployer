@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
+use App\Jobs\RebootAccessPointJob;
 use App\Services\CentralScopeCacheService;
 use App\Services\DeviceCentralFilterBuilder;
 use App\Services\SwitchPortProfileInterfaceComparer;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -20,6 +22,8 @@ class DeviceDetailsController extends Controller
     private const DEPLOYMENTS = ['Standalone', 'Cluster', 'Stack'];
 
     private const MAX_SERIALS = 25;
+
+    private const REBOOT_WHEN_OPTIONS = ['now', 'in_5_minutes', 'in_10_minutes', 'at'];
 
     public function index(Request $request, DeviceCentralFilterBuilder $filterBuilder, CentralScopeCacheService $centralScopeCacheService)
     {
@@ -137,14 +141,7 @@ class DeviceDetailsController extends Controller
             'serials.*' => ['required', 'string', 'max:16'],
         ]);
 
-        $serials = [];
-        foreach ($validated['serials'] as $serial) {
-            $trimmed = trim((string) $serial);
-            if ($trimmed === '' || in_array($trimmed, $serials, true)) {
-                continue;
-            }
-            $serials[] = $trimmed;
-        }
+        $serials = $this->normalizeSerials($validated['serials']);
 
         if ($serials === []) {
             return back()->withErrors(['serials' => 'At least one serial number is required.']);
@@ -239,6 +236,85 @@ class DeviceDetailsController extends Controller
         return response()->json([
             'serial' => $serial,
             'bssids' => $bssids,
+            'error' => null,
+        ]);
+    }
+
+    public function reboot(Request $request): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'scheduled' => false,
+                'scheduled_at' => null,
+                'serials' => [],
+                'results' => [],
+                'error' => 'Please set current client to reboot access points.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serials' => ['required', 'array', 'min:1', 'max:'.self::MAX_SERIALS],
+            'serials.*' => ['required', 'string', 'max:16'],
+            'when' => ['required', 'string', Rule::in(self::REBOOT_WHEN_OPTIONS)],
+            'reboot_at' => ['nullable', 'required_if:when,at', 'date', 'after:now'],
+        ]);
+
+        $serials = $this->normalizeSerials($validated['serials']);
+
+        if ($serials === []) {
+            return response()->json([
+                'scheduled' => false,
+                'scheduled_at' => null,
+                'serials' => [],
+                'results' => [],
+                'error' => 'At least one serial number is required.',
+            ], 422);
+        }
+
+        $when = $validated['when'];
+
+        if ($when === 'now') {
+            $helper = new CentralAPIHelper($currentClient);
+            $results = [];
+
+            foreach ($serials as $serial) {
+                $result = $helper->reboot_ap($serial);
+                $results[] = [
+                    'serial' => $serial,
+                    'ok' => (bool) ($result['ok'] ?? false),
+                    'error' => ($result['ok'] ?? false) ? null : (string) ($result['error'] ?? 'failed to reboot access point from central.'),
+                    'status' => $result['status'] ?? null,
+                ];
+            }
+
+            return response()->json([
+                'scheduled' => false,
+                'scheduled_at' => null,
+                'serials' => $serials,
+                'results' => $results,
+                'error' => null,
+            ]);
+        }
+
+        $scheduledAt = match ($when) {
+            'in_5_minutes' => now()->addMinutes(5),
+            'in_10_minutes' => now()->addMinutes(10),
+            'at' => Carbon::parse((string) $validated['reboot_at']),
+            default => now(),
+        };
+
+        foreach ($serials as $serial) {
+            RebootAccessPointJob::dispatch($currentClient->id, $serial)
+                ->delay($scheduledAt);
+        }
+
+        return response()->json([
+            'scheduled' => true,
+            'scheduled_at' => $scheduledAt->toIso8601String(),
+            'serials' => $serials,
+            'results' => [],
             'error' => null,
         ]);
     }
@@ -475,6 +551,26 @@ class DeviceDetailsController extends Controller
             'neighbourType' => (string) ($item['neighbourType'] ?? ''),
             'transceiverType' => (string) ($item['transceiverType'] ?? ''),
         ];
+    }
+
+    /**
+     * @param  list<string>  $rawSerials
+     * @return list<string>
+     */
+    private function normalizeSerials(array $rawSerials): array
+    {
+        $serials = [];
+
+        foreach ($rawSerials as $serial) {
+            $trimmed = trim((string) $serial);
+            if ($trimmed === '' || in_array($trimmed, $serials, true)) {
+                continue;
+            }
+
+            $serials[] = $trimmed;
+        }
+
+        return $serials;
     }
 
     /**

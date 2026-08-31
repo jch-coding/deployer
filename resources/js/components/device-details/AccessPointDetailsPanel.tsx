@@ -1,6 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
-import { Download, Loader2, Wifi } from 'lucide-react';
+import { Download, Loader2, RotateCcw, Wifi } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import RebootAccessPointsDialog from '@/components/device-details/RebootAccessPointsDialog';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { csrfHeaders } from '@/lib/csrf';
@@ -154,6 +155,21 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
                         <Download className="size-4" aria-hidden />
                         Export CSV
                     </Button>
+                    <RebootAccessPointsDialog
+                        serials={[serial]}
+                        disabled={Boolean(central_error)}
+                        trigger={
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="gap-2"
+                                data-test="device-details-reboot"
+                            >
+                                <RotateCcw className="size-4" aria-hidden />
+                                Reboot
+                            </Button>
+                        }
+                    />
                 </div>
             </div>
 

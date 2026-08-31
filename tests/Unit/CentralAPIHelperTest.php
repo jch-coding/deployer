@@ -2471,3 +2471,42 @@ test('collectCentralDeviceOptions returns error when devices request fails', fun
     expect($result['devices'])->toBe([])
         ->and($result['error'])->toBe('Could not load devices from Central.');
 });
+
+test('reboot_ap posts to network troubleshooting endpoint and treats 202 as success', function () {
+    Http::fake(function (Request $request) {
+        expect($request->method())->toBe('POST')
+            ->and($request->url())->toContain('network-troubleshooting/v1/aps/AP00000001/reboot');
+
+        return Http::response([
+            'startTime' => '2025-06-25T08:31:15.380079232Z',
+            'status' => 'INITIATED',
+        ], 202);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->reboot_ap('AP00000001');
+
+    expect($result)->toMatchArray([
+        'ok' => true,
+        'status' => 202,
+    ])
+        ->and($result['body']['status'] ?? null)->toBe('INITIATED');
+});
+
+test('reboot_ap surfaces central error message on failure', function () {
+    Http::fake([
+        '*network-troubleshooting/v1/aps/AP00000001/reboot*' => Http::response([
+            'message' => 'Device already rebooting: AP00000001',
+            'errorCode' => 'HPE_GL_ERROR_CONFLICT',
+        ], 409),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->reboot_ap('AP00000001');
+
+    expect($result)->toMatchArray([
+        'ok' => false,
+        'status' => 409,
+        'error' => 'Device already rebooting: AP00000001',
+    ]);
+});
