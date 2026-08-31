@@ -1,5 +1,7 @@
 import { router } from '@inertiajs/react';
-import { AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, FileText } from 'lucide-react';
+import { useState } from 'react';
+import CustomWorkflowReportDialog from '@/components/Deployment/CustomWorkflowReportDialog';
 import WorkflowDeviceStatusList, {
     type WorkflowDeviceStatusRow,
 } from '@/components/Deployment/WorkflowDeviceStatusList';
@@ -16,6 +18,7 @@ export type CustomWorkflowRunPayload = {
     id: number;
     name: string | null;
     status: string;
+    is_terminal: boolean;
     summary: { in_progress: number; completed: number; failed: number };
     devices: WorkflowDeviceStatusRow[];
     licensing_failures: Array<{
@@ -53,10 +56,13 @@ function SummaryCard({
 export default function CustomWorkflowRunPanel({
     workflow,
     title,
+    deploymentName,
 }: {
     workflow: CustomWorkflowRunPayload;
     title?: string;
+    deploymentName: string;
 }) {
+    const [reportOpen, setReportOpen] = useState(false);
     const panelTitle =
         title ??
         (workflow.name ? `Custom run: ${workflow.name}` : 'Custom workflow run');
@@ -71,6 +77,15 @@ export default function CustomWorkflowRunPanel({
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setReportOpen(true)}
+                        data-test="generate-custom-workflow-report"
+                    >
+                        <FileText className="mr-1 size-4" />
+                        Generate report
+                    </Button>
                     {workflow.can_pause ? (
                         <Button
                             variant="outline"
@@ -167,6 +182,14 @@ export default function CustomWorkflowRunPanel({
                     />
                 </CardContent>
             </Card>
+            <CustomWorkflowReportDialog
+                open={reportOpen}
+                onOpenChange={setReportOpen}
+                workflowName={workflow.name}
+                deploymentName={deploymentName}
+                summary={workflow.summary}
+                devices={workflow.devices}
+            />
         </div>
     );
 }

@@ -1507,7 +1507,13 @@ it('lists custom provision tasks with display names on the tasks index', functio
 
 it('renders the custom provision task detail page with workflow data', function () {
     Queue::fake();
-    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $site = \App\Models\Site::factory()->for($this->client)->create(['name' => 'HQ Site']);
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'site_id' => $site->id,
+        'device_function' => 'CAMPUS_AP',
+        'group' => 'Floor-1',
+    ]);
     $this->actingAs($this->user);
 
     $this->post(route('deployments.provision.store', $this->deployment), [
@@ -1528,6 +1534,10 @@ it('renders the custom provision task detail page with workflow data', function 
             ->where('deployment.id', $this->deployment->id)
             ->where('workflow.name', 'Detail run')
             ->has('workflow.devices', 1)
+            ->where('workflow.devices.0.device_function', 'CAMPUS_AP')
+            ->where('workflow.devices.0.mac_address', 'aa:bb:cc:dd:ee:ff')
+            ->where('workflow.devices.0.site_name', 'HQ Site')
+            ->where('workflow.devices.0.group', 'Floor-1')
         );
 });
 

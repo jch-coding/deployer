@@ -37,6 +37,10 @@ export type WorkflowDeviceStatusRow = {
     device_id: number;
     name: string;
     serial: string;
+    device_function?: string | null;
+    mac_address?: string | null;
+    site_name?: string | null;
+    group?: string | null;
     overall_status: string;
     current_step_label: string | null;
     status_message: string | null;

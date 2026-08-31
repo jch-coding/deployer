@@ -84,7 +84,11 @@ export default function CustomProvisionTask() {
                     </Button>
                 </div>
 
-                <CustomWorkflowRunPanel workflow={workflow} title={pageTitle} />
+                <CustomWorkflowRunPanel
+                    workflow={workflow}
+                    title={pageTitle}
+                    deploymentName={deployment.name}
+                />
             </div>
         </AppLayout>
     );

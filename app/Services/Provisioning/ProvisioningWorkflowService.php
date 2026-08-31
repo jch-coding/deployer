@@ -499,7 +499,7 @@ class ProvisioningWorkflowService
      */
     public function serializeForUi(ProvisioningWorkflow $workflow): array
     {
-        $workflow->loadMissing(['workflowDevices.device', 'workflowDevices.steps']);
+        $workflow->loadMissing(['workflowDevices.device.site', 'workflowDevices.steps']);
 
         $summary = $workflow->summaryCounts();
         $licensingFailures = [];
@@ -529,6 +529,10 @@ class ProvisioningWorkflowService
                 'device_id' => $device->id,
                 'name' => $device->name,
                 'serial' => $device->serial,
+                'device_function' => $device->device_function,
+                'mac_address' => $device->mac_address,
+                'site_name' => $device->site?->name,
+                'group' => $device->group,
                 'overall_status' => $workflowDevice->overall_status,
                 'current_step_key' => $workflowDevice->current_step_key,
                 'current_step_label' => $workflowDevice->current_step_key
