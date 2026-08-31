@@ -5,6 +5,7 @@ import {
     Loader2,
     Play,
     Plus,
+    Search,
     Trash2,
     Workflow,
 } from 'lucide-react';
@@ -151,6 +152,7 @@ export default function CustomProvision() {
             ? selectedDeviceIdsProp
             : deployment.devices.map((d) => d.id),
     );
+    const [deviceSearch, setDeviceSearch] = useState('');
     const [selectedSteps, setSelectedSteps] = useState<string[]>([]);
     const [workflowName, setWorkflowName] = useState('');
     const [saveAsTemplate, setSaveAsTemplate] = useState(false);
@@ -191,6 +193,25 @@ export default function CustomProvision() {
             toast.error(flash.error);
         }
     }, [flash]);
+
+    const filteredDevices = useMemo(() => {
+        const needle = deviceSearch.trim().toLowerCase();
+
+        if (needle === '') {
+            return deployment.devices;
+        }
+
+        return deployment.devices.filter((device) => {
+            const matches = (value: string) =>
+                value.toLowerCase().includes(needle);
+
+            return (
+                matches(device.name) ||
+                matches(device.serial) ||
+                matches(device.device_function ?? '')
+            );
+        });
+    }, [deployment.devices, deviceSearch]);
 
     const selectedDevices = useMemo(
         () =>
@@ -749,6 +770,23 @@ export default function CustomProvision() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent>
+                                <div className="relative mb-2">
+                                    <Search
+                                        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                                        aria-hidden
+                                    />
+                                    <Input
+                                        type="search"
+                                        value={deviceSearch}
+                                        onChange={(e) =>
+                                            setDeviceSearch(e.target.value)
+                                        }
+                                        placeholder="Search name, serial, or function…"
+                                        className="pl-9"
+                                        data-test="custom-workflow-devices-search"
+                                        aria-label="Search devices by name, serial, or device function"
+                                    />
+                                </div>
                                 <div className="mb-2 flex gap-2">
                                     <Button
                                         type="button"
@@ -756,7 +794,7 @@ export default function CustomProvision() {
                                         variant="outline"
                                         onClick={() =>
                                             setSelectedDeviceIds(
-                                                deployment.devices.map(
+                                                filteredDevices.map(
                                                     (d) => d.id,
                                                 ),
                                             )
@@ -774,28 +812,40 @@ export default function CustomProvision() {
                                     </Button>
                                 </div>
                                 <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
-                                    {deployment.devices.map((device) => (
-                                        <label
-                                            key={device.id}
-                                            className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted/50"
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedDeviceIds.includes(
-                                                    device.id,
-                                                )}
-                                                onChange={() =>
-                                                    toggleDevice(device.id)
-                                                }
-                                            />
-                                            <span className="truncate">
-                                                {formatDeviceLabel(
-                                                    device.name,
-                                                    device.serial,
-                                                )}
-                                            </span>
-                                        </label>
-                                    ))}
+                                    {filteredDevices.length > 0 ? (
+                                        filteredDevices.map((device) => (
+                                            <label
+                                                key={device.id}
+                                                className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted/50"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedDeviceIds.includes(
+                                                        device.id,
+                                                    )}
+                                                    onChange={() =>
+                                                        toggleDevice(device.id)
+                                                    }
+                                                />
+                                                <span className="truncate">
+                                                    {formatDeviceLabel(
+                                                        device.name,
+                                                        device.serial,
+                                                    )}
+                                                    {device.device_function ? (
+                                                        <span className="text-muted-foreground">
+                                                            {' '}
+                                                            {device.device_function}
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                            </label>
+                                        ))
+                                    ) : (
+                                        <p className="text-muted-foreground px-2 py-1 text-sm">
+                                            No devices match your search.
+                                        </p>
+                                    )}
                                 </div>
                             </CardContent>
                         </Card>
