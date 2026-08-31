@@ -110,6 +110,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/device-details/show', 'show')->name('device-details.show');
         Route::post('/device-details/compare-profiles', 'compareProfiles')->name('device-details.compare-profiles');
         Route::post('/device-details/bssids', 'bssids')->name('device-details.bssids');
+        Route::post('/device-details/reboot', 'reboot')->name('device-details.reboot');
         Route::post('/device-details/site-bssids', 'siteBssids')->name('device-details.site-bssids');
         Route::get('/device-details/{serial}', 'redirectShow')->name('device-details.redirect-show');
     });
