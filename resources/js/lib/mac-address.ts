@@ -21,6 +21,13 @@ export function normalizeMacAddress(value: string): string | null {
     return parts.join(':');
 }
 
+/**
+ * Strip separators and return lowercase hex for partial MAC matching.
+ */
+export function macAddressHex(value: string): string {
+    return value.trim().toLowerCase().replace(/[^0-9a-f]/g, '');
+}
+
 export function isValidMacAddress(value: string): boolean {
     return normalizeMacAddress(value) !== null;
 }

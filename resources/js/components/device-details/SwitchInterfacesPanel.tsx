@@ -1,6 +1,15 @@
-import type { ColumnDef, OnChangeFn, RowSelectionState } from '@tanstack/react-table';
+import type {
+    ColumnDef,
+    OnChangeFn,
+    RowSelectionState,
+} from '@tanstack/react-table';
 import { Download, GitCompareArrows, Loader2, Terminal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import SwitchMacAddressTableCard from '@/components/device-details/SwitchMacAddressTableCard';
+import SwitchPortBounceDialog, {
+    type PortBounceOutcome,
+} from '@/components/device-details/SwitchPortBounceDialog';
+import SwitchShowCommandsCard from '@/components/device-details/SwitchShowCommandsCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -18,10 +27,6 @@ import {
     hasActiveSwitchInterfacesTableFilters,
     type SwitchInterfacesTableFilters,
 } from '@/lib/switch-interfaces-table-filters';
-import SwitchPortBounceDialog, {
-    type PortBounceOutcome,
-} from '@/components/device-details/SwitchPortBounceDialog';
-import SwitchShowCommandsCard from '@/components/device-details/SwitchShowCommandsCard';
 import { compareProfiles as compareProfilesRoute } from '@/routes/device-details';
 
 export type SwitchDetailsPayload = {
@@ -162,22 +167,30 @@ type SwitchInterfacesPanelProps = {
     switchDetails: SwitchDetailsPayload;
 };
 
-export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterfacesPanelProps) {
-    const { serial, device_name, device_type, interfaces, central_error } = switchDetails;
+export default function SwitchInterfacesPanel({
+    switchDetails,
+}: SwitchInterfacesPanelProps) {
+    const { serial, device_name, device_type, interfaces, central_error } =
+        switchDetails;
     const title = device_name !== '' ? device_name : serial;
-    const showTroubleshooting = (device_type ?? '').trim().toUpperCase() !== 'GATEWAY';
+    const showTroubleshooting =
+        (device_type ?? '').trim().toUpperCase() !== 'GATEWAY';
 
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
-    const [tableFilters, setTableFilters] = useState<SwitchInterfacesTableFilters>(
-        emptySwitchInterfacesTableFilters,
-    );
+    const [tableFilters, setTableFilters] =
+        useState<SwitchInterfacesTableFilters>(
+            emptySwitchInterfacesTableFilters,
+        );
     const [compareLoading, setCompareLoading] = useState(false);
     const [compareError, setCompareError] = useState<string | null>(null);
-    const [compareResult, setCompareResult] = useState<ProfileCompareResult | null>(null);
+    const [compareResult, setCompareResult] =
+        useState<ProfileCompareResult | null>(null);
     const [showCommandsOpen, setShowCommandsOpen] = useState(false);
+    const [macAddressTableOpen, setMacAddressTableOpen] = useState(false);
     const [selectedPortNames, setSelectedPortNames] = useState<string[]>([]);
-    const [bounceOutcome, setBounceOutcome] = useState<PortBounceOutcome | null>(null);
+    const [bounceOutcome, setBounceOutcome] =
+        useState<PortBounceOutcome | null>(null);
     const [bounceRunning, setBounceRunning] = useState(false);
 
     const compareByName = useMemo(() => {
@@ -222,7 +235,9 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
             let changed = false;
             const next = { ...prev };
 
-            (Object.keys(prev) as (keyof SwitchInterfacesTableFilters)[]).forEach((key) => {
+            (
+                Object.keys(prev) as (keyof SwitchInterfacesTableFilters)[]
+            ).forEach((key) => {
                 const selected = prev[key];
                 if (selected !== '' && !filterOptions[key].includes(selected)) {
                     next[key] = '';
@@ -251,7 +266,9 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 body: JSON.stringify({ serial }),
             });
 
-            const body = (await response.json().catch(() => null)) as ProfileCompareResult | null;
+            const body = (await response
+                .json()
+                .catch(() => null)) as ProfileCompareResult | null;
 
             if (!response.ok) {
                 throw new Error(
@@ -272,15 +289,20 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
             setCompareResult(body);
         } catch (error) {
             setCompareResult(null);
-            setCompareError(error instanceof Error ? error.message : 'Compare failed.');
+            setCompareError(
+                error instanceof Error ? error.message : 'Compare failed.',
+            );
         } finally {
             setCompareLoading(false);
         }
     }, [serial]);
 
-    const getInterfaceRowId = useCallback((row: SwitchInterfaceRowWithCompare) => {
-        return row.name || `${row.neighbourSerial}-${row.status}`;
-    }, []);
+    const getInterfaceRowId = useCallback(
+        (row: SwitchInterfaceRowWithCompare) => {
+            return row.name || `${row.neighbourSerial}-${row.status}`;
+        },
+        [],
+    );
 
     const selectedPorts = useMemo(() => selectedPortNames, [selectedPortNames]);
 
@@ -289,39 +311,41 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
         setBounceRunning(outcome.kind === 'running');
     }, []);
 
-    const columns = useMemo<ColumnDef<SwitchInterfaceRowWithCompare>[]>(
-        () => {
-            const baseColumns: ColumnDef<SwitchInterfaceRowWithCompare>[] = [];
+    const columns = useMemo<ColumnDef<SwitchInterfaceRowWithCompare>[]>(() => {
+        const baseColumns: ColumnDef<SwitchInterfaceRowWithCompare>[] = [];
 
-            if (showTroubleshooting) {
-                baseColumns.push({
-                    id: 'select',
-                    header: ({ table }) => (
-                        <Checkbox
-                            checked={
-                                table.getIsAllPageRowsSelected() ||
-                                (table.getIsSomePageRowsSelected() && 'indeterminate')
-                            }
-                            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-                            aria-label="Select all ports on page"
-                            data-test="device-details-iface-select-all"
-                        />
-                    ),
-                    cell: ({ row }) => (
-                        <Checkbox
-                            checked={row.getIsSelected()}
-                            onCheckedChange={(value) => row.toggleSelected(!!value)}
-                            aria-label={`Select ${row.original.name}`}
-                            disabled={row.original.name === ''}
-                            data-test="device-details-iface-select-row"
-                        />
-                    ),
-                    enableSorting: false,
-                    enableHiding: false,
-                });
-            }
+        if (showTroubleshooting) {
+            baseColumns.push({
+                id: 'select',
+                header: ({ table }) => (
+                    <Checkbox
+                        checked={
+                            table.getIsAllPageRowsSelected() ||
+                            (table.getIsSomePageRowsSelected() &&
+                                'indeterminate')
+                        }
+                        onCheckedChange={(value) =>
+                            table.toggleAllPageRowsSelected(!!value)
+                        }
+                        aria-label="Select all ports on page"
+                        data-test="device-details-iface-select-all"
+                    />
+                ),
+                cell: ({ row }) => (
+                    <Checkbox
+                        checked={row.getIsSelected()}
+                        onCheckedChange={(value) => row.toggleSelected(!!value)}
+                        aria-label={`Select ${row.original.name}`}
+                        disabled={row.original.name === ''}
+                        data-test="device-details-iface-select-row"
+                    />
+                ),
+                enableSorting: false,
+                enableHiding: false,
+            });
+        }
 
-            baseColumns.push(
+        baseColumns.push(
             { accessorKey: 'name', header: 'Name' },
             {
                 id: 'profileCompare',
@@ -354,7 +378,10 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 accessorKey: 'status',
                 header: 'Status',
                 cell: ({ row }) => (
-                    <Badge variant="outline" className={statusBadgeClass(row.original.status)}>
+                    <Badge
+                        variant="outline"
+                        className={statusBadgeClass(row.original.status)}
+                    >
                         {row.original.status}
                     </Badge>
                 ),
@@ -363,7 +390,10 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 accessorKey: 'operStatus',
                 header: 'Oper Status',
                 cell: ({ row }) => (
-                    <Badge variant="outline" className={statusBadgeClass(row.original.operStatus)}>
+                    <Badge
+                        variant="outline"
+                        className={statusBadgeClass(row.original.operStatus)}
+                    >
                         {row.original.operStatus}
                     </Badge>
                 ),
@@ -374,7 +404,8 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
             {
                 accessorKey: 'allowedVlanIds',
                 header: 'Allowed VLAN IDs',
-                cell: ({ row }) => formatAllowedVlanIds(row.original.allowedVlanIds),
+                cell: ({ row }) =>
+                    formatAllowedVlanIds(row.original.allowedVlanIds),
             },
             { accessorKey: 'nativeVlan', header: 'Native VLAN' },
             { accessorKey: 'poeClass', header: 'PoE Class' },
@@ -382,12 +413,10 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
             { accessorKey: 'neighbourFunction', header: 'Neighbour Function' },
             { accessorKey: 'neighbourType', header: 'Neighbour Type' },
             { accessorKey: 'transceiverType', header: 'Transceiver Type' },
-            );
+        );
 
-            return baseColumns;
-        },
-        [showTroubleshooting],
-    );
+        return baseColumns;
+    }, [showTroubleshooting]);
 
     const totalFiltered = filteredInterfaces.length;
     const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
@@ -423,7 +452,9 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
 
     const handleRowSelectionChange: OnChangeFn<RowSelectionState> = useCallback(
         (updater) => {
-            const currentPageIds = new Set(pagedInterfaces.map((row) => getInterfaceRowId(row)));
+            const currentPageIds = new Set(
+                pagedInterfaces.map((row) => getInterfaceRowId(row)),
+            );
             const currentSelection: RowSelectionState = {};
 
             for (const name of selectedPortNames) {
@@ -432,10 +463,15 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 }
             }
 
-            const next = typeof updater === 'function' ? updater(currentSelection) : updater;
+            const next =
+                typeof updater === 'function'
+                    ? updater(currentSelection)
+                    : updater;
 
             setSelectedPortNames((previous) => {
-                const retained = previous.filter((name) => !currentPageIds.has(name));
+                const retained = previous.filter(
+                    (name) => !currentPageIds.has(name),
+                );
                 const updated = new Set(retained);
 
                 for (const [id, selected] of Object.entries(next)) {
@@ -453,7 +489,8 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
     const mismatchDetails = useMemo(
         () =>
             (compareResult?.interfaces ?? []).filter(
-                (item) => item.status === 'mismatch' && item.differences.length > 0,
+                (item) =>
+                    item.status === 'mismatch' && item.differences.length > 0,
             ),
         [compareResult],
     );
@@ -484,11 +521,29 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                             variant="outline"
                             className="gap-2"
                             disabled={Boolean(central_error)}
-                            onClick={() => setShowCommandsOpen((open) => !open)}
+                            onClick={() => {
+                                setMacAddressTableOpen(false);
+                                setShowCommandsOpen((open) => !open);
+                            }}
                             data-test="device-details-troubleshooting"
                         >
                             <Terminal className="size-4" aria-hidden />
                             Troubleshooting
+                        </Button>
+                    ) : null}
+                    {showTroubleshooting ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="gap-2"
+                            disabled={Boolean(central_error)}
+                            onClick={() => {
+                                setShowCommandsOpen(false);
+                                setMacAddressTableOpen((open) => !open);
+                            }}
+                            data-test="device-details-mac-address-table"
+                        >
+                            mac-address-table
                         </Button>
                     ) : null}
                     <Button
@@ -500,7 +555,10 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                         data-test="device-details-compare-profiles"
                     >
                         {compareLoading ? (
-                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                            <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden
+                            />
                         ) : (
                             <GitCompareArrows className="size-4" aria-hidden />
                         )}
@@ -511,7 +569,12 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                         variant="outline"
                         className="gap-2"
                         disabled={filteredInterfaces.length === 0}
-                        onClick={() => downloadSwitchInterfacesCsv(filteredInterfaces, serial)}
+                        onClick={() =>
+                            downloadSwitchInterfacesCsv(
+                                filteredInterfaces,
+                                serial,
+                            )
+                        }
                         data-test="device-details-export-csv"
                     >
                         <Download className="size-4" aria-hidden />
@@ -527,7 +590,17 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 />
             ) : null}
 
-            <h3 className="mb-3 text-lg font-medium" data-test="device-details-interfaces-heading">
+            {macAddressTableOpen ? (
+                <SwitchMacAddressTableCard
+                    serial={serial}
+                    onClose={() => setMacAddressTableOpen(false)}
+                />
+            ) : null}
+
+            <h3
+                className="mb-3 text-lg font-medium"
+                data-test="device-details-interfaces-heading"
+            >
                 Interfaces
             </h3>
 
@@ -561,9 +634,9 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                         Profiles: {compareResult.summary.profiles} · Matches:{' '}
                         {compareResult.summary.matches} · Mismatches:{' '}
                         {compareResult.summary.mismatches} · Missing profiles:{' '}
-                        {compareResult.summary.missing_profiles} · Missing interfaces:{' '}
-                        {compareResult.summary.missing_interfaces} · No profile:{' '}
-                        {compareResult.summary.no_profile}
+                        {compareResult.summary.missing_profiles} · Missing
+                        interfaces: {compareResult.summary.missing_interfaces} ·
+                        No profile: {compareResult.summary.no_profile}
                     </p>
                     {compareResult.profiles.length > 0 ? (
                         <ul className="mt-2 list-inside list-disc text-muted-foreground">
@@ -578,20 +651,35 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                         </ul>
                     ) : null}
                     {mismatchDetails.length > 0 ? (
-                        <div className="mt-3 space-y-2" data-test="device-details-compare-mismatches">
+                        <div
+                            className="mt-3 space-y-2"
+                            data-test="device-details-compare-mismatches"
+                        >
                             <p className="font-medium">Mismatch details</p>
                             {mismatchDetails.map((item) => (
-                                <div key={item.name} className="rounded border border-border bg-background px-3 py-2">
+                                <div
+                                    key={item.name}
+                                    className="rounded border border-border bg-background px-3 py-2"
+                                >
                                     <p className="font-medium">
                                         {item.name}
-                                        {item.sw_profile ? ` · ${item.sw_profile}` : ''}
+                                        {item.sw_profile
+                                            ? ` · ${item.sw_profile}`
+                                            : ''}
                                     </p>
                                     <ul className="mt-1 list-inside list-disc text-muted-foreground">
                                         {item.differences.map((diff) => (
-                                            <li key={`${item.name}-${diff.field}`}>
+                                            <li
+                                                key={`${item.name}-${diff.field}`}
+                                            >
                                                 {diff.field}: expected{' '}
-                                                {formatDifferenceValue(diff.expected)}, actual{' '}
-                                                {formatDifferenceValue(diff.actual)}
+                                                {formatDifferenceValue(
+                                                    diff.expected,
+                                                )}
+                                                , actual{' '}
+                                                {formatDifferenceValue(
+                                                    diff.actual,
+                                                )}
                                             </li>
                                         ))}
                                     </ul>
@@ -633,7 +721,9 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => setTableFilters(emptySwitchInterfacesTableFilters)}
+                        onClick={() =>
+                            setTableFilters(emptySwitchInterfacesTableFilters)
+                        }
                         data-test="device-details-iface-clear-filters"
                     >
                         Clear table filters
@@ -659,7 +749,8 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                             className="text-sm text-muted-foreground"
                             data-test="device-details-selected-port-count"
                         >
-                            {selectedPorts.length} port{selectedPorts.length === 1 ? '' : 's'} selected
+                            {selectedPorts.length} port
+                            {selectedPorts.length === 1 ? '' : 's'} selected
                         </span>
                     ) : null}
                 </div>
@@ -712,12 +803,19 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                             />
                         </>
                     ) : null}
-                    <span className="text-sm text-muted-foreground">Per page</span>
+                    <span className="text-sm text-muted-foreground">
+                        Per page
+                    </span>
                     <select
                         value={pageSize}
                         onChange={(e) => {
                             const next = Number(e.target.value);
-                            if (next === 10 || next === 25 || next === 50 || next === 100) {
+                            if (
+                                next === 10 ||
+                                next === 25 ||
+                                next === 50 ||
+                                next === 100
+                            ) {
                                 setPageSize(next);
                             }
                         }}
@@ -739,7 +837,10 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 >
                     {bounceOutcome.kind === 'running' ? (
                         <div className="flex items-center gap-2 text-muted-foreground">
-                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                            <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden
+                            />
                             Running {bounceOutcome.label}
                             {typeof bounceOutcome.progressPercent === 'number'
                                 ? ` (${bounceOutcome.progressPercent}%)`
@@ -753,28 +854,42 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                     ) : null}
                     {bounceOutcome.kind === 'completed' ? (
                         <div className="space-y-2">
-                            <p className="font-medium">{bounceOutcome.label} completed</p>
+                            <p className="font-medium">
+                                {bounceOutcome.label} completed
+                            </p>
                             {bounceOutcome.results.length === 0 ? (
-                                <p className="text-muted-foreground">No per-port results returned.</p>
+                                <p className="text-muted-foreground">
+                                    No per-port results returned.
+                                </p>
                             ) : (
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left text-sm">
                                         <thead>
                                             <tr className="border-b border-border">
-                                                <th className="py-1 pr-4 font-medium">Port</th>
-                                                <th className="py-1 font-medium">Status</th>
+                                                <th className="py-1 pr-4 font-medium">
+                                                    Port
+                                                </th>
+                                                <th className="py-1 font-medium">
+                                                    Status
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {bounceOutcome.results.map((row) => (
-                                                <tr
-                                                    key={row.port}
-                                                    className="border-b border-border/60 last:border-0"
-                                                >
-                                                    <td className="py-1 pr-4 font-mono">{row.port}</td>
-                                                    <td className="py-1">{row.status || '—'}</td>
-                                                </tr>
-                                            ))}
+                                            {bounceOutcome.results.map(
+                                                (row) => (
+                                                    <tr
+                                                        key={row.port}
+                                                        className="border-b border-border/60 last:border-0"
+                                                    >
+                                                        <td className="py-1 pr-4 font-mono">
+                                                            {row.port}
+                                                        </td>
+                                                        <td className="py-1">
+                                                            {row.status || '—'}
+                                                        </td>
+                                                    </tr>
+                                                ),
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
@@ -790,8 +905,12 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 getRowId={getInterfaceRowId}
                 enableRowSelection={showTroubleshooting}
                 rowSelection={showTroubleshooting ? rowSelection : undefined}
-                onRowSelectionChange={showTroubleshooting ? handleRowSelectionChange : undefined}
-                stickyLeftColumnIds={showTroubleshooting ? ['select', 'name'] : ['name']}
+                onRowSelectionChange={
+                    showTroubleshooting ? handleRowSelectionChange : undefined
+                }
+                stickyLeftColumnIds={
+                    showTroubleshooting ? ['select', 'name'] : ['name']
+                }
             />
 
             {totalFiltered > 0 ? (
@@ -816,7 +935,9 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                        onClick={() =>
+                            setPageIndex((p) => Math.min(totalPages - 1, p + 1))
+                        }
                         disabled={safePageIndex >= totalPages - 1}
                         data-test="device-details-interfaces-page-next"
                     >
