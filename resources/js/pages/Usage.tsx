@@ -771,11 +771,11 @@ sudo cloudflared service start`}</code>
                             </li>
                         </ol>
 
-                        <h3 className={h3}>Troubleshooting (switch show commands)</h3>
+                        <h3 className={h3}>Troubleshooting (show commands)</h3>
                         <p className={cn(body, 'mt-3')}>
-                            On a switch detail view, click <strong>Troubleshooting</strong> next to the
-                            interface table. Deployer runs your commands on the switch through Central&apos;s
-                            CX show-commands API and displays the CLI output below the input.
+                            On a switch or access point detail view, click <strong>Troubleshooting</strong>{' '}
+                            next to the device actions. Deployer runs your commands through Central&apos;s
+                            troubleshooting show-commands API and displays the CLI output below the input.
                         </p>
                         <ul className={cn(body, 'mt-4 list-disc space-y-2 pl-5')}>
                             <li>
@@ -784,17 +784,21 @@ sudo cloudflared service start`}</code>
                                 commands per run; each line must start with <code>show</code>.
                             </li>
                             <li>
+                                On access points, a categorized list of supported commands is loaded from
+                                Central. Click a command to add it to the input, then click <strong>Run</strong>.
+                            </li>
+                            <li>
                                 Click <strong>Run</strong> to submit. Progress and output appear in the card;
                                 you can run additional batches without closing the panel.
                             </li>
                             <li>
-                                Available on switches only (not gateways). The button is disabled when Central
-                                returns an error loading the device. Opening Troubleshooting closes the MAC
-                                address table card if it was open, and vice versa.
+                                Available on switches and access points (not gateways). The button is disabled
+                                when Central returns an error loading the device. On switches, opening
+                                Troubleshooting closes the MAC address table card if it was open, and vice versa.
                             </li>
                             <li>
-                                With Troubleshooting open, you can also select interface rows for port bounce
-                                or PoE bounce actions from the table toolbar.
+                                On switches, with Troubleshooting open, you can also select interface rows for
+                                port bounce or PoE bounce actions from the table toolbar.
                             </li>
                         </ul>
 

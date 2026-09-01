@@ -2646,6 +2646,115 @@ test('get_cx_show_commands_result polls async operation endpoint', function () {
         ->and($result['body']['output']['results'][0]['output'])->toBe('AOS-CX Version 10.x');
 });
 
+test('list_ap_show_commands gets categorized show commands from kebab-case endpoint', function () {
+    Http::fake(function (Request $request) {
+        expect($request->method())->toBe('GET')
+            ->and($request->url())->toContain('network-troubleshooting/v1/aps/AP00000001/show-commands');
+
+        return Http::response([
+            [
+                'categoryName' => 'System',
+                'count' => 2,
+                'commands' => [
+                    ['command' => 'show version'],
+                    ['command' => 'show clock'],
+                ],
+            ],
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->list_ap_show_commands('AP00000001');
+
+    expect($result['ok'])->toBeTrue()
+        ->and($result['body'][0]['categoryName'])->toBe('System')
+        ->and($result['body'][0]['commands'][0]['command'])->toBe('show version');
+});
+
+test('run_ap_show_commands posts show commands and returns task id on 202', function () {
+    Http::fake(function (Request $request) {
+        expect($request->method())->toBe('POST')
+            ->and($request->url())->toContain('network-troubleshooting/v1/aps/AP00000001/showCommands')
+            ->and($request->data())->toBe([
+                'commands' => ['show version', 'show clock'],
+            ]);
+
+        return Http::response([
+            'location' => '/network-troubleshooting/v1/aps/AP00000001/showCommands/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            'status' => 'INITIATED',
+        ], 202);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->run_ap_show_commands('AP00000001', ['show version', 'show clock']);
+
+    expect($result)->toMatchArray([
+        'ok' => true,
+        'status' => 202,
+        'task_id' => 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+    ]);
+});
+
+test('run_ap_show_commands rejects non-show commands', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->run_ap_show_commands('AP00000001', ['configure terminal']);
+
+    expect($result)->toMatchArray([
+        'ok' => false,
+        'status' => 400,
+        'error' => "Command denied: must start with 'show '",
+    ]);
+});
+
+test('run_ap_show_commands surfaces central device offline conflict', function () {
+    Http::fake(function (Request $request) {
+        return Http::response([
+            'message' => 'Device offline: AP00000001',
+            'errorCode' => 'HPE_GL_ERROR_CONFLICT',
+        ], 409);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->run_ap_show_commands('AP00000001', ['show version']);
+
+    expect($result)->toMatchArray([
+        'ok' => false,
+        'status' => 409,
+        'error' => 'Device offline: AP00000001',
+    ]);
+});
+
+test('get_ap_show_commands_result polls async operation endpoint', function () {
+    Http::fake(function (Request $request) {
+        expect($request->method())->toBe('GET')
+            ->and($request->url())->toContain(
+                'network-troubleshooting/v1/aps/AP00000001/showCommands/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            );
+
+        return Http::response([
+            'status' => 'COMPLETED',
+            'progressPercent' => 100,
+            'output' => [
+                'commands' => ['show version'],
+                'results' => [[
+                    'command' => 'show version',
+                    'output' => 'AOS-10 Version 10.x',
+                ]],
+            ],
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_ap_show_commands_result(
+        'AP00000001',
+        'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+    );
+
+    expect($result['ok'])->toBeTrue()
+        ->and($result['body']['status'])->toBe('COMPLETED')
+        ->and($result['body']['output']['results'][0]['output'])->toBe('AOS-10 Version 10.x');
+});
+
 test('run_cx_poe_bounce posts ports and returns task id on 202', function () {
     Http::fake(function (Request $request) {
         if (str_contains($request->url(), 'network-monitoring/v1/switches')) {

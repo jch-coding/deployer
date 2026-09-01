@@ -192,6 +192,38 @@ class DeviceDetailsController extends Controller
         return response()->json($result);
     }
 
+    public function availableShowCommands(Request $request, string $serial): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'error' => 'Please set current client to list show commands.',
+            ], 422);
+        }
+
+        $validated = validator(
+            ['serial' => $serial],
+            ['serial' => ['required', 'string', 'max:64']],
+        )->validate();
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->list_ap_show_commands(trim($validated['serial']));
+
+        if (! $result['ok']) {
+            $status = $result['status'] ?? 422;
+            if (! is_int($status) || $status < 400 || $status > 599) {
+                $status = 422;
+            }
+
+            return response()->json([
+                'error' => $result['error'],
+            ], $status);
+        }
+
+        return response()->json($result['body']);
+    }
+
     public function showCommands(Request $request): JsonResponse
     {
         $currentClient = $request->user()->currentClient();
@@ -206,10 +238,16 @@ class DeviceDetailsController extends Controller
             'serial' => ['required', 'string', 'max:64'],
             'commands' => ['required', 'array', 'min:1', 'max:20'],
             'commands.*' => ['required', 'string', 'max:512'],
+            'device_type' => ['nullable', 'string', Rule::in(['ACCESS_POINT'])],
         ]);
 
         $helper = new CentralAPIHelper($currentClient);
-        $result = $helper->run_cx_show_commands(trim($validated['serial']), $validated['commands']);
+        $serial = trim($validated['serial']);
+        $isAccessPoint = ($validated['device_type'] ?? '') === 'ACCESS_POINT';
+
+        $result = $isAccessPoint
+            ? $helper->run_ap_show_commands($serial, $validated['commands'])
+            : $helper->run_cx_show_commands($serial, $validated['commands']);
 
         if (! $result['ok']) {
             $status = $result['status'] ?? 422;
@@ -240,20 +278,28 @@ class DeviceDetailsController extends Controller
         }
 
         $validated = validator(
-            ['serial' => $serial, 'taskId' => $taskId],
+            [
+                'serial' => $serial,
+                'taskId' => $taskId,
+                'device_type' => $request->query('device_type'),
+            ],
             [
                 'serial' => ['required', 'string', 'max:64'],
                 'taskId' => ['required', 'uuid'],
+                'device_type' => ['nullable', 'string', Rule::in(['ACCESS_POINT'])],
             ],
             [],
             ['taskId' => 'task id'],
         )->validate();
 
         $helper = new CentralAPIHelper($currentClient);
-        $result = $helper->get_cx_show_commands_result(
-            trim($validated['serial']),
-            trim($validated['taskId']),
-        );
+        $serial = trim($validated['serial']);
+        $taskId = trim($validated['taskId']);
+        $isAccessPoint = ($validated['device_type'] ?? '') === 'ACCESS_POINT';
+
+        $result = $isAccessPoint
+            ? $helper->get_ap_show_commands_result($serial, $taskId)
+            : $helper->get_cx_show_commands_result($serial, $taskId);
 
         if (! $result['ok']) {
             $status = $result['status'] ?? 422;

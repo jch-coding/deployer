@@ -1,11 +1,12 @@
 import type { ColumnDef } from '@tanstack/react-table';
-import { Download, Loader2, RotateCcw, Wifi } from 'lucide-react';
+import { Download, Loader2, RotateCcw, Terminal, Wifi } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import RebootAccessPointsDialog from '@/components/device-details/RebootAccessPointsDialog';
+import SwitchShowCommandsCard from '@/components/device-details/SwitchShowCommandsCard';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
-import { csrfHeaders } from '@/lib/csrf';
 import { downloadBssidsCsv, type BssidRow } from '@/lib/bssids-csv';
+import { csrfHeaders } from '@/lib/csrf';
 import { bssids as bssidsRoute } from '@/routes/device-details';
 
 export type AccessPointDetailsPayload = {
@@ -36,6 +37,7 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
     const [loading, setLoading] = useState(false);
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [pageIndex, setPageIndex] = useState(0);
+    const [showCommandsOpen, setShowCommandsOpen] = useState(false);
     const pageSize = 25;
 
     const loadBssids = useCallback(async () => {
@@ -133,6 +135,17 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
                         type="button"
                         variant="outline"
                         className="gap-2"
+                        disabled={Boolean(central_error)}
+                        onClick={() => setShowCommandsOpen((open) => !open)}
+                        data-test="device-details-troubleshooting"
+                    >
+                        <Terminal className="size-4" aria-hidden />
+                        Troubleshooting
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
                         disabled={loading || Boolean(central_error)}
                         onClick={() => void loadBssids()}
                         data-test="device-details-bssids"
@@ -172,6 +185,14 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
                     />
                 </div>
             </div>
+
+            {showCommandsOpen ? (
+                <SwitchShowCommandsCard
+                    serial={serial}
+                    deviceType="ACCESS_POINT"
+                    onClose={() => setShowCommandsOpen(false)}
+                />
+            ) : null}
 
             {central_error && (
                 <div

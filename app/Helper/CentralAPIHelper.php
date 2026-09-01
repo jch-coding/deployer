@@ -2792,6 +2792,135 @@ class CentralAPIHelper
     }
 
     /**
+     * @return array{ok: true, status: int, body: list<array<string, mixed>>}|array{ok: false, status: int|null, error: string}
+     */
+    public function list_ap_show_commands(string $serial): array
+    {
+        $serial = trim($serial);
+
+        if ($serial === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->get($this->client->base_url.$this->troubleshooting['ap_reboot'].'/'.$serial.'/show-commands');
+
+        if ($response->successful()) {
+            $body = $response->json();
+            if (! is_array($body)) {
+                $body = [];
+            }
+
+            return ['ok' => true, 'status' => $response->status(), 'body' => $body];
+        }
+
+        return [
+            'ok' => false,
+            'status' => $response->status(),
+            'error' => $this->extractCentralErrorMessage($response, 'failed to list show commands for access point.'),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $commands
+     * @return array{ok: true, status: int, task_id: string, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function run_ap_show_commands(string $serial, array $commands): array
+    {
+        $serial = trim($serial);
+
+        if ($serial === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
+        }
+
+        $commands = $this->normalizeCxShowCommands($commands);
+        $validationError = $this->validateCxShowCommands($commands);
+        if ($validationError !== null) {
+            return ['ok' => false, 'status' => 400, 'error' => $validationError];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->post(
+                $this->client->base_url.$this->troubleshooting['ap_reboot'].'/'.$serial.'/showCommands',
+                ['commands' => $commands],
+            );
+
+        if ($response->status() === 202) {
+            $body = $response->json();
+            if (! is_array($body)) {
+                $body = [];
+            }
+
+            $taskId = $this->extractCxAsyncTaskId($response, $body);
+            if ($taskId === '') {
+                return ['ok' => false, 'status' => 202, 'error' => 'Central accepted the request but did not return a task id.'];
+            }
+
+            return [
+                'ok' => true,
+                'status' => 202,
+                'task_id' => $taskId,
+                'body' => $body,
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'status' => $response->status(),
+            'error' => $this->extractCentralErrorMessage($response, 'failed to run show commands on access point.'),
+        ];
+    }
+
+    /**
+     * @return array{ok: true, status: int, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function get_ap_show_commands_result(string $serial, string $taskId): array
+    {
+        $serial = trim($serial);
+        $taskId = trim($taskId);
+
+        if ($serial === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
+        }
+
+        if ($taskId === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'task id is required.'];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->get(
+                $this->client->base_url.$this->troubleshooting['ap_reboot'].'/'.$serial.'/showCommands/async-operations/'.$taskId,
+            );
+
+        if ($response->successful()) {
+            $body = $response->json();
+            if (! is_array($body)) {
+                $body = [];
+            }
+
+            return ['ok' => true, 'status' => $response->status(), 'body' => $body];
+        }
+
+        return [
+            'ok' => false,
+            'status' => $response->status(),
+            'error' => $this->extractCentralErrorMessage($response, 'failed to get show command results from central.'),
+        ];
+    }
+
+    /**
      * @param  list<string>  $commands
      * @return array{ok: true, status: int, task_id: string, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
      */

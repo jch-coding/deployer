@@ -1,11 +1,20 @@
-import { Loader2, X } from 'lucide-react';
+import { ChevronDown, Loader2, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { pollCxAsyncOperation } from '@/lib/cx-async-operation';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { csrfHeaders } from '@/lib/csrf';
+import { pollCxAsyncOperation } from '@/lib/cx-async-operation';
 import { cn } from '@/lib/utils';
 import { showCommands as showCommandsRoute } from '@/routes/device-details';
+import {
+    available as availableShowCommandsRoute,
+    result as showCommandsResultRoute,
+} from '@/routes/device-details/show-commands';
 
 const SHOW_COMMAND_PATTERN = /^\s*show\b.+/i;
 const MAX_COMMANDS = 20;
@@ -34,9 +43,16 @@ type ResultBlock =
           error: string;
       };
 
+type ShowCommandsCategory = {
+    categoryName: string;
+    count: number;
+    commands: Array<{ command: string }>;
+};
+
 type SwitchShowCommandsCardProps = {
     serial: string;
     onClose: () => void;
+    deviceType?: 'ACCESS_POINT';
 };
 
 function parseCommands(input: string): string[] {
@@ -63,11 +79,19 @@ function validateCommands(commands: string[]): string | null {
     return null;
 }
 
-export default function SwitchShowCommandsCard({ serial, onClose }: SwitchShowCommandsCardProps) {
+export default function SwitchShowCommandsCard({
+    serial,
+    onClose,
+    deviceType,
+}: SwitchShowCommandsCardProps) {
+    const isAccessPoint = deviceType === 'ACCESS_POINT';
+
     const [commandInput, setCommandInput] = useState('');
     const [blocks, setBlocks] = useState<ResultBlock[]>([]);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [running, setRunning] = useState(false);
+    const [catalog, setCatalog] = useState<ShowCommandsCategory[] | null>(null);
+    const [catalogLoading, setCatalogLoading] = useState(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const blockIdRef = useRef(0);
 
@@ -84,10 +108,96 @@ export default function SwitchShowCommandsCard({ serial, onClose }: SwitchShowCo
         }
     }, [blocks]);
 
+    useEffect(() => {
+        if (!isAccessPoint) {
+            return;
+        }
+
+        let cancelled = false;
+
+        const loadCatalog = async () => {
+            setCatalogLoading(true);
+
+            try {
+                const response = await fetch(availableShowCommandsRoute.url(serial), {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        ...csrfHeaders(),
+                    },
+                    credentials: 'same-origin',
+                });
+
+                const body = (await response.json().catch(() => null)) as
+                    | ShowCommandsCategory[]
+                    | { error?: string }
+                    | null;
+
+                if (cancelled) {
+                    return;
+                }
+
+                if (!response.ok || body === null || !Array.isArray(body)) {
+                    setCatalog(null);
+
+                    return;
+                }
+
+                setCatalog(body);
+            } catch {
+                if (!cancelled) {
+                    setCatalog(null);
+                }
+            } finally {
+                if (!cancelled) {
+                    setCatalogLoading(false);
+                }
+            }
+        };
+
+        void loadCatalog();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isAccessPoint, serial]);
+
+    const appendCommand = useCallback((command: string) => {
+        const trimmed = command.trim();
+        if (trimmed === '') {
+            return;
+        }
+
+        setCommandInput((current) => {
+            const existing = parseCommands(current);
+            if (existing.length >= MAX_COMMANDS) {
+                setSubmitError(`Too many commands. Maximum allowed is ${MAX_COMMANDS}.`);
+
+                return current;
+            }
+
+            if (existing.includes(trimmed)) {
+                return current;
+            }
+
+            setSubmitError(null);
+
+            if (current.trim() === '') {
+                return trimmed;
+            }
+
+            return `${current.replace(/\s+$/, '')}\n${trimmed}`;
+        });
+    }, []);
+
     const pollForResults = useCallback(
         async (taskId: string, blockId: string, commands: string[]) => {
             const body = await pollCxAsyncOperation(
-                showCommandsRoute.result.url({ serial, taskId }),
+                showCommandsResultRoute.url(
+                    { serial, taskId },
+                    isAccessPoint ? { query: { device_type: 'ACCESS_POINT' } } : undefined,
+                ),
                 {
                     onProgress: (pollBody) => {
                         setBlocks((current) =>
@@ -117,7 +227,7 @@ export default function SwitchShowCommandsCard({ serial, onClose }: SwitchShowCo
                 ),
             );
         },
-        [serial],
+        [isAccessPoint, serial],
     );
 
     const runCommands = useCallback(async () => {
@@ -154,7 +264,11 @@ export default function SwitchShowCommandsCard({ serial, onClose }: SwitchShowCo
                     ...csrfHeaders(),
                 },
                 credentials: 'same-origin',
-                body: JSON.stringify({ serial, commands }),
+                body: JSON.stringify({
+                    serial,
+                    commands,
+                    ...(isAccessPoint ? { device_type: 'ACCESS_POINT' } : {}),
+                }),
             });
 
             const body = (await response.json().catch(() => null)) as {
@@ -193,12 +307,13 @@ export default function SwitchShowCommandsCard({ serial, onClose }: SwitchShowCo
         } finally {
             setRunning(false);
         }
-    }, [commandInput, nextBlockId, pollForResults, serial]);
+    }, [commandInput, isAccessPoint, nextBlockId, pollForResults, serial]);
 
     const handleClose = () => {
         setBlocks([]);
         setCommandInput('');
         setSubmitError(null);
+        setCatalog(null);
         onClose();
     };
 
@@ -223,6 +338,59 @@ export default function SwitchShowCommandsCard({ serial, onClose }: SwitchShowCo
                             <X className="size-4" aria-hidden />
                         </Button>
                     </div>
+
+                    {isAccessPoint ? (
+                        <div className="mb-3 space-y-2" data-test="device-details-show-commands-catalog">
+                            <p className="text-xs font-medium text-muted-foreground">
+                                Available commands
+                            </p>
+                            {catalogLoading ? (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                                    Loading command list…
+                                </div>
+                            ) : catalog && catalog.length > 0 ? (
+                                <div className="space-y-1">
+                                    {catalog.map((category) => (
+                                        <Collapsible key={category.categoryName} defaultOpen>
+                                            <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm font-medium hover:bg-muted/50">
+                                                <span>
+                                                    {category.categoryName}
+                                                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                                        ({category.count})
+                                                    </span>
+                                                </span>
+                                                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                                            </CollapsibleTrigger>
+                                            <CollapsibleContent className="pb-1 pl-2">
+                                                <div className="flex flex-wrap gap-1 pt-1">
+                                                    {category.commands.map((item) => (
+                                                        <Button
+                                                            key={item.command}
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-auto max-w-full px-2 py-1 font-mono text-xs whitespace-normal"
+                                                            disabled={running}
+                                                            onClick={() => appendCommand(item.command)}
+                                                            data-test="device-details-show-commands-catalog-item"
+                                                        >
+                                                            {item.command}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </CollapsibleContent>
+                                        </Collapsible>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-xs text-muted-foreground">
+                                    Command list unavailable. Enter show commands manually below.
+                                </p>
+                            )}
+                        </div>
+                    ) : null}
+
                     <textarea
                         value={commandInput}
                         onChange={(event) => setCommandInput(event.target.value)}
