@@ -109,7 +109,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/device-details', 'index')->name('device-details.index');
         Route::get('/device-details/show', 'show')->name('device-details.show');
         Route::post('/device-details/compare-profiles', 'compareProfiles')->name('device-details.compare-profiles');
-        Route::get('/device-details/show-commands/available/{serial}', 'availableShowCommands')->name('device-details.show-commands.available');
+        Route::get('/device-details/ap-show-commands/{serial}/{taskId}', 'apShowCommandsResult')->name('device-details.ap-show-commands.result');
         Route::post('/device-details/show-commands', 'showCommands')->name('device-details.show-commands');
         Route::get('/device-details/show-commands/{serial}/{taskId}', 'showCommandsResult')->name('device-details.show-commands.result');
         Route::post('/device-details/poe-bounce', 'poeBounce')->name('device-details.poe-bounce');
