@@ -111,6 +111,10 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/device-details/compare-profiles', 'compareProfiles')->name('device-details.compare-profiles');
         Route::post('/device-details/show-commands', 'showCommands')->name('device-details.show-commands');
         Route::get('/device-details/show-commands/{serial}/{taskId}', 'showCommandsResult')->name('device-details.show-commands.result');
+        Route::post('/device-details/poe-bounce', 'poeBounce')->name('device-details.poe-bounce');
+        Route::get('/device-details/poe-bounce/{serial}/{taskId}', 'poeBounceResult')->name('device-details.poe-bounce.result');
+        Route::post('/device-details/port-bounce', 'portBounce')->name('device-details.port-bounce');
+        Route::get('/device-details/port-bounce/{serial}/{taskId}', 'portBounceResult')->name('device-details.port-bounce.result');
         Route::post('/device-details/bssids', 'bssids')->name('device-details.bssids');
         Route::post('/device-details/reboot', 'reboot')->name('device-details.reboot');
         Route::post('/device-details/site-bssids', 'siteBssids')->name('device-details.site-bssids');
