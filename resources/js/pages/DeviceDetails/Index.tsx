@@ -2,16 +2,17 @@ import { Link, router, usePage } from '@inertiajs/react';
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table';
 import { Download, Loader2, RotateCcw, Search, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import CentralScopeRefreshButtons, {
+    type CentralScopeCacheMeta,
+    type CentralScopeGroupsCacheMeta,
+} from '@/components/central/CentralScopeRefreshButtons';
 import RebootAccessPointsDialog from '@/components/device-details/RebootAccessPointsDialog';
+import SiteMacAddressSearchSection from '@/components/device-details/SiteMacAddressSearchSection';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
-import CentralScopeRefreshButtons, {
-    type CentralScopeCacheMeta,
-    type CentralScopeGroupsCacheMeta,
-} from '@/components/central/CentralScopeRefreshButtons';
 import AppLayout from '@/layouts/app-layout';
 import { downloadSiteBssidsCsv, type SiteBssidRow } from '@/lib/bssids-csv';
 import { csrfHeaders } from '@/lib/csrf';
@@ -77,13 +78,18 @@ function statusBadgeClass(status: string): string {
     }
 }
 
-function filtersMatchQuery(current: DeviceDetailsFilters, next: DeviceDetailsFilters): boolean {
+function filtersMatchQuery(
+    current: DeviceDetailsFilters,
+    next: DeviceDetailsFilters,
+): boolean {
     return (Object.keys(current) as (keyof DeviceDetailsFilters)[]).every(
         (key) => (current[key] ?? '').trim() === (next[key] ?? '').trim(),
     );
 }
 
-function buildQueryFromFilters(filters: DeviceDetailsFilters): Record<string, string> {
+function buildQueryFromFilters(
+    filters: DeviceDetailsFilters,
+): Record<string, string> {
     const query: Record<string, string> = {};
     if (filters.site_id.trim() !== '') {
         query.site_id = filters.site_id.trim();
@@ -143,11 +149,13 @@ export default function Index() {
         device_type_options,
         status_options,
         deployment_options,
+        has_active_filters,
         central_sites_cache,
         central_groups_cache,
     } = usePage<DeviceDetailsIndexProps>().props;
 
-    const [localFilters, setLocalFilters] = useState<DeviceDetailsFilters>(filters);
+    const [localFilters, setLocalFilters] =
+        useState<DeviceDetailsFilters>(filters);
     const [isSearching, setIsSearching] = useState(false);
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
@@ -156,11 +164,17 @@ export default function Index() {
     const [siteBssidsLoading, setSiteBssidsLoading] = useState(false);
     const [siteBssidsError, setSiteBssidsError] = useState<string | null>(null);
     const [siteBssidsPageIndex, setSiteBssidsPageIndex] = useState(0);
+    const [macSearchOpen, setMacSearchOpen] = useState(false);
     const siteBssidsPageSize = 25;
 
-    const hasActiveLocalFilters = useMemo(() => hasActiveFilters(localFilters), [localFilters]);
+    const hasActiveLocalFilters = useMemo(
+        () => hasActiveFilters(localFilters),
+        [localFilters],
+    );
     const hasSiteSelected = useMemo(
-        () => localFilters.site_id.trim() !== '' || localFilters.site_name.trim() !== '',
+        () =>
+            localFilters.site_id.trim() !== '' ||
+            localFilters.site_name.trim() !== '',
         [localFilters.site_id, localFilters.site_name],
     );
 
@@ -247,7 +261,12 @@ export default function Index() {
                 preserveState: true,
                 preserveScroll: true,
                 replace: true,
-                only: ['devices', 'filters', 'central_error', 'has_active_filters'],
+                only: [
+                    'devices',
+                    'filters',
+                    'central_error',
+                    'has_active_filters',
+                ],
                 onFinish: () => setIsSearching(false),
             },
         );
@@ -315,7 +334,9 @@ export default function Index() {
         } catch (error) {
             setSiteBssids(null);
             setSiteBssidsError(
-                error instanceof Error ? error.message : 'Failed to load site BSSIDs.',
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to load site BSSIDs.',
             );
         } finally {
             setSiteBssidsLoading(false);
@@ -330,9 +351,12 @@ export default function Index() {
                     <Checkbox
                         checked={
                             table.getIsAllPageRowsSelected() ||
-                            (table.getIsSomePageRowsSelected() && 'indeterminate')
+                            (table.getIsSomePageRowsSelected() &&
+                                'indeterminate')
                         }
-                        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                        onCheckedChange={(value) =>
+                            table.toggleAllPageRowsSelected(!!value)
+                        }
                         aria-label="Select all on page"
                         data-test="device-details-select-all"
                     />
@@ -396,7 +420,10 @@ export default function Index() {
                 accessorKey: 'status',
                 header: 'Status',
                 cell: ({ row }) => (
-                    <Badge variant="outline" className={statusBadgeClass(row.original.status)}>
+                    <Badge
+                        variant="outline"
+                        className={statusBadgeClass(row.original.status)}
+                    >
                         {row.original.status}
                     </Badge>
                 ),
@@ -416,10 +443,19 @@ export default function Index() {
     );
 
     const siteBssidRows = siteBssids ?? [];
-    const siteBssidsTotalPages = Math.max(1, Math.ceil(siteBssidRows.length / siteBssidsPageSize));
-    const safeSiteBssidsPageIndex = Math.min(siteBssidsPageIndex, siteBssidsTotalPages - 1);
+    const siteBssidsTotalPages = Math.max(
+        1,
+        Math.ceil(siteBssidRows.length / siteBssidsPageSize),
+    );
+    const safeSiteBssidsPageIndex = Math.min(
+        siteBssidsPageIndex,
+        siteBssidsTotalPages - 1,
+    );
     const siteBssidsStart = safeSiteBssidsPageIndex * siteBssidsPageSize;
-    const siteBssidsEnd = Math.min(siteBssidsStart + siteBssidsPageSize, siteBssidRows.length);
+    const siteBssidsEnd = Math.min(
+        siteBssidsStart + siteBssidsPageSize,
+        siteBssidRows.length,
+    );
     const pagedSiteBssids = useMemo(
         () => siteBssidRows.slice(siteBssidsStart, siteBssidsEnd),
         [siteBssidRows, siteBssidsEnd, siteBssidsStart],
@@ -429,6 +465,8 @@ export default function Index() {
         localFilters.site_id.trim() !== ''
             ? localFilters.site_id.trim()
             : localFilters.site_name.trim();
+
+    const hasSearchResults = has_active_filters;
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -446,14 +484,20 @@ export default function Index() {
     const safePageIndex = Math.min(pageIndex, totalPages - 1);
     const start = safePageIndex * pageSize;
     const end = Math.min(start + pageSize, totalDevices);
-    const pagedDevices = useMemo(() => devices.slice(start, end), [devices, end, start]);
+    const pagedDevices = useMemo(
+        () => devices.slice(start, end),
+        [devices, end, start],
+    );
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="mx-auto max-w-7xl px-4">
-                <h1 className="text-center text-3xl font-semibold">Device Details</h1>
+                <h1 className="text-center text-3xl font-semibold">
+                    Device Details
+                </h1>
                 <p className="mt-2 text-center text-sm text-muted-foreground">
-                    Search Central devices, then select one or more switches to view interfaces.
+                    Search Central devices, then select one or more switches to
+                    view interfaces.
                 </p>
 
                 <div className="mt-4 flex justify-center">
@@ -513,7 +557,9 @@ export default function Index() {
                         <Input
                             type="search"
                             value={localFilters.serial_number}
-                            onChange={(e) => updateFilter({ serial_number: e.target.value })}
+                            onChange={(e) =>
+                                updateFilter({ serial_number: e.target.value })
+                            }
                             placeholder="Serial number"
                             className="pl-9"
                             data-test="device-details-filter-serial-number"
@@ -522,13 +568,17 @@ export default function Index() {
                     <Input
                         type="search"
                         value={localFilters.device_name}
-                        onChange={(e) => updateFilter({ device_name: e.target.value })}
+                        onChange={(e) =>
+                            updateFilter({ device_name: e.target.value })
+                        }
                         placeholder="Device name"
                         data-test="device-details-filter-device-name"
                     />
                     <select
                         value={localFilters.device_type}
-                        onChange={(e) => updateFilter({ device_type: e.target.value })}
+                        onChange={(e) =>
+                            updateFilter({ device_type: e.target.value })
+                        }
                         className={selectClassName}
                         data-test="device-details-filter-device-type"
                     >
@@ -541,7 +591,9 @@ export default function Index() {
                     </select>
                     <select
                         value={localFilters.status}
-                        onChange={(e) => updateFilter({ status: e.target.value })}
+                        onChange={(e) =>
+                            updateFilter({ status: e.target.value })
+                        }
                         className={selectClassName}
                         data-test="device-details-filter-status"
                     >
@@ -555,20 +607,26 @@ export default function Index() {
                     <Input
                         type="search"
                         value={localFilters.model}
-                        onChange={(e) => updateFilter({ model: e.target.value })}
+                        onChange={(e) =>
+                            updateFilter({ model: e.target.value })
+                        }
                         placeholder="Model"
                         data-test="device-details-filter-model"
                     />
                     <Input
                         type="search"
                         value={localFilters.firmware_version}
-                        onChange={(e) => updateFilter({ firmware_version: e.target.value })}
+                        onChange={(e) =>
+                            updateFilter({ firmware_version: e.target.value })
+                        }
                         placeholder="Firmware version"
                         data-test="device-details-filter-firmware-version"
                     />
                     <select
                         value={localFilters.deployment}
-                        onChange={(e) => updateFilter({ deployment: e.target.value })}
+                        onChange={(e) =>
+                            updateFilter({ deployment: e.target.value })
+                        }
                         className={selectClassName}
                         data-test="device-details-filter-deployment"
                     >
@@ -612,7 +670,8 @@ export default function Index() {
                                     data-test="device-details-reboot-selected-index"
                                 >
                                     <RotateCcw className="size-4" aria-hidden />
-                                    Reboot selected APs ({selectedAccessPointSerials.length})
+                                    Reboot selected APs (
+                                    {selectedAccessPointSerials.length})
                                 </Button>
                             }
                         />
@@ -626,13 +685,37 @@ export default function Index() {
                         data-test="device-details-site-bssids"
                     >
                         {siteBssidsLoading ? (
-                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                            <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden
+                            />
                         ) : (
                             <Wifi className="size-4" aria-hidden />
                         )}
                         Site BSSIDs
                     </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        disabled={!hasSiteSelected}
+                        onClick={() => setMacSearchOpen(true)}
+                        data-test="device-details-site-mac-search-open"
+                    >
+                        Site MAC search
+                    </Button>
                 </div>
+
+                {macSearchOpen ? (
+                    <SiteMacAddressSearchSection
+                        devices={devices}
+                        selectedSerials={selectedSerials}
+                        siteLabel={siteBssidsExportLabel}
+                        hasSiteSelected={hasSiteSelected}
+                        hasSearchResults={hasSearchResults}
+                        onClose={() => setMacSearchOpen(false)}
+                    />
+                ) : null}
 
                 {siteBssidsError && (
                     <div
@@ -645,7 +728,10 @@ export default function Index() {
                 )}
 
                 {siteBssids !== null ? (
-                    <section className="mt-6" data-test="device-details-site-bssids-section">
+                    <section
+                        className="mt-6"
+                        data-test="device-details-site-bssids-section"
+                    >
                         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <h2
                                 className="text-lg font-medium"
@@ -659,7 +745,10 @@ export default function Index() {
                                 className="gap-2"
                                 disabled={siteBssidRows.length === 0}
                                 onClick={() =>
-                                    downloadSiteBssidsCsv(siteBssidRows, siteBssidsExportLabel)
+                                    downloadSiteBssidsCsv(
+                                        siteBssidRows,
+                                        siteBssidsExportLabel,
+                                    )
                                 }
                                 data-test="device-details-site-bssids-export-csv"
                             >
@@ -680,10 +769,13 @@ export default function Index() {
                                     className="mb-2 text-sm text-muted-foreground"
                                     data-test="device-details-site-bssids-count"
                                 >
-                                    Showing {siteBssidsStart + 1}–{siteBssidsEnd} of{' '}
-                                    {siteBssidRows.length}
+                                    Showing {siteBssidsStart + 1}–
+                                    {siteBssidsEnd} of {siteBssidRows.length}
                                 </p>
-                                <DataTable columns={siteBssidColumns} data={pagedSiteBssids} />
+                                <DataTable
+                                    columns={siteBssidColumns}
+                                    data={pagedSiteBssids}
+                                />
                                 <div className="mt-3 flex items-center justify-center gap-3">
                                     <Button
                                         type="button"
@@ -691,24 +783,31 @@ export default function Index() {
                                         size="sm"
                                         disabled={safeSiteBssidsPageIndex <= 0}
                                         onClick={() =>
-                                            setSiteBssidsPageIndex((prev) => Math.max(0, prev - 1))
+                                            setSiteBssidsPageIndex((prev) =>
+                                                Math.max(0, prev - 1),
+                                            )
                                         }
                                     >
                                         Prev
                                     </Button>
                                     <span className="text-sm text-muted-foreground">
-                                        Page {safeSiteBssidsPageIndex + 1} of {siteBssidsTotalPages}
+                                        Page {safeSiteBssidsPageIndex + 1} of{' '}
+                                        {siteBssidsTotalPages}
                                     </span>
                                     <Button
                                         type="button"
                                         variant="outline"
                                         size="sm"
                                         disabled={
-                                            safeSiteBssidsPageIndex >= siteBssidsTotalPages - 1
+                                            safeSiteBssidsPageIndex >=
+                                            siteBssidsTotalPages - 1
                                         }
                                         onClick={() =>
                                             setSiteBssidsPageIndex((prev) =>
-                                                Math.min(siteBssidsTotalPages - 1, prev + 1),
+                                                Math.min(
+                                                    siteBssidsTotalPages - 1,
+                                                    prev + 1,
+                                                ),
                                             )
                                         }
                                     >
@@ -726,7 +825,8 @@ export default function Index() {
                             className="text-center text-sm text-muted-foreground"
                             data-test="device-details-empty-filters"
                         >
-                            Select at least one filter to load devices from Central.
+                            Select at least one filter to load devices from
+                            Central.
                         </p>
                     ) : (
                         <>
@@ -735,11 +835,17 @@ export default function Index() {
                                     className="text-sm text-muted-foreground"
                                     data-test="device-details-result-count"
                                 >
-                                    {totalDevices === 1 ? '1 device' : `${totalDevices} devices`}
-                                    {totalDevices > 0 ? ` (showing ${start + 1}–${end})` : null}
+                                    {totalDevices === 1
+                                        ? '1 device'
+                                        : `${totalDevices} devices`}
+                                    {totalDevices > 0
+                                        ? ` (showing ${start + 1}–${end})`
+                                        : null}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-sm text-muted-foreground">Per page</span>
+                                    <span className="text-sm text-muted-foreground">
+                                        Per page
+                                    </span>
                                     <select
                                         value={pageSize}
                                         onChange={(e) => {
@@ -766,7 +872,9 @@ export default function Index() {
                             <DataTable<DeviceRow, unknown>
                                 data={pagedDevices}
                                 columns={columns}
-                                getRowId={(row) => row.serialNumber || row.deviceName}
+                                getRowId={(row) =>
+                                    row.serialNumber || row.deviceName
+                                }
                                 enableRowSelection
                                 rowSelection={rowSelection}
                                 onRowSelectionChange={setRowSelection}
@@ -777,7 +885,11 @@ export default function Index() {
                                         type="button"
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+                                        onClick={() =>
+                                            setPageIndex((p) =>
+                                                Math.max(0, p - 1),
+                                            )
+                                        }
                                         disabled={safePageIndex <= 0}
                                         data-test="device-details-page-prev"
                                     >
@@ -794,9 +906,13 @@ export default function Index() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() =>
-                                            setPageIndex((p) => Math.min(totalPages - 1, p + 1))
+                                            setPageIndex((p) =>
+                                                Math.min(totalPages - 1, p + 1),
+                                            )
                                         }
-                                        disabled={safePageIndex >= totalPages - 1}
+                                        disabled={
+                                            safePageIndex >= totalPages - 1
+                                        }
                                         data-test="device-details-page-next"
                                     >
                                         Next

@@ -1,4 +1,5 @@
-import { macAddressHex } from '@/lib/mac-address';
+import { isAccessPointDevice } from '@/lib/is-access-point';
+import { macAddressHex, normalizeMacAddress } from '@/lib/mac-address';
 
 export type MacAddressTableRow = {
     mac: string;
@@ -56,7 +57,9 @@ function parseDataRow(
     return { mac, vlan, type, port };
 }
 
-export function parseMacAddressTableOutput(output: string): MacAddressTableParseResult {
+export function parseMacAddressTableOutput(
+    output: string,
+): MacAddressTableParseResult {
     const raw = output;
     const lines = output.split(/\r?\n/);
 
@@ -76,7 +79,12 @@ export function parseMacAddressTableOutput(output: string): MacAddressTableParse
     const typeStart = headerLine.indexOf('Type');
     const portStart = headerLine.indexOf('Port');
 
-    if (macStart === -1 || vlanStart === -1 || typeStart === -1 || portStart === -1) {
+    if (
+        macStart === -1 ||
+        vlanStart === -1 ||
+        typeStart === -1 ||
+        portStart === -1
+    ) {
         return { rows: [], ageTime, count, raw };
     }
 
@@ -155,4 +163,81 @@ export function filterMacAddressTableRows(
     query: string,
 ): MacAddressTableRow[] {
     return rows.filter((row) => matchesMacAddressTableSearch(row, query));
+}
+
+export type SwitchLikeDevice = {
+    deviceType?: string;
+    device_type?: string;
+    deviceFunction?: string;
+    device_function?: string;
+    model?: string;
+};
+
+export function isSwitchDevice(device: SwitchLikeDevice): boolean {
+    const deviceType = (device.deviceType ?? device.device_type ?? '')
+        .trim()
+        .toUpperCase();
+
+    if (deviceType === 'GATEWAY') {
+        return false;
+    }
+
+    if (
+        isAccessPointDevice({
+            device_type: device.deviceType ?? device.device_type,
+            device_function: device.deviceFunction ?? device.device_function,
+            model: device.model,
+        })
+    ) {
+        return false;
+    }
+
+    return deviceType === 'SWITCH';
+}
+
+export function parseMacAddressLines(input: string): {
+    macs: string[];
+    invalidLines: string[];
+} {
+    const macs: string[] = [];
+    const invalidLines: string[] = [];
+    const seen = new Set<string>();
+
+    const tokens = input
+        .split(/[\n,]+/)
+        .map((token) => token.trim())
+        .filter((token) => token !== '');
+
+    for (const token of tokens) {
+        const normalized = normalizeMacAddress(token);
+        if (normalized === null) {
+            invalidLines.push(token);
+            continue;
+        }
+
+        if (!seen.has(normalized)) {
+            seen.add(normalized);
+            macs.push(normalized);
+        }
+    }
+
+    return { macs, invalidLines };
+}
+
+export function matchesAnyTargetMac(
+    row: MacAddressTableRow,
+    targetMacs: string[],
+): boolean {
+    if (targetMacs.length === 0) {
+        return false;
+    }
+
+    const rowHex = macAddressHex(row.mac);
+    const targetHexSet = new Set(
+        targetMacs
+            .map((mac) => macAddressHex(mac))
+            .filter((hex) => hex.length === 12),
+    );
+
+    return targetHexSet.has(rowHex);
 }

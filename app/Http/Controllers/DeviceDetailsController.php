@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
 use App\Jobs\RebootAccessPointJob;
+use App\Models\Deployment;
 use App\Services\CentralScopeCacheService;
 use App\Services\DeviceCentralFilterBuilder;
 use App\Services\SwitchPortProfileInterfaceComparer;
@@ -485,6 +486,73 @@ class DeviceDetailsController extends Controller
             'site_id' => $siteId,
             'site_name' => $siteName,
             'bssids' => $bssids,
+            'error' => null,
+        ]);
+    }
+
+    public function deployments(Request $request): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'deployments' => [],
+                'error' => 'Please set current client to view deployments.',
+            ], 422);
+        }
+
+        $deployments = $currentClient->deployments()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Deployment $deployment): array => [
+                'id' => $deployment->id,
+                'name' => $deployment->name,
+            ])
+            ->values()
+            ->all();
+
+        return response()->json([
+            'deployments' => $deployments,
+            'error' => null,
+        ]);
+    }
+
+    public function deploymentDevices(Request $request, Deployment $deployment): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'deployment_id' => $deployment->id,
+                'devices' => [],
+                'error' => 'Please set current client to view deployment devices.',
+            ], 422);
+        }
+
+        if ((int) $deployment->client_id !== (int) $currentClient->id) {
+            return response()->json([
+                'deployment_id' => $deployment->id,
+                'devices' => [],
+                'error' => 'Deployment does not belong to the current client.',
+            ], 422);
+        }
+
+        $devices = $deployment->devices()
+            ->orderBy('name')
+            ->get(['id', 'name', 'serial', 'mac_address'])
+            ->filter(fn ($device): bool => trim((string) ($device->mac_address ?? '')) !== '')
+            ->map(fn ($device): array => [
+                'id' => $device->id,
+                'name' => $device->name,
+                'serial' => (string) $device->serial,
+                'mac_address' => (string) $device->mac_address,
+            ])
+            ->values()
+            ->all();
+
+        return response()->json([
+            'deployment_id' => $deployment->id,
+            'devices' => $devices,
             'error' => null,
         ]);
     }

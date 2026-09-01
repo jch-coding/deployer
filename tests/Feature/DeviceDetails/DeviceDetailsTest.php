@@ -717,6 +717,72 @@ test('device details site bssids redirects gate when no current client is set', 
         ]);
 });
 
+test('device details deployments returns current client deployments', function () {
+    $deployment = $this->client->deployments()->create(['name' => 'MAC Search Deployment']);
+
+    $this->getJson(route('device-details.deployments'))
+        ->assertOk()
+        ->assertJsonPath('error', null)
+        ->assertJsonFragment([
+            'id' => $deployment->id,
+            'name' => 'MAC Search Deployment',
+        ]);
+});
+
+test('device details deployments redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->getJson(route('device-details.deployments'))
+        ->assertStatus(422)
+        ->assertJson([
+            'deployments' => [],
+            'error' => 'Please set current client to view deployments.',
+        ]);
+});
+
+test('device details deployment devices returns only devices with mac addresses', function () {
+    $deployment = $this->client->deployments()->create(['name' => 'MAC Search Deployment']);
+
+    $withMac = \App\Models\Device::factory()->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'name' => 'Device With MAC',
+        'serial' => 'SNMAC00001',
+        'mac_address' => 'aa:bb:cc:dd:ee:01',
+    ]);
+
+    \App\Models\Device::factory()->for($deployment)->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'name' => 'Device Without MAC',
+        'serial' => 'SNNOMAC001',
+        'mac_address' => null,
+    ]);
+
+    $this->getJson(route('device-details.deployments.devices', ['deployment' => $deployment->id]))
+        ->assertOk()
+        ->assertJsonPath('deployment_id', $deployment->id)
+        ->assertJsonPath('error', null)
+        ->assertJsonCount(1, 'devices')
+        ->assertJsonPath('devices.0.id', $withMac->id)
+        ->assertJsonPath('devices.0.name', 'Device With MAC')
+        ->assertJsonPath('devices.0.serial', 'SNMAC00001')
+        ->assertJsonPath('devices.0.mac_address', 'aa:bb:cc:dd:ee:01');
+});
+
+test('device details deployment devices rejects deployment outside current client', function () {
+    $otherClient = Client::factory()->for($this->user)->create();
+    $deployment = $otherClient->deployments()->create(['name' => 'Other Client Deployment']);
+
+    $this->getJson(route('device-details.deployments.devices', ['deployment' => $deployment->id]))
+        ->assertStatus(422)
+        ->assertJson([
+            'deployment_id' => $deployment->id,
+            'devices' => [],
+            'error' => 'Deployment does not belong to the current client.',
+        ]);
+});
+
 test('device details reboot initiates immediate reboot for one access point', function () {
     Http::fake(function (Request $request) {
         expect($request->method())->toBe('POST')
