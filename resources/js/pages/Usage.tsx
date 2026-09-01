@@ -9,6 +9,7 @@ import { index as clientsIndex } from '@/routes/clients';
 import { index as deploymentsIndex } from '@/routes/deployments';
 import { index as ekahauIndex } from '@/routes/ekahau';
 import { index as licensingIndex } from '@/routes/licensing';
+import { index as deviceDetailsIndex } from '@/routes/device-details';
 import { index as sitesIndex } from '@/routes/sites';
 import { index as webhooksIndex } from '@/routes/webhooks';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -21,6 +22,7 @@ const tocSections = [
     { id: 'create-a-deployment', label: 'Create a deployment' },
     { id: 'add-devices', label: 'Add devices' },
     { id: 'sites-page', label: 'Sites page' },
+    { id: 'device-details-page', label: 'Device Details page' },
     { id: 'licensing-page', label: 'Licensing page' },
     { id: 'central-api-page', label: 'Central API page' },
     { id: 'ekahau-page', label: 'Ekahau page' },
@@ -245,7 +247,9 @@ export default function Usage() {
                         </p>
                         <p className={cn(body, 'mt-4')}>
                             Beyond deployments, the sidebar also provides <strong>Sites</strong> (search
-                            Central inventory by site and device attributes), <strong>Licensing</strong>{' '}
+                            Central inventory by site and device attributes),{' '}
+                            <strong>Device Details</strong> (live switch interfaces, troubleshooting show
+                            commands, MAC address tables, and site-wide MAC search), <strong>Licensing</strong>{' '}
                             (GreenLake subscription inventory and assign/unassign actions),{' '}
                             <strong>Central API</strong> (an interactive explorer for New Central
                             Configuration API endpoints), and <strong>Ekahau</strong> (local tools for
@@ -734,6 +738,120 @@ sudo cloudflared service start`}</code>
                             <li>
                                 Review the results table for device name, serial, function, model, IPv4,
                                 online status, linked deployment name, and Central site name.
+                            </li>
+                        </ol>
+                    </section>
+
+                    <section id="device-details-page" className="border-b border-border py-10">
+                        <h2 className={h2}>Device Details page</h2>
+                        <p className={cn(body, 'mt-4')}>
+                            The{' '}
+                            <Link href={deviceDetailsIndex().url} prefetch className={linkClass}>
+                                Device Details
+                            </Link>{' '}
+                            page loads live interface and neighbor data from Aruba Central for switches and
+                            access points. Use it for day-two troubleshooting—running show commands, inspecting
+                            a switch MAC address table, or searching for MACs across site switches—without
+                            running a deployment task.
+                        </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Set the client you want to inspect as current, then open{' '}
+                                <strong>Device Details</strong> from the sidebar.
+                            </li>
+                            <li>
+                                Choose at least one filter (typically a Central site) and click{' '}
+                                <strong>Search</strong>. The page does not load results until you apply a
+                                filter.
+                            </li>
+                            <li>
+                                Open a single device by clicking its serial, or select rows and use{' '}
+                                <strong>View selected</strong> to open one or more devices on the detail
+                                view.
+                            </li>
+                        </ol>
+
+                        <h3 className={h3}>Troubleshooting (switch show commands)</h3>
+                        <p className={cn(body, 'mt-3')}>
+                            On a switch detail view, click <strong>Troubleshooting</strong> next to the
+                            interface table. Deployer runs your commands on the switch through Central&apos;s
+                            CX show-commands API and displays the CLI output below the input.
+                        </p>
+                        <ul className={cn(body, 'mt-4 list-disc space-y-2 pl-5')}>
+                            <li>
+                                Enter one <code>show</code> command per line (for example{' '}
+                                <code>show version</code> or <code>show interface brief</code>). Up to 20
+                                commands per run; each line must start with <code>show</code>.
+                            </li>
+                            <li>
+                                Click <strong>Run</strong> to submit. Progress and output appear in the card;
+                                you can run additional batches without closing the panel.
+                            </li>
+                            <li>
+                                Available on switches only (not gateways). The button is disabled when Central
+                                returns an error loading the device. Opening Troubleshooting closes the MAC
+                                address table card if it was open, and vice versa.
+                            </li>
+                            <li>
+                                With Troubleshooting open, you can also select interface rows for port bounce
+                                or PoE bounce actions from the table toolbar.
+                            </li>
+                        </ul>
+
+                        <h3 className={h3}>MAC address table (per switch)</h3>
+                        <p className={cn(body, 'mt-3')}>
+                            On the same switch detail view, click <strong>mac-address-table</strong> to run{' '}
+                            <code>show mac-address-table</code> and view a searchable table of learned MAC
+                            addresses.
+                        </p>
+                        <ul className={cn(body, 'mt-4 list-disc space-y-2 pl-5')}>
+                            <li>
+                                Columns include MAC address, VLAN, type, and port. Use the search box to filter
+                                by any of those fields; MAC matching is format-agnostic (colons, dashes, or
+                                partial hex all work).
+                            </li>
+                            <li>
+                                The card shows MAC age-time and entry count when the switch reports them. Use
+                                the refresh control to re-fetch the table; close the card to return to the
+                                interface list.
+                            </li>
+                            <li>
+                                Same availability rules as Troubleshooting: switches only, disabled on Central
+                                errors, and mutually exclusive with the Troubleshooting card.
+                            </li>
+                        </ul>
+
+                        <h3 className={h3}>Site MAC search</h3>
+                        <p className={cn(body, 'mt-3')}>
+                            From the Device Details index (after you have searched with a site selected), click{' '}
+                            <strong>Site MAC search</strong> to find one or more MAC addresses across switches
+                            in the current result set.
+                        </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                Select a site and run <strong>Search</strong> on the index page first. Site MAC
+                                search needs loaded site results before it can run.
+                            </li>
+                            <li>
+                                Click <strong>Site MAC search</strong>. Choose switch scope:{' '}
+                                <strong>All switches in search results</strong> or{' '}
+                                <strong>Selected switches only</strong> (table row selection). At most 25
+                                switches are queried per search.
+                            </li>
+                            <li>
+                                Choose MAC addresses to find: enter a manual list (one MAC per line, any
+                                common format) or pick a deployment and select devices whose{' '}
+                                <code>mac_address</code> values from your CSV should be searched.
+                            </li>
+                            <li>
+                                Click <strong>Search MAC addresses</strong>. Deployer runs{' '}
+                                <code>show mac-address-table</code> on each switch in sequence and shows
+                                progress. Matches list switch name, serial, MAC, VLAN, type, and port.
+                            </li>
+                            <li>
+                                Filter results in the table, or use <strong>Export CSV</strong> to download all
+                                matches. Per-switch failures are listed separately so partial results are still
+                                usable.
                             </li>
                         </ol>
                     </section>
