@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,110 @@ type RebootAccessPointsDialogProps = {
     trigger: ReactNode;
 };
 
+type RebootProgress = {
+    start: number;
+    end: number;
+    total: number;
+};
+
+const REBOOT_BATCH_SIZE = 25;
+
+function chunkSerials(serials: string[], size: number): string[][] {
+    const chunks: string[][] = [];
+
+    for (let index = 0; index < serials.length; index += size) {
+        chunks.push(serials.slice(index, index + size));
+    }
+
+    return chunks;
+}
+
+function failedResultsForChunk(
+    serials: string[],
+    error: string,
+): RebootResult[] {
+    return serials.map((serial) => ({
+        serial,
+        ok: false,
+        error,
+        status: null,
+    }));
+}
+
+function rebootFailureMessage(
+    payload: RebootResponse | null,
+    status: number,
+): string {
+    const validationMessage = payload?.errors
+        ? Object.values(payload.errors).flat().join(' ')
+        : null;
+
+    return (
+        payload?.error ??
+        validationMessage ??
+        payload?.message ??
+        `Failed to schedule reboot (HTTP ${status}).`
+    );
+}
+
+async function postRebootChunk(
+    serials: string[],
+    when: RebootWhen,
+    rebootAtIso?: string,
+): Promise<{ payload: RebootResponse } | { error: string }> {
+    const body: {
+        serials: string[];
+        when: RebootWhen;
+        reboot_at?: string;
+    } = {
+        serials,
+        when,
+    };
+
+    if (rebootAtIso !== undefined) {
+        body.reboot_at = rebootAtIso;
+    }
+
+    try {
+        const response = await fetch(rebootRoute.url(), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                ...csrfHeaders(),
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+        });
+
+        const payload = (await response
+            .json()
+            .catch(() => null)) as RebootResponse | null;
+
+        if (!response.ok) {
+            return { error: rebootFailureMessage(payload, response.status) };
+        }
+
+        if (payload === null) {
+            return { error: 'Failed to schedule reboot: empty response.' };
+        }
+
+        if (payload.error) {
+            return { error: payload.error };
+        }
+
+        return { payload };
+    } catch (error) {
+        return {
+            error:
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to schedule reboot.',
+        };
+    }
+}
+
 function formatScheduledAt(iso: string): string {
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) {
@@ -80,11 +184,18 @@ export default function RebootAccessPointsDialog({
     const [when, setWhen] = useState<RebootWhen>('now');
     const [rebootAt, setRebootAt] = useState(defaultCustomDateTime);
     const [loading, setLoading] = useState(false);
+    const [progress, setProgress] = useState<RebootProgress | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [results, setResults] = useState<RebootResult[] | null>(null);
 
     const uniqueSerials = useMemo(
-        () => [...new Set(serials.map((serial) => serial.trim()).filter((serial) => serial !== ''))],
+        () => [
+            ...new Set(
+                serials
+                    .map((serial) => serial.trim())
+                    .filter((serial) => serial !== ''),
+            ),
+        ],
         [serials],
     );
 
@@ -101,6 +212,7 @@ export default function RebootAccessPointsDialog({
         setRebootAt(defaultCustomDateTime());
         setSubmitError(null);
         setResults(null);
+        setProgress(null);
     }, []);
 
     const handleOpenChange = useCallback(
@@ -124,71 +236,71 @@ export default function RebootAccessPointsDialog({
             return;
         }
 
+        let rebootAtIso: string | undefined;
+
+        if (when === 'at') {
+            const parsed = new Date(rebootAt);
+            if (Number.isNaN(parsed.getTime())) {
+                setSubmitError('Select a valid date and time for the reboot.');
+                return;
+            }
+
+            if (parsed.getTime() <= Date.now()) {
+                setSubmitError('Reboot time must be in the future.');
+                return;
+            }
+
+            rebootAtIso = parsed.toISOString();
+        }
+
+        const chunks = chunkSerials(uniqueSerials, REBOOT_BATCH_SIZE);
+
         setLoading(true);
         setSubmitError(null);
         setResults(null);
+        setProgress(null);
 
         try {
-            const body: {
-                serials: string[];
-                when: RebootWhen;
-                reboot_at?: string;
-            } = {
-                serials: uniqueSerials,
-                when,
-            };
+            const rebootResults: RebootResult[] = [];
+            let scheduledCount = 0;
+            let scheduledAt: string | null = null;
 
-            if (when === 'at') {
-                const parsed = new Date(rebootAt);
-                if (Number.isNaN(parsed.getTime())) {
-                    throw new Error('Select a valid date and time for the reboot.');
+            for (let index = 0; index < chunks.length; index++) {
+                const chunk = chunks[index];
+                if (chunk === undefined || chunk.length === 0) {
+                    continue;
                 }
 
-                if (parsed.getTime() <= Date.now()) {
-                    throw new Error('Reboot time must be in the future.');
+                if (chunks.length > 1) {
+                    const start = index * REBOOT_BATCH_SIZE + 1;
+                    setProgress({
+                        start,
+                        end: start + chunk.length - 1,
+                        total: uniqueSerials.length,
+                    });
                 }
 
-                body.reboot_at = parsed.toISOString();
+                const outcome = await postRebootChunk(chunk, when, rebootAtIso);
+
+                if ('error' in outcome) {
+                    rebootResults.push(
+                        ...failedResultsForChunk(chunk, outcome.error),
+                    );
+                    continue;
+                }
+
+                if (outcome.payload.scheduled) {
+                    scheduledCount += chunk.length;
+                    scheduledAt = outcome.payload.scheduled_at ?? scheduledAt;
+                    continue;
+                }
+
+                rebootResults.push(...(outcome.payload.results ?? []));
             }
 
-            const response = await fetch(rebootRoute.url(), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    ...csrfHeaders(),
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify(body),
-            });
-
-            const payload = (await response.json().catch(() => null)) as RebootResponse | null;
-
-            if (!response.ok) {
-                const validationMessage = payload?.errors
-                    ? Object.values(payload.errors).flat().join(' ')
-                    : null;
-
-                throw new Error(
-                    payload?.error ??
-                        validationMessage ??
-                        payload?.message ??
-                        `Failed to schedule reboot (HTTP ${response.status}).`,
-                );
-            }
-
-            if (payload === null) {
-                throw new Error('Failed to schedule reboot: empty response.');
-            }
-
-            if (payload.error) {
-                throw new Error(payload.error);
-            }
-
-            if (payload.scheduled) {
-                const scheduledLabel = payload.scheduled_at
-                    ? formatScheduledAt(payload.scheduled_at)
+            if (scheduledCount === uniqueSerials.length) {
+                const scheduledLabel = scheduledAt
+                    ? formatScheduledAt(scheduledAt)
                     : 'the selected time';
 
                 toast.success(
@@ -200,10 +312,28 @@ export default function RebootAccessPointsDialog({
                 return;
             }
 
-            const rebootResults = payload.results ?? [];
+            if (scheduledCount > 0) {
+                const failureCount = uniqueSerials.length - scheduledCount;
+                const scheduledLabel = scheduledAt
+                    ? formatScheduledAt(scheduledAt)
+                    : 'the selected time';
+
+                toast.warning(
+                    `Reboot scheduled for ${scheduledCount} access point${scheduledCount === 1 ? '' : 's'} at ${scheduledLabel}, but ${failureCount} failed.`,
+                );
+                setResults(rebootResults);
+                setSubmitError(
+                    `Failed to schedule reboot for ${failureCount} access point${failureCount === 1 ? '' : 's'}.`,
+                );
+
+                return;
+            }
+
             setResults(rebootResults);
 
-            const successCount = rebootResults.filter((result) => result.ok).length;
+            const successCount = rebootResults.filter(
+                (result) => result.ok,
+            ).length;
             const failureCount = rebootResults.length - successCount;
 
             if (failureCount === 0) {
@@ -221,12 +351,19 @@ export default function RebootAccessPointsDialog({
                     `Reboot initiated for ${successCount} access point${successCount === 1 ? '' : 's'}, but ${failureCount} failed.`,
                 );
             } else {
-                toast.error(`Failed to reboot ${failureCount} access point${failureCount === 1 ? '' : 's'}.`);
+                toast.error(
+                    `Failed to reboot ${failureCount} access point${failureCount === 1 ? '' : 's'}.`,
+                );
             }
         } catch (error) {
-            setSubmitError(error instanceof Error ? error.message : 'Failed to schedule reboot.');
+            setSubmitError(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to schedule reboot.',
+            );
         } finally {
             setLoading(false);
+            setProgress(null);
         }
     }, [rebootAt, resetForm, uniqueSerials, when]);
 
@@ -234,15 +371,19 @@ export default function RebootAccessPointsDialog({
         <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogTrigger asChild>{trigger}</DialogTrigger>
             <DialogContent data-test="device-details-reboot-dialog">
-                <DialogTitle>Reboot access point{uniqueSerials.length === 1 ? '' : 's'}</DialogTitle>
+                <DialogTitle>
+                    Reboot access point{uniqueSerials.length === 1 ? '' : 's'}
+                </DialogTitle>
                 <DialogDescription>
-                    This will reboot {deviceLabel}. Connected clients will be disconnected during the
-                    reboot.
+                    This will reboot {deviceLabel}. Connected clients will be
+                    disconnected during the reboot.
                 </DialogDescription>
 
                 <div className="space-y-3">
                     <fieldset className="space-y-2">
-                        <legend className="text-sm font-medium">When should the reboot happen?</legend>
+                        <legend className="text-sm font-medium">
+                            When should the reboot happen?
+                        </legend>
                         <div className="space-y-2">
                             <label className="flex items-center gap-2 text-sm">
                                 <input
@@ -293,13 +434,17 @@ export default function RebootAccessPointsDialog({
 
                     {when === 'at' ? (
                         <div className="space-y-2">
-                            <Label htmlFor="device-details-reboot-at">Reboot at</Label>
+                            <Label htmlFor="device-details-reboot-at">
+                                Reboot at
+                            </Label>
                             <Input
                                 id="device-details-reboot-at"
                                 type="datetime-local"
                                 value={rebootAt}
                                 min={minCustomDateTime()}
-                                onChange={(event) => setRebootAt(event.target.value)}
+                                onChange={(event) =>
+                                    setRebootAt(event.target.value)
+                                }
                                 data-test="device-details-reboot-at"
                             />
                         </div>
@@ -328,7 +473,8 @@ export default function RebootAccessPointsDialog({
                                 .filter((result) => !result.ok)
                                 .map((result) => (
                                     <li key={result.serial}>
-                                        {result.serial}: {result.error ?? 'Unknown error'}
+                                        {result.serial}:{' '}
+                                        {result.error ?? 'Unknown error'}
                                     </li>
                                 ))}
                         </ul>
@@ -337,7 +483,11 @@ export default function RebootAccessPointsDialog({
 
                 <DialogFooter>
                     <DialogClose asChild>
-                        <Button type="button" variant="outline" disabled={loading}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={loading}
+                        >
                             Cancel
                         </Button>
                     </DialogClose>
@@ -350,11 +500,21 @@ export default function RebootAccessPointsDialog({
                         data-test="device-details-reboot-confirm"
                     >
                         {loading ? (
-                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                            <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden
+                            />
                         ) : (
                             <RotateCcw className="size-4" aria-hidden />
                         )}
-                        Reboot
+                        {loading && progress ? (
+                            <span data-test="device-details-reboot-progress">
+                                Rebooting {progress.start}–{progress.end} of{' '}
+                                {progress.total}
+                            </span>
+                        ) : (
+                            'Reboot'
+                        )}
                     </Button>
                 </DialogFooter>
             </DialogContent>

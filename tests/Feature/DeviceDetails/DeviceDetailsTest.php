@@ -814,6 +814,20 @@ test('device details reboot requires serials', function () {
         ->assertJsonValidationErrors(['serials']);
 });
 
+test('device details reboot rejects too many serials in a single request', function () {
+    $serials = [];
+    for ($i = 1; $i <= 26; $i++) {
+        $serials[] = 'AP'.str_pad((string) $i, 8, '0', STR_PAD_LEFT);
+    }
+
+    $this->postJson(route('device-details.reboot'), [
+        'serials' => $serials,
+        'when' => 'now',
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['serials']);
+});
+
 test('device details reboot validates when option', function () {
     $this->postJson(route('device-details.reboot'), [
         'serials' => ['AP00000001'],
