@@ -856,3 +856,90 @@ test('device details reboot redirects gate when no current client is set', funct
             'error' => 'Please set current client to reboot access points.',
         ]);
 });
+
+test('device details show commands redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.show-commands'), [
+        'serial' => 'SN12345',
+        'commands' => ['show version'],
+    ])
+        ->assertStatus(422)
+        ->assertJson([
+            'error' => 'Please set current client to run show commands.',
+        ]);
+});
+
+test('device details show commands requires serial and commands', function () {
+    $this->postJson(route('device-details.show-commands'), [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['serial', 'commands']);
+});
+
+test('device details show commands starts async operation and returns task id', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        expect($request->method())->toBe('POST')
+            ->and($request->url())->toContain('network-troubleshooting/v1/cx/SN12345/showCommands')
+            ->and($request->data())->toBe(['commands' => ['show version']]);
+
+        return Http::response([
+            'location' => '/network-troubleshooting/v1/cx/SN12345/showCommands/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            'status' => 'INITIATED',
+        ], 202);
+    });
+
+    $this->postJson(route('device-details.show-commands'), [
+        'serial' => 'SN12345',
+        'commands' => ['show version'],
+    ])
+        ->assertStatus(202)
+        ->assertJsonPath('task_id', 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e')
+        ->assertJsonPath('status', 'INITIATED');
+});
+
+test('device details show commands result returns completed output', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        expect($request->method())->toBe('GET')
+            ->and($request->url())->toContain(
+                'network-troubleshooting/v1/cx/SN12345/showCommands/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            );
+
+        return Http::response([
+            'status' => 'COMPLETED',
+            'progressPercent' => 100,
+            'output' => [
+                'commands' => ['show version'],
+                'results' => [[
+                    'command' => 'show version',
+                    'output' => 'AOS-CX Version 10.x',
+                ]],
+            ],
+        ], 200);
+    });
+
+    $this->getJson(route('device-details.show-commands.result', [
+        'serial' => 'SN12345',
+        'taskId' => 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('status', 'COMPLETED')
+        ->assertJsonPath('output.results.0.command', 'show version')
+        ->assertJsonPath('output.results.0.output', 'AOS-CX Version 10.x');
+});
+
+test('device details show commands result validates task id uuid', function () {
+    $this->getJson(route('device-details.show-commands.result', [
+        'serial' => 'SN12345',
+        'taskId' => 'not-a-uuid',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['taskId']);
+});

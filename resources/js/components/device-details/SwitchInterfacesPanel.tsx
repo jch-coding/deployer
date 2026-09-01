@@ -1,5 +1,5 @@
 import type { ColumnDef } from '@tanstack/react-table';
-import { Download, GitCompareArrows, Loader2 } from 'lucide-react';
+import { Download, GitCompareArrows, Loader2, Terminal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import {
     hasActiveSwitchInterfacesTableFilters,
     type SwitchInterfacesTableFilters,
 } from '@/lib/switch-interfaces-table-filters';
+import SwitchShowCommandsCard from '@/components/device-details/SwitchShowCommandsCard';
 import { compareProfiles as compareProfilesRoute } from '@/routes/device-details';
 
 export type SwitchDetailsPayload = {
@@ -158,8 +159,9 @@ type SwitchInterfacesPanelProps = {
 };
 
 export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterfacesPanelProps) {
-    const { serial, device_name, interfaces, central_error } = switchDetails;
+    const { serial, device_name, device_type, interfaces, central_error } = switchDetails;
     const title = device_name !== '' ? device_name : serial;
+    const showTroubleshooting = (device_type ?? '').trim().toUpperCase() !== 'GATEWAY';
 
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
@@ -169,6 +171,7 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
     const [compareLoading, setCompareLoading] = useState(false);
     const [compareError, setCompareError] = useState<string | null>(null);
     const [compareResult, setCompareResult] = useState<ProfileCompareResult | null>(null);
+    const [showCommandsOpen, setShowCommandsOpen] = useState(false);
 
     const compareByName = useMemo(() => {
         const map = new Map<string, ProfileCompareInterface>();
@@ -201,6 +204,7 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
     useEffect(() => {
         setCompareResult(null);
         setCompareError(null);
+        setShowCommandsOpen(false);
     }, [serial, interfaces]);
 
     useEffect(() => {
@@ -377,6 +381,19 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                     ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                    {showTroubleshooting ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="gap-2"
+                            disabled={Boolean(central_error)}
+                            onClick={() => setShowCommandsOpen((open) => !open)}
+                            data-test="device-details-troubleshooting"
+                        >
+                            <Terminal className="size-4" aria-hidden />
+                            Troubleshooting
+                        </Button>
+                    ) : null}
                     <Button
                         type="button"
                         variant="outline"
@@ -405,6 +422,13 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                     </Button>
                 </div>
             </div>
+
+            {showCommandsOpen ? (
+                <SwitchShowCommandsCard
+                    serial={serial}
+                    onClose={() => setShowCommandsOpen(false)}
+                />
+            ) : null}
 
             <h3 className="mb-3 text-lg font-medium" data-test="device-details-interfaces-heading">
                 Interfaces

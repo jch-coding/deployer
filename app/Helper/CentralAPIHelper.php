@@ -79,7 +79,12 @@ class CentralAPIHelper
 
     public array $troubleshooting = [
         'ap_reboot' => 'network-troubleshooting/v1/aps',
+        'cx_show_commands' => 'network-troubleshooting/v1/cx',
     ];
+
+    private const CX_SHOW_COMMAND_PATTERN = '/^\s*show\b.+/';
+
+    private const MAX_CX_SHOW_COMMANDS = 20;
 
     public array $high_availability = [
         'switch_stack' => 'network-config/v1alpha1/stacks',
@@ -2784,6 +2789,206 @@ class CentralAPIHelper
         }
 
         return ['ok' => false, 'status' => $response->status(), 'error' => $message];
+    }
+
+    /**
+     * @param  list<string>  $commands
+     * @return array{ok: true, status: int, task_id: string, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function run_cx_show_commands(string $serial, array $commands): array
+    {
+        $serial = trim($serial);
+
+        if ($serial === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
+        }
+
+        $commands = $this->normalizeCxShowCommands($commands);
+        $validationError = $this->validateCxShowCommands($commands);
+        if ($validationError !== null) {
+            return ['ok' => false, 'status' => 400, 'error' => $validationError];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
+        }
+
+        $deviceId = $this->resolveCxShowCommandsDeviceId($serial);
+        if (is_array($deviceId)) {
+            return ['ok' => false, 'status' => null, 'error' => (string) ($deviceId['error'] ?? 'failed to resolve switch identifier.')];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->post(
+                $this->client->base_url.$this->troubleshooting['cx_show_commands'].'/'.$deviceId.'/showCommands',
+                ['commands' => $commands],
+            );
+
+        if ($response->status() === 202) {
+            $body = $response->json();
+            if (! is_array($body)) {
+                $body = [];
+            }
+
+            $taskId = $this->extractCxShowCommandsTaskId($response, $body);
+            if ($taskId === '') {
+                return ['ok' => false, 'status' => 202, 'error' => 'Central accepted the request but did not return a task id.'];
+            }
+
+            return [
+                'ok' => true,
+                'status' => 202,
+                'task_id' => $taskId,
+                'body' => $body,
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'status' => $response->status(),
+            'error' => $this->extractCentralErrorMessage($response, 'failed to run show commands on switch.'),
+        ];
+    }
+
+    /**
+     * @return array{ok: true, status: int, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function get_cx_show_commands_result(string $serial, string $taskId): array
+    {
+        $serial = trim($serial);
+        $taskId = trim($taskId);
+
+        if ($serial === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
+        }
+
+        if ($taskId === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'task id is required.'];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
+        }
+
+        $deviceId = $this->resolveCxShowCommandsDeviceId($serial);
+        if (is_array($deviceId)) {
+            return ['ok' => false, 'status' => null, 'error' => (string) ($deviceId['error'] ?? 'failed to resolve switch identifier.')];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->get(
+                $this->client->base_url.$this->troubleshooting['cx_show_commands'].'/'.$deviceId.'/showCommands/async-operations/'.$taskId,
+            );
+
+        if ($response->successful()) {
+            $body = $response->json();
+            if (! is_array($body)) {
+                $body = [];
+            }
+
+            return ['ok' => true, 'status' => $response->status(), 'body' => $body];
+        }
+
+        return [
+            'ok' => false,
+            'status' => $response->status(),
+            'error' => $this->extractCentralErrorMessage($response, 'failed to get show command results from central.'),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $commands
+     * @return list<string>
+     */
+    private function normalizeCxShowCommands(array $commands): array
+    {
+        return array_values(array_filter(
+            array_map(static fn (mixed $command): string => is_string($command) ? trim($command) : '', $commands),
+            static fn (string $command): bool => $command !== '',
+        ));
+    }
+
+    /**
+     * @param  list<string>  $commands
+     */
+    private function validateCxShowCommands(array $commands): ?string
+    {
+        if ($commands === []) {
+            return 'At least one show command is required.';
+        }
+
+        if (count($commands) > self::MAX_CX_SHOW_COMMANDS) {
+            return 'Too many commands, maximum allowed is '.self::MAX_CX_SHOW_COMMANDS;
+        }
+
+        foreach ($commands as $command) {
+            if (preg_match(self::CX_SHOW_COMMAND_PATTERN, $command) !== 1) {
+                return "Command denied: must start with 'show '";
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return string|array{error: string}
+     */
+    private function resolveCxShowCommandsDeviceId(string $serial): string|array
+    {
+        $response = $this->get_switches([
+            'filter' => 'serialNumber eq '.$serial,
+            'limit' => 1,
+        ]);
+
+        if (is_array($response)) {
+            return ['error' => (string) ($response['error'] ?? 'failed to resolve switch identifier from central.')];
+        }
+
+        if (! $response->successful()) {
+            return $serial;
+        }
+
+        $items = $response->json('items', []);
+        if (! is_array($items) || $items === []) {
+            return $serial;
+        }
+
+        $stackId = trim((string) ($items[0]['stackId'] ?? ''));
+        if ($stackId !== '') {
+            return $stackId;
+        }
+
+        return $serial;
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     */
+    private function extractCxShowCommandsTaskId(\Illuminate\Http\Client\Response $response, array $body): string
+    {
+        $location = (string) ($response->header('Location') ?? '');
+        if ($location === '') {
+            $location = (string) ($body['location'] ?? '');
+        }
+
+        if ($location !== '' && preg_match('#/async-operations/([^/?]+)#', $location, $matches) === 1) {
+            return trim($matches[1]);
+        }
+
+        return '';
+    }
+
+    private function extractCentralErrorMessage(\Illuminate\Http\Client\Response $response, string $fallback): string
+    {
+        $message = $response->json('message');
+        if (! is_string($message) || $message === '') {
+            $message = $response->json('errorCode');
+        }
+        if (! is_string($message) || $message === '') {
+            $message = $fallback;
+        }
+
+        return $message;
     }
 
     public function get_local_management_profiles($queryParameters = ['view-type' => 'LIBRARY'])

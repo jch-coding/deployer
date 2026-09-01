@@ -191,6 +191,83 @@ class DeviceDetailsController extends Controller
         return response()->json($result);
     }
 
+    public function showCommands(Request $request): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'error' => 'Please set current client to run show commands.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serial' => ['required', 'string', 'max:64'],
+            'commands' => ['required', 'array', 'min:1', 'max:20'],
+            'commands.*' => ['required', 'string', 'max:512'],
+        ]);
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->run_cx_show_commands(trim($validated['serial']), $validated['commands']);
+
+        if (! $result['ok']) {
+            $status = $result['status'] ?? 422;
+            if (! is_int($status) || $status < 400 || $status > 599) {
+                $status = 422;
+            }
+
+            return response()->json([
+                'error' => $result['error'],
+            ], $status);
+        }
+
+        return response()->json([
+            'task_id' => $result['task_id'],
+            'status' => $result['body']['status'] ?? 'INITIATED',
+            'start_time' => $result['body']['startTime'] ?? null,
+        ], 202);
+    }
+
+    public function showCommandsResult(Request $request, string $serial, string $taskId): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'error' => 'Please set current client to run show commands.',
+            ], 422);
+        }
+
+        $validated = validator(
+            ['serial' => $serial, 'taskId' => $taskId],
+            [
+                'serial' => ['required', 'string', 'max:64'],
+                'taskId' => ['required', 'uuid'],
+            ],
+            [],
+            ['taskId' => 'task id'],
+        )->validate();
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->get_cx_show_commands_result(
+            trim($validated['serial']),
+            trim($validated['taskId']),
+        );
+
+        if (! $result['ok']) {
+            $status = $result['status'] ?? 422;
+            if (! is_int($status) || $status < 400 || $status > 599) {
+                $status = 422;
+            }
+
+            return response()->json([
+                'error' => $result['error'],
+            ], $status);
+        }
+
+        return response()->json($result['body']);
+    }
+
     public function bssids(Request $request, DeviceCentralFilterBuilder $filterBuilder): JsonResponse
     {
         $currentClient = $request->user()->currentClient();
