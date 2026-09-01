@@ -9,6 +9,25 @@ export type CustomWorkflowReportIncludeFields = {
     group: boolean;
 };
 
+export type CustomWorkflowReportStatusLabels = {
+    completed: string;
+    in_progress: string;
+    failed: string;
+};
+
+export type CustomWorkflowReportOptions = {
+    reportName: string;
+    includeDeploymentName: boolean;
+    includeTime: boolean;
+    statusLabels: CustomWorkflowReportStatusLabels;
+};
+
+export const DEFAULT_REPORT_STATUS_LABELS: CustomWorkflowReportStatusLabels = {
+    completed: 'Complete',
+    in_progress: 'In progress',
+    failed: 'Failed',
+};
+
 export type CustomWorkflowReportDevice = {
     device_id: number;
     name: string;
@@ -21,7 +40,6 @@ export type CustomWorkflowReportDevice = {
 };
 
 export type CustomWorkflowReportMetadata = {
-    workflowName: string | null;
     deploymentName: string;
     generatedAt: Date;
     summary: {
@@ -29,6 +47,10 @@ export type CustomWorkflowReportMetadata = {
         in_progress: number;
         failed: number;
     };
+    reportName: string;
+    includeDeploymentName: boolean;
+    includeTime: boolean;
+    statusLabels: CustomWorkflowReportStatusLabels;
 };
 
 const OPTIONAL_FIELD_LABELS: Record<
@@ -42,17 +64,35 @@ const OPTIONAL_FIELD_LABELS: Record<
     group: 'Group',
 };
 
-export function workflowDeviceStatusLabel(status: string): string {
+export function defaultCustomWorkflowReportName(
+    workflowName: string | null,
+): string {
+    return workflowName?.trim() || 'Custom workflow report';
+}
+
+export function workflowDeviceStatusLabel(
+    status: string,
+    labels: CustomWorkflowReportStatusLabels = DEFAULT_REPORT_STATUS_LABELS,
+): string {
     switch (status) {
         case 'completed':
-            return 'Complete';
+            return labels.completed;
         case 'failed':
-            return 'Failed';
+            return labels.failed;
         case 'in_progress':
-            return 'In progress';
+            return labels.in_progress;
         default:
             return status.replaceAll('_', ' ');
     }
+}
+
+export function formatReportGeneratedAt(
+    generatedAt: Date,
+    includeTime: boolean,
+): string {
+    return includeTime
+        ? generatedAt.toLocaleString()
+        : generatedAt.toLocaleDateString();
 }
 
 export function buildReportTableHeaders(
@@ -75,10 +115,11 @@ export function buildReportTableRow(
     device: CustomWorkflowReportDevice,
     includeFields: CustomWorkflowReportIncludeFields,
     notes: string,
+    statusLabels: CustomWorkflowReportStatusLabels = DEFAULT_REPORT_STATUS_LABELS,
 ): string[] {
     const row = [
         device.serial,
-        workflowDeviceStatusLabel(device.overall_status),
+        workflowDeviceStatusLabel(device.overall_status, statusLabels),
     ];
 
     if (includeFields.name) {
@@ -106,12 +147,14 @@ export function buildReportTableRows(
     devices: CustomWorkflowReportDevice[],
     includeFields: CustomWorkflowReportIncludeFields,
     deviceNotes: Record<number, string>,
+    statusLabels: CustomWorkflowReportStatusLabels = DEFAULT_REPORT_STATUS_LABELS,
 ): string[][] {
     return devices.map((device) =>
         buildReportTableRow(
             device,
             includeFields,
             deviceNotes[device.device_id] ?? '',
+            statusLabels,
         ),
     );
 }
@@ -127,11 +170,11 @@ function slugifyFilenamePart(value: string): string {
 }
 
 export function suggestedCustomWorkflowReportFilename(
-    workflowName: string | null,
+    reportName: string,
     generatedAt: Date,
 ): string {
     const datePart = generatedAt.toISOString().slice(0, 10);
-    const namePart = slugifyFilenamePart(workflowName ?? 'custom-workflow');
+    const namePart = slugifyFilenamePart(reportName);
 
     return `custom-workflow-report-${namePart}-${datePart}.pdf`;
 }
@@ -143,30 +186,42 @@ export function generateCustomWorkflowReportPdf(
     deviceNotes: Record<number, string>,
 ): Blob {
     const doc = new jsPDF({ orientation: 'landscape' });
-    const title = metadata.workflowName?.trim()
-        ? `Custom workflow report: ${metadata.workflowName.trim()}`
-        : 'Custom workflow report';
+    const title = metadata.reportName.trim() || 'Custom workflow report';
 
     doc.setFontSize(16);
     doc.text(title, 14, 18);
 
     doc.setFontSize(10);
-    doc.text(`Deployment: ${metadata.deploymentName}`, 14, 26);
+    let y = 26;
+
+    if (metadata.includeDeploymentName) {
+        doc.text(`Deployment: ${metadata.deploymentName}`, 14, y);
+        y += 6;
+    }
+
     doc.text(
-        `Generated: ${metadata.generatedAt.toLocaleString()}`,
+        `Generated: ${formatReportGeneratedAt(metadata.generatedAt, metadata.includeTime)}`,
         14,
-        32,
+        y,
     );
+    y += 6;
+
     doc.text(
-        `Summary — Complete: ${metadata.summary.completed}, In progress: ${metadata.summary.in_progress}, Failed: ${metadata.summary.failed}`,
+        `Summary — ${metadata.statusLabels.completed}: ${metadata.summary.completed}, ${metadata.statusLabels.in_progress}: ${metadata.summary.in_progress}, ${metadata.statusLabels.failed}: ${metadata.summary.failed}`,
         14,
-        38,
+        y,
     );
+    y += 6;
 
     autoTable(doc, {
-        startY: 44,
+        startY: y,
         head: [buildReportTableHeaders(includeFields)],
-        body: buildReportTableRows(devices, includeFields, deviceNotes),
+        body: buildReportTableRows(
+            devices,
+            includeFields,
+            deviceNotes,
+            metadata.statusLabels,
+        ),
         styles: { fontSize: 9, cellPadding: 2 },
         headStyles: { fillColor: [55, 65, 81] },
     });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { WorkflowDeviceStatusRow } from '@/components/Deployment/WorkflowDeviceStatusList';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -6,14 +6,19 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     type CustomWorkflowReportIncludeFields,
+    type CustomWorkflowReportOptions,
+    type CustomWorkflowReportStatusLabels,
+    DEFAULT_REPORT_STATUS_LABELS,
+    defaultCustomWorkflowReportName,
+    formatReportGeneratedAt,
     generateCustomWorkflowReportPdf,
     saveCustomWorkflowReportPdf,
     suggestedCustomWorkflowReportFilename,
@@ -62,6 +67,17 @@ const defaultIncludeFields: CustomWorkflowReportIncludeFields = {
     group: false,
 };
 
+function buildDefaultReportOptions(
+    workflowName: string | null,
+): CustomWorkflowReportOptions {
+    return {
+        reportName: defaultCustomWorkflowReportName(workflowName),
+        includeDeploymentName: false,
+        includeTime: false,
+        statusLabels: { ...DEFAULT_REPORT_STATUS_LABELS },
+    };
+}
+
 export default function CustomWorkflowReportDialog({
     open,
     onOpenChange,
@@ -72,15 +88,39 @@ export default function CustomWorkflowReportDialog({
 }: CustomWorkflowReportDialogProps) {
     const [includeFields, setIncludeFields] =
         useState<CustomWorkflowReportIncludeFields>(defaultIncludeFields);
-    const [deviceNotes, setDeviceNotes] = useState<Record<number, string>>(
-        {},
+    const [deviceNotes, setDeviceNotes] = useState<Record<number, string>>({});
+    const [reportOptions, setReportOptions] = useState<CustomWorkflowReportOptions>(
+        () => buildDefaultReportOptions(workflowName),
     );
     const [saving, setSaving] = useState(false);
 
     const generatedAt = useMemo(() => new Date(), [open]);
 
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        setIncludeFields(defaultIncludeFields);
+        setDeviceNotes({});
+        setReportOptions(buildDefaultReportOptions(workflowName));
+    }, [open, workflowName]);
+
     const toggleField = (key: keyof CustomWorkflowReportIncludeFields) => {
         setIncludeFields((prev) => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const updateStatusLabel = (
+        key: keyof CustomWorkflowReportStatusLabels,
+        value: string,
+    ) => {
+        setReportOptions((prev) => ({
+            ...prev,
+            statusLabels: {
+                ...prev.statusLabels,
+                [key]: value,
+            },
+        }));
     };
 
     const handleSave = async () => {
@@ -88,17 +128,20 @@ export default function CustomWorkflowReportDialog({
         try {
             const blob = generateCustomWorkflowReportPdf(
                 {
-                    workflowName,
                     deploymentName,
                     generatedAt,
                     summary,
+                    reportName: reportOptions.reportName,
+                    includeDeploymentName: reportOptions.includeDeploymentName,
+                    includeTime: reportOptions.includeTime,
+                    statusLabels: reportOptions.statusLabels,
                 },
                 devices,
                 includeFields,
                 deviceNotes,
             );
             const filename = suggestedCustomWorkflowReportFilename(
-                workflowName,
+                reportOptions.reportName,
                 generatedAt,
             );
             await saveCustomWorkflowReportPdf(blob, filename);
@@ -114,20 +157,116 @@ export default function CustomWorkflowReportDialog({
                 data-test="custom-workflow-report-dialog"
             >
                 <DialogHeader>
-                    <DialogTitle>Custom workflow report</DialogTitle>
-                    <DialogDescription>
-                        {workflowName?.trim()
-                            ? `${workflowName.trim()} — `
-                            : ''}
-                        {deploymentName}
-                    </DialogDescription>
+                    <DialogTitle>{reportOptions.reportName}</DialogTitle>
                 </DialogHeader>
 
+                <div className="space-y-3 rounded-md border p-3">
+                    <p className="text-sm font-medium">Report options</p>
+                    <div className="space-y-1">
+                        <Label htmlFor="report-name">Report name</Label>
+                        <Input
+                            id="report-name"
+                            value={reportOptions.reportName}
+                            onChange={(e) =>
+                                setReportOptions((prev) => ({
+                                    ...prev,
+                                    reportName: e.target.value,
+                                }))
+                            }
+                            data-test="report-name"
+                        />
+                    </div>
+                    <div className="flex flex-wrap gap-4">
+                        <label className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                                checked={reportOptions.includeDeploymentName}
+                                onCheckedChange={(checked) =>
+                                    setReportOptions((prev) => ({
+                                        ...prev,
+                                        includeDeploymentName: checked === true,
+                                    }))
+                                }
+                                data-test="report-include-deployment"
+                            />
+                            Include deployment name
+                        </label>
+                        <label className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                                checked={reportOptions.includeTime}
+                                onCheckedChange={(checked) =>
+                                    setReportOptions((prev) => ({
+                                        ...prev,
+                                        includeTime: checked === true,
+                                    }))
+                                }
+                                data-test="report-include-time"
+                            />
+                            Include time with date
+                        </label>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="space-y-1">
+                            <Label htmlFor="report-status-label-completed">
+                                Complete label
+                            </Label>
+                            <Input
+                                id="report-status-label-completed"
+                                value={reportOptions.statusLabels.completed}
+                                onChange={(e) =>
+                                    updateStatusLabel('completed', e.target.value)
+                                }
+                                data-test="report-status-label-completed"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="report-status-label-in-progress">
+                                In progress label
+                            </Label>
+                            <Input
+                                id="report-status-label-in-progress"
+                                value={reportOptions.statusLabels.in_progress}
+                                onChange={(e) =>
+                                    updateStatusLabel(
+                                        'in_progress',
+                                        e.target.value,
+                                    )
+                                }
+                                data-test="report-status-label-in-progress"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="report-status-label-failed">
+                                Failed label
+                            </Label>
+                            <Input
+                                id="report-status-label-failed"
+                                value={reportOptions.statusLabels.failed}
+                                onChange={(e) =>
+                                    updateStatusLabel('failed', e.target.value)
+                                }
+                                data-test="report-status-label-failed"
+                            />
+                        </div>
+                    </div>
+                </div>
+
                 <div className="space-y-1 text-sm text-muted-foreground">
-                    <p>Generated {generatedAt.toLocaleString()}</p>
+                    {reportOptions.includeDeploymentName ? (
+                        <p>Deployment: {deploymentName}</p>
+                    ) : null}
                     <p>
-                        Complete: {summary.completed} · In progress:{' '}
-                        {summary.in_progress} · Failed: {summary.failed}
+                        Generated{' '}
+                        {formatReportGeneratedAt(
+                            generatedAt,
+                            reportOptions.includeTime,
+                        )}
+                    </p>
+                    <p>
+                        {reportOptions.statusLabels.completed}:{' '}
+                        {summary.completed} ·{' '}
+                        {reportOptions.statusLabels.in_progress}:{' '}
+                        {summary.in_progress} ·{' '}
+                        {reportOptions.statusLabels.failed}: {summary.failed}
                     </p>
                 </div>
 
@@ -173,6 +312,7 @@ export default function CustomWorkflowReportDialog({
                                 >
                                     {workflowDeviceStatusLabel(
                                         device.overall_status,
+                                        reportOptions.statusLabels,
                                     )}
                                 </Badge>
                             </div>

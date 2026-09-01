@@ -3,15 +3,50 @@ import {
     buildReportTableHeaders,
     buildReportTableRow,
     buildReportTableRows,
+    formatReportGeneratedAt,
     suggestedCustomWorkflowReportFilename,
     workflowDeviceStatusLabel,
 } from './custom-workflow-report-pdf';
+
+const customStatusLabels = {
+    completed: 'Done',
+    in_progress: 'Working',
+    failed: 'Broken',
+};
 
 describe('workflowDeviceStatusLabel', () => {
     it('maps workflow device statuses to report labels', () => {
         expect(workflowDeviceStatusLabel('completed')).toBe('Complete');
         expect(workflowDeviceStatusLabel('in_progress')).toBe('In progress');
         expect(workflowDeviceStatusLabel('failed')).toBe('Failed');
+    });
+
+    it('uses custom status labels when provided', () => {
+        expect(
+            workflowDeviceStatusLabel('completed', customStatusLabels),
+        ).toBe('Done');
+        expect(
+            workflowDeviceStatusLabel('in_progress', customStatusLabels),
+        ).toBe('Working');
+        expect(workflowDeviceStatusLabel('failed', customStatusLabels)).toBe(
+            'Broken',
+        );
+    });
+});
+
+describe('formatReportGeneratedAt', () => {
+    const generatedAt = new Date('2026-08-31T15:30:00');
+
+    it('formats date only when includeTime is false', () => {
+        expect(formatReportGeneratedAt(generatedAt, false)).toBe(
+            generatedAt.toLocaleDateString(),
+        );
+    });
+
+    it('formats date and time when includeTime is true', () => {
+        expect(formatReportGeneratedAt(generatedAt, true)).toBe(
+            generatedAt.toLocaleString(),
+        );
     });
 });
 
@@ -95,15 +130,32 @@ describe('buildReportTableRows', () => {
             ),
         ).toHaveLength(1);
     });
+
+    it('uses custom status labels in the status column', () => {
+        expect(
+            buildReportTableRow(
+                device,
+                {
+                    name: false,
+                    device_function: false,
+                    mac_address: false,
+                    site_name: false,
+                    group: false,
+                },
+                '',
+                customStatusLabels,
+            ),
+        ).toEqual(['CN123', 'Done', '']);
+    });
 });
 
 describe('suggestedCustomWorkflowReportFilename', () => {
-    it('slugifies workflow name and includes date', () => {
+    it('slugifies report name and includes date', () => {
         expect(
             suggestedCustomWorkflowReportFilename(
-                'Detail Run!',
+                'Site rollout report!',
                 new Date('2026-08-31T12:00:00.000Z'),
             ),
-        ).toBe('custom-workflow-report-detail-run-2026-08-31.pdf');
+        ).toBe('custom-workflow-report-site-rollout-report-2026-08-31.pdf');
     });
 });
