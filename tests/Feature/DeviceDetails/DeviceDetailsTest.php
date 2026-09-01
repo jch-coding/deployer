@@ -943,3 +943,90 @@ test('device details show commands result validates task id uuid', function () {
         ->assertStatus(422)
         ->assertJsonValidationErrors(['taskId']);
 });
+
+test('device details poe bounce redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.poe-bounce'), [
+        'serial' => 'SN12345',
+        'ports' => ['1/1/1'],
+    ])
+        ->assertStatus(422)
+        ->assertJson([
+            'error' => 'Please set current client to run port bounce operations.',
+        ]);
+});
+
+test('device details poe bounce requires serial and ports', function () {
+    $this->postJson(route('device-details.poe-bounce'), [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['serial', 'ports']);
+});
+
+test('device details poe bounce starts async operation and returns task id', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        expect($request->method())->toBe('POST')
+            ->and($request->url())->toContain('network-troubleshooting/v1/cx/SN12345/poeBounce')
+            ->and($request->data())->toBe(['ports' => ['1/1/1', '1/1/2']]);
+
+        return Http::response([
+            'location' => '/network-troubleshooting/v1/cx/SN12345/poeBounce/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            'status' => 'INITIATED',
+        ], 202);
+    });
+
+    $this->postJson(route('device-details.poe-bounce'), [
+        'serial' => 'SN12345',
+        'ports' => ['1/1/1', '1/1/2'],
+    ])
+        ->assertStatus(202)
+        ->assertJsonPath('task_id', 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e')
+        ->assertJsonPath('status', 'INITIATED');
+});
+
+test('device details port bounce result returns completed output', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        expect($request->method())->toBe('GET')
+            ->and($request->url())->toContain(
+                'network-troubleshooting/v1/cx/SN12345/portBounce/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            );
+
+        return Http::response([
+            'status' => 'COMPLETED',
+            'progressPercent' => 100,
+            'output' => [
+                'ports' => ['1/1/1'],
+                'results' => [[
+                    'port' => '1/1/1',
+                    'status' => 'Bounced',
+                ]],
+            ],
+        ], 200);
+    });
+
+    $this->getJson(route('device-details.port-bounce.result', [
+        'serial' => 'SN12345',
+        'taskId' => 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('status', 'COMPLETED')
+        ->assertJsonPath('output.results.0.port', '1/1/1')
+        ->assertJsonPath('output.results.0.status', 'Bounced');
+});
+
+test('device details port bounce result validates task id uuid', function () {
+    $this->getJson(route('device-details.port-bounce.result', [
+        'serial' => 'SN12345',
+        'taskId' => 'not-a-uuid',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['taskId']);
+});

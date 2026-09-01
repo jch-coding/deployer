@@ -2645,3 +2645,125 @@ test('get_cx_show_commands_result polls async operation endpoint', function () {
         ->and($result['body']['status'])->toBe('COMPLETED')
         ->and($result['body']['output']['results'][0]['output'])->toBe('AOS-CX Version 10.x');
 });
+
+test('run_cx_poe_bounce posts ports and returns task id on 202', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/switches')) {
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => 'SN12345',
+                    'stackId' => 'STACK-1',
+                ]],
+            ], 200);
+        }
+
+        expect($request->method())->toBe('POST')
+            ->and($request->url())->toContain('network-troubleshooting/v1/cx/STACK-1/poeBounce')
+            ->and($request->data())->toBe(['ports' => ['1/1/1', '1/1/2']]);
+
+        return Http::response([
+            'location' => '/network-troubleshooting/v1/cx/STACK-1/poeBounce/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            'status' => 'INITIATED',
+        ], 202);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->run_cx_poe_bounce('SN12345', ['1/1/1', '1/1/2']);
+
+    expect($result)->toMatchArray([
+        'ok' => true,
+        'status' => 202,
+        'task_id' => 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+    ]);
+});
+
+test('run_cx_port_bounce posts ports and returns task id on 202', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        expect($request->method())->toBe('POST')
+            ->and($request->url())->toContain('network-troubleshooting/v1/cx/SN12345/portBounce')
+            ->and($request->data())->toBe(['ports' => ['1/1/1']]);
+
+        return Http::response([
+            'location' => '/network-troubleshooting/v1/cx/SN12345/portBounce/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            'status' => 'INITIATED',
+        ], 202);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->run_cx_port_bounce('SN12345', ['1/1/1']);
+
+    expect($result['ok'])->toBeTrue()
+        ->and($result['task_id'])->toBe('c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e');
+});
+
+test('run_cx_poe_bounce rejects empty ports', function () {
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->run_cx_poe_bounce('SN12345', []);
+
+    expect($result)->toMatchArray([
+        'ok' => false,
+        'status' => 400,
+        'error' => 'At least one port is required.',
+    ]);
+});
+
+test('run_cx_port_bounce surfaces central device offline conflict', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        return Http::response([
+            'message' => 'Device offline: SN12345',
+            'errorCode' => 'HPE_GL_ERROR_CONFLICT',
+        ], 409);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->run_cx_port_bounce('SN12345', ['1/1/1']);
+
+    expect($result)->toMatchArray([
+        'ok' => false,
+        'status' => 409,
+        'error' => 'Device offline: SN12345',
+    ]);
+});
+
+test('get_cx_poe_bounce_result polls async operation endpoint', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        expect($request->method())->toBe('GET')
+            ->and($request->url())->toContain(
+                'network-troubleshooting/v1/cx/SN12345/poeBounce/async-operations/c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+            );
+
+        return Http::response([
+            'status' => 'COMPLETED',
+            'progressPercent' => 100,
+            'output' => [
+                'ports' => ['1/1/1'],
+                'results' => [[
+                    'port' => '1/1/1',
+                    'status' => 'Bounced',
+                ]],
+            ],
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_cx_poe_bounce_result(
+        'SN12345',
+        'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
+    );
+
+    expect($result['ok'])->toBeTrue()
+        ->and($result['body']['status'])->toBe('COMPLETED')
+        ->and($result['body']['output']['results'][0]['status'])->toBe('Bounced');
+});

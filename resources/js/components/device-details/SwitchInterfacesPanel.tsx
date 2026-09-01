@@ -1,8 +1,9 @@
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, OnChangeFn, RowSelectionState } from '@tanstack/react-table';
 import { Download, GitCompareArrows, Loader2, Terminal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { csrfHeaders } from '@/lib/csrf';
 import {
@@ -17,6 +18,9 @@ import {
     hasActiveSwitchInterfacesTableFilters,
     type SwitchInterfacesTableFilters,
 } from '@/lib/switch-interfaces-table-filters';
+import SwitchPortBounceDialog, {
+    type PortBounceOutcome,
+} from '@/components/device-details/SwitchPortBounceDialog';
 import SwitchShowCommandsCard from '@/components/device-details/SwitchShowCommandsCard';
 import { compareProfiles as compareProfilesRoute } from '@/routes/device-details';
 
@@ -172,6 +176,9 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
     const [compareError, setCompareError] = useState<string | null>(null);
     const [compareResult, setCompareResult] = useState<ProfileCompareResult | null>(null);
     const [showCommandsOpen, setShowCommandsOpen] = useState(false);
+    const [selectedPortNames, setSelectedPortNames] = useState<string[]>([]);
+    const [bounceOutcome, setBounceOutcome] = useState<PortBounceOutcome | null>(null);
+    const [bounceRunning, setBounceRunning] = useState(false);
 
     const compareByName = useMemo(() => {
         const map = new Map<string, ProfileCompareInterface>();
@@ -205,6 +212,9 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
         setCompareResult(null);
         setCompareError(null);
         setShowCommandsOpen(false);
+        setSelectedPortNames([]);
+        setBounceOutcome(null);
+        setBounceRunning(false);
     }, [serial, interfaces]);
 
     useEffect(() => {
@@ -268,8 +278,50 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
         }
     }, [serial]);
 
+    const getInterfaceRowId = useCallback((row: SwitchInterfaceRowWithCompare) => {
+        return row.name || `${row.neighbourSerial}-${row.status}`;
+    }, []);
+
+    const selectedPorts = useMemo(() => selectedPortNames, [selectedPortNames]);
+
+    const handleBounceOutcome = useCallback((outcome: PortBounceOutcome) => {
+        setBounceOutcome(outcome);
+        setBounceRunning(outcome.kind === 'running');
+    }, []);
+
     const columns = useMemo<ColumnDef<SwitchInterfaceRowWithCompare>[]>(
-        () => [
+        () => {
+            const baseColumns: ColumnDef<SwitchInterfaceRowWithCompare>[] = [];
+
+            if (showTroubleshooting) {
+                baseColumns.push({
+                    id: 'select',
+                    header: ({ table }) => (
+                        <Checkbox
+                            checked={
+                                table.getIsAllPageRowsSelected() ||
+                                (table.getIsSomePageRowsSelected() && 'indeterminate')
+                            }
+                            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                            aria-label="Select all ports on page"
+                            data-test="device-details-iface-select-all"
+                        />
+                    ),
+                    cell: ({ row }) => (
+                        <Checkbox
+                            checked={row.getIsSelected()}
+                            onCheckedChange={(value) => row.toggleSelected(!!value)}
+                            aria-label={`Select ${row.original.name}`}
+                            disabled={row.original.name === ''}
+                            data-test="device-details-iface-select-row"
+                        />
+                    ),
+                    enableSorting: false,
+                    enableHiding: false,
+                });
+            }
+
+            baseColumns.push(
             { accessorKey: 'name', header: 'Name' },
             {
                 id: 'profileCompare',
@@ -330,8 +382,11 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
             { accessorKey: 'neighbourFunction', header: 'Neighbour Function' },
             { accessorKey: 'neighbourType', header: 'Neighbour Type' },
             { accessorKey: 'transceiverType', header: 'Transceiver Type' },
-        ],
-        [],
+            );
+
+            return baseColumns;
+        },
+        [showTroubleshooting],
     );
 
     const totalFiltered = filteredInterfaces.length;
@@ -351,6 +406,48 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 } satisfies SwitchInterfaceRowWithCompare;
             }),
         [compareByName, filteredInterfaces, end, start],
+    );
+
+    const rowSelection = useMemo(() => {
+        const selection: RowSelectionState = {};
+
+        for (const row of pagedInterfaces) {
+            const id = getInterfaceRowId(row);
+            if (selectedPortNames.includes(id)) {
+                selection[id] = true;
+            }
+        }
+
+        return selection;
+    }, [getInterfaceRowId, pagedInterfaces, selectedPortNames]);
+
+    const handleRowSelectionChange: OnChangeFn<RowSelectionState> = useCallback(
+        (updater) => {
+            const currentPageIds = new Set(pagedInterfaces.map((row) => getInterfaceRowId(row)));
+            const currentSelection: RowSelectionState = {};
+
+            for (const name of selectedPortNames) {
+                if (currentPageIds.has(name)) {
+                    currentSelection[name] = true;
+                }
+            }
+
+            const next = typeof updater === 'function' ? updater(currentSelection) : updater;
+
+            setSelectedPortNames((previous) => {
+                const retained = previous.filter((name) => !currentPageIds.has(name));
+                const updated = new Set(retained);
+
+                for (const [id, selected] of Object.entries(next)) {
+                    if (selected && currentPageIds.has(id)) {
+                        updated.add(id);
+                    }
+                }
+
+                return Array.from(updated);
+            });
+        },
+        [getInterfaceRowId, pagedInterfaces, selectedPortNames],
     );
 
     const mismatchDetails = useMemo(
@@ -545,18 +642,76 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
             ) : null}
 
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div
-                    className="text-sm text-muted-foreground"
-                    data-test="device-details-interfaces-count"
-                >
-                    {totalFiltered === 0
-                        ? '0 interfaces'
-                        : `Showing ${start + 1}–${end} of ${totalFiltered}`}
-                    {totalFiltered !== interfaces.length
-                        ? ` (filtered from ${interfaces.length})`
-                        : null}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                    <div
+                        className="text-sm text-muted-foreground"
+                        data-test="device-details-interfaces-count"
+                    >
+                        {totalFiltered === 0
+                            ? '0 interfaces'
+                            : `Showing ${start + 1}–${end} of ${totalFiltered}`}
+                        {totalFiltered !== interfaces.length
+                            ? ` (filtered from ${interfaces.length})`
+                            : null}
+                    </div>
+                    {showTroubleshooting ? (
+                        <span
+                            className="text-sm text-muted-foreground"
+                            data-test="device-details-selected-port-count"
+                        >
+                            {selectedPorts.length} port{selectedPorts.length === 1 ? '' : 's'} selected
+                        </span>
+                    ) : null}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    {showTroubleshooting ? (
+                        <>
+                            <SwitchPortBounceDialog
+                                serial={serial}
+                                ports={selectedPorts}
+                                type="poe"
+                                disabled={
+                                    Boolean(central_error) ||
+                                    selectedPorts.length === 0 ||
+                                    bounceRunning
+                                }
+                                onOutcome={handleBounceOutcome}
+                                trigger={
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-2"
+                                        data-test="device-details-poe-bounce"
+                                    >
+                                        PoE Bounce
+                                    </Button>
+                                }
+                            />
+                            <SwitchPortBounceDialog
+                                serial={serial}
+                                ports={selectedPorts}
+                                type="port"
+                                disabled={
+                                    Boolean(central_error) ||
+                                    selectedPorts.length === 0 ||
+                                    bounceRunning
+                                }
+                                onOutcome={handleBounceOutcome}
+                                trigger={
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-2"
+                                        data-test="device-details-port-bounce"
+                                    >
+                                        Port Bounce
+                                    </Button>
+                                }
+                            />
+                        </>
+                    ) : null}
                     <span className="text-sm text-muted-foreground">Per page</span>
                     <select
                         value={pageSize}
@@ -577,10 +732,66 @@ export default function SwitchInterfacesPanel({ switchDetails }: SwitchInterface
                 </div>
             </div>
 
+            {bounceOutcome ? (
+                <div
+                    className="mb-4 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm"
+                    data-test="device-details-bounce-outcome"
+                >
+                    {bounceOutcome.kind === 'running' ? (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                            Running {bounceOutcome.label}
+                            {typeof bounceOutcome.progressPercent === 'number'
+                                ? ` (${bounceOutcome.progressPercent}%)`
+                                : '…'}
+                        </div>
+                    ) : null}
+                    {bounceOutcome.kind === 'failed' ? (
+                        <p className="text-destructive" role="alert">
+                            {bounceOutcome.label} failed: {bounceOutcome.error}
+                        </p>
+                    ) : null}
+                    {bounceOutcome.kind === 'completed' ? (
+                        <div className="space-y-2">
+                            <p className="font-medium">{bounceOutcome.label} completed</p>
+                            {bounceOutcome.results.length === 0 ? (
+                                <p className="text-muted-foreground">No per-port results returned.</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead>
+                                            <tr className="border-b border-border">
+                                                <th className="py-1 pr-4 font-medium">Port</th>
+                                                <th className="py-1 font-medium">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {bounceOutcome.results.map((row) => (
+                                                <tr
+                                                    key={row.port}
+                                                    className="border-b border-border/60 last:border-0"
+                                                >
+                                                    <td className="py-1 pr-4 font-mono">{row.port}</td>
+                                                    <td className="py-1">{row.status || '—'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+
             <DataTable<SwitchInterfaceRowWithCompare, unknown>
                 data={pagedInterfaces}
                 columns={columns}
-                getRowId={(row) => row.name || `${row.neighbourSerial}-${row.status}`}
+                getRowId={getInterfaceRowId}
+                enableRowSelection={showTroubleshooting}
+                rowSelection={showTroubleshooting ? rowSelection : undefined}
+                onRowSelectionChange={showTroubleshooting ? handleRowSelectionChange : undefined}
+                stickyLeftColumnIds={showTroubleshooting ? ['select', 'name'] : ['name']}
             />
 
             {totalFiltered > 0 ? (

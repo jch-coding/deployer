@@ -2,28 +2,17 @@ import { Loader2, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { pollCxAsyncOperation } from '@/lib/cx-async-operation';
 import { csrfHeaders } from '@/lib/csrf';
 import { cn } from '@/lib/utils';
 import { showCommands as showCommandsRoute } from '@/routes/device-details';
 
 const SHOW_COMMAND_PATTERN = /^\s*show\b.+/i;
 const MAX_COMMANDS = 20;
-const POLL_INTERVAL_MS = 1500;
-const MAX_POLL_ATTEMPTS = 80;
 
 type ShowCommandResultItem = {
     command: string;
     output: string;
-};
-
-type ShowCommandsPollResponse = {
-    status?: string;
-    progressPercent?: number;
-    failReason?: string | null;
-    output?: {
-        results?: ShowCommandResultItem[];
-    } | null;
-    error?: string;
 };
 
 type ResultBlock =
@@ -74,12 +63,6 @@ function validateCommands(commands: string[]): string | null {
     return null;
 }
 
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-        window.setTimeout(resolve, ms);
-    });
-}
-
 export default function SwitchShowCommandsCard({ serial, onClose }: SwitchShowCommandsCardProps) {
     const [commandInput, setCommandInput] = useState('');
     const [blocks, setBlocks] = useState<ResultBlock[]>([]);
@@ -103,70 +86,36 @@ export default function SwitchShowCommandsCard({ serial, onClose }: SwitchShowCo
 
     const pollForResults = useCallback(
         async (taskId: string, blockId: string, commands: string[]) => {
-            for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
-                const response = await fetch(
-                    showCommandsRoute.result.url({ serial, taskId }),
-                    {
-                        method: 'GET',
-                        headers: {
-                            Accept: 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest',
-                            ...csrfHeaders(),
-                        },
-                        credentials: 'same-origin',
+            const body = await pollCxAsyncOperation(
+                showCommandsRoute.result.url({ serial, taskId }),
+                {
+                    onProgress: (pollBody) => {
+                        setBlocks((current) =>
+                            current.map((block) =>
+                                block.id === blockId && block.kind === 'pending'
+                                    ? {
+                                          ...block,
+                                          progressPercent: pollBody.progressPercent,
+                                      }
+                                    : block,
+                            ),
+                        );
                     },
-                );
+                },
+            );
 
-                const body = (await response.json().catch(() => null)) as ShowCommandsPollResponse | null;
+            const results = body.output?.results ?? commands.map((command) => ({
+                command,
+                output: '',
+            }));
 
-                if (!response.ok) {
-                    throw new Error(
-                        body?.error ?? `Failed to fetch show command results (HTTP ${response.status}).`,
-                    );
-                }
-
-                if (body === null) {
-                    throw new Error('Failed to fetch show command results: empty response.');
-                }
-
-                const status = (body.status ?? '').toUpperCase();
-
-                if (status === 'COMPLETED') {
-                    const results = body.output?.results ?? commands.map((command) => ({
-                        command,
-                        output: '',
-                    }));
-
-                    setBlocks((current) =>
-                        current.map((block) =>
-                            block.id === blockId
-                                ? { id: blockId, kind: 'completed', results }
-                                : block,
-                        ),
-                    );
-
-                    return;
-                }
-
-                if (status === 'FAILED') {
-                    throw new Error(body.failReason ?? 'Show command execution failed.');
-                }
-
-                setBlocks((current) =>
-                    current.map((block) =>
-                        block.id === blockId && block.kind === 'pending'
-                            ? {
-                                  ...block,
-                                  progressPercent: body.progressPercent,
-                              }
-                            : block,
-                    ),
-                );
-
-                await sleep(POLL_INTERVAL_MS);
-            }
-
-            throw new Error('Timed out waiting for show command results.');
+            setBlocks((current) =>
+                current.map((block) =>
+                    block.id === blockId
+                        ? { id: blockId, kind: 'completed', results }
+                        : block,
+                ),
+            );
         },
         [serial],
     );

@@ -268,6 +268,26 @@ class DeviceDetailsController extends Controller
         return response()->json($result['body']);
     }
 
+    public function poeBounce(Request $request): JsonResponse
+    {
+        return $this->startCxPortBounce($request, 'poe');
+    }
+
+    public function poeBounceResult(Request $request, string $serial, string $taskId): JsonResponse
+    {
+        return $this->getCxPortBounceResult($request, $serial, $taskId, 'poe');
+    }
+
+    public function portBounce(Request $request): JsonResponse
+    {
+        return $this->startCxPortBounce($request, 'port');
+    }
+
+    public function portBounceResult(Request $request, string $serial, string $taskId): JsonResponse
+    {
+        return $this->getCxPortBounceResult($request, $serial, $taskId, 'port');
+    }
+
     public function bssids(Request $request, DeviceCentralFilterBuilder $filterBuilder): JsonResponse
     {
         $currentClient = $request->user()->currentClient();
@@ -682,5 +702,83 @@ class DeviceDetailsController extends Controller
         }
 
         return false;
+    }
+
+    private function startCxPortBounce(Request $request, string $type): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'error' => 'Please set current client to run port bounce operations.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serial' => ['required', 'string', 'max:64'],
+            'ports' => ['required', 'array', 'min:1'],
+            'ports.*' => ['required', 'string', 'max:64'],
+        ]);
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $type === 'poe'
+            ? $helper->run_cx_poe_bounce(trim($validated['serial']), $validated['ports'])
+            : $helper->run_cx_port_bounce(trim($validated['serial']), $validated['ports']);
+
+        if (! $result['ok']) {
+            $status = $result['status'] ?? 422;
+            if (! is_int($status) || $status < 400 || $status > 599) {
+                $status = 422;
+            }
+
+            return response()->json([
+                'error' => $result['error'],
+            ], $status);
+        }
+
+        return response()->json([
+            'task_id' => $result['task_id'],
+            'status' => $result['body']['status'] ?? 'INITIATED',
+            'start_time' => $result['body']['startTime'] ?? null,
+        ], 202);
+    }
+
+    private function getCxPortBounceResult(Request $request, string $serial, string $taskId, string $type): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'error' => 'Please set current client to run port bounce operations.',
+            ], 422);
+        }
+
+        $validated = validator(
+            ['serial' => $serial, 'taskId' => $taskId],
+            [
+                'serial' => ['required', 'string', 'max:64'],
+                'taskId' => ['required', 'uuid'],
+            ],
+            [],
+            ['taskId' => 'task id'],
+        )->validate();
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $type === 'poe'
+            ? $helper->get_cx_poe_bounce_result(trim($validated['serial']), trim($validated['taskId']))
+            : $helper->get_cx_port_bounce_result(trim($validated['serial']), trim($validated['taskId']));
+
+        if (! $result['ok']) {
+            $status = $result['status'] ?? 422;
+            if (! is_int($status) || $status < 400 || $status > 599) {
+                $status = 422;
+            }
+
+            return response()->json([
+                'error' => $result['error'],
+            ], $status);
+        }
+
+        return response()->json($result['body']);
     }
 }

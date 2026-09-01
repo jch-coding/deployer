@@ -2813,7 +2813,7 @@ class CentralAPIHelper
             return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
         }
 
-        $deviceId = $this->resolveCxShowCommandsDeviceId($serial);
+        $deviceId = $this->resolveCxTroubleshootingDeviceId($serial);
         if (is_array($deviceId)) {
             return ['ok' => false, 'status' => null, 'error' => (string) ($deviceId['error'] ?? 'failed to resolve switch identifier.')];
         }
@@ -2830,7 +2830,7 @@ class CentralAPIHelper
                 $body = [];
             }
 
-            $taskId = $this->extractCxShowCommandsTaskId($response, $body);
+            $taskId = $this->extractCxAsyncTaskId($response, $body);
             if ($taskId === '') {
                 return ['ok' => false, 'status' => 202, 'error' => 'Central accepted the request but did not return a task id.'];
             }
@@ -2870,7 +2870,7 @@ class CentralAPIHelper
             return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
         }
 
-        $deviceId = $this->resolveCxShowCommandsDeviceId($serial);
+        $deviceId = $this->resolveCxTroubleshootingDeviceId($serial);
         if (is_array($deviceId)) {
             return ['ok' => false, 'status' => null, 'error' => (string) ($deviceId['error'] ?? 'failed to resolve switch identifier.')];
         }
@@ -2893,6 +2893,145 @@ class CentralAPIHelper
             'ok' => false,
             'status' => $response->status(),
             'error' => $this->extractCentralErrorMessage($response, 'failed to get show command results from central.'),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $ports
+     * @return array{ok: true, status: int, task_id: string, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function run_cx_poe_bounce(string $serial, array $ports): array
+    {
+        return $this->runCxPortBounceOperation($serial, $ports, 'poeBounce', 'failed to run poe bounce on switch.');
+    }
+
+    /**
+     * @return array{ok: true, status: int, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function get_cx_poe_bounce_result(string $serial, string $taskId): array
+    {
+        return $this->getCxPortBounceOperationResult($serial, $taskId, 'poeBounce', 'failed to get poe bounce results from central.');
+    }
+
+    /**
+     * @param  list<string>  $ports
+     * @return array{ok: true, status: int, task_id: string, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function run_cx_port_bounce(string $serial, array $ports): array
+    {
+        return $this->runCxPortBounceOperation($serial, $ports, 'portBounce', 'failed to run port bounce on switch.');
+    }
+
+    /**
+     * @return array{ok: true, status: int, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    public function get_cx_port_bounce_result(string $serial, string $taskId): array
+    {
+        return $this->getCxPortBounceOperationResult($serial, $taskId, 'portBounce', 'failed to get port bounce results from central.');
+    }
+
+    /**
+     * @param  list<string>  $ports
+     * @return array{ok: true, status: int, task_id: string, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    private function runCxPortBounceOperation(string $serial, array $ports, string $operation, string $failureMessage): array
+    {
+        $serial = trim($serial);
+
+        if ($serial === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
+        }
+
+        $ports = $this->normalizeCxPorts($ports);
+        $validationError = $this->validateCxPorts($ports);
+        if ($validationError !== null) {
+            return ['ok' => false, 'status' => 400, 'error' => $validationError];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
+        }
+
+        $deviceId = $this->resolveCxTroubleshootingDeviceId($serial);
+        if (is_array($deviceId)) {
+            return ['ok' => false, 'status' => null, 'error' => (string) ($deviceId['error'] ?? 'failed to resolve switch identifier.')];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->post(
+                $this->client->base_url.$this->troubleshooting['cx_show_commands'].'/'.$deviceId.'/'.$operation,
+                ['ports' => $ports],
+            );
+
+        if ($response->status() === 202) {
+            $body = $response->json();
+            if (! is_array($body)) {
+                $body = [];
+            }
+
+            $taskId = $this->extractCxAsyncTaskId($response, $body);
+            if ($taskId === '') {
+                return ['ok' => false, 'status' => 202, 'error' => 'Central accepted the request but did not return a task id.'];
+            }
+
+            return [
+                'ok' => true,
+                'status' => 202,
+                'task_id' => $taskId,
+                'body' => $body,
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'status' => $response->status(),
+            'error' => $this->extractCentralErrorMessage($response, $failureMessage),
+        ];
+    }
+
+    /**
+     * @return array{ok: true, status: int, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
+     */
+    private function getCxPortBounceOperationResult(string $serial, string $taskId, string $operation, string $failureMessage): array
+    {
+        $serial = trim($serial);
+        $taskId = trim($taskId);
+
+        if ($serial === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
+        }
+
+        if ($taskId === '') {
+            return ['ok' => false, 'status' => null, 'error' => 'task id is required.'];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
+        }
+
+        $deviceId = $this->resolveCxTroubleshootingDeviceId($serial);
+        if (is_array($deviceId)) {
+            return ['ok' => false, 'status' => null, 'error' => (string) ($deviceId['error'] ?? 'failed to resolve switch identifier.')];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->get(
+                $this->client->base_url.$this->troubleshooting['cx_show_commands'].'/'.$deviceId.'/'.$operation.'/async-operations/'.$taskId,
+            );
+
+        if ($response->successful()) {
+            $body = $response->json();
+            if (! is_array($body)) {
+                $body = [];
+            }
+
+            return ['ok' => true, 'status' => $response->status(), 'body' => $body];
+        }
+
+        return [
+            'ok' => false,
+            'status' => $response->status(),
+            'error' => $this->extractCentralErrorMessage($response, $failureMessage),
         ];
     }
 
@@ -2931,9 +3070,45 @@ class CentralAPIHelper
     }
 
     /**
+     * @param  list<string>  $ports
+     * @return list<string>
+     */
+    private function normalizeCxPorts(array $ports): array
+    {
+        $normalized = [];
+
+        foreach ($ports as $port) {
+            if (! is_string($port)) {
+                continue;
+            }
+
+            $port = trim($port);
+            if ($port === '') {
+                continue;
+            }
+
+            $normalized[$port] = $port;
+        }
+
+        return array_values($normalized);
+    }
+
+    /**
+     * @param  list<string>  $ports
+     */
+    private function validateCxPorts(array $ports): ?string
+    {
+        if ($ports === []) {
+            return 'At least one port is required.';
+        }
+
+        return null;
+    }
+
+    /**
      * @return string|array{error: string}
      */
-    private function resolveCxShowCommandsDeviceId(string $serial): string|array
+    private function resolveCxTroubleshootingDeviceId(string $serial): string|array
     {
         $response = $this->get_switches([
             'filter' => 'serialNumber eq '.$serial,
@@ -2964,7 +3139,7 @@ class CentralAPIHelper
     /**
      * @param  array<string, mixed>  $body
      */
-    private function extractCxShowCommandsTaskId(\Illuminate\Http\Client\Response $response, array $body): string
+    private function extractCxAsyncTaskId(\Illuminate\Http\Client\Response $response, array $body): string
     {
         $location = (string) ($response->header('Location') ?? '');
         if ($location === '') {
