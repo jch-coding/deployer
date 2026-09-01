@@ -784,10 +784,6 @@ sudo cloudflared service start`}</code>
                                 commands per run; each line must start with <code>show</code>.
                             </li>
                             <li>
-                                On access points, a categorized list of supported commands is loaded from
-                                Central. Click a command to add it to the input, then click <strong>Run</strong>.
-                            </li>
-                            <li>
                                 Click <strong>Run</strong> to submit. Progress and output appear in the card;
                                 you can run additional batches without closing the panel.
                             </li>

@@ -1024,38 +1024,6 @@ test('device details show commands result validates task id uuid', function () {
         ->assertJsonValidationErrors(['taskId']);
 });
 
-test('device details available show commands returns categorized catalog for access point', function () {
-    Http::fake(function (Request $request) {
-        expect($request->method())->toBe('GET')
-            ->and($request->url())->toContain('network-troubleshooting/v1/aps/AP00000001/show-commands');
-
-        return Http::response([
-            [
-                'categoryName' => 'System',
-                'count' => 1,
-                'commands' => [
-                    ['command' => 'show version'],
-                ],
-            ],
-        ], 200);
-    });
-
-    $this->getJson(route('device-details.show-commands.available', ['serial' => 'AP00000001']))
-        ->assertOk()
-        ->assertJsonPath('0.categoryName', 'System')
-        ->assertJsonPath('0.commands.0.command', 'show version');
-});
-
-test('device details available show commands redirects gate when no current client is set', function () {
-    $this->client->update(['current' => false]);
-
-    $this->getJson(route('device-details.show-commands.available', ['serial' => 'AP00000001']))
-        ->assertStatus(422)
-        ->assertJson([
-            'error' => 'Please set current client to list show commands.',
-        ]);
-});
-
 test('device details show commands starts async ap operation when device type is access point', function () {
     Http::fake(function (Request $request) {
         expect($request->method())->toBe('POST')
@@ -1078,7 +1046,7 @@ test('device details show commands starts async ap operation when device type is
         ->assertJsonPath('status', 'INITIATED');
 });
 
-test('device details show commands result returns completed ap output when device type is access point', function () {
+test('device details show commands result returns completed ap output', function () {
     Http::fake(function (Request $request) {
         expect($request->method())->toBe('GET')
             ->and($request->url())->toContain(
@@ -1088,6 +1056,9 @@ test('device details show commands result returns completed ap output when devic
         return Http::response([
             'status' => 'COMPLETED',
             'progressPercent' => 100,
+            'startTime' => '2026-02-03T14:20:59.912054756Z',
+            'endTime' => '2026-02-03T14:21:02.004881090Z',
+            'failReason' => null,
             'output' => [
                 'commands' => ['show version'],
                 'results' => [[
@@ -1098,10 +1069,9 @@ test('device details show commands result returns completed ap output when devic
         ], 200);
     });
 
-    $this->getJson(route('device-details.show-commands.result', [
+    $this->getJson(route('device-details.ap-show-commands.result', [
         'serial' => 'AP00000001',
         'taskId' => 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e',
-        'device_type' => 'ACCESS_POINT',
     ]))
         ->assertOk()
         ->assertJsonPath('status', 'COMPLETED')

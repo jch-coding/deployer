@@ -192,38 +192,6 @@ class DeviceDetailsController extends Controller
         return response()->json($result);
     }
 
-    public function availableShowCommands(Request $request, string $serial): JsonResponse
-    {
-        $currentClient = $request->user()->currentClient();
-
-        if (! $currentClient) {
-            return response()->json([
-                'error' => 'Please set current client to list show commands.',
-            ], 422);
-        }
-
-        $validated = validator(
-            ['serial' => $serial],
-            ['serial' => ['required', 'string', 'max:64']],
-        )->validate();
-
-        $helper = new CentralAPIHelper($currentClient);
-        $result = $helper->list_ap_show_commands(trim($validated['serial']));
-
-        if (! $result['ok']) {
-            $status = $result['status'] ?? 422;
-            if (! is_int($status) || $status < 400 || $status > 599) {
-                $status = 422;
-            }
-
-            return response()->json([
-                'error' => $result['error'],
-            ], $status);
-        }
-
-        return response()->json($result['body']);
-    }
-
     public function showCommands(Request $request): JsonResponse
     {
         $currentClient = $request->user()->currentClient();
@@ -300,6 +268,46 @@ class DeviceDetailsController extends Controller
         $result = $isAccessPoint
             ? $helper->get_ap_show_commands_result($serial, $taskId)
             : $helper->get_cx_show_commands_result($serial, $taskId);
+
+        if (! $result['ok']) {
+            $status = $result['status'] ?? 422;
+            if (! is_int($status) || $status < 400 || $status > 599) {
+                $status = 422;
+            }
+
+            return response()->json([
+                'error' => $result['error'],
+            ], $status);
+        }
+
+        return response()->json($result['body']);
+    }
+
+    public function apShowCommandsResult(Request $request, string $serial, string $taskId): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'error' => 'Please set current client to run show commands.',
+            ], 422);
+        }
+
+        $validated = validator(
+            ['serial' => $serial, 'taskId' => $taskId],
+            [
+                'serial' => ['required', 'string', 'max:64'],
+                'taskId' => ['required', 'uuid'],
+            ],
+            [],
+            ['taskId' => 'task id'],
+        )->validate();
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->get_ap_show_commands_result(
+            trim($validated['serial']),
+            trim($validated['taskId']),
+        );
 
         if (! $result['ok']) {
             $status = $result['status'] ?? 422;

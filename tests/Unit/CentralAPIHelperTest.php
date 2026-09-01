@@ -2646,31 +2646,6 @@ test('get_cx_show_commands_result polls async operation endpoint', function () {
         ->and($result['body']['output']['results'][0]['output'])->toBe('AOS-CX Version 10.x');
 });
 
-test('list_ap_show_commands gets categorized show commands from kebab-case endpoint', function () {
-    Http::fake(function (Request $request) {
-        expect($request->method())->toBe('GET')
-            ->and($request->url())->toContain('network-troubleshooting/v1/aps/AP00000001/show-commands');
-
-        return Http::response([
-            [
-                'categoryName' => 'System',
-                'count' => 2,
-                'commands' => [
-                    ['command' => 'show version'],
-                    ['command' => 'show clock'],
-                ],
-            ],
-        ], 200);
-    });
-
-    $helper = makeCentralApiHelperForSwitches();
-    $result = $helper->list_ap_show_commands('AP00000001');
-
-    expect($result['ok'])->toBeTrue()
-        ->and($result['body'][0]['categoryName'])->toBe('System')
-        ->and($result['body'][0]['commands'][0]['command'])->toBe('show version');
-});
-
 test('run_ap_show_commands posts show commands and returns task id on 202', function () {
     Http::fake(function (Request $request) {
         expect($request->method())->toBe('POST')
@@ -2734,6 +2709,9 @@ test('get_ap_show_commands_result polls async operation endpoint', function () {
         return Http::response([
             'status' => 'COMPLETED',
             'progressPercent' => 100,
+            'startTime' => '2026-02-03T14:20:59.912054756Z',
+            'endTime' => '2026-02-03T14:21:02.004881090Z',
+            'failReason' => null,
             'output' => [
                 'commands' => ['show version'],
                 'results' => [[

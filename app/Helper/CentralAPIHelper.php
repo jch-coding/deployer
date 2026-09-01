@@ -79,6 +79,7 @@ class CentralAPIHelper
 
     public array $troubleshooting = [
         'ap_reboot' => 'network-troubleshooting/v1/aps',
+        'ap_show_commands' => 'network-troubleshooting/v1/aps',
         'cx_show_commands' => 'network-troubleshooting/v1/cx',
     ];
 
@@ -2792,40 +2793,6 @@ class CentralAPIHelper
     }
 
     /**
-     * @return array{ok: true, status: int, body: list<array<string, mixed>>}|array{ok: false, status: int|null, error: string}
-     */
-    public function list_ap_show_commands(string $serial): array
-    {
-        $serial = trim($serial);
-
-        if ($serial === '') {
-            return ['ok' => false, 'status' => null, 'error' => 'serial number is required.'];
-        }
-
-        if (! $this->client->handleBearerTokenAuth()) {
-            return ['ok' => false, 'status' => null, 'error' => 'failed to get access token from central.'];
-        }
-
-        $response = Http::withToken($this->client->bearer_token)
-            ->get($this->client->base_url.$this->troubleshooting['ap_reboot'].'/'.$serial.'/show-commands');
-
-        if ($response->successful()) {
-            $body = $response->json();
-            if (! is_array($body)) {
-                $body = [];
-            }
-
-            return ['ok' => true, 'status' => $response->status(), 'body' => $body];
-        }
-
-        return [
-            'ok' => false,
-            'status' => $response->status(),
-            'error' => $this->extractCentralErrorMessage($response, 'failed to list show commands for access point.'),
-        ];
-    }
-
-    /**
      * @param  list<string>  $commands
      * @return array{ok: true, status: int, task_id: string, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
      */
@@ -2849,7 +2816,7 @@ class CentralAPIHelper
 
         $response = Http::withToken($this->client->bearer_token)
             ->post(
-                $this->client->base_url.$this->troubleshooting['ap_reboot'].'/'.$serial.'/showCommands',
+                $this->client->base_url.$this->apShowCommandsRunPath($serial),
                 ['commands' => $commands],
             );
 
@@ -2880,6 +2847,10 @@ class CentralAPIHelper
     }
 
     /**
+     * Poll async show-command status/result for an access point.
+     *
+     * @see https://developer.arubanetworks.com/new-central/reference/getapshowcommandsresultv1
+     *
      * @return array{ok: true, status: int, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
      */
     public function get_ap_show_commands_result(string $serial, string $taskId): array
@@ -2900,9 +2871,7 @@ class CentralAPIHelper
         }
 
         $response = Http::withToken($this->client->bearer_token)
-            ->get(
-                $this->client->base_url.$this->troubleshooting['ap_reboot'].'/'.$serial.'/showCommands/async-operations/'.$taskId,
-            );
+            ->get($this->client->base_url.$this->apShowCommandsResultPath($serial, $taskId));
 
         if ($response->successful()) {
             $body = $response->json();
@@ -3280,6 +3249,16 @@ class CentralAPIHelper
         }
 
         return '';
+    }
+
+    private function apShowCommandsRunPath(string $serial): string
+    {
+        return $this->troubleshooting['ap_show_commands'].'/'.$serial.'/showCommands';
+    }
+
+    private function apShowCommandsResultPath(string $serial, string $taskId): string
+    {
+        return $this->troubleshooting['ap_show_commands'].'/'.$serial.'/showCommands/async-operations/'.$taskId;
     }
 
     private function extractCentralErrorMessage(\Illuminate\Http\Client\Response $response, string $fallback): string
