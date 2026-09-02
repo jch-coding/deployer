@@ -425,6 +425,8 @@ class ProvisioningWorkflowService
         }
 
         $workflow->refreshOverallStatus();
+        $linkedTask = $this->taskForWorkflow($workflow);
+        $linkedTask?->refreshDeadlineFromDuration();
         $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 

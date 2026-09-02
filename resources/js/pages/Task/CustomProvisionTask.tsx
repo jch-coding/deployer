@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import CustomWorkflowRunPanel, {
     type CustomWorkflowRunPayload,
 } from '@/components/Deployment/CustomWorkflowRunPanel';
+import TaskDeadlineBar from '@/components/Task/TaskDeadlineBar';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { index as clientIndex } from '@/routes/clients';
@@ -17,6 +18,8 @@ type CustomProvisionTaskPageProps = SharedData & {
         status: string;
         deployment_time: number;
         wait_time: number;
+        expires_at: string | null;
+        can_extend: boolean;
     };
     deployment: {
         id: number;
@@ -76,6 +79,13 @@ export default function CustomProvisionTask() {
                         <p className="text-sm text-muted-foreground">
                             Custom provisioning workflow for {deployment.name}
                         </p>
+                        <TaskDeadlineBar
+                            className="mt-2"
+                            taskId={task.id}
+                            expiresAt={task.expires_at}
+                            canExtend={task.can_extend}
+                            status={workflow.status}
+                        />
                     </div>
                     <Button variant="outline" asChild>
                         <Link href={showDeployment(deployment.id).url}>
