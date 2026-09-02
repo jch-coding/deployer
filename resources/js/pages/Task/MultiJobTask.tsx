@@ -2,6 +2,7 @@ import { Link, router, usePage, usePoll } from '@inertiajs/react';
 import { ChevronDown, PowerOffIcon, Trash2Icon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import TaskDeadlineBar from '@/components/Task/TaskDeadlineBar';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
     Collapsible,
@@ -57,7 +58,12 @@ type SubJob = {
 };
 
 type PageProps = {
-    task: { id: number };
+    task: {
+        id: number;
+        status: string;
+        expires_at: string | null;
+        can_extend: boolean;
+    };
     deployment: { id: number; name: string };
     logical_friendly_name: string;
     logical_description: string;
@@ -185,6 +191,14 @@ export default function MultiJobTask() {
                 <h1 className="text-center text-2xl font-bold">
                     {logical_friendly_name}
                 </h1>
+                <div className="mt-2 flex justify-center">
+                    <TaskDeadlineBar
+                        taskId={task.id}
+                        expiresAt={task.expires_at}
+                        canExtend={task.can_extend}
+                        status={task.status}
+                    />
+                </div>
                 <p className="text-muted-foreground mt-2 text-center text-sm">
                     {logical_description}
                 </p>

@@ -6,6 +6,7 @@ use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
 use App\Models\ProvisioningWorkflow;
 use App\Models\ProvisioningWorkflowDevice;
+use App\Models\Task;
 use App\Services\Provisioning\ClassicDeviceOnlineService;
 use App\Services\Provisioning\MarkDeviceOnlineIfWaiting;
 use DateTime;
@@ -87,6 +88,17 @@ class PollClassicDeviceOnlineJob implements ShouldQueue
     public function retryUntil(): DateTime
     {
         $workflow = ProvisioningWorkflow::query()->find($this->workflowId);
+        if ($workflow !== null) {
+            $task = Task::query()
+                ->where('provisioning_workflow_id', $workflow->id)
+                ->first();
+
+            $expiresAt = $task?->expiresAt();
+            if ($expiresAt !== null) {
+                return $expiresAt->toDateTime();
+            }
+        }
+
         $minutes = $workflow?->deployment_time ?? 10;
 
         return now()->addMinutes($minutes)->toDateTime();

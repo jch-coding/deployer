@@ -45,6 +45,7 @@ use App\Models\Task;
 use App\Services\DeploymentCriticalCheckService;
 use App\Services\DeviceCentralVerifier;
 use App\Services\EthernetInterfaceCentralVerifier;
+use App\Services\ExtendTaskDeadlineService;
 use App\Services\InterfaceConfigurationCheckService;
 use App\Services\LagInterfaceCentralVerifier;
 use App\Services\LicensingInventoryService;
@@ -414,7 +415,10 @@ class TaskController extends Controller
             }
 
             return Inertia::render('Task/CustomProvisionTask', [
-                'task' => $task->only(['id', 'status', 'deployment_time', 'wait_time']),
+                'task' => array_merge(
+                    $task->only(['id', 'status', 'deployment_time', 'wait_time']),
+                    $this->deadlinePropsForTask($task),
+                ),
                 'deployment' => [
                     'id' => $task->deployment->id,
                     'name' => $task->deployment->name,
@@ -435,7 +439,7 @@ class TaskController extends Controller
                 ->get();
 
             return Inertia::render('Task/MultiJobTask', [
-                'task' => $task,
+                'task' => array_merge($task->only(['id', 'status']), $this->deadlinePropsForTask($task)),
                 'deployment' => $task->deployment,
                 'logical_friendly_name' => Task::getTaskFriendlyName($task->composite_kind),
                 'logical_description' => Task::getTaskFriendlyDescription($task->composite_kind),
@@ -452,7 +456,7 @@ class TaskController extends Controller
         $isGreenLakeInventoryTask = $task->task_type === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY';
 
         return Inertia::render($inertia_component, [
-            'task' => $task,
+            'task' => array_merge($task->toArray(), $this->deadlinePropsForTask($task)),
             'task_friendly_name' => Task::getTaskFriendlyName($task->task_type),
             'task_friendly_description' => Task::getTaskFriendlyDescription($task->task_type),
             'devices' => $task->devices,
@@ -814,6 +818,21 @@ class TaskController extends Controller
             ->where('composite_group_id', $task->composite_group_id)
             ->orderBy('composite_order')
             ->get();
+    }
+
+    /**
+     * @return array{expires_at: string|null, can_extend: bool}
+     */
+    protected function deadlinePropsForTask(Task $task): array
+    {
+        $task->loadMissing('provisioningWorkflow');
+        $group = $this->tasksInCompositeGroup($task);
+        $canExtend = $group->contains(fn (Task $member) => $member->canExtendDeadline());
+
+        return [
+            'expires_at' => $task->expiresAt()?->toIso8601String(),
+            'can_extend' => $canExtend,
+        ];
     }
 
     protected function allocateJobQueue(Request $request, string $entropy): string
@@ -2667,6 +2686,8 @@ class TaskController extends Controller
         foreach ($group as $t) {
             $t->resetIncompletePivotRowsToPending();
             $t->update(['status' => 'IN_PROGRESS']);
+            $t->refresh();
+            $t->refreshDeadlineFromDuration();
             if ($t->composite_kind === 'ADD_VLANS_TO_DEVICE_GROUP' && $t->task_type === 'CREATE_NEW_CENTRAL_CX_GROUP') {
                 continue;
             }
@@ -2707,6 +2728,8 @@ class TaskController extends Controller
         foreach ($group as $t) {
             $t->resetIncompletePivotRowsToPending();
             $t->update($updates);
+            $t->refresh();
+            $t->refreshDeadlineFromDuration();
             if ($t->composite_kind === 'ADD_VLANS_TO_DEVICE_GROUP' && $t->task_type === 'CREATE_NEW_CENTRAL_CX_GROUP') {
                 continue;
             }
@@ -2717,6 +2740,28 @@ class TaskController extends Controller
         }
 
         return to_route('tasks.show', $group->first());
+    }
+
+    public function extend(Request $request, Task $task, ExtendTaskDeadlineService $extendTaskDeadlineService)
+    {
+        $validated = $request->validate([
+            'hours' => ['nullable', 'integer', 'min:0'],
+            'minutes' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        $hours = (int) ($validated['hours'] ?? 0);
+        $minutes = (int) ($validated['minutes'] ?? 0);
+        $extraMinutes = ($hours * 60) + $minutes;
+
+        try {
+            $extendTaskDeadlineService->extend($this->tasksInCompositeGroup($task), $extraMinutes);
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->errors());
+        }
+
+        session()->flash('success', 'Task deadline extended.');
+
+        return back();
     }
 
     public function remediationCheck(Request $request, Task $task, TaskRemediationCheckService $remediationCheckService)

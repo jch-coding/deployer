@@ -8,7 +8,10 @@ use Illuminate\Support\Facades\Artisan;
 function expireTask(Task $task, int $minutesAgo = 10): void
 {
     $task->timestamps = false;
-    $task->update(['created_at' => now()->subMinutes($minutesAgo)]);
+    $task->update([
+        'created_at' => now()->subMinutes($minutesAgo),
+        'expires_at' => now()->subMinute(),
+    ]);
 }
 
 it('marks expired in-progress device task as timed out when partially completed', function () {
@@ -125,4 +128,39 @@ it('ignores tasks already in terminal states', function () {
     foreach ($taskIdsByStatus as $expectedStatus => $taskId) {
         expect(Task::query()->findOrFail($taskId)->status)->toBe($expectedStatus);
     }
+});
+
+it('does not finalize in-progress task when expires_at is still in the future even if created_at is old', function () {
+    $task = Task::factory()->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+        'deployment_time' => 1,
+        'created_at' => now()->subHours(2),
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $device = Device::factory()->create();
+    $task->devices()->attach($device->id, ['status' => 'PENDING']);
+
+    Artisan::call('tasks:finalize-expired');
+
+    expect($task->fresh()->status)->toBe('IN_PROGRESS');
+});
+
+it('finalizes in-progress task when expires_at is in the past', function () {
+    $task = Task::factory()->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+        'deployment_time' => 60,
+        'expires_at' => now()->subMinute(),
+    ]);
+
+    $deviceOne = Device::factory()->create();
+    $deviceTwo = Device::factory()->create();
+    $task->devices()->attach($deviceOne->id, ['status' => 'COMPLETED']);
+    $task->devices()->attach($deviceTwo->id, ['status' => 'PENDING']);
+
+    Artisan::call('tasks:finalize-expired');
+
+    expect($task->fresh()->status)->toBe('TIMED_OUT');
 });

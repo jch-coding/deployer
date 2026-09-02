@@ -35,7 +35,25 @@ abstract class BaseTaskJob implements ShouldQueue
 
     public function retryUntil(): DateTime
     {
+        if (isset($this->task)) {
+            $expiresAt = $this->task->fresh()->expiresAt();
+            if ($expiresAt !== null) {
+                return $expiresAt->toDateTime();
+            }
+        }
+
         return now()->addMinutes($this->deployment_time)->toDateTime();
+    }
+
+    protected function taskDeadlineStillActive(): bool
+    {
+        if (! isset($this->task)) {
+            return true;
+        }
+
+        $expiresAt = $this->task->fresh()->expiresAt();
+
+        return $expiresAt === null || $expiresAt->isFuture();
     }
 
     protected function handleSafely(callable $callback, string $context = ''): void
@@ -103,12 +121,20 @@ abstract class BaseTaskJob implements ShouldQueue
 
     protected function failTask(string $message = 'Task timed out or failed.', bool $withTimestamp = false): void
     {
+        if ($this->taskDeadlineStillActive()) {
+            return;
+        }
+
         $this->task->update(['status' => 'FAILED']);
         $this->task->processTaskStatusLog($message, $withTimestamp);
     }
 
     protected function failDeviceAndTaskIfNeeded(mixed $device, string $taskMessage = 'Task timed out or failed.', bool $withTimestamp = false): void
     {
+        if ($this->taskDeadlineStillActive()) {
+            return;
+        }
+
         $this->markDeviceFailed($device);
 
         if ($this->allTaskDevicesFailed()) {
@@ -123,6 +149,10 @@ abstract class BaseTaskJob implements ShouldQueue
         string $taskMessage = 'Task timed out or failed.',
         bool $withTimestamp = false
     ): void {
+        if ($this->taskDeadlineStillActive()) {
+            return;
+        }
+
         $this->markInterfaceFailed($deviceInterface);
 
         if ($this->allTaskInterfacesFailed($totalFilter, $failedFilter)) {

@@ -11,6 +11,7 @@ import { cancel, check as checkTask, clear_queue, show as showTask } from '@/rou
 import type { BreadcrumbItem, SharedData } from '@/types';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import TaskDeadlineBar from '@/components/Task/TaskDeadlineBar';
 import { useEffect, useState } from 'react';
 
 export default function Show() {
@@ -90,6 +91,14 @@ export default function Show() {
             </div>
             <div className="text-center text-2xl font-bold">
                 {task_friendly_name}
+            </div>
+            <div className="mx-auto flex max-w-7xl justify-center px-4">
+                <TaskDeadlineBar
+                    taskId={task.id}
+                    expiresAt={task.expires_at ?? null}
+                    canExtend={task.can_extend === true}
+                    status={task.status}
+                />
             </div>
             <div className="mx-auto my-2 flex min-w-7xl gap-4">
                 <div className="max-w-[400px]">

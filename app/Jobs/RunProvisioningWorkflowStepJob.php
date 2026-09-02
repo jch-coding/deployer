@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
 use App\Models\ProvisioningWorkflowDevice;
+use App\Models\Task;
 use App\Services\Provisioning\ProvisioningStepRunner;
 use App\Services\Provisioning\ProvisioningWorkflowOrchestrator;
 use DateTime;
@@ -85,7 +86,19 @@ class RunProvisioningWorkflowStepJob implements ShouldQueue
             ->with('workflow')
             ->find($this->workflowDeviceId);
 
-        $minutes = $workflowDevice?->workflow?->deployment_time ?? 10;
+        $workflow = $workflowDevice?->workflow;
+        if ($workflow !== null) {
+            $task = Task::query()
+                ->where('provisioning_workflow_id', $workflow->id)
+                ->first();
+
+            $expiresAt = $task?->expiresAt();
+            if ($expiresAt !== null) {
+                return $expiresAt->toDateTime();
+            }
+        }
+
+        $minutes = $workflow?->deployment_time ?? 10;
 
         return now()->addMinutes($minutes)->toDateTime();
     }

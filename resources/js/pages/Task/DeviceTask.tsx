@@ -12,6 +12,7 @@ import  { show as showDeployment } from '@/routes/deployments';
 import { show as showTask, cancel, clear_queue, check as checkTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 import { Button } from '@/components/ui/button';
+import TaskDeadlineBar from '@/components/Task/TaskDeadlineBar';
 import { toast } from 'sonner';
 
 type GreenLakeStepStatuses = Record<string, string>;
@@ -29,7 +30,14 @@ type TaskDevice = {
 };
 
 type DeviceTaskPageProps = SharedData & {
-    task: { id: number; task_type: string; status_log: string };
+    task: {
+        id: number;
+        task_type: string;
+        status: string;
+        status_log: string;
+        expires_at: string | null;
+        can_extend: boolean;
+    };
     task_friendly_name: string;
     devices: TaskDevice[];
     display_columns?: string[];
@@ -162,6 +170,14 @@ export default function Show() {
             </div>
             <div className="text-center text-2xl font-bold">
                 {task_friendly_name}
+            </div>
+            <div className="mx-auto flex max-w-7xl justify-center px-4">
+                <TaskDeadlineBar
+                    taskId={task.id}
+                    expiresAt={task.expires_at}
+                    canExtend={task.can_extend}
+                    status={task.status}
+                />
             </div>
             <div className="mx-auto my-2 flex min-w-7xl gap-4">
                 <div className="max-w-[400px]">

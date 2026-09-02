@@ -23,7 +23,23 @@ class Task extends Model
         'central_static_tags' => 'array',
         'site_details' => 'array',
         'mirror_fallback_mode' => 'boolean',
+        'expires_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Task $task): void {
+            if ($task->expires_at !== null) {
+                return;
+            }
+
+            $minutes = $task->deployment_time !== null && $task->deployment_time > 0
+                ? (int) $task->deployment_time
+                : self::DEFAULT_DEPLOYMENT_MINUTES;
+
+            $task->expires_at = now()->addMinutes($minutes);
+        });
+    }
 
     public function users(): BelongsToMany
     {
@@ -543,11 +559,44 @@ class Task extends Model
 
     public function expiresAt(int $defaultMinutes = self::DEFAULT_DEPLOYMENT_MINUTES): ?CarbonInterface
     {
+        if ($this->expires_at !== null) {
+            return $this->expires_at->copy();
+        }
+
         if ($this->created_at === null) {
             return null;
         }
 
         return $this->created_at->copy()->addMinutes($this->effectiveDeploymentMinutes($defaultMinutes));
+    }
+
+    public function refreshDeadlineFromDuration(): void
+    {
+        $this->update([
+            'expires_at' => now()->addMinutes($this->effectiveDeploymentMinutes()),
+        ]);
+    }
+
+    public function canExtendDeadline(): bool
+    {
+        if ($this->task_type === 'CUSTOM_PROVISION') {
+            $workflow = $this->relationLoaded('provisioningWorkflow')
+                ? $this->provisioningWorkflow
+                : $this->provisioningWorkflow()->first();
+
+            if ($workflow === null) {
+                return false;
+            }
+
+            return in_array($workflow->status, ['running', 'paused'], true);
+        }
+
+        return $this->status === 'IN_PROGRESS';
+    }
+
+    public static function formatDeadlineForLog(CarbonInterface $deadline): string
+    {
+        return $deadline->copy()->setTimezone('America/New_York')->format('Y-m-d H:i:s T');
     }
 
     public function processTaskStatusLog($message, $withTimeStamp = false)

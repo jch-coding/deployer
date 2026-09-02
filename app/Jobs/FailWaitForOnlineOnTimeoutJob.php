@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\ProvisioningStep;
 use App\Models\ProvisioningWorkflowDevice;
+use App\Models\Task;
 use App\Services\Provisioning\ProvisioningStepResult;
 use App\Services\Provisioning\ProvisioningWorkflowOrchestrator;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -29,6 +30,14 @@ class FailWaitForOnlineOnTimeoutJob implements ShouldQueue
 
         $workflow = $workflowDevice->workflow;
         if ($workflow === null || $workflow->isHalted()) {
+            return;
+        }
+
+        $task = Task::query()
+            ->where('provisioning_workflow_id', $workflow->id)
+            ->first();
+        $expiresAt = $task?->expiresAt();
+        if ($expiresAt !== null && $expiresAt->isFuture()) {
             return;
         }
 
