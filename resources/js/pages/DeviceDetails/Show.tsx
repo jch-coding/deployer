@@ -1,6 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import { Download, RotateCcw } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import AccessPointDetailsPanel, {
     type AccessPointDetailsPayload,
 } from '@/components/device-details/AccessPointDetailsPanel';
@@ -10,6 +10,7 @@ import SwitchInterfacesPanel, {
 } from '@/components/device-details/SwitchInterfacesPanel';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { clearMacAddressTableCache } from '@/lib/mac-address-table-cache';
 import { downloadAllSwitchInterfacesCsv } from '@/lib/switch-interfaces-csv';
 import { isAccessPointDevice } from '@/lib/is-access-point';
 import { index as clientsIndex } from '@/routes/clients';
@@ -35,6 +36,18 @@ function isAccessPoint(device: DeviceDetailsPayload): boolean {
 
 export default function Show() {
     const { current_client, devices } = usePage<DeviceDetailsShowProps>().props;
+
+    const clientCacheKey = String(current_client?.id ?? 'none');
+    const previousClientCacheKeyRef = useRef(clientCacheKey);
+
+    useEffect(() => {
+        if (previousClientCacheKeyRef.current === clientCacheKey) {
+            return;
+        }
+
+        previousClientCacheKeyRef.current = clientCacheKey;
+        clearMacAddressTableCache();
+    }, [clientCacheKey]);
 
     const accessPoints = useMemo(() => devices.filter(isAccessPoint), [devices]);
     const switches = useMemo(() => devices.filter((device) => !isAccessPoint(device)), [devices]);

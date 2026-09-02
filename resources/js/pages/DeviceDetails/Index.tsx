@@ -1,7 +1,7 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table';
 import { Download, Loader2, RotateCcw, Search, Wifi } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CentralScopeRefreshButtons, {
     type CentralScopeCacheMeta,
     type CentralScopeGroupsCacheMeta,
@@ -17,6 +17,7 @@ import AppLayout from '@/layouts/app-layout';
 import { downloadSiteBssidsCsv, type SiteBssidRow } from '@/lib/bssids-csv';
 import { csrfHeaders } from '@/lib/csrf';
 import { isAccessPointDevice } from '@/lib/is-access-point';
+import { clearMacAddressTableCache } from '@/lib/mac-address-table-cache';
 import { index as clientsIndex } from '@/routes/clients';
 import {
     index as deviceDetailsIndex,
@@ -166,6 +167,30 @@ export default function Index() {
     const [siteBssidsPageIndex, setSiteBssidsPageIndex] = useState(0);
     const [macSearchOpen, setMacSearchOpen] = useState(false);
     const siteBssidsPageSize = 25;
+
+    const macSearchResetKey = useMemo(
+        () =>
+            [
+                current_client?.id ?? 'none',
+                localFilters.site_id.trim(),
+                localFilters.site_name.trim(),
+            ].join('|'),
+        [
+            current_client?.id,
+            localFilters.site_id,
+            localFilters.site_name,
+        ],
+    );
+    const previousMacSearchResetKeyRef = useRef(macSearchResetKey);
+
+    useEffect(() => {
+        if (previousMacSearchResetKeyRef.current === macSearchResetKey) {
+            return;
+        }
+
+        previousMacSearchResetKeyRef.current = macSearchResetKey;
+        clearMacAddressTableCache();
+    }, [macSearchResetKey]);
 
     const hasActiveLocalFilters = useMemo(
         () => hasActiveFilters(localFilters),
@@ -706,15 +731,18 @@ export default function Index() {
                     </Button>
                 </div>
 
-                {macSearchOpen ? (
-                    <SiteMacAddressSearchSection
-                        devices={devices}
-                        selectedSerials={selectedSerials}
-                        siteLabel={siteBssidsExportLabel}
-                        hasSiteSelected={hasSiteSelected}
-                        hasSearchResults={hasSearchResults}
-                        onClose={() => setMacSearchOpen(false)}
-                    />
+                {hasSiteSelected ? (
+                    <div className={macSearchOpen ? undefined : 'hidden'}>
+                        <SiteMacAddressSearchSection
+                            devices={devices}
+                            selectedSerials={selectedSerials}
+                            siteLabel={siteBssidsExportLabel}
+                            hasSiteSelected={hasSiteSelected}
+                            hasSearchResults={hasSearchResults}
+                            resetKey={macSearchResetKey}
+                            onClose={() => setMacSearchOpen(false)}
+                        />
+                    </div>
                 ) : null}
 
                 {siteBssidsError && (

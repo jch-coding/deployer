@@ -5,17 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
-import { csrfHeaders } from '@/lib/csrf';
-import { pollCxAsyncOperation } from '@/lib/cx-async-operation';
+import {
+    getCachedOrFetchMacAddressTable,
+    MAC_ADDRESS_TABLE_COMMAND,
+} from '@/lib/mac-address-search';
 import {
     filterMacAddressTableRows,
-    parseMacAddressTableOutput,
     type MacAddressTableRow,
 } from '@/lib/mac-address-table';
-import { showCommands as showCommandsRoute } from '@/routes/device-details';
-import { result as showCommandsResultRoute } from '@/routes/device-details/show-commands';
-
-const MAC_ADDRESS_TABLE_COMMAND = 'show mac-address-table';
 
 type SwitchMacAddressTableCardProps = {
     serial: string;
@@ -66,86 +63,51 @@ export default function SwitchMacAddressTableCard({
     const [state, setState] = useState<CardState>({ kind: 'loading' });
     const [searchQuery, setSearchQuery] = useState('');
 
-    const fetchMacAddressTable = useCallback(async () => {
-        setState({ kind: 'loading' });
-        setSearchQuery('');
-
-        try {
-            const response = await fetch(showCommandsRoute.url(), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    ...csrfHeaders(),
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    serial,
-                    commands: [MAC_ADDRESS_TABLE_COMMAND],
-                }),
-            });
-
-            const body = (await response.json().catch(() => null)) as {
-                task_id?: string;
-                error?: string;
-            } | null;
-
-            if (!response.ok) {
-                throw new Error(
-                    body?.error ??
-                        `Failed to start show mac-address-table (HTTP ${response.status}).`,
-                );
+    const loadMacAddressTable = useCallback(
+        async (force: boolean) => {
+            setState({ kind: 'loading' });
+            if (force) {
+                setSearchQuery('');
             }
 
-            const taskId = body?.task_id?.trim();
-            if (!taskId) {
-                throw new Error('Central did not return a task id.');
-            }
-
-            const pollBody = await pollCxAsyncOperation(
-                showCommandsResultRoute.url({ serial, taskId }),
-                {
-                    onProgress: (progressBody) => {
+            try {
+                const entry = await getCachedOrFetchMacAddressTable(serial, {
+                    force,
+                    onProgress: (progressPercent) => {
                         setState({
                             kind: 'loading',
-                            progressPercent: progressBody.progressPercent,
+                            progressPercent,
                         });
                     },
-                },
-            );
+                });
 
-            const output =
-                pollBody.output?.results?.find(
-                    (result) => result.command === MAC_ADDRESS_TABLE_COMMAND,
-                )?.output ??
-                pollBody.output?.results?.[0]?.output ??
-                '';
+                const { table } = entry;
 
-            const parsed = parseMacAddressTableOutput(output);
-
-            setState({
-                kind: 'ready',
-                rows: parsed.rows,
-                ageTime: parsed.ageTime,
-                count: parsed.count,
-                raw: parsed.raw,
-                parseFailed: parsed.rows.length === 0 && output.trim() !== '',
-            });
-        } catch (error) {
-            setState({
-                kind: 'error',
-                message:
-                    error instanceof Error
-                        ? error.message
-                        : 'Failed to load MAC address table.',
-            });
-        }
-    }, [serial]);
+                setState({
+                    kind: 'ready',
+                    rows: table.rows,
+                    ageTime: table.ageTime,
+                    count: table.count,
+                    raw: table.raw,
+                    parseFailed:
+                        table.rows.length === 0 && table.raw.trim() !== '',
+                });
+            } catch (error) {
+                setState({
+                    kind: 'error',
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : 'Failed to load MAC address table.',
+                });
+            }
+        },
+        [serial],
+    );
 
     useEffect(() => {
-        void fetchMacAddressTable();
-    }, [fetchMacAddressTable]);
+        void loadMacAddressTable(false);
+    }, [loadMacAddressTable]);
 
     const filteredRows = useMemo(() => {
         if (state.kind !== 'ready') {
@@ -175,7 +137,7 @@ export default function SwitchMacAddressTableCard({
                             size="icon"
                             className="size-8 shrink-0"
                             disabled={state.kind === 'loading'}
-                            onClick={() => void fetchMacAddressTable()}
+                            onClick={() => void loadMacAddressTable(true)}
                             aria-label="Refresh MAC address table"
                             data-test="device-details-mac-address-table-refresh"
                         >

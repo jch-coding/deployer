@@ -811,8 +811,10 @@ sudo cloudflared service start`}</code>
                                 partial hex all work).
                             </li>
                             <li>
-                                The card shows MAC age-time and entry count when the switch reports them. Use
-                                the refresh control to re-fetch the table; close the card to return to the
+                                The card shows MAC age-time and entry count when the switch reports them. If
+                                this switch&apos;s table was already loaded during Site MAC search (or an
+                                earlier open) on the same page session, it opens from cache. Use the refresh
+                                control to re-fetch the table from Central; close the card to return to the
                                 interface list.
                             </li>
                             <li>
@@ -835,8 +837,9 @@ sudo cloudflared service start`}</code>
                             <li>
                                 Click <strong>Site MAC search</strong>. Choose switch scope:{' '}
                                 <strong>All switches in search results</strong> or{' '}
-                                <strong>Selected switches only</strong> (table row selection). At most 25
-                                switches are queried per search.
+                                <strong>Selected switches only</strong> (table row selection). There is no
+                                hard limit on how many switches you can search; Central calls are batched
+                                (25 at a time).
                             </li>
                             <li>
                                 Choose MAC addresses to find: enter a manual list (one MAC per line, any
@@ -845,13 +848,18 @@ sudo cloudflared service start`}</code>
                             </li>
                             <li>
                                 Click <strong>Search MAC addresses</strong>. Deployer runs{' '}
-                                <code>show mac-address-table</code> on each switch in sequence and shows
-                                progress. Matches list switch name, serial, MAC, VLAN, type, and port.
+                                <code>show mac-address-table</code> on switches that have not already been
+                                fetched in this page session (batched), reuses cached tables for switches
+                                already searched, and shows progress. Matches list switch name, serial, MAC,
+                                VLAN, type, and port. Changing the target MAC list re-filters cached tables
+                                without re-querying Central.
                             </li>
                             <li>
                                 Filter results in the table, or use <strong>Export CSV</strong> to download all
-                                matches. Per-switch failures are listed separately so partial results are still
-                                usable.
+                                matches. Per-switch failures are listed separately and skipped for matching so
+                                partial results are still usable. Closing and reopening Site MAC search on the
+                                same site keeps prior results; changing site or client clears the cached
+                                tables.
                             </li>
                         </ol>
                     </section>

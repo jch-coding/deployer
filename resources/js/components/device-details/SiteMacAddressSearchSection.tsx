@@ -1,6 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { Download, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
@@ -8,8 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { csrfHeaders } from '@/lib/csrf';
 import {
-    fetchMacAddressTableOutputForSerial,
-    MAC_ADDRESS_SEARCH_MAX_SWITCHES,
     runMacAddressSearch,
     type MacAddressSearchMatch,
     type MacAddressSearchProgress,
@@ -53,6 +51,8 @@ type SiteMacAddressSearchSectionProps = {
     siteLabel: string;
     hasSiteSelected: boolean;
     hasSearchResults: boolean;
+    /** When this changes (site or client), clear displayed matches/errors. */
+    resetKey: string;
     onClose: () => void;
 };
 
@@ -90,12 +90,48 @@ function toSwitchTarget(device: DeviceRow) {
     };
 }
 
+function mergeMatchesBySerial(
+    previous: MacAddressSearchMatch[],
+    next: MacAddressSearchMatch[],
+    runSerials: Set<string>,
+): MacAddressSearchMatch[] {
+    return [
+        ...previous.filter((match) => !runSerials.has(match.serial)),
+        ...next,
+    ];
+}
+
+function mergeErrorsBySerial(
+    previous: MacAddressSearchSwitchError[],
+    next: MacAddressSearchSwitchError[],
+    runSerials: Set<string>,
+): MacAddressSearchSwitchError[] {
+    return [
+        ...previous.filter((error) => !runSerials.has(error.serial)),
+        ...next,
+    ];
+}
+
+function formatSearchProgress(progress: MacAddressSearchProgress): string {
+    const cachedNote =
+        progress.cachedCount > 0
+            ? ` · ${progress.cachedCount} already searched`
+            : '';
+
+    if (progress.total === 0) {
+        return `Using ${progress.cachedCount} cached switch${progress.cachedCount === 1 ? '' : 'es'}`;
+    }
+
+    return `Fetching batch ${progress.current} of ${progress.total} (${progress.batchSize} switch${progress.batchSize === 1 ? '' : 'es'})${cachedNote}`;
+}
+
 export default function SiteMacAddressSearchSection({
     devices,
     selectedSerials,
     siteLabel,
     hasSiteSelected,
     hasSearchResults,
+    resetKey,
     onClose,
 }: SiteMacAddressSearchSectionProps) {
     const [switchScope, setSwitchScope] = useState<SwitchScope>('all');
@@ -123,6 +159,7 @@ export default function SiteMacAddressSearchSection({
         MacAddressSearchSwitchError[]
     >([]);
     const [resultsFilter, setResultsFilter] = useState('');
+    const lastResetKeyRef = useRef(resetKey);
 
     const siteSwitches = useMemo(
         () =>
@@ -189,6 +226,19 @@ export default function SiteMacAddressSearchSection({
                 ).length > 0,
         );
     }, [matches, resultsFilter]);
+
+    useEffect(() => {
+        if (lastResetKeyRef.current === resetKey) {
+            return;
+        }
+
+        lastResetKeyRef.current = resetKey;
+        setMatches(null);
+        setSwitchErrors([]);
+        setSubmitError(null);
+        setProgress(null);
+        setResultsFilter('');
+    }, [resetKey]);
 
     const loadDeployments = useCallback(async () => {
         setDeploymentsLoading(true);
@@ -340,14 +390,6 @@ export default function SiteMacAddressSearchSection({
             return;
         }
 
-        if (switchesToSearch.length > MAC_ADDRESS_SEARCH_MAX_SWITCHES) {
-            setSubmitError(
-                `Too many switches selected. Maximum allowed is ${MAC_ADDRESS_SEARCH_MAX_SWITCHES}.`,
-            );
-
-            return;
-        }
-
         let targetMacs: string[];
         try {
             targetMacs = resolveTargetMacs();
@@ -364,19 +406,24 @@ export default function SiteMacAddressSearchSection({
         setSearching(true);
         setSubmitError(null);
         setProgress(null);
-        setMatches(null);
-        setSwitchErrors([]);
+
+        const runSerials = new Set(
+            switchesToSearch.map((switchDevice) => switchDevice.serial),
+        );
 
         try {
             const result = await runMacAddressSearch({
                 switches: switchesToSearch,
                 targetMacs,
-                fetchMacAddressTableOutput: fetchMacAddressTableOutputForSerial,
                 onProgress: setProgress,
             });
 
-            setMatches(result.matches);
-            setSwitchErrors(result.errors);
+            setMatches((previous) =>
+                mergeMatchesBySerial(previous ?? [], result.matches, runSerials),
+            );
+            setSwitchErrors((previous) =>
+                mergeErrorsBySerial(previous, result.errors, runSerials),
+            );
         } catch (error) {
             setSubmitError(
                 error instanceof Error
@@ -585,8 +632,7 @@ export default function SiteMacAddressSearchSection({
                             className="text-sm text-muted-foreground"
                             data-test="device-details-site-mac-search-progress"
                         >
-                            Searching switch {progress.current} of{' '}
-                            {progress.total} ({progress.serial})
+                            {formatSearchProgress(progress)}
                         </span>
                     ) : null}
                 </div>
