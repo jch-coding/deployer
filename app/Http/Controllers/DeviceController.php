@@ -18,6 +18,7 @@ use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\DeviceInterface;
 use App\Models\LacpProfile;
+use App\Models\LicensingInventoryDevice;
 use App\Models\Site;
 use App\Models\StpProfile;
 use App\Models\SwitchPort;
@@ -1444,6 +1445,10 @@ class DeviceController extends Controller
         return back();
     }
 
+    /**
+     * Keep this in sync with filterDeploymentDevices on the deployment show page:
+     * name, serial, device_function, and GreenLake inventory model.
+     */
     private function applyDeploymentDeviceSearch(Builder|Relation $query, string $search): void
     {
         if ($search === '') {
@@ -1451,10 +1456,20 @@ class DeviceController extends Controller
         }
 
         $pattern = '%'.addcslashes(mb_strtolower($search), '%_\\').'%';
-        $query->where(function ($inner) use ($pattern) {
-            $inner->whereRaw('lower(name) LIKE ?', [$pattern])
-                ->orWhereRaw('lower(serial) LIKE ?', [$pattern])
-                ->orWhereRaw('lower(device_function) LIKE ?', [$pattern]);
+        $inventoryTable = (new LicensingInventoryDevice)->getTable();
+        $deviceTable = (new Device)->getTable();
+
+        $query->where(function ($inner) use ($pattern, $inventoryTable, $deviceTable) {
+            $inner->whereRaw("lower({$deviceTable}.name) LIKE ?", [$pattern])
+                ->orWhereRaw("lower({$deviceTable}.serial) LIKE ?", [$pattern])
+                ->orWhereRaw("lower({$deviceTable}.device_function) LIKE ?", [$pattern])
+                ->orWhereExists(function ($sub) use ($pattern, $inventoryTable, $deviceTable) {
+                    $sub->selectRaw('1')
+                        ->from($inventoryTable)
+                        ->whereColumn("{$inventoryTable}.client_id", "{$deviceTable}.client_id")
+                        ->whereColumn("{$inventoryTable}.serial", "{$deviceTable}.serial")
+                        ->whereRaw("lower({$inventoryTable}.model) LIKE ?", [$pattern]);
+                });
         });
     }
 

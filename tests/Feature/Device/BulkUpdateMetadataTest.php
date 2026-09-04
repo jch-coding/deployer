@@ -4,6 +4,7 @@ use App\DeviceFunction;
 use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
+use App\Models\LicensingInventoryDevice;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
@@ -91,6 +92,47 @@ test('bulk update metadata sync all respects search filter', function () {
 
     expect($alpha->fresh()->group)->toBe('Matched Group')
         ->and($beta->fresh()->group)->toBe('Keep Group');
+});
+
+test('bulk update metadata sync all matches greenlake inventory model', function () {
+    $matched = Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'name' => 'Closet Switch',
+        'serial' => 'SERIAL-6300-100',
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+        'group' => null,
+    ]);
+    $unmatched = Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'name' => 'Lobby AP',
+        'serial' => 'SERIAL-AP-200',
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+        'group' => 'Keep Group',
+    ]);
+
+    LicensingInventoryDevice::factory()->for($this->client)->create([
+        'serial' => $matched->serial,
+        'model' => '6300M',
+    ]);
+    LicensingInventoryDevice::factory()->for($this->client)->create([
+        'serial' => $unmatched->serial,
+        'model' => 'AP-515',
+    ]);
+
+    $this->post(route('deployments.bulk-update-metadata', $this->deployment), [
+        'sync_all' => true,
+        'search' => '6300M',
+        'group' => 'Access Closet',
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success', 'Updated metadata for 1 device.');
+
+    expect($matched->fresh()->group)->toBe('Access Closet')
+        ->and($unmatched->fresh()->group)->toBe('Keep Group');
 });
 
 test('bulk update metadata can clear site and group', function () {

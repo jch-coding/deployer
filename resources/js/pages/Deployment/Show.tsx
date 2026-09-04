@@ -4,6 +4,7 @@ import { Crown, Download, Search, Workflow } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { toast } from 'sonner';
+import { buildDeploymentBulkSelectionPayload } from '@/lib/deployment-bulk-selection';
 import type { LicenseTypeOption } from '@/lib/license-types';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
 import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
@@ -475,14 +476,34 @@ export default function Show() {
         allFilteredSelected ||
         (selectedCount > 0 && selectedCount === filteredDevices.length);
 
-    // "Select all filtered" clears rowSelection, so Diva/custom links must
-    // use filteredDevices — not selectedIds — when that mode is active.
+    const filteredDeviceIds = useMemo(
+        () => filteredDevices.map((device) => device.id),
+        [filteredDevices],
+    );
+
+    // "Select all filtered" clears rowSelection, so Diva/custom links and
+    // bulk actions must use filteredDevices — not selectedIds — when that
+    // mode is active. Client-side filters (including GreenLake model) are
+    // not all replicated by a backend search string.
     const provisionDeviceIds = useMemo(
+        () => (isAllFilteredSelected ? filteredDeviceIds : selectedIds),
+        [filteredDeviceIds, isAllFilteredSelected, selectedIds],
+    );
+
+    const bulkSelectionPayload = useMemo(
         () =>
-            isAllFilteredSelected
-                ? filteredDevices.map((device) => device.id)
-                : selectedIds,
-        [filteredDevices, isAllFilteredSelected, selectedIds],
+            buildDeploymentBulkSelectionPayload({
+                allMatchingSelected: isAllFilteredSelected,
+                search: deviceTableSearch,
+                selectedIds,
+                filteredDeviceIds,
+            }),
+        [
+            deviceTableSearch,
+            filteredDeviceIds,
+            isAllFilteredSelected,
+            selectedIds,
+        ],
     );
 
     const allPageRowsSelected =
@@ -496,27 +517,11 @@ export default function Show() {
 
     const handleForceSyncScopeIds = useCallback(() => {
         setSyncingScopeIds(true);
-        router.post(
-            refreshScopeIds.url(deploymentId),
-            isAllFilteredSelected
-                ? {
-                      sync_all: true,
-                      ...(deviceTableSearch.trim() !== ''
-                          ? { search: deviceTableSearch.trim() }
-                          : {}),
-                  }
-                : { device_ids: selectedIds },
-            {
-                preserveScroll: true,
-                onFinish: () => setSyncingScopeIds(false),
-            },
-        );
-    }, [
-        deploymentId,
-        deviceTableSearch,
-        isAllFilteredSelected,
-        selectedIds,
-    ]);
+        router.post(refreshScopeIds.url(deploymentId), bulkSelectionPayload, {
+            preserveScroll: true,
+            onFinish: () => setSyncingScopeIds(false),
+        });
+    }, [bulkSelectionPayload, deploymentId]);
 
     const canApplyBulkMetadata =
         bulkSite !== BULK_NO_CHANGE || bulkGroup !== BULK_NO_CHANGE;
@@ -537,14 +542,7 @@ export default function Show() {
             device_ids?: number[];
             site?: string | null;
             group?: string | null;
-        } = isAllFilteredSelected
-            ? {
-                  sync_all: true,
-                  ...(deviceTableSearch.trim() !== ''
-                      ? { search: deviceTableSearch.trim() }
-                      : {}),
-              }
-            : { device_ids: selectedIds };
+        } = { ...bulkSelectionPayload };
 
         if (bulkSite !== BULK_NO_CHANGE) {
             payload.site = bulkSite === BULK_NONE ? null : bulkSite;
@@ -568,12 +566,10 @@ export default function Show() {
         });
     }, [
         bulkGroup,
+        bulkSelectionPayload,
         bulkSite,
         canApplyBulkMetadata,
         deploymentId,
-        deviceTableSearch,
-        isAllFilteredSelected,
-        selectedIds,
         stopBulkMetadataLoading,
     ]);
 
@@ -594,14 +590,7 @@ export default function Show() {
             device_ids?: number[];
         } = {
             target_deployment_id: Number(bulkTargetDeploymentId),
-            ...(isAllFilteredSelected
-                ? {
-                      sync_all: true,
-                      ...(deviceTableSearch.trim() !== ''
-                          ? { search: deviceTableSearch.trim() }
-                          : {}),
-                  }
-                : { device_ids: selectedIds }),
+            ...bulkSelectionPayload,
         };
 
         movingDevicesRef.current = true;
@@ -617,11 +606,9 @@ export default function Show() {
             onFinish: stopMovingDevicesLoading,
         });
     }, [
+        bulkSelectionPayload,
         bulkTargetDeploymentId,
         deploymentId,
-        deviceTableSearch,
-        isAllFilteredSelected,
-        selectedIds,
         stopMovingDevicesLoading,
     ]);
 
