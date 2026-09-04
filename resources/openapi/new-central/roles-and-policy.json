@@ -1,0 +1,2772 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Roles & Policy",
+        "description": "Roles, firewall policies, role GPIDs, role ACLs, object groups, and policy-group ordering.",
+        "version": "v1alpha1"
+    },
+    "tags": [
+        {
+            "name": "Role",
+            "description": "User role profiles that define network access and role parameters for clients."
+        },
+        {
+            "name": "Policy",
+            "description": "Firewall policies with ordered rules that match traffic and apply actions."
+        },
+        {
+            "name": "Role Gpid",
+            "description": "Role to GPID mappings for role identification."
+        },
+        {
+            "name": "Role Acl",
+            "description": "Role-based access control lists and their rules."
+        },
+        {
+            "name": "Object Group",
+            "description": "Named address and port object groups used in policy matching."
+        },
+        {
+            "name": "Policy Group",
+            "description": "Global ordered list of firewall policies and their evaluation sequence."
+        }
+    ],
+    "paths": {
+        "/network-config/v1alpha1/roles": {
+            "get": {
+                "operationId": "readRoles",
+                "summary": "Read existing roles",
+                "description": "List role profiles used to assign network access and role parameters to clients.",
+                "tags": [
+                    "Role"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "patch": {
+                "operationId": "updateRoles",
+                "summary": "Update roles configuration",
+                "tags": [
+                    "Role"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List role profiles used to assign network access and role parameters to clients.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/network-config/v1alpha1/roles/{name}": {
+            "get": {
+                "operationId": "readRolesRoleByID",
+                "summary": "Read an existing role by name",
+                "description": "Read a role profile by unique name.",
+                "tags": [
+                    "Role"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createRolesRoleByID",
+                "summary": "Create or replace roles role by id",
+                "tags": [
+                    "Role"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role profile by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateRolesRoleByID",
+                "summary": "Update roles role by id",
+                "tags": [
+                    "Role"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role profile by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteRolesRoleByID",
+                "summary": "Delete roles role by id",
+                "tags": [
+                    "Role"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role profile by unique name."
+            }
+        },
+        "/network-config/v1alpha1/policies": {
+            "get": {
+                "operationId": "readPolicies",
+                "summary": "Read existing policies",
+                "description": "List firewall policies with ordered rules that match traffic and apply actions.",
+                "tags": [
+                    "Policy"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "patch": {
+                "operationId": "updatePolicies",
+                "summary": "Update policies configuration",
+                "tags": [
+                    "Policy"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List firewall policies with ordered rules that match traffic and apply actions.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/network-config/v1alpha1/policies/{name}": {
+            "get": {
+                "operationId": "readPoliciesPolicyByID",
+                "summary": "Read an existing policy by name",
+                "description": "Read a firewall policy by unique name.",
+                "tags": [
+                    "Policy"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Policy name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createPoliciesPolicyByID",
+                "summary": "Create or replace policies policy by id",
+                "tags": [
+                    "Policy"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Policy name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a firewall policy by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updatePoliciesPolicyByID",
+                "summary": "Update policies policy by id",
+                "tags": [
+                    "Policy"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Policy name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a firewall policy by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deletePoliciesPolicyByID",
+                "summary": "Delete policies policy by id",
+                "tags": [
+                    "Policy"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Policy name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a firewall policy by unique name."
+            }
+        },
+        "/network-config/v1alpha1/role-gpids": {
+            "get": {
+                "operationId": "readRoleGpids",
+                "summary": "Read existing role GPIDs",
+                "description": "List role to GPID mappings used for role identification.",
+                "tags": [
+                    "Role Gpid"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "patch": {
+                "operationId": "updateRoleGpids",
+                "summary": "Update role gpids configuration",
+                "tags": [
+                    "Role Gpid"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List role to GPID mappings used for role identification.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/network-config/v1alpha1/role-gpids/{name}": {
+            "get": {
+                "operationId": "readRoleGpidsRoleGpidByID",
+                "summary": "Read an existing role GPID by name",
+                "description": "Read a role GPID mapping by unique name.",
+                "tags": [
+                    "Role Gpid"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role GPID name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createRoleGpidsRoleGpidByID",
+                "summary": "Create or replace role gpids role gpid by id",
+                "tags": [
+                    "Role Gpid"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role GPID name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role GPID mapping by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateRoleGpidsRoleGpidByID",
+                "summary": "Update role gpids role gpid by id",
+                "tags": [
+                    "Role Gpid"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role GPID name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role GPID mapping by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteRoleGpidsRoleGpidByID",
+                "summary": "Delete role gpids role gpid by id",
+                "tags": [
+                    "Role Gpid"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role GPID name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role GPID mapping by unique name."
+            }
+        },
+        "/network-config/v1alpha1/role-acls": {
+            "get": {
+                "operationId": "readRoleAcls",
+                "summary": "Read Role ACLs",
+                "description": "List role-based access control lists and their rules.",
+                "tags": [
+                    "Role Acl"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "patch": {
+                "operationId": "updateRoleAcls",
+                "summary": "Update role acls configuration",
+                "tags": [
+                    "Role Acl"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List role-based access control lists and their rules.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/network-config/v1alpha1/role-acls/{name}": {
+            "get": {
+                "operationId": "readRoleAclsAclByID",
+                "summary": "Read a Role ACL by name",
+                "description": "Read a role ACL by unique name.",
+                "tags": [
+                    "Role Acl"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role ACL name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createRoleAclsAclByID",
+                "summary": "Create or replace role acls acl by id",
+                "tags": [
+                    "Role Acl"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role ACL name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role ACL by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateRoleAclsAclByID",
+                "summary": "Update role acls acl by id",
+                "tags": [
+                    "Role Acl"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role ACL name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role ACL by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteRoleAclsAclByID",
+                "summary": "Delete role acls acl by id",
+                "tags": [
+                    "Role Acl"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Role ACL name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a role ACL by unique name."
+            }
+        },
+        "/network-config/v1alpha1/object-groups": {
+            "get": {
+                "operationId": "readObjectGroups",
+                "summary": "Read Object Groups",
+                "description": "List named address and port object groups used in policy matching.",
+                "tags": [
+                    "Object Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "patch": {
+                "operationId": "updateObjectGroups",
+                "summary": "Update object groups configuration",
+                "tags": [
+                    "Object Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "List named address and port object groups used in policy matching.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/network-config/v1alpha1/object-groups/{name}": {
+            "get": {
+                "operationId": "readObjectGroupsGroupByID",
+                "summary": "Read Object Group",
+                "description": "Read an object group by unique name.",
+                "tags": [
+                    "Object Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Object group name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createObjectGroupsGroupByID",
+                "summary": "Create or replace object groups group by id",
+                "tags": [
+                    "Object Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Object group name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read an object group by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateObjectGroupsGroupByID",
+                "summary": "Update object groups group by id",
+                "tags": [
+                    "Object Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Object group name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read an object group by unique name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteObjectGroupsGroupByID",
+                "summary": "Delete object groups group by id",
+                "tags": [
+                    "Object Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Object group name.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read an object group by unique name."
+            }
+        },
+        "/network-config/v1alpha1/policy-groups": {
+            "get": {
+                "operationId": "readPolicyGroups",
+                "summary": "Read policy groups",
+                "description": "Read the global ordered list of firewall policies and their evaluation sequence.",
+                "tags": [
+                    "Policy Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "patch": {
+                "operationId": "updatePolicyGroups",
+                "summary": "Update policy groups configuration",
+                "tags": [
+                    "Policy Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "description": "Read the global ordered list of firewall policies and their evaluation sequence.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/network-config/v1alpha1/policy-groups/policy-group/policy-group-list/{name}": {
+            "get": {
+                "operationId": "readPolicyGroupsPolicyGroupPolicyGroupListByID",
+                "summary": "Read policy-group-list by name",
+                "description": "Read a policy group list entry by unique policy name.",
+                "tags": [
+                    "Policy Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Policy name in the policy group list.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createPolicyGroupsPolicyGroupPolicyGroupListByID",
+                "summary": "Create or replace policy groups policy group policy group list by id",
+                "tags": [
+                    "Policy Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Policy name in the policy group list.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a policy group list entry by unique policy name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updatePolicyGroupsPolicyGroupPolicyGroupListByID",
+                "summary": "Update policy groups policy group policy group list by id",
+                "tags": [
+                    "Policy Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Policy name in the policy group list.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a policy group list entry by unique policy name.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deletePolicyGroupsPolicyGroupPolicyGroupListByID",
+                "summary": "Delete policy groups policy group policy group list by id",
+                "tags": [
+                    "Policy Group"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "Policy name in the policy group list.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "description": "Read a policy group list entry by unique policy name."
+            }
+        }
+    }
+}

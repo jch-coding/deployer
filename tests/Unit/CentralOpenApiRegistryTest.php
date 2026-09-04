@@ -132,3 +132,37 @@ test('registry loads wireless get endpoints', function () {
 
     expect($tags)->toContain('Radio', 'Wlan Ssid');
 });
+
+test('registry loads roles and policy endpoints', function () {
+    $registry = app(CentralOpenApiRegistry::class);
+
+    expect($registry->hasOperation('readRoles'))->toBeTrue()
+        ->and($registry->hasOperation('readRolesRoleByID'))->toBeTrue()
+        ->and($registry->hasOperation('readPolicies'))->toBeTrue()
+        ->and($registry->hasOperation('readRoleAcls'))->toBeTrue()
+        ->and($registry->hasOperation('readObjectGroups'))->toBeTrue()
+        ->and($registry->hasOperation('readPolicyGroups'))->toBeTrue()
+        ->and($registry->hasOperation('createRolesRoleByID'))->toBeTrue()
+        ->and($registry->hasOperation('updatePoliciesPolicyByID'))->toBeTrue()
+        ->and($registry->hasOperation('deleteRoleAclsAclByID'))->toBeTrue();
+
+    $roles = $registry->operation('readRoles');
+
+    expect($roles['method'])->toBe('GET')
+        ->and($roles['path'])->toBe('/network-config/v1alpha1/roles')
+        ->and($roles['tags'])->toContain('Role')
+        ->and($roles['reference_url'])->toBe('https://developer.arubanetworks.com/new-central-config/reference/readroles')
+        ->and(collect($roles['parameters'])->pluck('name'))->toContain('view-type', 'scope-id')
+        ->and($roles['requires_body'])->toBeFalse();
+
+    $createRole = $registry->operation('createRolesRoleByID');
+
+    expect($createRole['method'])->toBe('POST')
+        ->and($createRole['path'])->toBe('/network-config/v1alpha1/roles/{name}')
+        ->and($createRole['requires_body'])->toBeTrue()
+        ->and(collect($createRole['parameters'])->pluck('name'))->toContain('name');
+
+    $tags = collect($registry->tags())->pluck('name');
+
+    expect($tags)->toContain('Role', 'Policy', 'Role Acl', 'Object Group', 'Policy Group');
+});
