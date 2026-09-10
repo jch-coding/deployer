@@ -392,6 +392,336 @@ test('ASSIGN_SUBSCRIPTION rejects task when tag/type pool lacks seats', function
     Bus::assertNothingBatched();
 });
 
+test('ASSIGN_SUBSCRIPTION stores by subscription_key without license_tag', function () {
+    Bus::fake();
+
+    $devices = Device::factory(2)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'CAMPUS_AP',
+    ]);
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    seedLicensingCache(
+        $this->client,
+        devices: $devices->map(fn ($device) => [
+            'serial' => $device->serial,
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'services' => [],
+            'subscription_key' => '',
+        ])->all(),
+        subscriptions: [[
+            'subscription_key' => 'KEY-DIRECT',
+            'greenlake_subscription_id' => 'gl-sub-KEY-DIRECT',
+            'sku' => 'Q9Y65AAE',
+            'license_type' => 'Advanced AP',
+            'status' => 'OK',
+            'available' => 10,
+            'tags' => [],
+        ]],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SUBSCRIPTION',
+        'deployment_time' => 3,
+        'licensing_mode' => 'uniform',
+        'subscription_key' => 'KEY-DIRECT',
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->task_type)->toBe('ASSIGN_SUBSCRIPTION')
+        ->and($task->license_type)->toBe('Advanced AP')
+        ->and($task->devices)->toHaveCount(2);
+
+    $firstDevice = $task->devices->first();
+    expect($firstDevice->pivot->licensing_service_name)->toBe('gl-sub-KEY-DIRECT');
+
+    Bus::assertBatchCount(1);
+    Bus::assertBatched(function ($batch): bool {
+        return $batch->jobs->count() === 1
+            && $batch->jobs->first() instanceof AssignSubscriptionJob
+            && $batch->jobs->first()->greenlakeSubscriptionId === 'gl-sub-KEY-DIRECT';
+    });
+});
+
+test('ASSIGN_SUBSCRIPTION rejects when subscription_key lacks seats', function () {
+    Bus::fake();
+
+    $devices = Device::factory(2)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'CAMPUS_AP',
+    ]);
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    seedLicensingCache(
+        $this->client,
+        devices: $devices->map(fn ($device) => [
+            'serial' => $device->serial,
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'services' => [],
+            'subscription_key' => '',
+        ])->all(),
+        subscriptions: [[
+            'subscription_key' => 'KEY-DIRECT',
+            'greenlake_subscription_id' => 'gl-sub-KEY-DIRECT',
+            'sku' => 'Q9Y65AAE',
+            'license_type' => 'Advanced AP',
+            'status' => 'OK',
+            'available' => 1,
+            'quantity' => 1,
+            'tags' => [],
+        ]],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SUBSCRIPTION',
+        'deployment_time' => 3,
+        'licensing_mode' => 'uniform',
+        'subscription_key' => 'KEY-DIRECT',
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasErrors('subscription_key');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ASSIGN_SUBSCRIPTION rejects when neither tag nor subscription_key is provided', function () {
+    Bus::fake();
+
+    $devices = Device::factory(1)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'CAMPUS_AP',
+    ]);
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    seedLicensingCache(
+        $this->client,
+        devices: $devices->map(fn ($device) => [
+            'serial' => $device->serial,
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'services' => [],
+            'subscription_key' => '',
+        ])->all(),
+        subscriptions: [[
+            'subscription_key' => 'KEY-DIRECT',
+            'greenlake_subscription_id' => 'gl-sub-KEY-DIRECT',
+            'sku' => 'Q9Y65AAE',
+            'license_type' => 'Advanced AP',
+            'status' => 'OK',
+            'available' => 10,
+            'tags' => [],
+        ]],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SUBSCRIPTION',
+        'deployment_time' => 3,
+        'licensing_mode' => 'uniform',
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasErrors('subscription_key');
+    expect($this->deployment->refresh()->tasks)->toHaveCount(0);
+    Bus::assertNothingBatched();
+});
+
+test('ASSIGN_SUBSCRIPTION per_device stores by devices subscription_key', function () {
+    Bus::fake();
+
+    $devices = Device::factory(2)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'CAMPUS_AP',
+    ]);
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    seedLicensingCache(
+        $this->client,
+        devices: $devices->map(fn ($device) => [
+            'serial' => $device->serial,
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'services' => [],
+            'subscription_key' => '',
+        ])->all(),
+        subscriptions: [
+            [
+                'subscription_key' => 'KEY-A',
+                'greenlake_subscription_id' => 'gl-sub-KEY-A',
+                'sku' => 'Q9Y65AAE',
+                'license_type' => 'Advanced AP',
+                'status' => 'OK',
+                'available' => 5,
+                'tags' => [],
+            ],
+            [
+                'subscription_key' => 'KEY-B',
+                'greenlake_subscription_id' => 'gl-sub-KEY-B',
+                'sku' => 'Q9Y65AAE',
+                'license_type' => 'Advanced AP',
+                'status' => 'OK',
+                'available' => 5,
+                'tags' => [],
+            ],
+        ],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SUBSCRIPTION',
+        'deployment_time' => 3,
+        'licensing_mode' => 'per_device',
+        'devices' => [
+            ['id' => $devices[0]->id, 'subscription_key' => 'KEY-A'],
+            ['id' => $devices[1]->id, 'subscription_key' => 'KEY-B'],
+        ],
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task)->not()->toBeNull()
+        ->and($task->devices)->toHaveCount(2);
+
+    $byId = $task->devices->keyBy('id');
+    expect($byId[$devices[0]->id]->pivot->licensing_service_name)->toBe('gl-sub-KEY-A')
+        ->and($byId[$devices[1]->id]->pivot->licensing_service_name)->toBe('gl-sub-KEY-B');
+});
+
+test('ASSIGN_SUBSCRIPTION chunks devices into jobs of at most 25', function () {
+    Bus::fake();
+
+    $devices = Device::factory(26)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'CAMPUS_AP',
+    ]);
+
+    $this->client->update([
+        'classic_base_url' => ClassicBaseUrl::US1,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+        'bearer_token' => 'greenlake-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    seedLicensingCache(
+        $this->client,
+        devices: $devices->map(fn ($device) => [
+            'serial' => $device->serial,
+            'model' => 'AP-515',
+            'device_type' => 'IAP',
+            'services' => [],
+            'subscription_key' => '',
+        ])->all(),
+        subscriptions: [[
+            'subscription_key' => 'KEY-POOL',
+            'greenlake_subscription_id' => 'gl-sub-KEY-POOL',
+            'sku' => 'Q9Y65AAE',
+            'license_type' => 'Advanced AP',
+            'status' => 'OK',
+            'available' => 50,
+            'tags' => ['pool-a'],
+        ]],
+    );
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'ASSIGN_SUBSCRIPTION',
+        'deployment_time' => 3,
+        'licensing_mode' => 'uniform',
+        'license_tag' => 'pool-a',
+        'license_type' => 'Advanced AP',
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+    expect($task)->not()->toBeNull()
+        ->and($task->devices)->toHaveCount(26)
+        ->and($task->batch_id)->toBeNull();
+
+    Bus::assertChained([
+        Bus::chainedBatch(function ($batch): bool {
+            $job = $batch->jobs->first();
+
+            return $batch->jobs->count() === 1
+                && $job instanceof AssignSubscriptionJob
+                && count($job->devices) === 25
+                && $job->greenlakeSubscriptionId === 'gl-sub-KEY-POOL';
+        }),
+        Bus::chainedBatch(function ($batch): bool {
+            $job = $batch->jobs->first();
+
+            return $batch->jobs->count() === 1
+                && $job instanceof AssignSubscriptionJob
+                && count($job->devices) === 1
+                && $job->greenlakeSubscriptionId === 'gl-sub-KEY-POOL';
+        }),
+    ]);
+});
+
 test('UNASSIGN_SUBSCRIPTION stores licensing fields and dispatches unassign jobs', function () {
     Bus::fake();
 

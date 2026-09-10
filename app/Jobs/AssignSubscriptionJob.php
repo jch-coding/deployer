@@ -36,43 +36,57 @@ class AssignSubscriptionJob extends BaseTaskJob
             return;
         }
 
-        $deviceIds = [];
+        $devicesWithIds = [];
         foreach ($this->devices as $device) {
             $greenlakeDeviceId = trim((string) ($device['greenlake_device_id'] ?? ''));
-            if ($greenlakeDeviceId !== '') {
-                $deviceIds[] = $greenlakeDeviceId;
+            if ($greenlakeDeviceId === '') {
+                $this->markDeviceFailed($device['id'] ?? null);
+                $this->task->processTaskStatusLog(
+                    "\nFailed to assign license ({$subscriptionId}) to device ".($device['serial'] ?? '').': missing GreenLake device id.',
+                );
+
+                continue;
             }
+
+            $devicesWithIds[] = [
+                ...$device,
+                'greenlake_device_id' => $greenlakeDeviceId,
+            ];
         }
 
-        if ($deviceIds === []) {
+        if ($devicesWithIds === []) {
             $this->failTask('No GreenLake device ids available for license assignment.');
 
             return;
         }
 
-        $result = $this->greenLakeAPIHelper->assignSubscriptionToDevices($deviceIds, $subscriptionId);
-        $ok = $result['error'] === null && array_filter(
-            $result['responses'],
-            fn ($response) => ! $response->successful(),
-        ) === [];
-
-        if ($ok) {
-            foreach ($this->devices as $device) {
-                $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
-            }
-            $message = array_reduce(
-                $this->devices,
-                fn (string $carry, array $device) => $carry."\nAssigned license ({$subscriptionId}) to device ".($device['serial'] ?? ''),
-                ''
+        foreach (array_chunk($devicesWithIds, GreenLakeAPIHelper::DEVICES_PER_ASSIGN_REQUEST) as $deviceChunk) {
+            $chunkDeviceIds = array_map(
+                fn (array $device): string => $device['greenlake_device_id'],
+                $deviceChunk,
             );
-            $this->task->processTaskStatusLog($message);
-        } else {
-            foreach ($this->devices as $device) {
-                $this->markDeviceFailed($device['id']);
+
+            $result = $this->greenLakeAPIHelper->assignSubscriptionToDevices($chunkDeviceIds, $subscriptionId);
+            $resultsByGreenLakeId = $result['results'] ?? [];
+
+            foreach ($deviceChunk as $device) {
+                $greenlakeDeviceId = $device['greenlake_device_id'];
+                $ok = (bool) ($resultsByGreenLakeId[$greenlakeDeviceId] ?? false);
+
+                if ($ok) {
+                    $this->task->devices()->find($device['id'])?->pivot?->update(['status' => 'COMPLETED']);
+                    $this->task->processTaskStatusLog(
+                        "\nAssigned license ({$subscriptionId}) to device ".($device['serial'] ?? ''),
+                    );
+                } else {
+                    $this->markDeviceFailed($device['id']);
+                    $errorDetail = $result['error'] ?? 'GreenLake assign failed.';
+                    Log::error('Failed to assign subscription with error '.$errorDetail);
+                    $this->task->processTaskStatusLog(
+                        "\nFailed to assign license ({$subscriptionId}) to device ".($device['serial'] ?? '').": {$errorDetail}",
+                    );
+                }
             }
-            $errorDetail = $result['error'] ?? 'GreenLake assign failed.';
-            Log::error('Failed to assign subscription with error '.$errorDetail);
-            $this->task->processTaskStatusLog("\nFailed to assign license ({$subscriptionId}): {$errorDetail}");
         }
 
         $this->task->load('devices');

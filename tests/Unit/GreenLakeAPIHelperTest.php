@@ -299,7 +299,11 @@ test('assignSubscriptionToDevices patches each device with subscription id', fun
     $result = $helper->assignSubscriptionToDevices(['dev-1', 'dev-2'], 'sub-uuid-1');
 
     expect($result['error'])->toBeNull()
-        ->and($result['responses'])->toHaveCount(2);
+        ->and($result['responses'])->toHaveCount(2)
+        ->and($result['results'])->toBe([
+            'dev-1' => true,
+            'dev-2' => true,
+        ]);
 
     Http::assertSent(function (Request $request): bool {
         if ($request->method() !== 'PATCH') {
@@ -310,6 +314,29 @@ test('assignSubscriptionToDevices patches each device with subscription id', fun
             && str_contains($request->url(), 'id=dev-')
             && ($request->data()['subscription'][0]['id'] ?? '') === 'sub-uuid-1';
     });
+});
+
+test('assignSubscriptionToDevices processes ids in sequential chunks of 25', function () {
+    $client = Client::factory()->create([
+        'bearer_token' => 'test-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    Http::fake([
+        GreenLakeAPIHelper::BASE_URL.'/*' => Http::response([], 200),
+    ]);
+
+    $deviceIds = array_map(fn (int $i): string => 'dev-'.$i, range(1, 26));
+    $helper = new GreenLakeAPIHelper($client);
+    $result = $helper->assignSubscriptionToDevices($deviceIds, 'sub-uuid-1');
+
+    expect($result['error'])->toBeNull()
+        ->and($result['responses'])->toHaveCount(26)
+        ->and($result['results'])->toHaveCount(26)
+        ->and($result['results']['dev-1'])->toBeTrue()
+        ->and($result['results']['dev-26'])->toBeTrue();
+
+    Http::assertSentCount(26);
 });
 
 test('unassignSubscriptionFromDevices sends empty subscription array', function () {

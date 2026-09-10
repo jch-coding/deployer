@@ -1008,12 +1008,14 @@ export default function documentation() {
                         <div className="space-y-4">
                             <p>
                                 Device-based licensing task. CSV rows identify which devices to license;
-                                subscription tag, license type, and pool selection are chosen on the task
-                                card (uniform pool or per-device license modal)—not in the CSV.
+                                subscription selection is chosen on the task card—either a uniform tag and
+                                license type pool, a specific subscription by ID and available seats, or
+                                per-device selections in the license modal—not in the CSV.
                             </p>
                             <p className="text-muted-foreground text-sm">
-                                Requires a current licensing inventory sync and available pool seats for
-                                the selected tag and license type.
+                                Requires a current licensing inventory sync and available seats for the
+                                selected tag/type pool or subscription. Assignments run in batches of up to
+                                25 devices.
                             </p>
                             <ColumnPair
                                 required={['name', 'serial', 'device_function']}

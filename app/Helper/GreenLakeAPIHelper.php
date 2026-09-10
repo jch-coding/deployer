@@ -11,6 +11,8 @@ class GreenLakeAPIHelper
 {
     public const BASE_URL = 'https://global.api.greenlake.hpe.com';
 
+    public const DEVICES_PER_ASSIGN_REQUEST = 25;
+
     public array $subscriptions = [
         'list' => '/subscriptions/v1/subscriptions',
         'detail' => '/subscriptions/v1/subscriptions/{id}',
@@ -1211,7 +1213,6 @@ class GreenLakeAPIHelper
     }
 
     /**
-     * @param  mixed  $list
      * @return array<int, string>
      */
     private function extractSerialsFromAsyncResultList(mixed $list): array
@@ -1256,40 +1257,50 @@ class GreenLakeAPIHelper
 
     /**
      * @param  array<int, string>  $deviceIds
-     * @return array{responses: array<int, Response>, error: string|null}
+     * @return array{responses: array<int, Response>, results: array<string, bool>, error: string|null}
      */
     public function assignSubscriptionToDevices(array $deviceIds, string $greenlakeSubscriptionId): array
     {
         $responses = [];
+        $results = [];
         $firstError = null;
 
+        $normalizedIds = [];
         foreach ($deviceIds as $deviceId) {
-            $deviceId = trim($deviceId);
-            if ($deviceId === '') {
-                continue;
+            $deviceId = trim((string) $deviceId);
+            if ($deviceId !== '') {
+                $normalizedIds[] = $deviceId;
             }
+        }
 
-            $response = $this->updateDevice($deviceId, [
-                'subscription' => [
-                    ['id' => $greenlakeSubscriptionId],
-                ],
-            ]);
+        foreach (array_chunk($normalizedIds, self::DEVICES_PER_ASSIGN_REQUEST) as $chunk) {
+            foreach ($chunk as $deviceId) {
+                $response = $this->updateDevice($deviceId, [
+                    'subscription' => [
+                        ['id' => $greenlakeSubscriptionId],
+                    ],
+                ]);
 
-            if (is_array($response)) {
-                $firstError ??= (string) ($response['error'] ?? 'failed to assign subscription on GreenLake.');
+                if (is_array($response)) {
+                    $firstError ??= (string) ($response['error'] ?? 'failed to assign subscription on GreenLake.');
+                    $results[$deviceId] = false;
 
-                continue;
-            }
+                    continue;
+                }
 
-            $responses[] = $response;
+                $responses[] = $response;
+                $ok = $response->successful();
+                $results[$deviceId] = $ok;
 
-            if (! $response->successful()) {
-                $firstError ??= $this->extractErrorMessage($response);
+                if (! $ok) {
+                    $firstError ??= $this->extractErrorMessage($response);
+                }
             }
         }
 
         return [
             'responses' => $responses,
+            'results' => $results,
             'error' => $firstError,
         ];
     }
