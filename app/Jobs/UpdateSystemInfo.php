@@ -32,6 +32,10 @@ class UpdateSystemInfo extends BaseTaskJob
                 return;
             }
 
+            if ($pivotForDevice->status === 'FAILED') {
+                return;
+            }
+
             if (! $this->device->scope_id || in_array($pivotForDevice->status, ['FAILED', 'TIMED_OUT'], true)) {
                 $scope_id_response = $this->centralAPIHelper->getScopeIdFromCentral($this->device);
                 if (array_key_exists('error', $scope_id_response)) {
@@ -51,6 +55,33 @@ class UpdateSystemInfo extends BaseTaskJob
 
                 $this->device->scope_id = $scopeEntries[0]['scopeId'];
                 $this->device->save();
+            }
+
+            if ($this->task->only_update_different_names) {
+                $systemInfoResponse = $this->centralAPIHelper->getSystemInfo($this->device);
+                $hostname = CentralAPIHelper::hostnameFromSystemInfoResponse($systemInfoResponse);
+                if ($hostname === null) {
+                    $detail = is_array($systemInfoResponse)
+                        ? ($systemInfoResponse['error'] ?? json_encode($systemInfoResponse))
+                        : 'Invalid response from Central';
+                    Log::error('getSystemInfo failed before hostname compare: '.$detail);
+                    $this->task->processTaskStatusLog(
+                        'Failed to read system info for '.$this->device->name.'; will retry.',
+                        true,
+                    );
+                    $this->release($this->wait_time * 60);
+
+                    return;
+                }
+
+                if (CentralAPIHelper::hostnameMatchesExpected($hostname, (string) $this->device->name)) {
+                    $this->markDevicePivotCompletedAndMaybeFinishTask($pivotForDevice);
+                    $message = 'Hostname for '.$this->device->name.' already matches Central; skipped update.';
+                    Log::info($message);
+                    $this->task->processTaskStatusLog($message);
+
+                    return;
+                }
             }
 
             $response = $this->centralAPIHelper->updateSystemInfo($this->device);
@@ -115,9 +146,7 @@ class UpdateSystemInfo extends BaseTaskJob
     {
         $pivot->update(['status' => 'COMPLETED']);
         $this->task->load('devices');
-        if ($this->task->allTrackedItemsCompleted()) {
-            $this->task->update(['status' => 'COMPLETED']);
-        }
+        $this->task->finishIfAllDevicesSettled();
     }
 
     private function responseMessageString(Response $response): string

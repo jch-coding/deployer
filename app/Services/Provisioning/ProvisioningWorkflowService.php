@@ -71,7 +71,10 @@ class ProvisioningWorkflowService
         $licensingConfig = $licensingWillRun
             ? $this->buildLicensingConfig($deployment, $devices, $options)
             : ['mode' => 'skipped'];
-        $licensingConfig['naming'] = ['per_device' => $provisioningNames];
+        $licensingConfig['naming'] = [
+            'per_device' => $provisioningNames,
+            'only_update_different_names' => (bool) ($options['only_update_different_names'] ?? false),
+        ];
         if (! $isCustom) {
             $licensingConfig['start_step'] = $startStep->value;
             $licensingConfig['omit_steps'] = $omitSteps;
@@ -86,6 +89,7 @@ class ProvisioningWorkflowService
             CentralAPIHelper::deploymentUsesVsxFallbackMode($devices),
             CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices),
             $provisioningNames,
+            (bool) ($options['only_update_different_names'] ?? false),
         );
         /** @var array<string, array<string, array{status?: string, message?: string}>> $preflightResults */
         $preflightResults = is_array($options['preflight_results'] ?? null)

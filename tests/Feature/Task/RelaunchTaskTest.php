@@ -17,6 +17,7 @@ beforeEach(function () {
         ->create();
     $this->client = $this->user->clients()->first();
     $this->client->update(['current' => true]);
+    withClassicCentralCredentials($this->client);
     $this->deployment = $this->client->deployments()->create(['name' => 'Test Deployment']);
     $this->actingAs($this->user);
 });
@@ -27,7 +28,9 @@ test('relaunching a failed task sets status in progress, updates batch id, and d
     $devices = Device::factory(2)->create([
         'deployment_id' => $this->deployment->id,
         'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
     ]);
+    fakeClassicMonitoringOnline($devices);
 
     $task = Task::factory()->for($this->deployment)->create([
         'task_type' => 'UPDATE_SYSTEM_INFO',
@@ -59,7 +62,9 @@ test('relaunching a cancelled task sets status in progress and redirects to show
     $device = Device::factory()->create([
         'deployment_id' => $this->deployment->id,
         'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
     ]);
+    fakeClassicMonitoringOnline([$device]);
 
     $task = Task::factory()->for($this->deployment)->create([
         'task_type' => 'UPDATE_SYSTEM_INFO',
@@ -84,7 +89,9 @@ test('relaunching a timed out task sets status in progress and redirects to show
     $device = Device::factory()->create([
         'deployment_id' => $this->deployment->id,
         'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
     ]);
+    fakeClassicMonitoringOnline([$device]);
 
     $task = Task::factory()->for($this->deployment)->create([
         'task_type' => 'UPDATE_SYSTEM_INFO',
@@ -112,7 +119,9 @@ test('relaunch with custom timers persists deployment_time and wait_time', funct
     $device = Device::factory()->create([
         'deployment_id' => $this->deployment->id,
         'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
     ]);
+    fakeClassicMonitoringOnline([$device]);
 
     $task = Task::factory()->for($this->deployment)->create([
         'task_type' => 'UPDATE_SYSTEM_INFO',

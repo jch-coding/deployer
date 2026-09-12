@@ -13,6 +13,7 @@ class ProvisioningStepContext
         public readonly bool $mirrorFallbackMode = false,
         /** @var array<int, string> */
         public readonly array $provisioningNames = [],
+        public readonly bool $onlyUpdateDifferentNames = false,
     ) {}
 
     public static function forWorkflow(ProvisioningWorkflow $workflow): self
@@ -23,11 +24,13 @@ class ProvisioningStepContext
 
         $namingConfig = $workflow->licensing_config['naming'] ?? [];
         $provisioningNames = is_array($namingConfig['per_device'] ?? null) ? $namingConfig['per_device'] : [];
+        $onlyUpdateDifferentNames = (bool) ($namingConfig['only_update_different_names'] ?? false);
 
         return new self(
             CentralAPIHelper::deploymentUsesVsxFallbackMode($devices),
             CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices),
             $provisioningNames,
+            $onlyUpdateDifferentNames,
         );
     }
 }

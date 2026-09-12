@@ -327,3 +327,61 @@ function seedCentralScopeCache(Client $client): void
     \App\Models\CentralScopeCache::factory()->for($client)->sites()->create();
     \App\Models\CentralScopeCache::factory()->for($client)->groups()->create();
 }
+
+/**
+ * Ensure the client has Classic Central tokens for inventory calls.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function withClassicCentralCredentials(Client $client, array $overrides = []): void
+{
+    $client->update(array_merge([
+        'classic_base_url' => \App\ClassicBaseUrl::US_WEST4,
+        'classic_client_id' => 'classic-client-id',
+        'classic_client_secret' => 'classic-client-secret',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'classic_refresh_token' => 'refresh-token',
+        'classic_access_token' => 'access-token',
+        'classic_expires_in' => now()->addHour(),
+    ], $overrides));
+}
+
+/**
+ * Fake Classic Central switch/AP monitoring so Name Devices online gate sees devices as Up/Down.
+ *
+ * @param  iterable<\App\Models\Device|object>  $devices
+ * @param  array<string, string>  $statusBySerial  serial => status (default Up)
+ */
+function fakeClassicMonitoringOnline(iterable $devices = [], array $statusBySerial = []): void
+{
+    $switches = [];
+    $aps = [];
+
+    foreach ($devices as $device) {
+        $serial = (string) ($device->serial ?? '');
+        if ($serial === '') {
+            continue;
+        }
+        $status = $statusBySerial[$serial] ?? 'Up';
+        $function = (string) ($device->device_function ?? '');
+        $row = ['serial' => $serial, 'status' => $status];
+
+        if (str_contains($function, 'AP')) {
+            $aps[] = $row;
+        } else {
+            $switches[] = $row;
+        }
+    }
+
+    Http::fake([
+        '*monitoring/v1/switches*' => Http::response([
+            'switches' => $switches,
+            'total' => count($switches),
+        ], 200),
+        '*monitoring/v2/aps*' => Http::response([
+            'aps' => $aps,
+            'total' => count($aps),
+        ], 200),
+    ]);
+}

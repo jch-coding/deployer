@@ -7,7 +7,6 @@ use App\Helper\CentralAPIHelper;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\LicensingInventoryDevice;
-use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -428,7 +427,8 @@ class ProvisioningPreflightService
         }
 
         $response = $centralAPIHelper->getSystemInfo($device);
-        if (is_array($response) || ! $response instanceof Response || ! $response->successful()) {
+        $hostname = CentralAPIHelper::hostnameFromSystemInfoResponse($response);
+        if ($hostname === null) {
             return $this->warn(
                 'Could not read system info from Central.',
                 'UPDATE_SYSTEM_INFO',
@@ -437,13 +437,7 @@ class ProvisioningPreflightService
             );
         }
 
-        $profiles = $response->json('profile', []);
-        $hostname = '';
-        if (is_array($profiles) && isset($profiles[0]) && is_array($profiles[0])) {
-            $hostname = trim((string) ($profiles[0]['hostname'] ?? ''));
-        }
-
-        if ($hostname !== '' && strcasecmp($hostname, $expected) === 0) {
+        if (CentralAPIHelper::hostnameMatchesExpected($hostname, $expected)) {
             return $this->ok("Hostname matches \"{$expected}\".");
         }
 

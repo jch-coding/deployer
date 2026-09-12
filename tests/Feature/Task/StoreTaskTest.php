@@ -17,6 +17,7 @@ use App\Models\LicensingInventoryDevice;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     $this->user = User::factory()
@@ -145,8 +146,15 @@ test('ASSIGN_DEVICE_FUNCTION dispatches grouped chunks for each device function'
 
 test('creating a task with devices stores the task and attaches the devices', function () {
     Bus::fake();
+    withClassicCentralCredentials($this->client);
 
-    $devices = Device::factory(2)->create(['deployment_id' => $this->deployment->id, 'client_id' => $this->client->id]);
+    $devices = Device::factory(2)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    fakeClassicMonitoringOnline($devices);
+
     $response = $this->post(route('tasks.store', $this->deployment), [
         'name' => 'Test Task',
         'task_type' => 'UPDATE_SYSTEM_INFO',
@@ -160,11 +168,131 @@ test('creating a task with devices stores the task and attaches the devices', fu
         'id' => $task->id,
         'task_type' => 'UPDATE_SYSTEM_INFO',
         'status' => 'IN_PROGRESS',
+        'only_update_different_names' => false,
     ]);
     $this->assertCount(2, $task->devices);
     $this->assertEquals('PENDING', $task->devices()->find($devices[0])->pivot->status);
     $this->assertEquals('PENDING', $task->devices()->find($devices[1])->pivot->status);
     expect($task->batch_id)->not()->toBeNull();
+});
+
+test('creating UPDATE_SYSTEM_INFO stores only_update_different_names when checked', function () {
+    Bus::fake();
+    withClassicCentralCredentials($this->client);
+
+    $devices = Device::factory(1)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    fakeClassicMonitoringOnline($devices);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'deployment_time' => 1,
+        'only_update_different_names' => true,
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+    expect($task->only_update_different_names)->toBeTrue();
+});
+
+test('UPDATE_SYSTEM_INFO marks offline devices failed and only dispatches online devices', function () {
+    Bus::fake();
+    withClassicCentralCredentials($this->client);
+
+    $online = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+        'serial' => 'SN-ONLINE',
+    ]);
+    $offline = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+        'serial' => 'SN-OFFLINE',
+    ]);
+    fakeClassicMonitoringOnline([$online, $offline], [
+        'SN-ONLINE' => 'Up',
+        'SN-OFFLINE' => 'Down',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'deployment_time' => 1,
+        'devices' => [
+            ['id' => $online->id],
+            ['id' => $offline->id],
+        ],
+    ]);
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task->devices()->find($online->id)->pivot->status)->toBe('PENDING')
+        ->and($task->devices()->find($offline->id)->pivot->status)->toBe('FAILED')
+        ->and($task->status)->toBe('IN_PROGRESS')
+        ->and((string) $task->status_log)->toContain('not online in Classic Central');
+
+    Bus::assertBatched(fn ($batch) => count($batch->jobs) === 1);
+});
+
+test('UPDATE_SYSTEM_INFO fails immediately when all devices are offline', function () {
+    Bus::fake();
+    withClassicCentralCredentials($this->client);
+
+    $devices = Device::factory(2)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    fakeClassicMonitoringOnline($devices, [
+        $devices[0]->serial => 'Down',
+        $devices[1]->serial => 'Down',
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'deployment_time' => 1,
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task->status)->toBe('FAILED')
+        ->and($task->devices()->wherePivot('status', 'FAILED')->count())->toBe(2)
+        ->and($task->batch_id)->toBeNull();
+    Bus::assertNothingBatched();
+});
+
+test('UPDATE_SYSTEM_INFO fails when Classic inventory cannot be read', function () {
+    Bus::fake();
+    withClassicCentralCredentials($this->client);
+
+    $devices = Device::factory(1)->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    Http::fake([
+        '*monitoring/v1/switches*' => Http::response(['error' => 'boom'], 500),
+        '*monitoring/v2/aps*' => Http::response(['aps' => []], 200),
+    ]);
+
+    $response = $this->post(route('tasks.store', $this->deployment), [
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'deployment_time' => 1,
+        'devices' => $devices->map(fn ($device) => ['id' => $device->id])->toArray(),
+    ]);
+    $response->assertSessionHasNoErrors();
+    $task = $this->deployment->refresh()->tasks()->first();
+
+    expect($task->status)->toBe('FAILED')
+        ->and($task->devices()->find($devices[0]->id)->pivot->status)->toBe('FAILED')
+        ->and((string) $task->status_log)->toContain('could not be read');
+    Bus::assertNothingBatched();
 });
 
 test('CONFIGURE_ALL_INTERFACE does not create subtasks when selected devices have no eligible interfaces', function () {

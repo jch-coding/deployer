@@ -95,3 +95,150 @@ it('keeps device pivot pending when system info update fails', function () {
 
     expect($task->devices()->find($device->id)->pivot->status)->toBe('PENDING');
 });
+
+it('does not call getSystemInfo when only_update_different_names is false', function () {
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+        'only_update_different_names' => false,
+    ]);
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'scope_id' => 'scope-id',
+        'name' => 'switch-a',
+    ]);
+    $task->devices()->attach($device->id, ['status' => 'PENDING']);
+
+    $centralApi = Mockery::mock(CentralAPIHelper::class);
+    $successResponse = Mockery::mock(Response::class);
+    $successResponse->shouldReceive('successful')->andReturn(true);
+    $centralApi->shouldReceive('getSystemInfo')->never();
+    $centralApi->shouldReceive('updateSystemInfo')->once()->andReturn($successResponse);
+
+    (new UpdateSystemInfo($device, $task, $centralApi))->handle();
+
+    expect($task->fresh()->status)->toBe('COMPLETED');
+});
+
+it('skips update when only_update_different_names and hostname already matches', function () {
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+        'only_update_different_names' => true,
+    ]);
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'scope_id' => 'scope-id',
+        'name' => 'switch-a',
+    ]);
+    $task->devices()->attach($device->id, ['status' => 'PENDING']);
+
+    $centralApi = Mockery::mock(CentralAPIHelper::class);
+    $getResponse = Mockery::mock(Response::class);
+    $getResponse->shouldReceive('successful')->andReturn(true);
+    $getResponse->shouldReceive('json')->with('profile', [])->andReturn([
+        ['hostname' => 'switch-a'],
+    ]);
+    $centralApi->shouldReceive('getSystemInfo')->once()->andReturn($getResponse);
+    $centralApi->shouldReceive('updateSystemInfo')->never();
+    $centralApi->shouldReceive('postSystemInfo')->never();
+
+    (new UpdateSystemInfo($device, $task, $centralApi))->handle();
+
+    expect($task->devices()->find($device->id)->pivot->status)->toBe('COMPLETED')
+        ->and($task->fresh()->status)->toBe('COMPLETED')
+        ->and((string) $task->fresh()->status_log)->toContain('already matches Central');
+});
+
+it('updates when only_update_different_names and hostname differs', function () {
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+        'only_update_different_names' => true,
+    ]);
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'scope_id' => 'scope-id',
+        'name' => 'switch-a',
+    ]);
+    $task->devices()->attach($device->id, ['status' => 'PENDING']);
+
+    $centralApi = Mockery::mock(CentralAPIHelper::class);
+    $getResponse = Mockery::mock(Response::class);
+    $getResponse->shouldReceive('successful')->andReturn(true);
+    $getResponse->shouldReceive('json')->with('profile', [])->andReturn([
+        ['hostname' => 'old-name'],
+    ]);
+    $successResponse = Mockery::mock(Response::class);
+    $successResponse->shouldReceive('successful')->andReturn(true);
+    $centralApi->shouldReceive('getSystemInfo')->once()->andReturn($getResponse);
+    $centralApi->shouldReceive('updateSystemInfo')->once()->andReturn($successResponse);
+
+    (new UpdateSystemInfo($device, $task, $centralApi))->handle();
+
+    expect($task->fresh()->status)->toBe('COMPLETED')
+        ->and((string) $task->fresh()->status_log)->toContain('updated successfully');
+});
+
+it('retries when only_update_different_names and getSystemInfo fails', function () {
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+        'only_update_different_names' => true,
+        'wait_time' => 1,
+    ]);
+    $device = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'scope_id' => 'scope-id',
+        'name' => 'switch-a',
+    ]);
+    $task->devices()->attach($device->id, ['status' => 'PENDING']);
+
+    $centralApi = Mockery::mock(CentralAPIHelper::class);
+    $centralApi->shouldReceive('getSystemInfo')->once()->andReturn(['error' => 'token failed']);
+    $centralApi->shouldReceive('updateSystemInfo')->never();
+
+    $job = Mockery::mock(UpdateSystemInfo::class, [$device, $task, $centralApi])
+        ->makePartial()
+        ->shouldAllowMockingProtectedMethods();
+    $job->shouldReceive('release')->once();
+
+    $job->handle();
+
+    expect($task->devices()->find($device->id)->pivot->status)->toBe('PENDING');
+});
+
+it('finishes task as completed when remaining device succeeds after others failed', function () {
+    $task = Task::factory()->for($this->deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'IN_PROGRESS',
+    ]);
+    $failed = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'scope_id' => 'scope-1',
+    ]);
+    $pending = Device::factory()->create([
+        'deployment_id' => $this->deployment->id,
+        'client_id' => $this->client->id,
+        'scope_id' => 'scope-2',
+        'name' => 'switch-b',
+    ]);
+    $task->devices()->attach($failed->id, ['status' => 'FAILED']);
+    $task->devices()->attach($pending->id, ['status' => 'PENDING']);
+
+    $centralApi = Mockery::mock(CentralAPIHelper::class);
+    $successResponse = Mockery::mock(Response::class);
+    $successResponse->shouldReceive('successful')->andReturn(true);
+    $centralApi->shouldReceive('updateSystemInfo')->once()->andReturn($successResponse);
+
+    (new UpdateSystemInfo($pending, $task, $centralApi))->handle();
+
+    expect($task->fresh()->status)->toBe('COMPLETED')
+        ->and($task->devices()->find($failed->id)->pivot->status)->toBe('FAILED')
+        ->and($task->devices()->find($pending->id)->pivot->status)->toBe('COMPLETED');
+});

@@ -35,8 +35,9 @@ const tocSections = [
 const deploymentTasks = [
     {
         title: 'Name Devices',
-        description: 'Name or rename devices in Aruba Central according to the names in your device CSV.',
-        requiresClassicCentral: false,
+        description:
+            'Name or rename devices in Aruba Central according to the names in your device CSV. Devices that are not Up in Classic Central are marked failed and skipped. Optionally only update devices whose Central hostname differs from the CSV name.',
+        requiresClassicCentral: true,
     },
     {
         title: 'Configure LAG, Ethernet and VLAN Interfaces',
@@ -710,6 +711,29 @@ sudo cloudflared service start`}</code>
                                     CSV columns
                                 </Link>{' '}
                                 for required and optional headers per task type.
+                            </li>
+                        </ol>
+                        <h3 className={cn(h2, 'mt-8 text-xl')}>Update devices</h3>
+                        <p className={cn(body, 'mt-4')}>
+                            To change devices that are already on the deployment, use{' '}
+                            <strong>Update Devices</strong>. This upload only patches existing serials and
+                            never creates new devices.
+                        </p>
+                        <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
+                            <li>
+                                From the deployment&apos;s page, choose <strong>Update Devices</strong> and
+                                select your CSV file.
+                            </li>
+                            <li>
+                                Only the <strong>serial</strong> column is required. Include any other
+                                known columns you want to change (for example site, group, name, or
+                                interface settings). Blank cells leave existing values unchanged.
+                            </li>
+                            <li>
+                                Serials must already belong to this deployment. Unknown serials are
+                                rejected and nothing is created. For switches, you can list interface
+                                rows with the serial on the first row of a block and leave later serial
+                                cells blank.
                             </li>
                         </ol>
                     </section>

@@ -53,6 +53,7 @@ use App\Services\LicensingPoolResolver;
 use App\Services\LicensingSubscriptionResolver;
 use App\Services\LicensingSyncException;
 use App\Services\LicensingSyncService;
+use App\Services\Provisioning\ClassicDeviceOnlineService;
 use App\Services\Provisioning\ProvisioningWorkflowService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
@@ -897,6 +898,7 @@ class TaskController extends Controller
             'sites.*.geolocation' => ['nullable', 'array'],
             'sites.*.geolocation.latitude' => ['nullable', 'string', 'max:255'],
             'sites.*.geolocation.longitude' => ['nullable', 'string', 'max:255'],
+            'only_update_different_names' => ['nullable', 'boolean'],
         ]);
 
         $isAddVlans = $validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP';
@@ -1775,13 +1777,18 @@ class TaskController extends Controller
                 $task->forceFill(['batch_id' => $batchId])->save();
             }
         } else {
-            $task = $deployment->tasks()->create([
+            $taskAttributes = [
                 'task_type' => $validated['task_type'],
                 'name' => 'task_for_'.$deployment->name.now(),
                 'deployment_time' => $validated['deployment_time'],
                 'status' => 'IN_PROGRESS',
                 'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
-            ]);
+            ];
+            if ($validated['task_type'] === 'UPDATE_SYSTEM_INFO') {
+                $taskAttributes['only_update_different_names'] = (bool) ($validated['only_update_different_names'] ?? false);
+            }
+
+            $task = $deployment->tasks()->create($taskAttributes);
 
             $device_collection = Collection::make($validated['devices']);
             $task->devices()->attach($device_collection->pluck('id'));
@@ -3055,8 +3062,12 @@ class TaskController extends Controller
         $jobs = [];
         switch ($task->task_type) {
             case 'UPDATE_SYSTEM_INFO':
-                $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
-                $jobs[] = $in_progress->map(fn ($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper))->toArray();
+                $onlineDevices = $this->markOfflineDevicesFailedForSystemInfo($task, $centralAPIHelper);
+                if ($onlineDevices->isNotEmpty()) {
+                    $jobs[] = $onlineDevices
+                        ->map(fn ($device) => new UpdateSystemInfo($device, $task, $centralAPIHelper))
+                        ->toArray();
+                }
                 break;
             case 'CONFIGURE_MIRROR_SESSION':
                 $fallbackMode = $task->mirror_fallback_mode;
@@ -3427,6 +3438,95 @@ class TaskController extends Controller
         }
 
         return $inProgress->filter(fn ($device) => $device->sku);
+    }
+
+    /**
+     * Fail Name Devices pivots that are not Up in Classic Central. Returns devices still PENDING.
+     *
+     * @return Collection<int, Device>
+     */
+    protected function markOfflineDevicesFailedForSystemInfo(Task $task, CentralAPIHelper $centralAPIHelper): Collection
+    {
+        $candidates = $task->devices->filter(
+            fn ($device) => ! in_array($device->pivot->status, ['COMPLETED', 'FAILED'], true),
+        );
+
+        if ($candidates->isEmpty()) {
+            $task->finishIfAllDevicesSettled();
+
+            return collect();
+        }
+
+        $onlineService = app(ClassicDeviceOnlineService::class);
+        $needsSwitch = $candidates->contains(
+            fn (Device $device) => str_contains((string) $device->device_function, 'SWITCH')
+                || ! str_contains((string) $device->device_function, 'AP'),
+        );
+        $needsAp = $candidates->contains(
+            fn (Device $device) => str_contains((string) $device->device_function, 'AP')
+                || ! str_contains((string) $device->device_function, 'SWITCH'),
+        );
+
+        $switchStatuses = [];
+        $apStatuses = [];
+        $inventoryError = null;
+
+        if ($needsSwitch) {
+            $switchResult = $centralAPIHelper->classic_collect_all_switches();
+            if (array_key_exists('error', $switchResult)) {
+                $inventoryError = (string) $switchResult['error'];
+            } else {
+                $switchStatuses = $onlineService->statusesIndexedBySerial($switchResult['switches'] ?? []);
+            }
+        }
+
+        if ($inventoryError === null && $needsAp) {
+            $apResult = $centralAPIHelper->classic_collect_all_aps();
+            if (array_key_exists('error', $apResult)) {
+                $inventoryError = (string) $apResult['error'];
+            } else {
+                $apStatuses = $onlineService->statusesIndexedBySerial($apResult['aps'] ?? []);
+            }
+        }
+
+        if ($inventoryError !== null) {
+            foreach ($candidates as $device) {
+                $device->pivot->update(['status' => 'FAILED']);
+                $task->processTaskStatusLog(
+                    'Device '.$device->name.' naming skipped: could not read Classic Central inventory ('.$inventoryError.').',
+                    true,
+                );
+            }
+            $task->load('devices');
+            $task->update(['status' => 'FAILED']);
+            $task->processTaskStatusLog(
+                'Name Devices failed: Classic Central inventory could not be read.',
+                true,
+            );
+
+            return collect();
+        }
+
+        $online = collect();
+        foreach ($candidates as $device) {
+            if ($onlineService->isDeviceUp($device, $switchStatuses, $apStatuses)) {
+                $online->push($device);
+
+                continue;
+            }
+
+            $status = $onlineService->currentStatus($device, $switchStatuses, $apStatuses);
+            $device->pivot->update(['status' => 'FAILED']);
+            $task->processTaskStatusLog(
+                'Device '.$device->name.' is not online in Classic Central (status: '.$status.'); skipped naming.',
+                true,
+            );
+        }
+
+        $task->load('devices');
+        $task->finishIfAllDevicesSettled();
+
+        return $online->values();
     }
 
     /**

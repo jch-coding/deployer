@@ -51,9 +51,8 @@ test('last failed device marks task failed when all devices have failed', functi
         'task_type' => 'UPDATE_SYSTEM_INFO',
         'status' => 'IN_PROGRESS',
         'deployment_time' => 1,
+        'expires_at' => now()->subMinute(),
     ]);
-    $task->timestamps = false;
-    $task->update(['created_at' => now()->subMinutes(10)]);
 
     $deviceOne = Device::factory()->create([
         'deployment_id' => $this->deployment->id,

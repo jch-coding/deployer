@@ -736,6 +736,31 @@ class CentralAPIHelper
         }
     }
 
+    /**
+     * Extract hostname from a successful system-info GET response body.
+     */
+    public static function hostnameFromSystemInfoResponse(mixed $response): ?string
+    {
+        if (! $response instanceof Response || ! $response->successful()) {
+            return null;
+        }
+
+        $profiles = $response->json('profile', []);
+        if (! is_array($profiles) || ! isset($profiles[0]) || ! is_array($profiles[0])) {
+            return '';
+        }
+
+        return trim((string) ($profiles[0]['hostname'] ?? ''));
+    }
+
+    public static function hostnameMatchesExpected(?string $hostname, string $expected): bool
+    {
+        $hostname = trim((string) $hostname);
+        $expected = trim($expected);
+
+        return $hostname !== '' && $expected !== '' && strcasecmp($hostname, $expected) === 0;
+    }
+
     public function updateSystemInfo(Device $device)
     {
         if (! $this->client->handleBearerTokenAuth()) {

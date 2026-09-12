@@ -123,6 +123,7 @@ class ProvisioningWorkflowController extends Controller
             'template_name' => ['nullable', 'string', 'max:255'],
             'preflight_results' => ['nullable', 'array'],
             'query_central_for_online' => ['nullable', 'boolean'],
+            'only_update_different_names' => ['nullable', 'boolean'],
         ]);
 
         if (isset($validated['steps'])) {

@@ -23,6 +23,7 @@ class Task extends Model
         'central_static_tags' => 'array',
         'site_details' => 'array',
         'mirror_fallback_mode' => 'boolean',
+        'only_update_different_names' => 'boolean',
         'expires_at' => 'datetime',
     ];
 
@@ -327,7 +328,7 @@ class Task extends Model
     {
         switch ($task_type) {
             case 'UPDATE_SYSTEM_INFO':
-                return 'Name or rename devices';
+                return 'Name or rename devices. Devices that are not Up in Classic Central are marked failed. Optionally skip devices whose Central hostname already matches.';
             case 'CONFIGURE_ALL_INTERFACE':
                 return 'Configure LAG, physical and SVIs in that order.';
             case 'RELAUNCH_FAILED_CRITICAL_CONFIG':
@@ -548,6 +549,45 @@ class Task extends Model
         }
 
         return false;
+    }
+
+    /**
+     * True when every device pivot is COMPLETED or FAILED (nothing still PENDING / in flight).
+     */
+    public function allTrackedDevicesSettled(): bool
+    {
+        if ($this->getTaskCategory($this->task_type) !== 'DEVICE') {
+            return false;
+        }
+
+        $total = $this->devices()->count();
+        if ($total === 0) {
+            return false;
+        }
+
+        $settled = $this->devices()
+            ->wherePivotIn('status', ['COMPLETED', 'FAILED'])
+            ->count();
+
+        return $settled === $total;
+    }
+
+    /**
+     * Mark the task COMPLETED or FAILED once every device pivot is settled.
+     */
+    public function finishIfAllDevicesSettled(): void
+    {
+        if (! $this->allTrackedDevicesSettled()) {
+            return;
+        }
+
+        if ($this->allTrackedItemsFailed()) {
+            $this->update(['status' => 'FAILED']);
+
+            return;
+        }
+
+        $this->update(['status' => 'COMPLETED']);
     }
 
     public function effectiveDeploymentMinutes(int $defaultMinutes = self::DEFAULT_DEPLOYMENT_MINUTES): int

@@ -14,6 +14,7 @@ use App\Models\ProvisioningWorkflow;
 use App\Models\ProvisioningWorkflowDevice;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\Provisioning\ProvisioningStepContext;
 use App\Services\Provisioning\ProvisioningStepResult;
 use App\Services\Provisioning\ProvisioningWorkflowOrchestrator;
 use App\Services\Provisioning\ProvisioningWorkflowService;
@@ -1122,6 +1123,26 @@ it('skips wait_for_online when query_central_for_online finds the device up', fu
     expect($waitStep->status)->toBe('skipped')
         ->and($waitStep->message)->toBe('Already online in Central (Up).')
         ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::AssociateSite->value);
+});
+
+it('stores only_update_different_names on the workflow naming config', function () {
+    Queue::fake();
+
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'start_step' => ProvisioningStep::NameDevice->value,
+        'only_update_different_names' => true,
+    ])->assertRedirect(route('deployments.provision', $this->deployment));
+
+    $workflow = \App\Models\ProvisioningWorkflow::query()->first();
+    expect($workflow->licensing_config['naming']['only_update_different_names'] ?? false)->toBeTrue()
+        ->and(ProvisioningStepContext::forWorkflow($workflow)->onlyUpdateDifferentNames)->toBeTrue();
 });
 
 it('does not skip wait_for_online from central when query_central_for_online is off', function () {

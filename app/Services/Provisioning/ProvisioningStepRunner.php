@@ -65,7 +65,11 @@ class ProvisioningStepRunner
             ProvisioningStep::WaitForOnline => $this->handleWaitForOnline($workflowDevice, $device, $centralAPIHelper),
             ProvisioningStep::AssociateSite => $this->associateDeviceToSiteAction->execute($device, $centralAPIHelper),
             ProvisioningStep::ResolveScopeId => $this->resolveDeviceScopeIdAction->execute($device, $centralAPIHelper),
-            ProvisioningStep::NameDevice => $this->nameDeviceAction->execute($device, $centralAPIHelper),
+            ProvisioningStep::NameDevice => $this->nameDeviceAction->execute(
+                $device,
+                $centralAPIHelper,
+                $context->onlyUpdateDifferentNames,
+            ),
             ProvisioningStep::ConfigureVlanInterfaces => $this->configureDeviceVlanInterfacesAction->execute($device, $centralAPIHelper),
             ProvisioningStep::CreateStackProfile => $this->handleCreateStackProfile($workflowDevice, $device, $centralAPIHelper),
             ProvisioningStep::WaitForVsfStackScope => $this->waitForVsfStackScopeAction->execute(

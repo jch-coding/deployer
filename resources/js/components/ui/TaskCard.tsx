@@ -167,6 +167,7 @@ export default function TaskCard({
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(0)
     const [vlanSitePrefix, setVlanSitePrefix] = useState('')
     const [firmwareComplianceVersion, setFirmwareComplianceVersion] = useState('')
+    const [onlyUpdateDifferentNames, setOnlyUpdateDifferentNames] = useState(false)
     const [bulkLicenseTag, setBulkLicenseTag] = useState('');
     const [bulkLicenseType, setBulkLicenseType] = useState<LicenseTypeOption | ''>('');
     const [bulkSubscriptionKey, setBulkSubscriptionKey] = useState('');
@@ -1082,6 +1083,11 @@ export default function TaskCard({
                           vlanPrefixTrimmed !== '' ? firmwareComplianceVersion.trim() : undefined,
                   }
                 : {}),
+            ...(taskStr === 'UPDATE_SYSTEM_INFO'
+                ? {
+                      only_update_different_names: onlyUpdateDifferentNames,
+                  }
+                : {}),
         }, {
             onError: (errors) => {
                 setIsLaunching(false);
@@ -1248,6 +1254,28 @@ export default function TaskCard({
                     </Badge>
                 ) : null}
                 <CardDescription>{task_friendly_description}</CardDescription>
+                {task === 'UPDATE_SYSTEM_INFO' ? (
+                    <div className="mt-3 space-y-1">
+                        <label className="flex items-start gap-2 text-sm">
+                            <Checkbox
+                                checked={onlyUpdateDifferentNames}
+                                onCheckedChange={(checked) =>
+                                    setOnlyUpdateDifferentNames(checked === true)
+                                }
+                                data-test="only-update-different-names"
+                                className="mt-0.5"
+                            />
+                            <span>
+                                Only update names that differ from Central
+                                <span className="text-muted-foreground block text-xs">
+                                    Queries Central system info first and skips devices whose
+                                    hostname already matches the local name. Devices that are not
+                                    Up in Classic Central are always marked failed.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+                ) : null}
                 {task === 'ADD_VLANS_TO_DEVICE_GROUP' ? (
                     <div className="mt-3 space-y-1">
                         <label htmlFor="vlan-site-prefix" className="text-sm font-medium">

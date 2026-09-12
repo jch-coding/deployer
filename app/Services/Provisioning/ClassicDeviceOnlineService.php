@@ -96,6 +96,15 @@ class ClassicDeviceOnlineService
      * @param  array<int, array<string, mixed>>  $items
      * @return array<string, string>
      */
+    public function statusesIndexedBySerial(array $items): array
+    {
+        return $this->indexBySerial($items);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<string, string>
+     */
     private function indexBySerial(array $items): array
     {
         $indexed = [];

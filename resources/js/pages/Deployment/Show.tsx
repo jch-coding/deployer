@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { buildDeploymentBulkSelectionPayload } from '@/lib/deployment-bulk-selection';
 import type { LicenseTypeOption } from '@/lib/license-types';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
-import { storeMany } from '@/actions/App/Http/Controllers/DeviceController';
+import { storeMany, updateMany } from '@/actions/App/Http/Controllers/DeviceController';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -139,6 +139,48 @@ function groupCsvUploadErrors(
     });
 
     return { headerErrors, rowErrors, otherErrors };
+}
+
+function CsvUploadErrorList({
+    errors,
+}: {
+    errors: Record<string, string | string[]>;
+}) {
+    if (Object.keys(errors).length === 0) {
+        return null;
+    }
+
+    const { headerErrors, rowErrors, otherErrors } =
+        groupCsvUploadErrors(errors);
+
+    return (
+        <div className="space-y-2 text-xs text-red-500">
+            {headerErrors.length > 0 && (
+                <div className="space-y-1">
+                    <p className="font-medium">CSV header issues</p>
+                    {headerErrors.map(({ key, message }) => (
+                        <p key={key}>{message}</p>
+                    ))}
+                </div>
+            )}
+            {rowErrors.length > 0 && (
+                <div className="space-y-1">
+                    <p className="font-medium">Row issues</p>
+                    {rowErrors.map(({ key, message }) => (
+                        <p key={key}>
+                            <span className="font-medium">{key}:</span>{' '}
+                            {message}
+                        </p>
+                    ))}
+                </div>
+            )}
+            {otherErrors.map(({ key, message }) => (
+                <p key={key}>
+                    {key}: {message}
+                </p>
+            ))}
+        </div>
+    );
 }
 
 type CentralScopeOption = {
@@ -293,9 +335,20 @@ export default function Show() {
     }>({
         devices: null,
     });
+    const {
+        setData: setUpdateData,
+        post: postUpdate,
+        progress: updateProgress,
+        errors: updateErrors,
+    } = useForm<{
+        devices: File | null;
+    }>({
+        devices: null,
+    });
     const tasks = usePage<DeploymentPageProps>().props.tasks;
     const latest_tasks = usePage<DeploymentPageProps>().props.latest_tasks;
     const [submitting, setSubmitting] = useState(false);
+    const [updateSubmitting, setUpdateSubmitting] = useState(false);
     const {
         available_subscriptions = [],
         enabled_services = [],
@@ -331,6 +384,7 @@ export default function Show() {
     );
 
     const classicCentralTaskTypes = new Set([
+        'UPDATE_SYSTEM_INFO',
         'ASSOCIATE_DEVICE_TO_SITE',
         'ASSOCIATE_SITE_AND_NAME',
         'CREATE_SITE',
@@ -751,6 +805,11 @@ export default function Show() {
         post(storeMany(deployment.id).url);
     }
 
+    function handleUpdateSubmit(e: FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        postUpdate(updateMany(deployment.id).url);
+    }
+
     const scopeCacheReloadOnly = [
         'central_sites_cache',
         'central_groups_cache',
@@ -840,7 +899,8 @@ export default function Show() {
                             <DialogContent>
                                 <DialogTitle>Add Device</DialogTitle>
                                 <DialogDescription>
-                                    Add devices to this deployment
+                                    Add devices to this deployment. CSV must
+                                    include name, serial, and device_function.
                                 </DialogDescription>
                                 <Form
                                     action={storeMany(deployment.id).url}
@@ -876,88 +936,7 @@ export default function Show() {
                                         className="block cursor-pointer rounded-lg border border-gray-300 bg-gray-50 p-2 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:placeholder-gray-400"
                                         disabled={submitting}
                                     />
-                                    {errors && Object.keys(errors).length > 0 && (
-                                        <div className="space-y-2 text-xs text-red-500">
-                                            {(() => {
-                                                const {
-                                                    headerErrors,
-                                                    rowErrors,
-                                                    otherErrors,
-                                                } = groupCsvUploadErrors(errors);
-
-                                                return (
-                                                    <>
-                                                        {headerErrors.length >
-                                                            0 && (
-                                                            <div className="space-y-1">
-                                                                <p className="font-medium">
-                                                                    CSV header
-                                                                    issues
-                                                                </p>
-                                                                {headerErrors.map(
-                                                                    ({
-                                                                        key,
-                                                                        message,
-                                                                    }) => (
-                                                                        <p
-                                                                            key={
-                                                                                key
-                                                                            }
-                                                                        >
-                                                                            {
-                                                                                message
-                                                                            }
-                                                                        </p>
-                                                                    ),
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        {rowErrors.length >
-                                                            0 && (
-                                                            <div className="space-y-1">
-                                                                <p className="font-medium">
-                                                                    Row issues
-                                                                </p>
-                                                                {rowErrors.map(
-                                                                    ({
-                                                                        key,
-                                                                        message,
-                                                                    }) => (
-                                                                        <p
-                                                                            key={
-                                                                                key
-                                                                            }
-                                                                        >
-                                                                            <span className="font-medium">
-                                                                                {
-                                                                                    key
-                                                                                }
-                                                                                :
-                                                                            </span>{' '}
-                                                                            {
-                                                                                message
-                                                                            }
-                                                                        </p>
-                                                                    ),
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        {otherErrors.map(
-                                                            ({
-                                                                key,
-                                                                message,
-                                                            }) => (
-                                                                <p key={key}>
-                                                                    {key}:{' '}
-                                                                    {message}
-                                                                </p>
-                                                            ),
-                                                        )}
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
-                                    )}
+                                    <CsvUploadErrorList errors={errors} />
                                     <DialogFooter className="mt-4 flex-row-reverse sm:justify-start">
                                         <Button
                                             data-test="upload-devices"
@@ -971,6 +950,82 @@ export default function Show() {
                                                 max="100"
                                             >
                                                 {progress.percentage}%
+                                            </progress>
+                                        )}
+                                    </DialogFooter>
+                                </Form>
+                            </DialogContent>
+                        </Dialog>
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    data-test="update-devices"
+                                >
+                                    Update Devices
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogTitle>Update Devices</DialogTitle>
+                                <DialogDescription>
+                                    Update existing devices in this deployment.
+                                    Only the serial column is required; all
+                                    other columns are optional and update
+                                    matching fields. Serials must already
+                                    belong to this deployment.
+                                </DialogDescription>
+                                <Form
+                                    action={updateMany(deployment.id).url}
+                                    method="POST"
+                                    onSuccess={() => {
+                                        toast.success(
+                                            'Devices updated successfully',
+                                        );
+                                        setUpdateSubmitting(false);
+                                    }}
+                                    onError={() => {
+                                        toast.error(
+                                            'Failed to update devices',
+                                        );
+                                        setUpdateSubmitting(false);
+                                    }}
+                                    data-test="update-devices-form"
+                                    className="flex flex-col gap-4"
+                                    as="form"
+                                    encType="multipart/form-data"
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        setUpdateSubmitting(true);
+                                        handleUpdateSubmit(e);
+                                    }}
+                                >
+                                    <input
+                                        type="file"
+                                        name="devices"
+                                        onChange={(e) => {
+                                            const file =
+                                                e.target.files?.[0] ?? null;
+                                            setUpdateData('devices', file);
+                                        }}
+                                        className="block cursor-pointer rounded-lg border border-gray-300 bg-gray-50 p-2 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:placeholder-gray-400"
+                                        disabled={updateSubmitting}
+                                    />
+                                    <CsvUploadErrorList errors={updateErrors} />
+                                    <DialogFooter className="mt-4 flex-row-reverse sm:justify-start">
+                                        <Button
+                                            data-test="upload-update-devices"
+                                            type="submit"
+                                        >
+                                            Update Devices
+                                        </Button>
+                                        {updateProgress && (
+                                            <progress
+                                                value={
+                                                    updateProgress.percentage
+                                                }
+                                                max="100"
+                                            >
+                                                {updateProgress.percentage}%
                                             </progress>
                                         )}
                                     </DialogFooter>
