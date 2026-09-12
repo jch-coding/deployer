@@ -3208,8 +3208,9 @@ class CentralAPIHelper
      */
     private function resolveCxTroubleshootingDeviceId(string $serial): string|array
     {
+        $filter = (new DeviceCentralFilterBuilder)->build(['serialNumber' => $serial]);
         $response = $this->get_switches([
-            'filter' => 'serialNumber eq '.$serial,
+            'filter' => $filter ?? "serialNumber eq '".str_replace("'", "''", $serial)."'",
             'limit' => 1,
         ]);
 

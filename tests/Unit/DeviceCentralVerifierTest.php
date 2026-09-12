@@ -35,7 +35,7 @@ test('device central verifier passes when central device matches site associatio
     $helper = mock(CentralAPIHelper::class)->makePartial();
     $helper->shouldReceive('get_all_devices')
         ->once()
-        ->with(['filter' => 'siteId eq site-scope-123'])
+        ->with(['filter' => "siteId eq 'site-scope-123'"])
         ->andReturn([
             [
                 'serialNumber' => 'SN12345',

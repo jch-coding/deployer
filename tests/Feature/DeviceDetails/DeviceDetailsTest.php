@@ -47,7 +47,7 @@ test('device details index fetches devices when filters are applied', function (
         if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
             parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
 
-            expect($query['filter'] ?? null)->toBe('siteId eq scope-site and status eq ONLINE');
+            expect($query['filter'] ?? null)->toBe("siteId eq 'scope-site' and status eq 'ONLINE'");
 
             return Http::response([
                 'items' => [[
@@ -134,6 +134,9 @@ test('device details index rejects invalid filter enums', function () {
 test('device details show maps interface fields for a single serial', function () {
     Http::fake(function (Request $request) {
         if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
+            parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+            expect($query['filter'] ?? null)->toBe("serialNumber eq 'SN12345'");
+
             return Http::response([
                 'items' => [[
                     'deviceName' => 'Switch-A',
@@ -558,7 +561,7 @@ test('device details bssids returns mapped rows for a serial', function () {
         expect($request->url())->toContain('network-monitoring/v1/bssids');
 
         parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
-        expect($query['filter'] ?? null)->toBe('serialNumber eq AP00000001');
+        expect($query['filter'] ?? null)->toBe("serialNumber eq 'AP00000001'");
 
         return Http::response([
             'items' => [[
@@ -637,7 +640,7 @@ test('device details site bssids returns mapped ap_name and ap_mac rows', functi
         expect($request->url())->toContain('network-monitoring/v1/bssids');
 
         parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
-        expect($query['filter'] ?? null)->toBe('siteId eq scope-site');
+        expect($query['filter'] ?? null)->toBe("siteId eq 'scope-site'");
 
         return Http::response([
             'items' => [

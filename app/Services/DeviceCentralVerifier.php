@@ -139,8 +139,9 @@ class DeviceCentralVerifier
      */
     protected function fetchDevicesBySite(CentralAPIHelper $helper, Site $site): array
     {
+        $filter = (new DeviceCentralFilterBuilder)->build(['siteId' => (string) $site->scope_id]);
         $items = $helper->get_all_devices([
-            'filter' => 'siteId eq '.$site->scope_id,
+            'filter' => $filter ?? "siteId eq '".str_replace("'", "''", (string) $site->scope_id)."'",
         ]);
 
         if (array_key_exists('error', $items)) {

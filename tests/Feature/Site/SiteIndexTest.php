@@ -45,7 +45,7 @@ test('sites index fetches devices when filters are applied', function () {
         if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
             parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
 
-            expect($query['filter'] ?? null)->toBe('siteId eq scope-site and status eq ONLINE');
+            expect($query['filter'] ?? null)->toBe("siteId eq 'scope-site' and status eq 'ONLINE'");
 
             return Http::response([
                 'items' => [[

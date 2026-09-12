@@ -17,7 +17,7 @@ class DeviceCentralFilterBuilder
                 continue;
             }
 
-            $clauses[] = $field.' eq '.$this->formatValue($value);
+            $clauses[] = $field.' eq '.$this->quoteValue($value);
         }
 
         if ($clauses === []) {
@@ -25,6 +25,37 @@ class DeviceCentralFilterBuilder
         }
 
         return implode(' and ', $clauses);
+    }
+
+    /**
+     * Build an OData `in` filter for a single field.
+     *
+     * @param  list<string>  $values
+     */
+    public function buildIn(string $field, array $values): ?string
+    {
+        $normalized = [];
+
+        foreach ($values as $value) {
+            $trimmed = trim((string) $value);
+            if ($trimmed === '' || in_array($trimmed, $normalized, true)) {
+                continue;
+            }
+
+            $normalized[] = $trimmed;
+        }
+
+        if ($normalized === []) {
+            return null;
+        }
+
+        if (! in_array($field, $this->fieldOrder(), true)) {
+            return null;
+        }
+
+        $quoted = array_map(fn (string $value): string => $this->quoteValue($value), $normalized);
+
+        return $field.' in ('.implode(', ', $quoted).')';
     }
 
     /**
@@ -45,21 +76,8 @@ class DeviceCentralFilterBuilder
         ];
     }
 
-    private function formatValue(string $value): string
+    private function quoteValue(string $value): string
     {
-        if ($this->needsQuoting($value)) {
-            return "'".str_replace("'", "''", $value)."'";
-        }
-
-        return $value;
-    }
-
-    private function needsQuoting(string $value): bool
-    {
-        if (preg_match('/\s/', $value) === 1) {
-            return true;
-        }
-
-        return preg_match('/[^A-Za-z0-9._-]/', $value) === 1;
+        return "'".str_replace("'", "''", $value)."'";
     }
 }
