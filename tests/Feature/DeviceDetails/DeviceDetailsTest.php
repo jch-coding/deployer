@@ -135,7 +135,7 @@ test('device details show maps interface fields for a single serial', function (
     Http::fake(function (Request $request) {
         if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
             parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
-            expect($query['filter'] ?? null)->toBe("serialNumber eq 'SN12345'");
+            expect($query['filter'] ?? null)->toBe("serialNumber in ('SN12345')");
 
             return Http::response([
                 'items' => [[
@@ -204,23 +204,19 @@ test('device details show maps interfaces for multiple serials', function () {
             parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
             $filter = (string) ($query['filter'] ?? '');
 
-            if (str_contains($filter, 'SN111')) {
-                return Http::response([
-                    'items' => [['deviceName' => 'Switch-One', 'serialNumber' => 'SN111', 'deviceType' => 'SWITCH']],
-                    'next' => null,
-                    'total' => 1,
-                    'count' => 1,
-                ], 200);
-            }
+            expect($filter)->toContain('serialNumber in (')
+                ->and($filter)->toContain("'SN111'")
+                ->and($filter)->toContain("'SN222'");
 
-            if (str_contains($filter, 'SN222')) {
-                return Http::response([
-                    'items' => [['deviceName' => 'Switch-Two', 'serialNumber' => 'SN222', 'deviceType' => 'SWITCH']],
-                    'next' => null,
-                    'total' => 1,
-                    'count' => 1,
-                ], 200);
-            }
+            return Http::response([
+                'items' => [
+                    ['deviceName' => 'Switch-One', 'serialNumber' => 'SN111', 'deviceType' => 'SWITCH'],
+                    ['deviceName' => 'Switch-Two', 'serialNumber' => 'SN222', 'deviceType' => 'SWITCH'],
+                ],
+                'next' => null,
+                'total' => 2,
+                'count' => 2,
+            ], 200);
         }
 
         if (str_contains($request->url(), 'network-monitoring/v1/switches/SN111/interfaces')) {
@@ -282,6 +278,55 @@ test('device details show maps interfaces for multiple serials', function () {
             ->where('devices.1.device_name', 'Switch-Two')
             ->where('devices.1.interfaces.0.name', '1/1/2')
             ->where('devices.1.interfaces.0.allowedVlanIds', [20, 30]));
+});
+
+test('device details show uses request names when central metadata is missing', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
+            return Http::response([
+                'items' => [],
+                'next' => null,
+                'total' => 0,
+                'count' => 0,
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'network-monitoring/v1/switches/SN999/interfaces')) {
+            return Http::response([
+                'items' => [[
+                    'name' => '1/1/1',
+                    'status' => 'Connected',
+                    'operStatus' => 'Up',
+                    'neighbour' => '',
+                    'neighbourSerial' => '',
+                    'vlanMode' => '',
+                    'allowedVlanIds' => [],
+                    'nativeVlan' => '',
+                    'poeClass' => '',
+                    'neighbourFamily' => '',
+                    'neighbourFunction' => '',
+                    'neighbourType' => '',
+                    'transceiverType' => '',
+                ]],
+                'total' => 1,
+                'offset' => null,
+            ], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $this->get(route('device-details.show', [
+        'serials' => ['SN999'],
+        'names' => ['SN999' => 'Lobby-Switch'],
+    ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('DeviceDetails/Show')
+            ->has('devices', 1)
+            ->where('devices.0.serial', 'SN999')
+            ->where('devices.0.device_name', 'Lobby-Switch')
+            ->has('devices.0.interfaces', 1));
 });
 
 test('device details show keeps per-switch errors isolated', function () {

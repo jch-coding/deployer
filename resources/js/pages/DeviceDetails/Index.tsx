@@ -130,10 +130,23 @@ function hasActiveFilters(filters: DeviceDetailsFilters): boolean {
     );
 }
 
-function showUrlForSerials(serials: string[]): string {
+function showUrlForSerials(
+    serials: string[],
+    namesBySerial: Record<string, string> = {},
+): string {
+    const names: Record<string, string> = {};
+
+    for (const serial of serials) {
+        const name = (namesBySerial[serial] ?? '').trim();
+        if (name !== '') {
+            names[serial] = name;
+        }
+    }
+
     return deviceDetailsShow.url({
         query: {
             serials,
+            ...(Object.keys(names).length > 0 ? { names } : {}),
         },
     });
 }
@@ -304,8 +317,17 @@ export default function Index() {
             return;
         }
 
-        router.get(showUrlForSerials(selectedSerials));
-    }, [selectedSerials]);
+        const namesBySerial: Record<string, string> = {};
+        for (const device of devices) {
+            const serial = device.serialNumber.trim();
+            const name = device.deviceName.trim();
+            if (serial !== '' && name !== '' && selectedSerials.includes(serial)) {
+                namesBySerial[serial] = name;
+            }
+        }
+
+        router.get(showUrlForSerials(selectedSerials, namesBySerial));
+    }, [devices, selectedSerials]);
 
     const loadSiteBssids = useCallback(async () => {
         const siteId = localFilters.site_id.trim();
@@ -409,9 +431,14 @@ export default function Index() {
                         return row.original.deviceName;
                     }
 
+                    const names =
+                        row.original.deviceName.trim() !== ''
+                            ? { [serial]: row.original.deviceName.trim() }
+                            : {};
+
                     return (
                         <Link
-                            href={showUrlForSerials([serial])}
+                            href={showUrlForSerials([serial], names)}
                             className="text-primary underline-offset-4 hover:underline"
                             data-test="device-details-link-name"
                         >
@@ -429,9 +456,14 @@ export default function Index() {
                         return '';
                     }
 
+                    const names =
+                        row.original.deviceName.trim() !== ''
+                            ? { [serial]: row.original.deviceName.trim() }
+                            : {};
+
                     return (
                         <Link
-                            href={showUrlForSerials([serial])}
+                            href={showUrlForSerials([serial], names)}
                             className="text-primary underline-offset-4 hover:underline"
                             data-test="device-details-link-serial"
                         >

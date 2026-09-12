@@ -59,3 +59,24 @@ test('buildIn returns null for empty values or unknown fields', function () {
     expect($builder->buildIn('serialNumber', ['', '  ']))->toBeNull()
         ->and($builder->buildIn('unknownField', ['SN111']))->toBeNull();
 });
+
+test('buildInChunks keeps each filter under the max length', function () {
+    $builder = new DeviceCentralFilterBuilder;
+    $serials = [];
+    for ($i = 1; $i <= 25; $i++) {
+        $serials[] = 'SN'.str_pad((string) $i, 10, '0', STR_PAD_LEFT);
+    }
+
+    $chunks = $builder->buildInChunks('serialNumber', $serials);
+
+    expect($chunks)->not->toBeEmpty();
+    foreach ($chunks as $chunk) {
+        expect(strlen($chunk))->toBeLessThanOrEqual(DeviceCentralFilterBuilder::FILTER_MAX_LENGTH)
+            ->and($chunk)->toStartWith('serialNumber in (');
+    }
+
+    $joined = implode(' ', $chunks);
+    foreach ($serials as $serial) {
+        expect($joined)->toContain("'{$serial}'");
+    }
+});

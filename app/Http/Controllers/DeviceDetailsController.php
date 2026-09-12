@@ -141,6 +141,8 @@ class DeviceDetailsController extends Controller
         $validated = $request->validate([
             'serials' => ['required', 'array', 'min:1', 'max:'.self::MAX_SERIALS],
             'serials.*' => ['required', 'string', 'max:16'],
+            'names' => ['nullable', 'array'],
+            'names.*' => ['nullable', 'string', 'max:255'],
         ]);
 
         $serials = $this->normalizeSerials($validated['serials']);
@@ -149,11 +151,19 @@ class DeviceDetailsController extends Controller
             return back()->withErrors(['serials' => 'At least one serial number is required.']);
         }
 
+        $fallbackNames = $this->normalizeNamesBySerial($validated['names'] ?? [], $serials);
         $helper = new CentralAPIHelper($currentClient);
+        $metaBySerial = $this->fetchDeviceMetaBySerials($helper, $filterBuilder, $serials);
         $devices = [];
 
         foreach ($serials as $serial) {
-            $devices[] = $this->buildDevicePayload($helper, $filterBuilder, $serial);
+            $meta = $metaBySerial[$serial] ?? [];
+            $devices[] = $this->buildDevicePayload(
+                $helper,
+                $serial,
+                $meta,
+                $fallbackNames[$serial] ?? '',
+            );
         }
 
         return Inertia::render('DeviceDetails/Show', [
@@ -612,6 +622,12 @@ class DeviceDetailsController extends Controller
     }
 
     /**
+     * @param  array{
+     *     device_name?: string,
+     *     device_type?: string,
+     *     device_function?: string,
+     *     model?: string
+     * }  $meta
      * @return array{
      *     serial: string,
      *     device_name: string,
@@ -621,30 +637,21 @@ class DeviceDetailsController extends Controller
      *     central_error: string|null
      * }
      */
-    private function buildDevicePayload(CentralAPIHelper $helper, DeviceCentralFilterBuilder $filterBuilder, string $serial): array
-    {
-        $deviceName = '';
-        $deviceType = '';
-        $deviceFunction = '';
-        $model = '';
-        $centralError = null;
-        $filter = $filterBuilder->build(['serialNumber' => $serial]);
-
-        if ($filter !== null) {
-            $deviceResult = $helper->get_all_devices([
-                'filter' => $filter,
-                'limit' => 1,
-            ]);
-
-            if (is_array($deviceResult) && array_key_exists('error', $deviceResult)) {
-                $centralError = (string) $deviceResult['error'];
-            } elseif (is_array($deviceResult) && $deviceResult !== []) {
-                $deviceName = (string) ($deviceResult[0]['deviceName'] ?? '');
-                $deviceType = (string) ($deviceResult[0]['deviceType'] ?? '');
-                $deviceFunction = (string) ($deviceResult[0]['deviceFunction'] ?? $deviceResult[0]['persona'] ?? '');
-                $model = (string) ($deviceResult[0]['model'] ?? '');
-            }
+    private function buildDevicePayload(
+        CentralAPIHelper $helper,
+        string $serial,
+        array $meta = [],
+        string $fallbackName = '',
+    ): array {
+        $deviceName = trim((string) ($meta['device_name'] ?? ''));
+        if ($deviceName === '') {
+            $deviceName = trim($fallbackName);
         }
+
+        $deviceType = trim((string) ($meta['device_type'] ?? ''));
+        $deviceFunction = trim((string) ($meta['device_function'] ?? ''));
+        $model = trim((string) ($meta['model'] ?? ''));
+        $centralError = null;
 
         $isAccessPoint = $this->isAccessPoint($deviceType, $deviceFunction, $model);
         $resolvedDeviceType = $isAccessPoint
@@ -653,7 +660,7 @@ class DeviceDetailsController extends Controller
 
         $interfaces = [];
 
-        if ($centralError === null && ! $isAccessPoint) {
+        if (! $isAccessPoint) {
             $interfacesResult = $helper->get_all_switch_interfaces($serial);
 
             if (array_key_exists('error', $interfacesResult)) {
@@ -674,6 +681,112 @@ class DeviceDetailsController extends Controller
             'interfaces' => $interfaces,
             'central_error' => $centralError,
         ];
+    }
+
+    /**
+     * @param  list<string>  $serials
+     * @return array<string, array{
+     *     device_name: string,
+     *     device_type: string,
+     *     device_function: string,
+     *     model: string
+     * }>
+     */
+    private function fetchDeviceMetaBySerials(
+        CentralAPIHelper $helper,
+        DeviceCentralFilterBuilder $filterBuilder,
+        array $serials,
+    ): array {
+        $metaBySerial = [];
+        $filters = $filterBuilder->buildInChunks('serialNumber', $serials);
+
+        foreach ($filters as $filter) {
+            $deviceResult = $helper->get_all_devices([
+                'filter' => $filter,
+                'limit' => max(count($serials), 1),
+            ]);
+
+            if (! is_array($deviceResult) || array_key_exists('error', $deviceResult)) {
+                continue;
+            }
+
+            foreach ($deviceResult as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $serial = trim((string) ($item['serialNumber'] ?? ''));
+                if ($serial === '') {
+                    continue;
+                }
+
+                $metaBySerial[$serial] = [
+                    'device_name' => (string) ($item['deviceName'] ?? ''),
+                    'device_type' => (string) ($item['deviceType'] ?? ''),
+                    'device_function' => (string) ($item['deviceFunction'] ?? $item['persona'] ?? ''),
+                    'model' => (string) ($item['model'] ?? ''),
+                ];
+            }
+        }
+
+        // Fall back to per-serial lookups for any serials missed by chunked `in` filters.
+        foreach ($serials as $serial) {
+            if (isset($metaBySerial[$serial])) {
+                continue;
+            }
+
+            $filter = $filterBuilder->build(['serialNumber' => $serial]);
+            if ($filter === null) {
+                continue;
+            }
+
+            $deviceResult = $helper->get_all_devices([
+                'filter' => $filter,
+                'limit' => 1,
+            ]);
+
+            if (! is_array($deviceResult) || array_key_exists('error', $deviceResult) || $deviceResult === []) {
+                continue;
+            }
+
+            $item = $deviceResult[0] ?? null;
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $metaBySerial[$serial] = [
+                'device_name' => (string) ($item['deviceName'] ?? ''),
+                'device_type' => (string) ($item['deviceType'] ?? ''),
+                'device_function' => (string) ($item['deviceFunction'] ?? $item['persona'] ?? ''),
+                'model' => (string) ($item['model'] ?? ''),
+            ];
+        }
+
+        return $metaBySerial;
+    }
+
+    /**
+     * @param  array<string, mixed>  $rawNames
+     * @param  list<string>  $serials
+     * @return array<string, string>
+     */
+    private function normalizeNamesBySerial(array $rawNames, array $serials): array
+    {
+        $allowed = array_fill_keys($serials, true);
+        $names = [];
+
+        foreach ($rawNames as $serial => $name) {
+            $trimmedSerial = trim((string) $serial);
+            $trimmedName = trim((string) $name);
+
+            if ($trimmedSerial === '' || $trimmedName === '' || ! isset($allowed[$trimmedSerial])) {
+                continue;
+            }
+
+            $names[$trimmedSerial] = $trimmedName;
+        }
+
+        return $names;
     }
 
     private function isAccessPoint(string $deviceType, string $deviceFunction, string $model = ''): bool
