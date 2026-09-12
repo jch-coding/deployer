@@ -25,6 +25,7 @@ import {
     buildSwitchInterfaceFilterOptions,
     emptySwitchInterfacesTableFilters,
     filterSwitchInterfaces,
+    filterSwitchInterfacesBySearchAll,
     hasActiveSwitchInterfacesTableFilters,
     type SwitchInterfacesTableFilters,
 } from '@/lib/switch-interfaces-table-filters';
@@ -166,10 +167,12 @@ const filterFields: {
 
 type SwitchInterfacesPanelProps = {
     switchDetails: SwitchDetailsPayload;
+    searchQuery?: string;
 };
 
 export default function SwitchInterfacesPanel({
     switchDetails,
+    searchQuery = '',
 }: SwitchInterfacesPanelProps) {
     const { serial, device_name, device_type, interfaces, central_error } =
         switchDetails;
@@ -203,14 +206,19 @@ export default function SwitchInterfacesPanel({
         return map;
     }, [compareResult]);
 
+    const searchFilteredInterfaces = useMemo(
+        () => filterSwitchInterfacesBySearchAll(interfaces, searchQuery),
+        [interfaces, searchQuery],
+    );
+
     const filterOptions = useMemo(
-        () => buildSwitchInterfaceFilterOptions(interfaces),
-        [interfaces],
+        () => buildSwitchInterfaceFilterOptions(searchFilteredInterfaces),
+        [searchFilteredInterfaces],
     );
 
     const filteredInterfaces = useMemo(
-        () => filterSwitchInterfaces(interfaces, tableFilters),
-        [interfaces, tableFilters],
+        () => filterSwitchInterfaces(searchFilteredInterfaces, tableFilters),
+        [searchFilteredInterfaces, tableFilters],
     );
 
     const hasActiveTableFilters = useMemo(
@@ -220,7 +228,7 @@ export default function SwitchInterfacesPanel({
 
     useEffect(() => {
         setPageIndex(0);
-    }, [tableFilters, pageSize, interfaces]);
+    }, [tableFilters, pageSize, interfaces, searchQuery]);
 
     useEffect(() => {
         setCompareResult(null);

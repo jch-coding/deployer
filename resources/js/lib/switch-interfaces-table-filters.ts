@@ -98,3 +98,32 @@ export function filterSwitchInterfaces<T extends SwitchInterfaceRow>(
         );
     });
 }
+
+/** Fields included in the page-level "Search all" substring match. */
+export const switchInterfaceSearchAllFields = [
+    'neighbourSerial',
+    'nativeVlan',
+] as const satisfies ReadonlyArray<keyof SwitchInterfaceRow>;
+
+export function matchesSwitchInterfaceSearchAll(
+    iface: SwitchInterfaceRow,
+    query: string,
+): boolean {
+    const trimmed = query.trim();
+    if (trimmed === '') {
+        return true;
+    }
+
+    const needle = trimmed.toLowerCase();
+
+    return switchInterfaceSearchAllFields.some((key) =>
+        String(iface[key]).toLowerCase().includes(needle),
+    );
+}
+
+export function filterSwitchInterfacesBySearchAll<T extends SwitchInterfaceRow>(
+    interfaces: T[],
+    query: string,
+): T[] {
+    return interfaces.filter((iface) => matchesSwitchInterfaceSearchAll(iface, query));
+}
