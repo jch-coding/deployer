@@ -729,3 +729,70 @@ it('skips name-only organizational rows when processing a CSV file', function ()
     expect($deviceArrays)->toHaveCount(1)
         ->and($deviceArrays[0]['name'])->toBe('SW-1');
 });
+
+it('accepts serial-only headers in update mode', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ['serial', 'site', 'group'],
+        ['SN0000000001', 'Building-A', 'AP-Group-1'],
+    ], CSVHelper::MODE_UPDATE);
+
+    expect($deviceArrays)->toHaveCount(1)
+        ->and($deviceArrays[0])->toMatchArray([
+            'serial' => 'SN0000000001',
+            'site' => 'Building-A',
+            'group' => 'AP-Group-1',
+        ]);
+});
+
+it('still requires name and device_function headers in create mode', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['serial', 'site'],
+            ['SN0000000001', 'Building-A'],
+        ], CSVHelper::MODE_CREATE);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('CSV headers: missing required columns')
+            ->and($e->errors()['CSV headers: missing required columns'][0])->toContain('name')
+            ->and($e->errors()['CSV headers: missing required columns'][0])->toContain('device_function');
+    }
+});
+
+it('fills blank serials from the previous row in update mode', function () {
+    $deviceArrays = CSVHelper::createDeviceArrays([
+        ['serial', 'interface', 'interface_mode', 'access_vlan'],
+        ['SN0000000001', '1/1/1', 'ACCESS', '20'],
+        ['', '1/1/2', 'ACCESS', '30'],
+    ], CSVHelper::MODE_UPDATE);
+
+    expect($deviceArrays)->toHaveCount(2)
+        ->and($deviceArrays[0]['serial'])->toBe('SN0000000001')
+        ->and($deviceArrays[1]['serial'])->toBe('SN0000000001')
+        ->and($deviceArrays[1]['interface'])->toBe('1/1/2');
+});
+
+it('requires serial on each update-mode row when fill-down cannot resolve it', function () {
+    try {
+        CSVHelper::createDeviceArrays([
+            ['serial', 'interface'],
+            ['', '1/1/1'],
+        ], CSVHelper::MODE_UPDATE);
+        expect(false)->toBeTrue('expected ValidationException');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('Row 2 (1/1/1): serial')
+            ->and($e->errors()['Row 2 (1/1/1): serial'][0])->toContain('serial is required');
+    }
+});
+
+it('fillDownSerial carries the last non-empty serial forward', function () {
+    $result = CSVHelper::fillDownSerial([
+        ['serial', 'interface'],
+        ['SN0000000001', '1/1/1'],
+        ['', '1/1/2'],
+        ['SN0000000002', '1/1/1'],
+        ['', '1/1/3'],
+    ]);
+
+    expect($result[2][0])->toBe('SN0000000001')
+        ->and($result[4][0])->toBe('SN0000000002');
+});

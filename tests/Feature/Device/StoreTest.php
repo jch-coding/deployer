@@ -805,3 +805,142 @@ it('updates interface fields when csv provides new non-null values', function ()
         ->and($interface->switch_port)->not->toBeNull()
         ->and($interface->switch_port->access_vlan)->toBe(40);
 });
+
+it('updates an existing AP from a serial-only update CSV without requiring device_function', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $device = Device::factory()
+        ->recycle($client)
+        ->recycle($deployment)
+        ->create([
+            'name' => 'Original AP Name',
+            'serial' => 'SNAPUPDATE0001',
+            'device_function' => DeviceFunction::CAMPUS_AP,
+            'group' => 'Original-Group',
+            'deployment_id' => $deployment->id,
+            'user_id' => $user->id,
+        ]);
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'serial,site,group,name'.PHP_EOL.
+        'SNAPUPDATE0001,Building-A,AP-Group-1,'.PHP_EOL
+    );
+
+    $this->post(route('devices.update-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device->refresh();
+    $site = Site::query()->where('client_id', $client->id)->where('name', 'Building-A')->first();
+
+    expect($device->name)->toBe('Original AP Name')
+        ->and($device->device_function)->toBe(DeviceFunction::CAMPUS_AP->name)
+        ->and($device->group)->toBe('AP-Group-1')
+        ->and($device->site_id)->toBe($site?->id)
+        ->and(Device::query()->count())->toBe(1);
+});
+
+it('updates switch interfaces from an update CSV with serial fill-down', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $device = Device::factory()
+        ->recycle($client)
+        ->recycle($deployment)
+        ->create([
+            'name' => 'Core Switch',
+            'serial' => 'SNSWUPDATE0001',
+            'device_function' => DeviceFunction::ACCESS_SWITCH,
+            'deployment_id' => $deployment->id,
+            'user_id' => $user->id,
+        ]);
+    DeviceInterface::factory()->create([
+        'device_id' => $device->id,
+        'interface' => '1/1/1',
+        'description' => 'Original',
+        'interface_kind' => 'ETHERNET',
+    ]);
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'serial,interface,description,interface_mode,access_vlan'.PHP_EOL.
+        'SNSWUPDATE0001,1/1/1,Updated Port,ACCESS,20'.PHP_EOL.
+        ',1/1/2,New Port,ACCESS,30'.PHP_EOL
+    );
+
+    $this->post(route('devices.update-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $device->refresh();
+    $existing = DeviceInterface::query()
+        ->where('device_id', $device->id)
+        ->where('interface', '1/1/1')
+        ->firstOrFail();
+    $created = DeviceInterface::query()
+        ->where('device_id', $device->id)
+        ->where('interface', '1/1/2')
+        ->firstOrFail();
+
+    expect($device->name)->toBe('Core Switch')
+        ->and($device->device_function)->toBe(DeviceFunction::ACCESS_SWITCH->name)
+        ->and($existing->description)->toBe('Updated Port')
+        ->and($created->description)->toBe('New Port')
+        ->and(Device::query()->count())->toBe(1);
+});
+
+it('rejects unknown serials on update-many without creating devices', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'serial,group'.PHP_EOL.
+        'UNKNOWNSERIAL1,Some-Group'.PHP_EOL
+    );
+
+    $this->post(route('devices.update-many', $deployment), ['devices' => $uploadedFile])
+        ->assertSessionHasErrors('devices');
+
+    $this->assertDatabaseCount('devices', 0);
+});
+
+it('rejects serials that belong to another deployment on update-many', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $otherDeployment = Deployment::factory()->recycle($client)->create();
+    Device::factory()
+        ->recycle($client)
+        ->create([
+            'serial' => 'SNOTHERDEP01',
+            'device_function' => DeviceFunction::CAMPUS_AP,
+            'deployment_id' => $otherDeployment->id,
+            'user_id' => $user->id,
+        ]);
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'serial,group'.PHP_EOL.
+        'SNOTHERDEP01,Moved-Group'.PHP_EOL
+    );
+
+    $this->post(route('devices.update-many', $deployment), ['devices' => $uploadedFile])
+        ->assertSessionHasErrors('devices');
+
+    $this->assertDatabaseHas('devices', [
+        'serial' => 'SNOTHERDEP01',
+        'deployment_id' => $otherDeployment->id,
+        'group' => null,
+    ]);
+    $this->assertDatabaseCount('devices', 1);
+});

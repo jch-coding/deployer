@@ -11,7 +11,13 @@ use Illuminate\Validation\ValidationException;
 
 class CSVHelper
 {
+    public const MODE_CREATE = 'create';
+
+    public const MODE_UPDATE = 'update';
+
     private const REQUIRED_COLUMNS = ['name', 'serial', 'device_function'];
+
+    private const REQUIRED_COLUMNS_UPDATE = ['serial'];
 
     private const KNOWN_COLUMNS = [
         'name',
@@ -221,13 +227,57 @@ class CSVHelper
         return $CSVData;
     }
 
-    public static function createDeviceArrays($CSVData)
+    /**
+     * Carry forward the last non-empty serial to subsequent blank serial cells.
+     * Used for update-mode CSVs where interface rows omit repeated serials.
+     *
+     * @param  list<list<string|int|float|null>>  $CSVData
+     * @return list<list<string|int|float|null>>
+     */
+    public static function fillDownSerial(array $CSVData): array
+    {
+        if (empty($CSVData) || ! is_array($CSVData[0] ?? null)) {
+            return $CSVData;
+        }
+
+        $headers = array_values($CSVData[0]);
+        $serialCol = self::findCsvHeaderIndex($headers, 'serial');
+        if ($serialCol === false) {
+            return $CSVData;
+        }
+
+        $lastSerial = '';
+        for ($i = 1, $n = count($CSVData); $i < $n; $i++) {
+            $row = array_values(is_array($CSVData[$i]) ? $CSVData[$i] : []);
+            $row = array_pad($row, count($headers), '');
+            $serial = trim((string) ($row[$serialCol] ?? ''));
+
+            if ($serial !== '') {
+                $lastSerial = $serial;
+            } elseif ($lastSerial !== '') {
+                $row[$serialCol] = $lastSerial;
+                $CSVData[$i] = $row;
+            }
+        }
+
+        return $CSVData;
+    }
+
+    /**
+     * @param  list<list<string|int|float|null>>  $CSVData
+     * @return list<array<string, mixed>>
+     */
+    public static function createDeviceArrays($CSVData, string $mode = self::MODE_CREATE)
     {
         if (empty($CSVData) || ! is_array($CSVData[0] ?? null)) {
             return [];
         }
 
-        $headerErrors = self::validateCsvHeaders($CSVData[0]);
+        if ($mode === self::MODE_UPDATE) {
+            $CSVData = self::fillDownSerial($CSVData);
+        }
+
+        $headerErrors = self::validateCsvHeaders($CSVData[0], $mode);
 
         if ($headerErrors !== []) {
             throw ValidationException::withMessages($headerErrors);
@@ -252,7 +302,7 @@ class CSVHelper
                 $mappedRow[$header] = $value;
             }
             $csvRowNumber = $i + 2;
-            self::validateRequiredRowFields($mappedRow, $csvRowNumber, $validationMessages);
+            self::validateRequiredRowFields($mappedRow, $csvRowNumber, $validationMessages, $mode);
             if (count($validationMessages) >= self::MAX_ROW_ERRORS) {
                 break;
             }
@@ -302,7 +352,7 @@ class CSVHelper
      * @param  list<string|int|float|null>  $rawHeaders
      * @return array<string, list<string>>
      */
-    public static function validateCsvHeaders(array $rawHeaders): array
+    public static function validateCsvHeaders(array $rawHeaders, string $mode = self::MODE_CREATE): array
     {
         $errors = [];
         $normalizedPresent = [];
@@ -330,8 +380,12 @@ class CSVHelper
             $normalizedPresent[$normalized] = true;
         }
 
+        $requiredColumns = $mode === self::MODE_UPDATE
+            ? self::REQUIRED_COLUMNS_UPDATE
+            : self::REQUIRED_COLUMNS;
+
         $missing = array_values(array_filter(
-            self::REQUIRED_COLUMNS,
+            $requiredColumns,
             fn (string $column) => ! isset($normalizedPresent[$column])
         ));
 
@@ -361,11 +415,29 @@ class CSVHelper
      * @param  array<string, mixed>  $row
      * @param  list<array{row: int, column: string, text: string}>  $validationMessages
      */
-    private static function validateRequiredRowFields(array $row, int $csvRowNumber, array &$validationMessages): void
-    {
+    private static function validateRequiredRowFields(
+        array $row,
+        int $csvRowNumber,
+        array &$validationMessages,
+        string $mode = self::MODE_CREATE
+    ): void {
         $name = trim((string) ($row['name'] ?? ''));
         $serial = trim((string) ($row['serial'] ?? ''));
         $deviceFunction = trim((string) ($row['device_function'] ?? ''));
+
+        if ($mode === self::MODE_UPDATE) {
+            if ($serial === '') {
+                self::addValidationMessage(
+                    $validationMessages,
+                    $csvRowNumber,
+                    'serial',
+                    $row,
+                    'serial is required on this row.'
+                );
+            }
+
+            return;
+        }
 
         if ($serial === '' && $deviceFunction === '') {
             return;

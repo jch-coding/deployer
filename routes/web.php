@@ -92,6 +92,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/deployments/{deployment}/bulk-update-metadata', 'bulkUpdateMetadata')->name('deployments.bulk-update-metadata');
         Route::post('/deployments/{deployment}/bulk-move', 'bulkMoveToDeployment')->name('deployments.bulk-move');
         Route::post('devices/store-many/{deployment}', 'storeMany')->name('devices.store-many');
+        Route::post('devices/update-many/{deployment}', 'updateMany')->name('devices.update-many');
         Route::post('/devices/{deployment}', 'store')->name('devices.store');
         Route::get('/devices/{device}', 'show')->name('devices.show');
         Route::patch('/devices/{device}', 'updateMetadata')->name('devices.update-metadata');

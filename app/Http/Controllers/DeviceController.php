@@ -113,11 +113,30 @@ class DeviceController extends Controller
      */
     public function storeMany(Request $request, Deployment $deployment)
     {
+        return $this->importDevicesFromCsv($request, $deployment, CSVHelper::MODE_CREATE);
+    }
+
+    public function updateMany(Request $request, Deployment $deployment)
+    {
+        return $this->importDevicesFromCsv($request, $deployment, CSVHelper::MODE_UPDATE);
+    }
+
+    /**
+     * Shared CSV import for Add Devices (create/upsert) and Update Devices (update-only).
+     */
+    private function importDevicesFromCsv(Request $request, Deployment $deployment, string $mode)
+    {
         $user = $request->user();
         $currentClient = $user->currentClient();
+        $isUpdate = $mode === CSVHelper::MODE_UPDATE;
 
         if (! $currentClient || $currentClient->id !== $deployment->client_id) {
-            return redirect()->route('deployments.show', $deployment)->with('error', 'Devices cannot be created for this deployment');
+            return redirect()->route('deployments.show', $deployment)->with(
+                'error',
+                $isUpdate
+                    ? 'Devices cannot be updated for this deployment'
+                    : 'Devices cannot be created for this deployment'
+            );
         }
 
         if (! $request->hasFile('devices')) {
@@ -127,13 +146,21 @@ class DeviceController extends Controller
         $file = $request->file('devices');
         $csvData = CSVHelper::processCSVFile($file->getPathname());
         try {
-            $devices = CSVHelper::createDeviceArrays($csvData);
+            $devices = CSVHelper::createDeviceArrays($csvData, $mode);
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors());
         }
 
         if (count($devices) === 0) {
             return back()->withErrors('No devices found in CSV file');
+        }
+
+        if ($isUpdate) {
+            try {
+                $this->assertDevicesExistInDeployment($devices, $deployment, $user->id);
+            } catch (ValidationException $e) {
+                return back()->withErrors($e->errors());
+            }
         }
 
         $headers = array_map(
@@ -148,18 +175,18 @@ class DeviceController extends Controller
         $csvHasLicenseType = in_array('license_type', $headers, true);
 
         $withDeployment = array_map(
-            function ($arr) use ($currentClient, $user, $deployment, $hasLicenseColumns, $csvHasLicenseTag, $csvHasLicenseType) {
+            function ($arr) use ($currentClient, $user, $deployment, $hasLicenseColumns, $csvHasLicenseTag, $csvHasLicenseType, $isUpdate) {
                 $name = trim((string) ($arr['name'] ?? ''));
                 $serial = trim((string) ($arr['serial'] ?? ''));
+                $deviceFunction = trim((string) ($arr['device_function'] ?? ''));
+
                 $row = [
-                    'name' => $name !== '' ? $name : $serial,
                     'serial' => $serial,
-                    'device_function' => $arr['device_function'],
                     'client_id' => $currentClient->id,
                     'user_id' => $user->id,
                     'deployment_id' => $deployment->id,
                     'group' => $arr['group'] ?? null,
-                    'sku' => $arr['sku'] == '' ? null : $arr['sku'],
+                    'sku' => ($arr['sku'] ?? '') == '' ? null : $arr['sku'],
                     'vsx_profile' => ($arr['vsx_profile'] ?? '') === '' ? null : $arr['vsx_profile'],
                     'vsx_role' => ($arr['vsx_role'] ?? '') === '' ? null : $arr['vsx_role'],
                     'vsx_system_mac' => ($arr['vsx_system_mac'] ?? '') === '' ? null : $arr['vsx_system_mac'],
@@ -171,6 +198,18 @@ class DeviceController extends Controller
                     'mirror_name' => ($arr['mirror_name'] ?? '') === '' ? null : $arr['mirror_name'],
                     'mac_address' => ($arr['mac_address'] ?? '') === '' ? null : $arr['mac_address'],
                 ];
+
+                if ($isUpdate) {
+                    if ($name !== '') {
+                        $row['name'] = $name;
+                    }
+                    if ($deviceFunction !== '') {
+                        $row['device_function'] = $deviceFunction;
+                    }
+                } else {
+                    $row['name'] = $name !== '' ? $name : $serial;
+                    $row['device_function'] = $arr['device_function'];
+                }
 
                 if ($hasLicenseColumns && $csvHasLicenseTag) {
                     $row['license_tag'] = ($arr['license_tag'] ?? '') === '' ? null : $arr['license_tag'];
@@ -185,14 +224,13 @@ class DeviceController extends Controller
             $unique_devices
         );
 
-        $savedDevices = self::saveDevicesFromCsv($withDeployment, $user->id);
+        $savedDevices = self::saveDevicesFromCsv($withDeployment, $user->id, $isUpdate);
 
-        $errors = [];
         $unsaved_devices = [];
         $unsaved_interfaces = [];
         $unsaved_sites = [];
 
-        if ($savedDevices !== count($devices)) {
+        if ($savedDevices !== count($unique_devices)) {
             $unsaved_devices = array_filter($devices, fn ($device) => Device::query()
                 ->where('serial', $device['serial'])
                 ->where('user_id', $user->id)
@@ -201,7 +239,7 @@ class DeviceController extends Controller
 
         if (in_array('site', $headers)) {
             $sites_with_devices = static::getSitesWithDeviceSerials($devices);
-            $saved_sites = static::saveSitesWithDevices($sites_with_devices, $currentClient, $user->id);
+            static::saveSitesWithDevices($sites_with_devices, $currentClient, $user->id);
             $unsaved_sites = array_filter(
                 $sites_with_devices,
                 fn ($site) => Site::query()
@@ -212,9 +250,7 @@ class DeviceController extends Controller
         }
 
         if (in_array('interface', $headers)) {
-
             $interfaces = static::getInterfaces($devices, $user->id);
-
             $savedInterfaces = static::saveInterfaces($interfaces, $user->id);
 
             if ($savedInterfaces !== $interfaces['total_interfaces']) {
@@ -253,6 +289,46 @@ class DeviceController extends Controller
                 'unsaved_interfaces' => $unsaved_interfaces,
                 'unsaved_sites' => $unsaved_sites,
             ]);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $devices
+     *
+     * @throws ValidationException
+     */
+    private function assertDevicesExistInDeployment(array $devices, Deployment $deployment, int $userId): void
+    {
+        $serials = array_values(array_unique(array_filter(
+            array_map(fn ($device) => trim((string) ($device['serial'] ?? '')), $devices),
+            fn (string $serial) => $serial !== ''
+        )));
+
+        $existingSerials = Device::query()
+            ->where('user_id', $userId)
+            ->where('deployment_id', $deployment->id)
+            ->where('client_id', $deployment->client_id)
+            ->whereIn('serial', $serials)
+            ->pluck('serial')
+            ->all();
+
+        $existingLookup = array_fill_keys($existingSerials, true);
+        $missing = array_values(array_filter(
+            $serials,
+            fn (string $serial) => ! isset($existingLookup[$serial])
+        ));
+
+        if ($missing === []) {
+            return;
+        }
+
+        $listed = implode(', ', array_slice($missing, 0, 10));
+        $suffix = count($missing) > 10 ? ' (and '.(count($missing) - 10).' more)' : '';
+
+        throw ValidationException::withMessages([
+            'devices' => [
+                'Unknown serial(s) for this deployment: '.$listed.$suffix.'. Update Devices only updates existing devices.',
+            ],
+        ]);
     }
 
     public function consolidateDataForDevices(array $devices)
@@ -494,7 +570,7 @@ class DeviceController extends Controller
     /**
      * @param  array<string, mixed>  $rows
      */
-    public static function saveDevicesFromCsv(array $rows, int $userId): int
+    public static function saveDevicesFromCsv(array $rows, int $userId, bool $updateOnly = false): int
     {
         $saved = 0;
 
@@ -505,21 +581,39 @@ class DeviceController extends Controller
                 ->first();
 
             if ($existing) {
+                $mergeFields = self::CSV_DEVICE_OPTIONAL_MERGE_FIELDS;
+                if ($updateOnly) {
+                    $mergeFields = array_values(array_unique(array_merge(
+                        $mergeFields,
+                        ['name', 'device_function']
+                    )));
+                }
+
                 $attributes = CsvImportMergeHelper::mergeOptionalFields(
                     $existing->getAttributes(),
                     $row,
-                    self::CSV_DEVICE_OPTIONAL_MERGE_FIELDS
+                    $mergeFields
                 );
 
-                foreach (['name', 'device_function', 'client_id', 'deployment_id'] as $field) {
+                foreach (['client_id', 'deployment_id'] as $field) {
                     if (array_key_exists($field, $row)) {
                         $attributes[$field] = $row[$field];
                     }
                 }
 
+                if (! $updateOnly) {
+                    foreach (['name', 'device_function'] as $field) {
+                        if (array_key_exists($field, $row)) {
+                            $attributes[$field] = $row[$field];
+                        }
+                    }
+                }
+
                 $existing->update($attributes);
-            } else {
+            } elseif (! $updateOnly) {
                 Device::create($row);
+            } else {
+                continue;
             }
 
             $saved++;

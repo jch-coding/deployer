@@ -165,6 +165,7 @@ export default function CustomProvision() {
         'poll' | 'webhook' | 'stream'
     >('poll');
     const [queryCentralForOnline, setQueryCentralForOnline] = useState(false);
+    const [onlyUpdateDifferentNames, setOnlyUpdateDifferentNames] = useState(false);
     const [licensingMode, setLicensingMode] = useState<'uniform' | 'per_device'>(
         'uniform',
     );
@@ -347,6 +348,10 @@ export default function CustomProvision() {
 
         if (includesWaitOnline) {
             payload.query_central_for_online = queryCentralForOnline;
+        }
+
+        if (includesNameDevice) {
+            payload.only_update_different_names = onlyUpdateDifferentNames;
         }
 
         if (needsLicensingDialog && licensingMode === 'uniform') {
@@ -965,6 +970,33 @@ export default function CustomProvision() {
                                             </span>
                                         </label>
                                     </div>
+                                ) : null}
+
+                                {includesNameDevice ? (
+                                    <label className="flex items-start gap-2 text-sm">
+                                        <input
+                                            type="checkbox"
+                                            className="mt-1"
+                                            checked={onlyUpdateDifferentNames}
+                                            onChange={(e) =>
+                                                setOnlyUpdateDifferentNames(
+                                                    e.target.checked,
+                                                )
+                                            }
+                                            data-test="only-update-different-names"
+                                        />
+                                        <span>
+                                            Only update names that differ from
+                                            Central
+                                            <span className="block text-xs text-muted-foreground">
+                                                Queries Central system info first
+                                                and skips devices whose hostname
+                                                already matches. Devices that are
+                                                not Up in Classic Central are
+                                                always marked failed.
+                                            </span>
+                                        </span>
+                                    </label>
                                 ) : null}
 
                                 {needsLicensingDialog ? (
