@@ -1,8 +1,9 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { AlertCircle, CheckCircle2, Loader2, Play, RotateCcw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, Play, RotateCcw, SkipForward } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { AvailableSubscription } from '@/components/licensing/LicenseSelect';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -33,7 +34,10 @@ import {
     store as storeProvision,
 } from '@/routes/deployments/provision';
 import { cancel as cancelWorkflow, pause as pauseWorkflow, resume as resumeWorkflow } from '@/routes/provisioning_workflows';
-import { restart as restartWorkflowDevice } from '@/routes/provisioning_workflow_devices';
+import {
+    override as overrideWorkflowDeviceStep,
+    restart as restartWorkflowDevice,
+} from '@/routes/provisioning_workflow_devices';
 import { store as storeTask } from '@/routes/tasks';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
@@ -59,6 +63,8 @@ type WorkflowStep = {
     status: string;
     message: string | null;
     order: number;
+    user_overridden?: boolean;
+    can_override?: boolean;
 };
 
 type WorkflowDeviceCard = {
@@ -1366,8 +1372,37 @@ function DeviceWorkflowCard({ deviceCard }: { deviceCard: WorkflowDeviceCard }) 
                                 <span
                                     className={cn('mt-1 size-2 shrink-0 rounded-full', statusColor(step.status))}
                                 />
-                                <div>
-                                    <span className="font-medium">{step.label}</span>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-medium">{step.label}</span>
+                                        {step.user_overridden ? (
+                                            <Badge
+                                                variant="outline"
+                                                className="font-normal"
+                                                data-test={`workflow-step-user-override-${deviceCard.device_id}-${step.step_key}`}
+                                            >
+                                                User override
+                                            </Badge>
+                                        ) : null}
+                                        {step.can_override ? (
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-6 px-2 text-xs"
+                                                data-test={`workflow-step-skip-${deviceCard.device_id}-${step.step_key}`}
+                                                onClick={() =>
+                                                    router.post(
+                                                        overrideWorkflowDeviceStep(deviceCard.id).url,
+                                                        { step_key: step.step_key },
+                                                    )
+                                                }
+                                            >
+                                                <SkipForward className="mr-1 size-3" />
+                                                Skip step
+                                            </Button>
+                                        ) : null}
+                                    </div>
                                     {step.message ? (
                                         <p className="text-muted-foreground">{step.message}</p>
                                     ) : null}

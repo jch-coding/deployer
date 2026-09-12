@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ProvisioningWorkflowDeviceStep extends Model
 {
     protected $casts = [
+        'user_overridden' => 'boolean',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
@@ -42,6 +43,16 @@ class ProvisioningWorkflowDeviceStep extends Model
         ]);
     }
 
+    public function markCompletedByUser(string $message = 'Marked complete by user.'): void
+    {
+        $this->update([
+            'status' => 'completed',
+            'user_overridden' => true,
+            'message' => $message !== '' ? $message : 'Marked complete by user.',
+            'completed_at' => now(),
+        ]);
+    }
+
     public function markFailed(string $message): void
     {
         $this->update([
@@ -64,6 +75,7 @@ class ProvisioningWorkflowDeviceStep extends Model
     {
         $this->update([
             'status' => 'pending',
+            'user_overridden' => false,
             'message' => null,
             'attempts' => 0,
             'started_at' => null,

@@ -49,8 +49,6 @@ class RunProvisioningWorkflowStepJob implements ShouldQueue
         }
 
         if ($stepRow->status === 'completed' || $stepRow->status === 'skipped') {
-            $orchestrator->advanceToNextStep($workflowDevice, $step);
-
             return;
         }
 

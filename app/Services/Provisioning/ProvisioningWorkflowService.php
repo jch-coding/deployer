@@ -480,6 +480,52 @@ class ProvisioningWorkflowService
         $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 
+    public function overrideStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $step): void
+    {
+        $workflowDevice->loadMissing('device', 'workflow', 'steps');
+        $workflow = $workflowDevice->workflow;
+
+        if ($workflow->isTerminal()) {
+            throw ValidationException::withMessages([
+                'step_key' => 'Cannot override a step on a completed or cancelled workflow.',
+            ]);
+        }
+
+        $stepRow = $workflowDevice->steps->firstWhere('step_key', $step->value);
+        if ($stepRow === null) {
+            throw ValidationException::withMessages([
+                'step_key' => 'That step is not part of this workflow.',
+            ]);
+        }
+
+        if ($workflowDevice->current_step_key !== $step->value) {
+            throw ValidationException::withMessages([
+                'step_key' => 'Only the current step can be overridden.',
+            ]);
+        }
+
+        if (! in_array($stepRow->status, ['in_progress', 'failed'], true)) {
+            throw ValidationException::withMessages([
+                'step_key' => 'Only an in-progress or failed step can be overridden.',
+            ]);
+        }
+
+        if ($workflowDevice->overall_status === 'failed') {
+            $workflowDevice->update([
+                'overall_status' => 'in_progress',
+                'failed_step_key' => null,
+            ]);
+        }
+
+        $stepRow->markCompletedByUser();
+        $workflowDevice->update([
+            'status_message' => 'Marked complete by user.',
+        ]);
+
+        $this->orchestrator->advanceToNextStep($workflowDevice->fresh(['steps', 'device', 'workflow']), $step);
+        $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
+    }
+
     public function taskForWorkflow(ProvisioningWorkflow $workflow): ?Task
     {
         return Task::query()
@@ -509,13 +555,21 @@ class ProvisioningWorkflowService
 
         foreach ($workflow->workflowDevices as $workflowDevice) {
             $device = $workflowDevice->device;
-            $steps = $workflowDevice->steps->sortBy('step_order')->values()->map(fn (ProvisioningWorkflowDeviceStep $row) => [
-                'step_key' => $row->step_key,
-                'label' => ProvisioningStep::from($row->step_key)->label(),
-                'status' => $row->status,
-                'message' => $row->message,
-                'order' => $row->step_order,
-            ])->all();
+            $steps = $workflowDevice->steps->sortBy('step_order')->values()->map(function (ProvisioningWorkflowDeviceStep $row) use ($workflowDevice, $workflow) {
+                $canOverride = ! $workflow->isTerminal()
+                    && $workflowDevice->current_step_key === $row->step_key
+                    && in_array($row->status, ['in_progress', 'failed'], true);
+
+                return [
+                    'step_key' => $row->step_key,
+                    'label' => ProvisioningStep::from($row->step_key)->label(),
+                    'status' => $row->status,
+                    'message' => $row->message,
+                    'order' => $row->step_order,
+                    'user_overridden' => (bool) $row->user_overridden,
+                    'can_override' => $canOverride,
+                ];
+            })->all();
 
             if ($workflowDevice->failed_step_key === ProvisioningStep::VerifyLicensing->value) {
                 $licensingFailures[] = [

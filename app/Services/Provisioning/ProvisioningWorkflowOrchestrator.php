@@ -42,6 +42,10 @@ class ProvisioningWorkflowOrchestrator
             return;
         }
 
+        if (in_array($stepRow->status, ['completed', 'skipped'], true)) {
+            return;
+        }
+
         if ($result->isWaitingPeer()) {
             $workflowDevice->update([
                 'current_step_key' => $step->value,

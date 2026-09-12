@@ -275,6 +275,27 @@ class ProvisioningWorkflowController extends Controller
         return back()->with('success', 'Device workflow restarted.');
     }
 
+    public function overrideStep(Request $request, ProvisioningWorkflowDevice $workflowDevice, ProvisioningWorkflowService $workflowService)
+    {
+        $workflowDevice->loadMissing('workflow.deployment');
+        $this->authorizeWorkflow($request, $workflowDevice->workflow);
+
+        $validated = $request->validate([
+            'step_key' => ['required', 'string', Rule::in(array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases()))],
+        ]);
+
+        try {
+            $workflowService->overrideStep(
+                $workflowDevice,
+                ProvisioningStep::from($validated['step_key']),
+            );
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->errors());
+        }
+
+        return back()->with('success', 'Step marked complete by user.');
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -3,6 +3,7 @@ export type WorkflowDeviceSearchStep = {
     label: string;
     status: string;
     message: string | null;
+    user_overridden?: boolean;
 };
 
 export type WorkflowDeviceSearchRow = {
@@ -37,6 +38,9 @@ function haystackForDevice(device: WorkflowDeviceSearchRow): string {
             step.status,
             step.message ?? '',
         );
+        if (step.user_overridden) {
+            parts.push('user override');
+        }
     }
 
     return parts.join(' ').toLowerCase();
