@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { csrfHeaders } from '@/lib/csrf';
+import { formatDeviceTitle } from '@/lib/device-label';
 import {
     downloadSwitchInterfacesCsv,
     formatAllowedVlanIds,
@@ -172,7 +173,7 @@ export default function SwitchInterfacesPanel({
 }: SwitchInterfacesPanelProps) {
     const { serial, device_name, device_type, interfaces, central_error } =
         switchDetails;
-    const title = device_name !== '' ? device_name : serial;
+    const title = formatDeviceTitle(device_name, serial);
     const showTroubleshooting =
         (device_type ?? '').trim().toUpperCase() !== 'GATEWAY';
 
@@ -505,14 +506,6 @@ export default function SwitchInterfacesPanel({
                     >
                         {title}
                     </h2>
-                    {device_name !== '' ? (
-                        <p
-                            className="mt-1 text-sm text-muted-foreground"
-                            data-test="device-details-switch-serial"
-                        >
-                            Serial: {serial}
-                        </p>
-                    ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {showTroubleshooting ? (

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { clearMacAddressTableCache } from '@/lib/mac-address-table-cache';
 import { clearDatapathSessionTableCache } from '@/lib/datapath-session-table-cache';
+import { formatDeviceTitle } from '@/lib/device-label';
 import { downloadAllSwitchInterfacesCsv } from '@/lib/switch-interfaces-csv';
 import { isAccessPointDevice } from '@/lib/is-access-point';
 import { index as clientsIndex } from '@/routes/clients';
@@ -26,10 +27,6 @@ type DeviceDetailsPayload = SwitchDetailsPayload & {
 type DeviceDetailsShowProps = {
     devices: DeviceDetailsPayload[];
 } & SharedData;
-
-function deviceDisplayName(device: DeviceDetailsPayload): string {
-    return device.device_name !== '' ? device.device_name : device.serial;
-}
 
 function isAccessPoint(device: DeviceDetailsPayload): boolean {
     return isAccessPointDevice(device);
@@ -59,7 +56,7 @@ export default function Show() {
             return 'Device Details';
         }
         if (devices.length === 1) {
-            return deviceDisplayName(devices[0]);
+            return formatDeviceTitle(devices[0].device_name, devices[0].serial);
         }
 
         if (accessPoints.length === devices.length) {
@@ -141,7 +138,10 @@ export default function Show() {
                                 onClick={() =>
                                     downloadAllSwitchInterfacesCsv(
                                         switches.map((item) => ({
-                                            switchName: deviceDisplayName(item),
+                                            switchName: formatDeviceTitle(
+                                                item.device_name,
+                                                item.serial,
+                                            ),
                                             interfaces: item.interfaces,
                                         })),
                                     )

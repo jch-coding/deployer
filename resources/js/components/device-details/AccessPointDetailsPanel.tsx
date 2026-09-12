@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { downloadBssidsCsv, type BssidRow } from '@/lib/bssids-csv';
 import { csrfHeaders } from '@/lib/csrf';
+import { formatDeviceTitle } from '@/lib/device-label';
 import { bssids as bssidsRoute } from '@/routes/device-details';
 
 export type AccessPointDetailsPayload = {
@@ -32,7 +33,7 @@ type AccessPointDetailsPanelProps = {
 
 export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDetailsPanelProps) {
     const { serial, device_name, central_error } = accessPoint;
-    const title = device_name !== '' ? device_name : serial;
+    const title = formatDeviceTitle(device_name, serial);
 
     const [bssids, setBssids] = useState<BssidRow[] | null>(null);
     const [loading, setLoading] = useState(false);
@@ -124,14 +125,6 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
                     <h2 className="text-xl font-semibold" data-test="device-details-ap-title">
                         {title}
                     </h2>
-                    {device_name !== '' ? (
-                        <p
-                            className="mt-1 text-sm text-muted-foreground"
-                            data-test="device-details-ap-serial"
-                        >
-                            Serial: {serial}
-                        </p>
-                    ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <Button

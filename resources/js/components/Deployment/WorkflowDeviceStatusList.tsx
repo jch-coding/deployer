@@ -9,10 +9,7 @@ import {
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
-import {
-    deviceHasExplicitName,
-    formatDeviceLabel,
-} from '@/lib/device-label';
+import { formatDeviceTitle } from '@/lib/device-label';
 import { workflowDeviceMatchesSearch } from '@/lib/workflow-device-search';
 import { cn } from '@/lib/utils';
 import {
@@ -73,15 +70,6 @@ function statusColor(status: string): string {
     }
 }
 
-function formatDeviceRowTitle(name: string, serial: string): string {
-    const label = formatDeviceLabel(name, serial);
-    if (deviceHasExplicitName(name, serial)) {
-        return `${label} (${serial.trim()})`;
-    }
-
-    return label;
-}
-
 function deviceCurrentStepSummary(device: WorkflowDeviceStatusRow): string {
     if (device.current_step_label) {
         return device.current_step_label;
@@ -128,12 +116,12 @@ function WorkflowDeviceRow({
                         className="flex h-auto min-w-0 flex-1 items-center justify-between gap-3 px-2 py-1.5"
                         aria-label={
                             isOpen
-                                ? `Collapse ${formatDeviceRowTitle(device.name, device.serial)}`
-                                : `Expand ${formatDeviceRowTitle(device.name, device.serial)}`
+                                ? `Collapse ${formatDeviceTitle(device.name, device.serial)}`
+                                : `Expand ${formatDeviceTitle(device.name, device.serial)}`
                         }
                     >
                         <span className="truncate text-left text-sm font-medium">
-                            {formatDeviceRowTitle(device.name, device.serial)}
+                            {formatDeviceTitle(device.name, device.serial)}
                         </span>
                         <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
                             {deviceCurrentStepSummary(device)}
