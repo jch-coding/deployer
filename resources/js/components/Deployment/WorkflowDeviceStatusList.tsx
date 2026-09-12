@@ -1,6 +1,7 @@
-import { ChevronDown, RotateCcw, Search } from 'lucide-react';
+import { ChevronDown, RotateCcw, Search, SkipForward } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { router } from '@inertiajs/react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
@@ -14,7 +15,10 @@ import {
 } from '@/lib/device-label';
 import { workflowDeviceMatchesSearch } from '@/lib/workflow-device-search';
 import { cn } from '@/lib/utils';
-import { restart as restartWorkflowDevice } from '@/routes/provisioning_workflow_devices';
+import {
+    override as overrideWorkflowDeviceStep,
+    restart as restartWorkflowDevice,
+} from '@/routes/provisioning_workflow_devices';
 
 const selectClassName =
     'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
@@ -30,6 +34,8 @@ export type WorkflowDeviceStatusStep = {
     status: string;
     message: string | null;
     order: number;
+    user_overridden?: boolean;
+    can_override?: boolean;
 };
 
 export type WorkflowDeviceStatusRow = {
@@ -165,10 +171,43 @@ function WorkflowDeviceRow({
                                 )}
                             />
                             <div className="min-w-0 flex-1">
-                                <span className="font-medium">{step.label}</span>
-                                <span className="ml-2 uppercase text-muted-foreground">
-                                    {step.status}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-medium">{step.label}</span>
+                                    <span className="uppercase text-muted-foreground">
+                                        {step.status}
+                                    </span>
+                                    {step.user_overridden ? (
+                                        <Badge
+                                            variant="outline"
+                                            className="font-normal"
+                                            data-test={`workflow-step-user-override-${device.device_id}-${step.step_key}`}
+                                        >
+                                            User override
+                                        </Badge>
+                                    ) : null}
+                                    {step.can_override ? (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 px-2 text-xs"
+                                            data-test={`workflow-step-skip-${device.device_id}-${step.step_key}`}
+                                            onClick={() =>
+                                                router.post(
+                                                    overrideWorkflowDeviceStep(
+                                                        device.id,
+                                                    ).url,
+                                                    {
+                                                        step_key: step.step_key,
+                                                    },
+                                                )
+                                            }
+                                        >
+                                            <SkipForward className="mr-1 size-3" />
+                                            Skip step
+                                        </Button>
+                                    ) : null}
+                                </div>
                                 {step.message ? (
                                     <p className="text-muted-foreground">
                                         {step.message}

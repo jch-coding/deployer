@@ -78,6 +78,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/provisioning-workflows/{workflow}/pause', 'pause')->name('provisioning_workflows.pause');
         Route::post('/provisioning-workflows/{workflow}/resume', 'resume')->name('provisioning_workflows.resume');
         Route::post('/provisioning-workflow-devices/{workflowDevice}/restart', 'restart')->name('provisioning_workflow_devices.restart');
+        Route::post('/provisioning-workflow-devices/{workflowDevice}/override', 'overrideStep')->name('provisioning_workflow_devices.override');
     });
 
     Route::controller(ProvisioningWorkflowTemplateController::class)->group(function () {

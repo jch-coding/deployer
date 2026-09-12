@@ -1,6 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { Download, Loader2, RotateCcw, Terminal, Wifi } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import ApDatapathSessionTableCard from '@/components/device-details/ApDatapathSessionTableCard';
 import RebootAccessPointsDialog from '@/components/device-details/RebootAccessPointsDialog';
 import SwitchShowCommandsCard from '@/components/device-details/SwitchShowCommandsCard';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,8 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [pageIndex, setPageIndex] = useState(0);
     const [showCommandsOpen, setShowCommandsOpen] = useState(false);
+    const [datapathSessionTableOpen, setDatapathSessionTableOpen] =
+        useState(false);
     const pageSize = 25;
 
     const loadBssids = useCallback(async () => {
@@ -136,11 +139,27 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
                         variant="outline"
                         className="gap-2"
                         disabled={Boolean(central_error)}
-                        onClick={() => setShowCommandsOpen((open) => !open)}
+                        onClick={() => {
+                            setDatapathSessionTableOpen(false);
+                            setShowCommandsOpen((open) => !open);
+                        }}
                         data-test="device-details-troubleshooting"
                     >
                         <Terminal className="size-4" aria-hidden />
                         Troubleshooting
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        disabled={Boolean(central_error)}
+                        onClick={() => {
+                            setShowCommandsOpen(false);
+                            setDatapathSessionTableOpen((open) => !open);
+                        }}
+                        data-test="device-details-datapath-session-table"
+                    >
+                        datapath-session table
                     </Button>
                     <Button
                         type="button"
@@ -191,6 +210,13 @@ export default function AccessPointDetailsPanel({ accessPoint }: AccessPointDeta
                     serial={serial}
                     deviceType="ACCESS_POINT"
                     onClose={() => setShowCommandsOpen(false)}
+                />
+            ) : null}
+
+            {datapathSessionTableOpen ? (
+                <ApDatapathSessionTableCard
+                    serial={serial}
+                    onClose={() => setDatapathSessionTableOpen(false)}
                 />
             ) : null}
 

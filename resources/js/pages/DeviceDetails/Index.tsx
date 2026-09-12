@@ -18,6 +18,7 @@ import { downloadSiteBssidsCsv, type SiteBssidRow } from '@/lib/bssids-csv';
 import { csrfHeaders } from '@/lib/csrf';
 import { isAccessPointDevice } from '@/lib/is-access-point';
 import { clearMacAddressTableCache } from '@/lib/mac-address-table-cache';
+import { clearDatapathSessionTableCache } from '@/lib/datapath-session-table-cache';
 import { index as clientsIndex } from '@/routes/clients';
 import {
     index as deviceDetailsIndex,
@@ -190,6 +191,7 @@ export default function Index() {
 
         previousMacSearchResetKeyRef.current = macSearchResetKey;
         clearMacAddressTableCache();
+        clearDatapathSessionTableCache();
     }, [macSearchResetKey]);
 
     const hasActiveLocalFilters = useMemo(

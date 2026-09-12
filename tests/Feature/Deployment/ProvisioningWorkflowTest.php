@@ -1651,3 +1651,464 @@ it('syncs device pivot status from workflow device progress', function () {
 
     expect($task->devices()->first()->pivot->status)->toBe('COMPLETED');
 });
+
+it('overrides an in-progress step as completed and advances to the next step', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+        'status_message' => 'Failed to associate device to site. Retrying...',
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+        'message' => 'Failed to associate device to site. Retrying...',
+        'attempts' => 3,
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 2,
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflow_devices.override', $workflowDevice), [
+        'step_key' => ProvisioningStep::AssociateSite->value,
+    ])->assertRedirect();
+
+    $workflowDevice->refresh();
+    $associateStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->first();
+    $nameStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->first();
+
+    expect($associateStep->status)->toBe('completed')
+        ->and($associateStep->user_overridden)->toBeTrue()
+        ->and($associateStep->message)->toBe('Marked complete by user.')
+        ->and($workflowDevice->overall_status)->toBe('in_progress')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::NameDevice->value)
+        ->and($nameStep->status)->toBe('in_progress');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($workflowDevice) {
+        return $job->workflowDeviceId === $workflowDevice->id
+            && $job->stepKey === ProvisioningStep::NameDevice->value;
+    });
+});
+
+it('overrides a failed step and resumes the device workflow', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'failed',
+        'failed_step_key' => ProvisioningStep::AssociateSite->value,
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+        'status_message' => 'Site not found',
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'failed',
+        'message' => 'Site not found',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 2,
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflow_devices.override', $workflowDevice), [
+        'step_key' => ProvisioningStep::AssociateSite->value,
+    ])->assertRedirect();
+
+    $workflowDevice->refresh();
+
+    expect($workflowDevice->overall_status)->toBe('in_progress')
+        ->and($workflowDevice->failed_step_key)->toBeNull()
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::NameDevice->value)
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('status'))->toBe('completed')
+        ->and((bool) $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('user_overridden'))->toBeTrue();
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($workflowDevice) {
+        return $job->workflowDeviceId === $workflowDevice->id
+            && $job->stepKey === ProvisioningStep::NameDevice->value;
+    });
+});
+
+it('completes the device when the overridden step is the last step', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflow_devices.override', $workflowDevice), [
+        'step_key' => ProvisioningStep::AssociateSite->value,
+    ])->assertRedirect();
+
+    $workflowDevice->refresh();
+
+    expect($workflowDevice->overall_status)->toBe('completed')
+        ->and($workflowDevice->current_step_key)->toBeNull()
+        ->and($workflowDevice->status_message)->toBe('Workflow completed successfully.')
+        ->and((bool) $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('user_overridden'))->toBeTrue();
+
+    Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('does not re-advance when a released step job runs after a user override', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::NameDevice->value,
+        'status_message' => 'Name device...',
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'user_overridden' => true,
+        'message' => 'Marked complete by user.',
+        'completed_at' => now(),
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 2,
+        'status' => 'in_progress',
+        'message' => 'Name device...',
+    ]);
+
+    $job = new RunProvisioningWorkflowStepJob($workflowDevice->id, ProvisioningStep::AssociateSite->value);
+    $job->handle(
+        app(\App\Services\Provisioning\ProvisioningStepRunner::class),
+        app(ProvisioningWorkflowOrchestrator::class),
+    );
+
+    $workflowDevice->refresh();
+    $nameStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->first();
+
+    expect($workflowDevice->current_step_key)->toBe(ProvisioningStep::NameDevice->value)
+        ->and($nameStep->status)->toBe('in_progress')
+        ->and((bool) $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('user_overridden'))->toBeTrue();
+
+    Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('ignores in-flight step results after a user override', function () {
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::NameDevice->value,
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'user_overridden' => true,
+        'message' => 'Marked complete by user.',
+        'completed_at' => now(),
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 2,
+        'status' => 'in_progress',
+    ]);
+
+    app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
+        $workflowDevice->fresh(['steps', 'workflow', 'device']),
+        ProvisioningStep::AssociateSite,
+        ProvisioningStepResult::failed('Late failure from in-flight API call'),
+    );
+
+    $associateStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->first();
+
+    expect($associateStep->status)->toBe('completed')
+        ->and($associateStep->user_overridden)->toBeTrue()
+        ->and($workflowDevice->fresh()->overall_status)->toBe('in_progress');
+});
+
+it('clears user_overridden when restarting from an overridden step', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'failed',
+        'failed_step_key' => ProvisioningStep::NameDevice->value,
+        'current_step_key' => ProvisioningStep::NameDevice->value,
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'user_overridden' => true,
+        'message' => 'Marked complete by user.',
+        'completed_at' => now(),
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 2,
+        'status' => 'failed',
+        'message' => 'Naming failed',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflow_devices.restart', $workflowDevice), [
+        'from_step' => ProvisioningStep::AssociateSite->value,
+    ])->assertRedirect();
+
+    $associateStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->first();
+
+    expect($associateStep->status)->toBe('in_progress')
+        ->and($associateStep->user_overridden)->toBeFalse()
+        ->and($associateStep->message)->toBe('Restarting...');
+});
+
+it('rejects overriding a non-current step', function () {
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::NameDevice->value,
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 2,
+        'status' => 'in_progress',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->from(route('deployments.provision', $this->deployment))
+        ->post(route('provisioning_workflow_devices.override', $workflowDevice), [
+            'step_key' => ProvisioningStep::AssociateSite->value,
+        ])
+        ->assertRedirect(route('deployments.provision', $this->deployment))
+        ->assertSessionHasErrors('step_key');
+});
+
+it('rejects overriding a step on a cancelled workflow', function () {
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'cancelled',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'completed_at' => now(),
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->from(route('deployments.provision', $this->deployment))
+        ->post(route('provisioning_workflow_devices.override', $workflowDevice), [
+            'step_key' => ProvisioningStep::AssociateSite->value,
+        ])
+        ->assertRedirect(route('deployments.provision', $this->deployment))
+        ->assertSessionHasErrors('step_key');
+});
+
+it('serializes user_overridden and can_override flags for the UI', function () {
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ],
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::NameDevice->value,
+    ]);
+
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'user_overridden' => true,
+        'message' => 'Marked complete by user.',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 2,
+        'status' => 'in_progress',
+    ]);
+
+    $payload = app(ProvisioningWorkflowService::class)->serializeForUi($workflow->fresh());
+    $steps = collect($payload['devices'][0]['steps']);
+
+    expect($steps->firstWhere('step_key', ProvisioningStep::AssociateSite->value)['user_overridden'])->toBeTrue()
+        ->and($steps->firstWhere('step_key', ProvisioningStep::AssociateSite->value)['can_override'])->toBeFalse()
+        ->and($steps->firstWhere('step_key', ProvisioningStep::NameDevice->value)['user_overridden'])->toBeFalse()
+        ->and($steps->firstWhere('step_key', ProvisioningStep::NameDevice->value)['can_override'])->toBeTrue();
+});

@@ -122,7 +122,7 @@ const deploymentTasks = [
     {
         title: 'Assign Subscription',
         description:
-            'Assign GreenLake subscription licenses to selected devices using a uniform tag and license type pool, or per-device license selections.',
+            'Assign GreenLake subscription licenses to selected devices using a license tag and type pool, or by picking a specific subscription (ID and seats), including per-device selections.',
         requiresClassicCentral: true,
         requiresLicensing: true,
     },
@@ -249,7 +249,8 @@ export default function Usage() {
                             Beyond deployments, the sidebar also provides <strong>Sites</strong> (search
                             Central inventory by site and device attributes),{' '}
                             <strong>Device Details</strong> (live switch interfaces, troubleshooting show
-                            commands, MAC address tables, and site-wide MAC search), <strong>Licensing</strong>{' '}
+                            commands, MAC address tables, AP datapath session tables, and site-wide MAC search),{' '}
+                            <strong>Licensing</strong>{' '}
                             (GreenLake subscription inventory and assign/unassign actions),{' '}
                             <strong>Central API</strong> (an interactive explorer for New Central
                             Configuration API endpoints), and <strong>Ekahau</strong> (local tools for
@@ -751,8 +752,8 @@ sudo cloudflared service start`}</code>
                             </Link>{' '}
                             page loads live interface and neighbor data from Aruba Central for switches and
                             access points. Use it for day-two troubleshooting—running show commands, inspecting
-                            a switch MAC address table, or searching for MACs across site switches—without
-                            running a deployment task.
+                            a switch MAC address table, viewing an AP datapath session table, or searching for
+                            MACs across site switches—without running a deployment task.
                         </p>
                         <ol className={cn(body, 'mt-4 list-decimal space-y-2 pl-5')}>
                             <li>
@@ -791,6 +792,8 @@ sudo cloudflared service start`}</code>
                                 Available on switches and access points (not gateways). The button is disabled
                                 when Central returns an error loading the device. On switches, opening
                                 Troubleshooting closes the MAC address table card if it was open, and vice versa.
+                                On access points, opening Troubleshooting closes the datapath session table card
+                                if it was open, and vice versa.
                             </li>
                             <li>
                                 On switches, with Troubleshooting open, you can also select interface rows for
@@ -820,6 +823,31 @@ sudo cloudflared service start`}</code>
                             <li>
                                 Same availability rules as Troubleshooting: switches only, disabled on Central
                                 errors, and mutually exclusive with the Troubleshooting card.
+                            </li>
+                        </ul>
+
+                        <h3 className={h3}>Datapath session table (per access point)</h3>
+                        <p className={cn(body, 'mt-3')}>
+                            On an access point detail view, click <strong>datapath-session table</strong> to run{' '}
+                            <code>show datapath session</code> and view the AP datapath session table.
+                        </p>
+                        <ul className={cn(body, 'mt-4 list-disc space-y-2 pl-5')}>
+                            <li>
+                                Columns include Source IP, Destination IP, protocol, ports, counters, destination
+                                interface, age/TAge, packets, bytes, Flags, and Offload flags. Protocol numbers
+                                are shown as names when known (UDP, TCP, IGMP, ARP). Hex counters (TAge, Packets,
+                                Bytes) are converted to decimal.
+                            </li>
+                            <li>
+                                Session and offload flag letters expand to their full names as badges. Use the
+                                per-column filter inputs to narrow rows (AND across columns). Flag filters match
+                                both the letter and the expanded name (for example, <code>client</code> or{' '}
+                                <code>C</code>).
+                            </li>
+                            <li>
+                                Access points only, disabled on Central errors, and mutually exclusive with the
+                                Troubleshooting card. Reopening in the same page session can use a cached table;
+                                refresh re-fetches from Central.
                             </li>
                         </ul>
 

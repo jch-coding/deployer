@@ -11,6 +11,7 @@ import SwitchInterfacesPanel, {
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { clearMacAddressTableCache } from '@/lib/mac-address-table-cache';
+import { clearDatapathSessionTableCache } from '@/lib/datapath-session-table-cache';
 import { downloadAllSwitchInterfacesCsv } from '@/lib/switch-interfaces-csv';
 import { isAccessPointDevice } from '@/lib/is-access-point';
 import { index as clientsIndex } from '@/routes/clients';
@@ -47,6 +48,7 @@ export default function Show() {
 
         previousClientCacheKeyRef.current = clientCacheKey;
         clearMacAddressTableCache();
+        clearDatapathSessionTableCache();
     }, [clientCacheKey]);
 
     const accessPoints = useMemo(() => devices.filter(isAccessPoint), [devices]);
