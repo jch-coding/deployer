@@ -168,17 +168,23 @@ const filterFields: {
 type SwitchInterfacesPanelProps = {
     switchDetails: SwitchDetailsPayload;
     searchQuery?: string;
+    snapshotMode?: boolean;
+    capturedAt?: string | null;
 };
 
 export default function SwitchInterfacesPanel({
     switchDetails,
     searchQuery = '',
+    snapshotMode = false,
+    capturedAt = null,
 }: SwitchInterfacesPanelProps) {
     const { serial, device_name, device_type, interfaces, central_error } =
         switchDetails;
     const title = formatDeviceTitle(device_name, serial);
     const showTroubleshooting =
+        !snapshotMode &&
         (device_type ?? '').trim().toUpperCase() !== 'GATEWAY';
+    const showLiveActions = !snapshotMode;
 
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
@@ -356,7 +362,10 @@ export default function SwitchInterfacesPanel({
 
         baseColumns.push(
             { accessorKey: 'name', header: 'Name' },
-            {
+        );
+
+        if (showLiveActions) {
+            baseColumns.push({
                 id: 'profileCompare',
                 header: 'Profile check',
                 cell: ({ row }) => {
@@ -382,7 +391,10 @@ export default function SwitchInterfacesPanel({
                         </div>
                     );
                 },
-            },
+            });
+        }
+
+        baseColumns.push(
             {
                 accessorKey: 'status',
                 header: 'Status',
@@ -425,7 +437,7 @@ export default function SwitchInterfacesPanel({
         );
 
         return baseColumns;
-    }, [showTroubleshooting]);
+    }, [showLiveActions, showTroubleshooting]);
 
     const totalFiltered = filteredInterfaces.length;
     const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
@@ -514,6 +526,15 @@ export default function SwitchInterfacesPanel({
                     >
                         {title}
                     </h2>
+                    {snapshotMode && capturedAt ? (
+                        <p
+                            className="mt-1 text-sm text-muted-foreground"
+                            data-test="device-details-snapshot-captured-at"
+                        >
+                            Snapshot from{' '}
+                            {new Date(capturedAt).toLocaleString()}
+                        </p>
+                    ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {showTroubleshooting ? (
@@ -547,24 +568,26 @@ export default function SwitchInterfacesPanel({
                             mac-address-table
                         </Button>
                     ) : null}
-                    <Button
-                        type="button"
-                        variant="outline"
-                        className="gap-2"
-                        disabled={compareLoading || Boolean(central_error)}
-                        onClick={() => void runCompare()}
-                        data-test="device-details-compare-profiles"
-                    >
-                        {compareLoading ? (
-                            <Loader2
-                                className="size-4 animate-spin"
-                                aria-hidden
-                            />
-                        ) : (
-                            <GitCompareArrows className="size-4" aria-hidden />
-                        )}
-                        Compare switch profile interfaces
-                    </Button>
+                    {showLiveActions ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="gap-2"
+                            disabled={compareLoading || Boolean(central_error)}
+                            onClick={() => void runCompare()}
+                            data-test="device-details-compare-profiles"
+                        >
+                            {compareLoading ? (
+                                <Loader2
+                                    className="size-4 animate-spin"
+                                    aria-hidden
+                                />
+                            ) : (
+                                <GitCompareArrows className="size-4" aria-hidden />
+                            )}
+                            Compare switch profile interfaces
+                        </Button>
+                    ) : null}
                     <Button
                         type="button"
                         variant="outline"

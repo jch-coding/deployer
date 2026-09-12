@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helper\CentralAPIHelper;
 use App\Jobs\RebootAccessPointJob;
 use App\Models\Deployment;
+use App\Models\DeviceInterfaceSnapshot;
 use App\Services\CentralScopeCacheService;
 use App\Services\DeviceCentralFilterBuilder;
 use App\Services\SwitchPortProfileInterfaceComparer;
@@ -166,8 +167,160 @@ class DeviceDetailsController extends Controller
             );
         }
 
+        $snapshotSummaries = DeviceInterfaceSnapshot::query()
+            ->where('user_id', $request->user()->id)
+            ->where('client_id', $currentClient->id)
+            ->whereIn('serial', $serials)
+            ->get(['serial', 'captured_at', 'device_name'])
+            ->map(fn (DeviceInterfaceSnapshot $snapshot): array => [
+                'serial' => $snapshot->serial,
+                'device_name' => $snapshot->device_name,
+                'captured_at' => $snapshot->captured_at?->toIso8601String(),
+            ])
+            ->values()
+            ->all();
+
         return Inertia::render('DeviceDetails/Show', [
             'devices' => $devices,
+            'snapshot_summaries' => $snapshotSummaries,
+        ]);
+    }
+
+    public function storeSnapshots(Request $request): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'message' => 'Please set current client to save interface snapshots.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'devices' => ['required', 'array', 'min:1', 'max:'.self::MAX_SERIALS],
+            'devices.*.serial' => ['required', 'string', 'max:16'],
+            'devices.*.device_name' => ['nullable', 'string', 'max:255'],
+            'devices.*.device_type' => ['nullable', 'string', 'max:255'],
+            'devices.*.device_function' => ['nullable', 'string', 'max:255'],
+            'devices.*.central_error' => ['nullable', 'string'],
+            'devices.*.interfaces' => ['nullable', 'array'],
+            'devices.*.interfaces.*.name' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.status' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.operStatus' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.neighbour' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.neighbourSerial' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.vlanMode' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.allowedVlanIds' => ['nullable', 'array'],
+            'devices.*.interfaces.*.allowedVlanIds.*' => ['integer'],
+            'devices.*.interfaces.*.nativeVlan' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.poeClass' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.neighbourFamily' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.neighbourFunction' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.neighbourType' => ['nullable', 'string', 'max:255'],
+            'devices.*.interfaces.*.transceiverType' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $capturedAt = now();
+        $saved = [];
+
+        foreach ($validated['devices'] as $device) {
+            $serial = trim((string) $device['serial']);
+            if ($serial === '') {
+                continue;
+            }
+
+            $deviceType = trim((string) ($device['device_type'] ?? ''));
+            $deviceFunction = trim((string) ($device['device_function'] ?? ''));
+
+            if ($this->isAccessPoint($deviceType, $deviceFunction)) {
+                continue;
+            }
+
+            $centralError = trim((string) ($device['central_error'] ?? ''));
+            if ($centralError !== '') {
+                continue;
+            }
+
+            $interfaces = [];
+            foreach ($device['interfaces'] ?? [] as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $interfaces[] = $this->mapInterfaceItem($item);
+            }
+
+            $snapshot = DeviceInterfaceSnapshot::query()->updateOrCreate(
+                [
+                    'user_id' => $request->user()->id,
+                    'client_id' => $currentClient->id,
+                    'serial' => $serial,
+                ],
+                [
+                    'device_name' => trim((string) ($device['device_name'] ?? '')),
+                    'device_type' => $deviceType !== '' ? $deviceType : 'SWITCH',
+                    'device_function' => $deviceFunction,
+                    'interfaces' => $interfaces,
+                    'captured_at' => $capturedAt,
+                ],
+            );
+
+            $saved[] = [
+                'serial' => $snapshot->serial,
+                'device_name' => $snapshot->device_name,
+                'captured_at' => $snapshot->captured_at?->toIso8601String(),
+            ];
+        }
+
+        return response()->json([
+            'message' => $saved === []
+                ? 'No switch interfaces were available to snapshot.'
+                : 'Interface snapshot saved for '.count($saved).' device'.(count($saved) === 1 ? '' : 's').'.',
+            'snapshots' => $saved,
+        ]);
+    }
+
+    public function indexSnapshots(Request $request): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'message' => 'Please set current client to view interface snapshots.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serials' => ['required', 'array', 'min:1', 'max:'.self::MAX_SERIALS],
+            'serials.*' => ['required', 'string', 'max:16'],
+        ]);
+
+        $serials = $this->normalizeSerials($validated['serials']);
+
+        if ($serials === []) {
+            return response()->json([
+                'message' => 'At least one serial number is required.',
+            ], 422);
+        }
+
+        $snapshots = DeviceInterfaceSnapshot::query()
+            ->where('user_id', $request->user()->id)
+            ->where('client_id', $currentClient->id)
+            ->whereIn('serial', $serials)
+            ->get()
+            ->map(fn (DeviceInterfaceSnapshot $snapshot): array => [
+                'serial' => $snapshot->serial,
+                'device_name' => $snapshot->device_name,
+                'device_type' => $snapshot->device_type,
+                'device_function' => $snapshot->device_function,
+                'interfaces' => $snapshot->interfaces ?? [],
+                'captured_at' => $snapshot->captured_at?->toIso8601String(),
+            ])
+            ->values()
+            ->all();
+
+        return response()->json([
+            'snapshots' => $snapshots,
         ]);
     }
 

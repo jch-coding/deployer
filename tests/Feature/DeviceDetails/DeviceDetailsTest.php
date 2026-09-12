@@ -1213,3 +1213,402 @@ test('device details port bounce result validates task id uuid', function () {
         ->assertStatus(422)
         ->assertJsonValidationErrors(['taskId']);
 });
+
+test('device details show includes snapshot summaries for current user and client only', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'network-monitoring/v1/devices')) {
+            return Http::response([
+                'items' => [[
+                    'deviceName' => 'Switch-A',
+                    'serialNumber' => 'SN12345',
+                    'deviceType' => 'SWITCH',
+                ]],
+                'next' => null,
+                'total' => 1,
+                'count' => 1,
+            ], 200);
+        }
+
+        if (str_contains($request->url(), 'network-monitoring/v1/switches/SN12345/interfaces')) {
+            return Http::response(['items' => [], 'total' => 0, 'offset' => null], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $ownSnapshot = \App\Models\DeviceInterfaceSnapshot::factory()->create([
+        'user_id' => $this->user->id,
+        'client_id' => $this->client->id,
+        'serial' => 'SN12345',
+        'device_name' => 'Switch-A',
+        'captured_at' => now()->subMinute(),
+    ]);
+
+    $otherClient = \App\Models\Client::factory()->for($this->user)->create([
+        'current' => false,
+        'base_url' => \App\BaseURL::US1,
+        'bearer_token' => 'other-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    \App\Models\DeviceInterfaceSnapshot::factory()->create([
+        'user_id' => $this->user->id,
+        'client_id' => $otherClient->id,
+        'serial' => 'SN12345',
+        'device_name' => 'Other-Client-Switch',
+    ]);
+
+    $otherUser = \App\Models\User::factory()->create();
+    $otherUserClient = \App\Models\Client::factory()->for($otherUser)->create([
+        'current' => true,
+        'base_url' => \App\BaseURL::US1,
+        'bearer_token' => 'other-user-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    \App\Models\DeviceInterfaceSnapshot::factory()->create([
+        'user_id' => $otherUser->id,
+        'client_id' => $otherUserClient->id,
+        'serial' => 'SN12345',
+        'device_name' => 'Other-User-Switch',
+    ]);
+
+    $this->get(route('device-details.show', ['serials' => ['SN12345']]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('DeviceDetails/Show')
+            ->has('snapshot_summaries', 1)
+            ->where('snapshot_summaries.0.serial', 'SN12345')
+            ->where('snapshot_summaries.0.device_name', 'Switch-A')
+            ->where('snapshot_summaries.0.captured_at', $ownSnapshot->captured_at->toIso8601String()));
+});
+
+test('device details snapshot store creates and overwrites per device', function () {
+    $payload = [
+        'devices' => [[
+            'serial' => 'SN12345',
+            'device_name' => 'Switch-A',
+            'device_type' => 'SWITCH',
+            'device_function' => 'ACCESS_SWITCH',
+            'central_error' => null,
+            'interfaces' => [[
+                'name' => '1/1/1',
+                'status' => 'Connected',
+                'operStatus' => 'Up',
+                'neighbour' => 'AP-1',
+                'neighbourSerial' => 'APSN1',
+                'vlanMode' => 'Trunk',
+                'allowedVlanIds' => [10, 20],
+                'nativeVlan' => '1',
+                'poeClass' => 'Class4',
+                'neighbourFamily' => 'Aruba',
+                'neighbourFunction' => 'AP',
+                'neighbourType' => 'Access Point',
+                'transceiverType' => 'SFP',
+            ]],
+        ]],
+    ];
+
+    $this->postJson(route('device-details.snapshots.store'), $payload)
+        ->assertOk()
+        ->assertJsonPath('snapshots.0.serial', 'SN12345')
+        ->assertJsonPath('snapshots.0.device_name', 'Switch-A');
+
+    $this->assertDatabaseCount('device_interface_snapshots', 1);
+    $first = \App\Models\DeviceInterfaceSnapshot::query()->first();
+    expect($first->serial)->toBe('SN12345')
+        ->and($first->interfaces[0]['name'])->toBe('1/1/1')
+        ->and($first->interfaces[0]['neighbourSerial'])->toBe('APSN1');
+
+    $overwritePayload = [
+        'devices' => [[
+            'serial' => 'SN12345',
+            'device_name' => 'Switch-A-Renamed',
+            'device_type' => 'SWITCH',
+            'device_function' => 'ACCESS_SWITCH',
+            'central_error' => null,
+            'interfaces' => [[
+                'name' => '1/1/2',
+                'status' => 'Not Connected',
+                'operStatus' => 'Down',
+                'neighbour' => '',
+                'neighbourSerial' => '',
+                'vlanMode' => 'Access',
+                'allowedVlanIds' => [30],
+                'nativeVlan' => '30',
+                'poeClass' => '',
+                'neighbourFamily' => '',
+                'neighbourFunction' => '',
+                'neighbourType' => '',
+                'transceiverType' => '',
+            ]],
+        ]],
+    ];
+
+    $this->travel(5)->seconds();
+
+    $this->postJson(route('device-details.snapshots.store'), $overwritePayload)
+        ->assertOk()
+        ->assertJsonPath('snapshots.0.serial', 'SN12345')
+        ->assertJsonPath('snapshots.0.device_name', 'Switch-A-Renamed');
+
+    $this->assertDatabaseCount('device_interface_snapshots', 1);
+    $updated = \App\Models\DeviceInterfaceSnapshot::query()->first();
+    expect($updated->id)->toBe($first->id)
+        ->and($updated->device_name)->toBe('Switch-A-Renamed')
+        ->and($updated->interfaces[0]['name'])->toBe('1/1/2')
+        ->and($updated->captured_at->greaterThan($first->captured_at))->toBeTrue();
+});
+
+test('device details snapshot store does not overwrite a different serial', function () {
+    \App\Models\DeviceInterfaceSnapshot::factory()->create([
+        'user_id' => $this->user->id,
+        'client_id' => $this->client->id,
+        'serial' => 'SN111',
+        'device_name' => 'Keep-Me',
+        'interfaces' => [['name' => 'keep', 'status' => 'Up', 'operStatus' => 'Up', 'neighbour' => '', 'neighbourSerial' => '', 'vlanMode' => '', 'allowedVlanIds' => [], 'nativeVlan' => '', 'poeClass' => '', 'neighbourFamily' => '', 'neighbourFunction' => '', 'neighbourType' => '', 'transceiverType' => '']],
+    ]);
+
+    $this->postJson(route('device-details.snapshots.store'), [
+        'devices' => [[
+            'serial' => 'SN222',
+            'device_name' => 'New-Switch',
+            'device_type' => 'SWITCH',
+            'device_function' => 'ACCESS_SWITCH',
+            'central_error' => null,
+            'interfaces' => [[
+                'name' => '1/1/1',
+                'status' => 'Connected',
+                'operStatus' => 'Up',
+                'neighbour' => '',
+                'neighbourSerial' => '',
+                'vlanMode' => 'Access',
+                'allowedVlanIds' => [1],
+                'nativeVlan' => '1',
+                'poeClass' => '',
+                'neighbourFamily' => '',
+                'neighbourFunction' => '',
+                'neighbourType' => '',
+                'transceiverType' => '',
+            ]],
+        ]],
+    ])->assertOk();
+
+    $this->assertDatabaseCount('device_interface_snapshots', 2);
+    $this->assertDatabaseHas('device_interface_snapshots', [
+        'serial' => 'SN111',
+        'device_name' => 'Keep-Me',
+    ]);
+    $this->assertDatabaseHas('device_interface_snapshots', [
+        'serial' => 'SN222',
+        'device_name' => 'New-Switch',
+    ]);
+});
+
+test('device details snapshot store skips access points and central errors', function () {
+    $this->postJson(route('device-details.snapshots.store'), [
+        'devices' => [
+            [
+                'serial' => 'AP111',
+                'device_name' => 'AP-One',
+                'device_type' => 'ACCESS_POINT',
+                'device_function' => 'CAMPUS',
+                'central_error' => null,
+                'interfaces' => [],
+            ],
+            [
+                'serial' => 'SNERR',
+                'device_name' => 'Broken-Switch',
+                'device_type' => 'SWITCH',
+                'device_function' => 'ACCESS_SWITCH',
+                'central_error' => 'Central timeout',
+                'interfaces' => [[
+                    'name' => '1/1/1',
+                    'status' => 'Connected',
+                    'operStatus' => 'Up',
+                    'neighbour' => '',
+                    'neighbourSerial' => '',
+                    'vlanMode' => '',
+                    'allowedVlanIds' => [],
+                    'nativeVlan' => '',
+                    'poeClass' => '',
+                    'neighbourFamily' => '',
+                    'neighbourFunction' => '',
+                    'neighbourType' => '',
+                    'transceiverType' => '',
+                ]],
+            ],
+            [
+                'serial' => 'SNOK',
+                'device_name' => 'Good-Switch',
+                'device_type' => 'SWITCH',
+                'device_function' => 'ACCESS_SWITCH',
+                'central_error' => null,
+                'interfaces' => [[
+                    'name' => '1/1/1',
+                    'status' => 'Connected',
+                    'operStatus' => 'Up',
+                    'neighbour' => '',
+                    'neighbourSerial' => '',
+                    'vlanMode' => 'Access',
+                    'allowedVlanIds' => [10],
+                    'nativeVlan' => '10',
+                    'poeClass' => '',
+                    'neighbourFamily' => '',
+                    'neighbourFunction' => '',
+                    'neighbourType' => '',
+                    'transceiverType' => '',
+                ]],
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonCount(1, 'snapshots')
+        ->assertJsonPath('snapshots.0.serial', 'SNOK');
+
+    $this->assertDatabaseCount('device_interface_snapshots', 1);
+    $this->assertDatabaseHas('device_interface_snapshots', [
+        'serial' => 'SNOK',
+        'device_name' => 'Good-Switch',
+    ]);
+    $this->assertDatabaseMissing('device_interface_snapshots', ['serial' => 'AP111']);
+    $this->assertDatabaseMissing('device_interface_snapshots', ['serial' => 'SNERR']);
+});
+
+test('device details snapshot store does not overwrite another users snapshot', function () {
+    $otherUser = \App\Models\User::factory()->create();
+    $otherClient = \App\Models\Client::factory()->for($otherUser)->create([
+        'current' => true,
+        'base_url' => \App\BaseURL::US1,
+        'bearer_token' => 'other-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $otherSnapshot = \App\Models\DeviceInterfaceSnapshot::factory()->create([
+        'user_id' => $otherUser->id,
+        'client_id' => $otherClient->id,
+        'serial' => 'SN12345',
+        'device_name' => 'Other-User-Switch',
+        'interfaces' => [['name' => 'keep', 'status' => 'Up', 'operStatus' => 'Up', 'neighbour' => '', 'neighbourSerial' => '', 'vlanMode' => '', 'allowedVlanIds' => [], 'nativeVlan' => '', 'poeClass' => '', 'neighbourFamily' => '', 'neighbourFunction' => '', 'neighbourType' => '', 'transceiverType' => '']],
+    ]);
+
+    $this->postJson(route('device-details.snapshots.store'), [
+        'devices' => [[
+            'serial' => 'SN12345',
+            'device_name' => 'My-Switch',
+            'device_type' => 'SWITCH',
+            'device_function' => 'ACCESS_SWITCH',
+            'central_error' => null,
+            'interfaces' => [[
+                'name' => '1/1/1',
+                'status' => 'Connected',
+                'operStatus' => 'Up',
+                'neighbour' => '',
+                'neighbourSerial' => '',
+                'vlanMode' => 'Access',
+                'allowedVlanIds' => [1],
+                'nativeVlan' => '1',
+                'poeClass' => '',
+                'neighbourFamily' => '',
+                'neighbourFunction' => '',
+                'neighbourType' => '',
+                'transceiverType' => '',
+            ]],
+        ]],
+    ])->assertOk();
+
+    $this->assertDatabaseCount('device_interface_snapshots', 2);
+    expect($otherSnapshot->fresh()->device_name)->toBe('Other-User-Switch')
+        ->and($otherSnapshot->fresh()->interfaces[0]['name'])->toBe('keep');
+    $this->assertDatabaseHas('device_interface_snapshots', [
+        'user_id' => $this->user->id,
+        'client_id' => $this->client->id,
+        'serial' => 'SN12345',
+        'device_name' => 'My-Switch',
+    ]);
+});
+
+test('device details snapshot index returns only requested serials for current user and client', function () {
+    \App\Models\DeviceInterfaceSnapshot::factory()->create([
+        'user_id' => $this->user->id,
+        'client_id' => $this->client->id,
+        'serial' => 'SN111',
+        'device_name' => 'Switch-One',
+        'interfaces' => [['name' => '1/1/1', 'status' => 'Up', 'operStatus' => 'Up', 'neighbour' => '', 'neighbourSerial' => '', 'vlanMode' => '', 'allowedVlanIds' => [], 'nativeVlan' => '', 'poeClass' => '', 'neighbourFamily' => '', 'neighbourFunction' => '', 'neighbourType' => '', 'transceiverType' => '']],
+    ]);
+
+    \App\Models\DeviceInterfaceSnapshot::factory()->create([
+        'user_id' => $this->user->id,
+        'client_id' => $this->client->id,
+        'serial' => 'SN222',
+        'device_name' => 'Switch-Two',
+    ]);
+
+    $otherClient = \App\Models\Client::factory()->for($this->user)->create([
+        'current' => false,
+        'base_url' => \App\BaseURL::US1,
+        'bearer_token' => 'other-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    \App\Models\DeviceInterfaceSnapshot::factory()->create([
+        'user_id' => $this->user->id,
+        'client_id' => $otherClient->id,
+        'serial' => 'SN111',
+        'device_name' => 'Other-Client',
+    ]);
+
+    $this->getJson(route('device-details.snapshots.index', [
+        'serials' => ['SN111'],
+    ]))
+        ->assertOk()
+        ->assertJsonCount(1, 'snapshots')
+        ->assertJsonPath('snapshots.0.serial', 'SN111')
+        ->assertJsonPath('snapshots.0.device_name', 'Switch-One')
+        ->assertJsonPath('snapshots.0.interfaces.0.name', '1/1/1');
+});
+
+test('device details snapshot endpoints require current client and valid serials', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.snapshots.store'), [
+        'devices' => [[
+            'serial' => 'SN12345',
+            'device_name' => 'Switch-A',
+            'device_type' => 'SWITCH',
+            'interfaces' => [],
+        ]],
+    ])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'Please set current client to save interface snapshots.');
+
+    $this->getJson(route('device-details.snapshots.index', [
+        'serials' => ['SN12345'],
+    ]))
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'Please set current client to view interface snapshots.');
+
+    $this->client->update(['current' => true]);
+
+    $this->postJson(route('device-details.snapshots.store'), [
+        'devices' => [],
+    ])->assertStatus(422);
+
+    $this->getJson(route('device-details.snapshots.index'))
+        ->assertStatus(422);
+
+    $tooMany = array_map(fn (int $i) => 'SN'.str_pad((string) $i, 4, '0', STR_PAD_LEFT), range(1, 26));
+
+    $this->postJson(route('device-details.snapshots.store'), [
+        'devices' => array_map(fn (string $serial) => [
+            'serial' => $serial,
+            'device_name' => $serial,
+            'device_type' => 'SWITCH',
+            'interfaces' => [],
+        ], $tooMany),
+    ])->assertStatus(422);
+
+    $this->getJson(route('device-details.snapshots.index', [
+        'serials' => $tooMany,
+    ]))->assertStatus(422);
+});
