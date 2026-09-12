@@ -109,6 +109,8 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(DeviceDetailsController::class)->group(function () {
         Route::get('/device-details', 'index')->name('device-details.index');
         Route::get('/device-details/show', 'show')->name('device-details.show');
+        Route::post('/device-details/snapshots', 'storeSnapshots')->name('device-details.snapshots.store');
+        Route::get('/device-details/snapshots', 'indexSnapshots')->name('device-details.snapshots.index');
         Route::post('/device-details/compare-profiles', 'compareProfiles')->name('device-details.compare-profiles');
         Route::get('/device-details/ap-show-commands/{serial}/{taskId}', 'apShowCommandsResult')->name('device-details.ap-show-commands.result');
         Route::post('/device-details/show-commands', 'showCommands')->name('device-details.show-commands');
