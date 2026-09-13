@@ -56,6 +56,15 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
         });
     }, [devices, switchesOnly, apsOnly, deviceSearch]);
 
+    const filteredIds = useMemo(
+        () => new Set(filteredDevices.map((d) => d.id)),
+        [filteredDevices],
+    );
+    const selectedFilteredCount = taskDevices.filter((d) => filteredIds.has(d.id)).length;
+    const allFilteredSelected =
+        filteredDevices.length > 0 && selectedFilteredCount === filteredDevices.length;
+    const someFilteredSelected = selectedFilteredCount > 0 && !allFilteredSelected;
+
     const handleCheckboxChange = (deviceId : number, checked : boolean) => {
         const newDevice = devices.find(device => device.id === deviceId)
         if (checked) {
@@ -66,6 +75,18 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
             }
         }
     }
+
+    const toggleFilteredDevices = (checked: boolean) => {
+        if (checked) {
+            const existingIds = new Set(taskDevices.map((d) => d.id));
+            const toAdd = filteredDevices
+                .filter((d) => !existingIds.has(d.id))
+                .map((d) => ({ ...d, completed: false }));
+            setTaskDevices([...taskDevices, ...toAdd]);
+        } else {
+            setTaskDevices(taskDevices.filter((d) => !filteredIds.has(d.id)));
+        }
+    };
 
     const dispatch_task_with_devices = (task, devices, allDevices = false) => {
         const devices_for_task= allDevices ? devices : devices.filter(device => taskDevices.find(dev => device.id === dev.id) !== undefined)
@@ -188,18 +209,43 @@ export default function TaskItemsCard({ task, task_friendly_name, task_friendly_
                         {
                             devices.length > 0 ?
                                 filteredDevices.length > 0 ? (
-                                    filteredDevices.map((device) => (
-                                        <div className="flex gap-2" key={device.id}>
+                                    <>
+                                        <div className="mb-2 flex gap-2 border-b pb-2">
                                             <Checkbox
-                                                id={`task-device-${device.id}`}
-                                                checked={taskDevices.find(dev => dev.id === device.id) !== undefined}
-                                                onCheckedChange={(checked) =>
-                                                    handleCheckboxChange(device.id, checked === true)
+                                                id="task-items-select-all-filtered"
+                                                checked={
+                                                    allFilteredSelected
+                                                        ? true
+                                                        : someFilteredSelected
+                                                          ? 'indeterminate'
+                                                          : false
                                                 }
+                                                onCheckedChange={(checked) =>
+                                                    toggleFilteredDevices(checked === true)
+                                                }
+                                                aria-label="Select all matching devices"
+                                                data-test="select-all-filtered-task-devices"
                                             />
-                                            <label htmlFor={`task-device-${device.id}`}>{device.name} {device.serial ? `(${device.serial})` : ''}</label>
+                                            <label
+                                                htmlFor="task-items-select-all-filtered"
+                                                className="text-sm font-medium"
+                                            >
+                                                Select all {filteredDevices.length} matching
+                                            </label>
                                         </div>
-                                    ))
+                                        {filteredDevices.map((device) => (
+                                            <div className="flex gap-2" key={device.id}>
+                                                <Checkbox
+                                                    id={`task-device-${device.id}`}
+                                                    checked={taskDevices.find(dev => dev.id === device.id) !== undefined}
+                                                    onCheckedChange={(checked) =>
+                                                        handleCheckboxChange(device.id, checked === true)
+                                                    }
+                                                />
+                                                <label htmlFor={`task-device-${device.id}`}>{device.name} {device.serial ? `(${device.serial})` : ''}</label>
+                                            </div>
+                                        ))}
+                                    </>
                                 ) : (
                                     <p className="text-muted-foreground text-sm">No devices match your filters.</p>
                                 ) :
