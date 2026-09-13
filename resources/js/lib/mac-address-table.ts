@@ -165,6 +165,61 @@ export function filterMacAddressTableRows(
     return rows.filter((row) => matchesMacAddressTableSearch(row, query));
 }
 
+export type DeploymentDeviceFilterable = {
+    name: string;
+    serial: string;
+    mac_address: string;
+};
+
+/**
+ * Case-insensitive filter for deployment devices by name, serial, or MAC.
+ * MAC-like queries also match stripped hex so formats like 88-22-5b match.
+ */
+export function matchesDeploymentDeviceFilter(
+    device: DeploymentDeviceFilterable,
+    query: string,
+): boolean {
+    const trimmed = query.trim();
+    if (trimmed === '') {
+        return true;
+    }
+
+    const needle = trimmed.toLowerCase();
+
+    if (device.name.toLowerCase().includes(needle)) {
+        return true;
+    }
+
+    if (device.serial.toLowerCase().includes(needle)) {
+        return true;
+    }
+
+    if (device.mac_address.toLowerCase().includes(needle)) {
+        return true;
+    }
+
+    if (isMacLikeSearchQuery(trimmed)) {
+        const queryHex = macAddressHex(trimmed);
+        if (queryHex !== '') {
+            const deviceHex = macAddressHex(device.mac_address);
+            if (deviceHex.includes(queryHex)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+export function filterDeploymentDevices<T extends DeploymentDeviceFilterable>(
+    devices: T[],
+    query: string,
+): T[] {
+    return devices.filter((device) =>
+        matchesDeploymentDeviceFilter(device, query),
+    );
+}
+
 export type SwitchLikeDevice = {
     deviceType?: string;
     device_type?: string;

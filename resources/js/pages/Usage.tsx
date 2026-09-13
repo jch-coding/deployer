@@ -896,7 +896,10 @@ sudo cloudflared service start`}</code>
                             <li>
                                 Choose MAC addresses to find: enter a manual list (one MAC per line, any
                                 common format) or pick a deployment and select devices whose{' '}
-                                <code>mac_address</code> values from your CSV should be searched.
+                                <code>mac_address</code> values from your CSV should be searched. In the
+                                deployment list you can filter by name, serial, or MAC and use{' '}
+                                <strong>Select all</strong> to check every device that matches the current
+                                filter.
                             </li>
                             <li>
                                 Click <strong>Search MAC addresses</strong>. Deployer runs{' '}

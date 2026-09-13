@@ -15,6 +15,7 @@ import {
 } from '@/lib/mac-address-search';
 import { downloadMacAddressSearchCsv } from '@/lib/mac-address-search-csv';
 import {
+    filterDeploymentDevices,
     filterMacAddressTableRows,
     isSwitchDevice,
     parseMacAddressLines,
@@ -147,6 +148,7 @@ export default function SiteMacAddressSearchSection({
         useState(false);
     const [selectedDeploymentDeviceIds, setSelectedDeploymentDeviceIds] =
         useState<Record<string, boolean>>({});
+    const [deploymentDeviceFilter, setDeploymentDeviceFilter] = useState('');
     const [searching, setSearching] = useState(false);
     const [progress, setProgress] = useState<MacAddressSearchProgress | null>(
         null,
@@ -204,6 +206,39 @@ export default function SiteMacAddressSearchSection({
                 (device) => selectedDeploymentDeviceIds[String(device.id)],
             ),
         [deploymentDevices, selectedDeploymentDeviceIds],
+    );
+
+    const filteredDeploymentDevices = useMemo(
+        () => filterDeploymentDevices(deploymentDevices, deploymentDeviceFilter),
+        [deploymentDeviceFilter, deploymentDevices],
+    );
+
+    const filteredSelectedCount = useMemo(
+        () =>
+            filteredDeploymentDevices.filter(
+                (device) => selectedDeploymentDeviceIds[String(device.id)],
+            ).length,
+        [filteredDeploymentDevices, selectedDeploymentDeviceIds],
+    );
+
+    const allFilteredSelected =
+        filteredDeploymentDevices.length > 0 &&
+        filteredSelectedCount === filteredDeploymentDevices.length;
+
+    const someFilteredSelected =
+        filteredSelectedCount > 0 && !allFilteredSelected;
+
+    const toggleAllFilteredDeploymentDevices = useCallback(
+        (checked: boolean) => {
+            setSelectedDeploymentDeviceIds((current) => {
+                const next = { ...current };
+                for (const device of filteredDeploymentDevices) {
+                    next[String(device.id)] = checked;
+                }
+                return next;
+            });
+        },
+        [filteredDeploymentDevices],
     );
 
     const filteredMatches = useMemo(() => {
@@ -282,12 +317,14 @@ export default function SiteMacAddressSearchSection({
         if (deploymentId === '') {
             setDeploymentDevices([]);
             setSelectedDeploymentDeviceIds({});
+            setDeploymentDeviceFilter('');
 
             return;
         }
 
         setDeploymentDevicesLoading(true);
         setSelectedDeploymentDeviceIds({});
+        setDeploymentDeviceFilter('');
 
         try {
             const response = await fetch(
@@ -572,39 +609,110 @@ export default function SiteMacAddressSearchSection({
                                         : 'No devices with MAC addresses in this deployment.'}
                                 </p>
                             ) : (
-                                <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-border p-3">
-                                    {deploymentDevices.map((device) => (
-                                        <label
-                                            key={device.id}
-                                            className="flex items-start gap-2 text-sm"
-                                        >
+                                <div className="space-y-2">
+                                    <Input
+                                        value={deploymentDeviceFilter}
+                                        onChange={(event) =>
+                                            setDeploymentDeviceFilter(
+                                                event.target.value,
+                                            )
+                                        }
+                                        placeholder="Filter by name, serial, or MAC"
+                                        data-test="device-details-site-mac-search-device-filter"
+                                    />
+                                    <div className="max-h-48 overflow-y-auto rounded-md border border-border">
+                                        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-muted/80 px-3 py-2 backdrop-blur-sm">
                                             <Checkbox
                                                 checked={
-                                                    selectedDeploymentDeviceIds[
-                                                        String(device.id)
-                                                    ] ?? false
+                                                    allFilteredSelected
+                                                        ? true
+                                                        : someFilteredSelected
+                                                          ? 'indeterminate'
+                                                          : false
                                                 }
                                                 onCheckedChange={(checked) =>
-                                                    setSelectedDeploymentDeviceIds(
-                                                        (current) => ({
-                                                            ...current,
-                                                            [String(device.id)]:
-                                                                Boolean(
-                                                                    checked,
-                                                                ),
-                                                        }),
+                                                    toggleAllFilteredDeploymentDevices(
+                                                        checked === true,
                                                     )
                                                 }
-                                                data-test={`device-details-site-mac-search-device-${device.id}`}
+                                                disabled={
+                                                    filteredDeploymentDevices.length ===
+                                                    0
+                                                }
+                                                aria-label="Select all filtered devices"
+                                                data-test="device-details-site-mac-search-select-all"
                                             />
-                                            <span>
-                                                {device.name} ({device.serial})
-                                                <span className="mt-0.5 block font-mono text-xs text-muted-foreground">
-                                                    {device.mac_address}
-                                                </span>
+                                            <span className="text-sm font-medium">
+                                                Select all
                                             </span>
-                                        </label>
-                                    ))}
+                                            <span className="text-xs text-muted-foreground">
+                                                {selectedDeploymentDevices.length}{' '}
+                                                of {deploymentDevices.length}{' '}
+                                                selected
+                                                {deploymentDeviceFilter.trim() !==
+                                                ''
+                                                    ? ` · ${filteredDeploymentDevices.length} shown`
+                                                    : ''}
+                                            </span>
+                                        </div>
+                                        {filteredDeploymentDevices.length ===
+                                        0 ? (
+                                            <p
+                                                className="px-3 py-2 text-sm text-muted-foreground"
+                                                data-test="device-details-site-mac-search-device-filter-empty"
+                                            >
+                                                No devices match this filter.
+                                            </p>
+                                        ) : (
+                                            <div className="space-y-2 p-3">
+                                                {filteredDeploymentDevices.map(
+                                                    (device) => (
+                                                        <label
+                                                            key={device.id}
+                                                            className="flex items-start gap-2 text-sm"
+                                                        >
+                                                            <Checkbox
+                                                                checked={
+                                                                    selectedDeploymentDeviceIds[
+                                                                        String(
+                                                                            device.id,
+                                                                        )
+                                                                    ] ?? false
+                                                                }
+                                                                onCheckedChange={(
+                                                                    checked,
+                                                                ) =>
+                                                                    setSelectedDeploymentDeviceIds(
+                                                                        (
+                                                                            current,
+                                                                        ) => ({
+                                                                            ...current,
+                                                                            [String(
+                                                                                device.id,
+                                                                            )]:
+                                                                                Boolean(
+                                                                                    checked,
+                                                                                ),
+                                                                        }),
+                                                                    )
+                                                                }
+                                                                data-test={`device-details-site-mac-search-device-${device.id}`}
+                                                            />
+                                                            <span>
+                                                                {device.name} (
+                                                                {device.serial})
+                                                                <span className="mt-0.5 block font-mono text-xs text-muted-foreground">
+                                                                    {
+                                                                        device.mac_address
+                                                                    }
+                                                                </span>
+                                                            </span>
+                                                        </label>
+                                                    ),
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>

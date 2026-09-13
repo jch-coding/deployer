@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+    filterDeploymentDevices,
     filterMacAddressTableRows,
+    matchesDeploymentDeviceFilter,
     matchesMacAddressTableSearch,
     parseMacAddressTableOutput,
 } from './mac-address-table';
@@ -86,5 +88,55 @@ describe('matchesMacAddressTableSearch', () => {
 
         expect(filterMacAddressTableRows(rows, 'static')).toHaveLength(1);
         expect(filterMacAddressTableRows(rows, 'no-match')).toHaveLength(0);
+    });
+});
+
+describe('matchesDeploymentDeviceFilter', () => {
+    const device = {
+        name: 'AP-Lobby-01',
+        serial: 'CN12345678',
+        mac_address: '88:22:5b:7d:ff:00',
+    };
+
+    it('matches name, serial, and MAC substrings case-insensitively', () => {
+        expect(matchesDeploymentDeviceFilter(device, 'lobby')).toBe(true);
+        expect(matchesDeploymentDeviceFilter(device, 'CN1234')).toBe(true);
+        expect(matchesDeploymentDeviceFilter(device, 'cn12345678')).toBe(true);
+        expect(matchesDeploymentDeviceFilter(device, '88:22:5b')).toBe(true);
+    });
+
+    it('matches MAC addresses in multiple formats', () => {
+        expect(matchesDeploymentDeviceFilter(device, '88-22-5b-7d-ff-00')).toBe(
+            true,
+        );
+        expect(matchesDeploymentDeviceFilter(device, '8822.5b7d.ff00')).toBe(
+            true,
+        );
+        expect(matchesDeploymentDeviceFilter(device, '88225B7DFF00')).toBe(true);
+    });
+
+    it('returns true when query is empty', () => {
+        expect(matchesDeploymentDeviceFilter(device, '')).toBe(true);
+        expect(matchesDeploymentDeviceFilter(device, '   ')).toBe(true);
+    });
+
+    it('returns false when nothing matches', () => {
+        expect(matchesDeploymentDeviceFilter(device, 'no-match')).toBe(false);
+    });
+
+    it('filters a device list', () => {
+        const devices = [
+            device,
+            {
+                name: 'SW-Core',
+                serial: 'SG99999999',
+                mac_address: 'e8:1c:a5:72:ad:c0',
+            },
+        ];
+
+        expect(filterDeploymentDevices(devices, 'lobby')).toHaveLength(1);
+        expect(filterDeploymentDevices(devices, 'e8-1c-a5')).toHaveLength(1);
+        expect(filterDeploymentDevices(devices, '')).toHaveLength(2);
+        expect(filterDeploymentDevices(devices, 'zzz')).toHaveLength(0);
     });
 });
