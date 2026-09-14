@@ -1306,6 +1306,87 @@ test('device details poe bounce redirects gate when no current client is set', f
         ]);
 });
 
+test('device details client details redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.client-details'), [
+        'serial' => 'SN12345',
+        'interfaces' => [[
+            'name' => '1/1/1',
+            'neighbour' => '',
+            'neighbourSerial' => '05:50:35:a1:a0:01',
+        ]],
+    ])
+        ->assertStatus(422)
+        ->assertJson([
+            'rows' => [],
+            'errors' => [],
+            'error' => 'Please set current client to view client details.',
+        ]);
+});
+
+test('device details client details requires serial and interfaces', function () {
+    $this->postJson(route('device-details.client-details'), [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['serial', 'interfaces']);
+});
+
+test('device details client details returns mapped rows for neighbour mac', function () {
+    Http::fake(function (Request $request) {
+        expect($request->url())->toContain('network-monitoring/v1/clients/'.rawurlencode('05:50:35:a1:a0:01'));
+
+        return Http::response([
+            'ipv4' => '10.0.0.5',
+            'clientVendor' => 'Android',
+            'port' => null,
+            'vlanId' => '100',
+            'clientOperatingSystem' => 'Android',
+            'clientFunction' => 'Mobile',
+            'role' => 'wireless',
+            'clientTags' => 'tag1,tag2',
+            'clientManufacturer' => 'Samsung',
+            'clientCategory' => 'Smart Device',
+            'authenticationType' => 'WPA2',
+        ], 200);
+    });
+
+    $this->postJson(route('device-details.client-details'), [
+        'serial' => 'SN12345',
+        'interfaces' => [[
+            'name' => '1/1/10',
+            'neighbour' => 'Phone',
+            'neighbourSerial' => '05:50:35:a1:a0:01',
+        ]],
+    ])
+        ->assertOk()
+        ->assertJsonPath('error', null)
+        ->assertJsonPath('errors', [])
+        ->assertJsonPath('rows.0.macAddress', '05:50:35:a1:a0:01')
+        ->assertJsonPath('rows.0.interface', '1/1/10')
+        ->assertJsonPath('rows.0.ipv4', '10.0.0.5')
+        ->assertJsonPath('rows.0.clientTags', 'tag1,tag2')
+        ->assertJsonPath('rows.0.role', 'wireless');
+});
+
+test('device details client details returns soft errors when central fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/clients/*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $this->postJson(route('device-details.client-details'), [
+        'serial' => 'SN12345',
+        'interfaces' => [[
+            'name' => '1/1/10',
+            'neighbour' => '',
+            'neighbourSerial' => '05:50:35:a1:a0:01',
+        ]],
+    ])
+        ->assertOk()
+        ->assertJsonPath('rows', [])
+        ->assertJsonPath('errors.0.interface', '1/1/10')
+        ->assertJsonPath('errors.0.message', 'failed to get client details from central.');
+});
+
 test('device details poe bounce requires serial and ports', function () {
     $this->postJson(route('device-details.poe-bounce'), [])
         ->assertStatus(422)

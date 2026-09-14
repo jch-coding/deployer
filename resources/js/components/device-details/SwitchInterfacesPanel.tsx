@@ -5,6 +5,9 @@ import type {
 } from '@tanstack/react-table';
 import { Download, GitCompareArrows, Loader2, Network, Terminal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import SwitchClientDetailsCard, {
+    type ClientDetailsInterfaceInput,
+} from '@/components/device-details/SwitchClientDetailsCard';
 import SwitchMacAddressTableCard from '@/components/device-details/SwitchMacAddressTableCard';
 import SwitchNeighboursCard from '@/components/device-details/SwitchNeighboursCard';
 import SwitchPortBounceDialog, {
@@ -200,6 +203,10 @@ export default function SwitchInterfacesPanel({
     const [showCommandsOpen, setShowCommandsOpen] = useState(false);
     const [macAddressTableOpen, setMacAddressTableOpen] = useState(false);
     const [neighboursOpen, setNeighboursOpen] = useState(false);
+    const [clientDetailsOpen, setClientDetailsOpen] = useState(false);
+    const [clientDetailsInterfaces, setClientDetailsInterfaces] = useState<
+        ClientDetailsInterfaceInput[]
+    >([]);
     const [selectedPortNames, setSelectedPortNames] = useState<string[]>([]);
     const [bounceOutcome, setBounceOutcome] =
         useState<PortBounceOutcome | null>(null);
@@ -244,6 +251,8 @@ export default function SwitchInterfacesPanel({
         setShowCommandsOpen(false);
         setMacAddressTableOpen(false);
         setNeighboursOpen(false);
+        setClientDetailsOpen(false);
+        setClientDetailsInterfaces([]);
         setSelectedPortNames([]);
         setBounceOutcome(null);
         setBounceRunning(false);
@@ -647,6 +656,17 @@ export default function SwitchInterfacesPanel({
                 />
             ) : null}
 
+            {clientDetailsOpen ? (
+                <SwitchClientDetailsCard
+                    serial={serial}
+                    interfaces={clientDetailsInterfaces}
+                    onClose={() => {
+                        setClientDetailsOpen(false);
+                        setClientDetailsInterfaces([]);
+                    }}
+                />
+            ) : null}
+
             <h3
                 className="mb-3 text-lg font-medium"
                 data-test="device-details-interfaces-heading"
@@ -807,6 +827,34 @@ export default function SwitchInterfacesPanel({
                 <div className="flex flex-wrap items-center gap-2">
                     {showTroubleshooting ? (
                         <>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                                disabled={
+                                    Boolean(central_error) ||
+                                    selectedPorts.length === 0 ||
+                                    bounceRunning
+                                }
+                                onClick={() => {
+                                    const selected = new Set(selectedPorts);
+                                    const payload = interfaces
+                                        .filter((row) =>
+                                            selected.has(row.name),
+                                        )
+                                        .map((row) => ({
+                                            name: row.name,
+                                            neighbour: row.neighbour,
+                                            neighbourSerial: row.neighbourSerial,
+                                        }));
+                                    setClientDetailsInterfaces(payload);
+                                    setClientDetailsOpen(true);
+                                }}
+                                data-test="device-details-client-details"
+                            >
+                                Client Details
+                            </Button>
                             <SwitchPortBounceDialog
                                 serial={serial}
                                 ports={selectedPorts}

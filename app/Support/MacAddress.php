@@ -31,6 +31,19 @@ class MacAddress
     }
 
     /**
+     * Extract and normalize a MAC from an unmanaged neighbour identifier (tpd_{hex}).
+     */
+    public static function fromTpdIdentifier(string $value): ?string
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '' || ! preg_match('/^tpd_/i', $trimmed)) {
+            return null;
+        }
+
+        return self::normalize(substr($trimmed, 4));
+    }
+
+    /**
      * Format a MAC for Central NAC CSV import (AA-BB-CC-DD-EE-FF).
      */
     public static function toCentralCsvFormat(string $value): ?string

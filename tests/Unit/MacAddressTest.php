@@ -20,3 +20,12 @@ it('rejects invalid MAC addresses', function () {
         ->and(MacAddress::normalize('aa:bb:cc:dd:ee'))->toBeNull()
         ->and(MacAddress::isValid('zz:zz:zz:zz:zz:zz'))->toBeFalse();
 });
+
+it('extracts MACs from tpd_ unmanaged identifiers', function () {
+    expect(MacAddress::fromTpdIdentifier('tpd_aabbccddeeff'))->toBe('aa:bb:cc:dd:ee:ff')
+        ->and(MacAddress::fromTpdIdentifier('TPD_AABBCCDDEEFF'))->toBe('aa:bb:cc:dd:ee:ff')
+        ->and(MacAddress::fromTpdIdentifier('tpd_aa:bb:cc:dd:ee:ff'))->toBe('aa:bb:cc:dd:ee:ff')
+        ->and(MacAddress::fromTpdIdentifier('SG99KN003F'))->toBeNull()
+        ->and(MacAddress::fromTpdIdentifier('tpd_short'))->toBeNull()
+        ->and(MacAddress::fromTpdIdentifier(''))->toBeNull();
+});

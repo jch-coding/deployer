@@ -7,6 +7,7 @@ use App\Jobs\RebootAccessPointJob;
 use App\Models\Deployment;
 use App\Models\DeviceInterfaceSnapshot;
 use App\Services\CentralScopeCacheService;
+use App\Services\ClientDetailsLookupService;
 use App\Services\DeviceCentralFilterBuilder;
 use App\Services\SwitchPortProfileInterfaceComparer;
 use Carbon\Carbon;
@@ -597,6 +598,48 @@ class DeviceDetailsController extends Controller
         return response()->json([
             'serial' => $serial,
             'neighbours' => $neighbours,
+            'error' => null,
+        ]);
+    }
+
+    public function clientDetails(Request $request, ClientDetailsLookupService $lookupService): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'rows' => [],
+                'errors' => [],
+                'error' => 'Please set current client to view client details.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serial' => ['required', 'string', 'max:64'],
+            'interfaces' => ['required', 'array', 'min:1'],
+            'interfaces.*.name' => ['required', 'string', 'max:64'],
+            'interfaces.*.neighbour' => ['nullable', 'string', 'max:255'],
+            'interfaces.*.neighbourSerial' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $interfaces = array_map(
+            static fn (array $interface): array => [
+                'name' => trim((string) $interface['name']),
+                'neighbour' => trim((string) ($interface['neighbour'] ?? '')),
+                'neighbourSerial' => trim((string) ($interface['neighbourSerial'] ?? '')),
+            ],
+            $validated['interfaces'],
+        );
+
+        $result = $lookupService->lookup(
+            $currentClient,
+            trim($validated['serial']),
+            $interfaces,
+        );
+
+        return response()->json([
+            'rows' => $result['rows'],
+            'errors' => $result['errors'],
             'error' => null,
         ]);
     }
