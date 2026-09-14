@@ -417,6 +417,15 @@ export function createDeploymentShowColumns(
         deploymentShowSelectColumn,
         ...sharedDeviceColumns.slice(0, 2),
         {
+            accessorKey: 'mac_address',
+            header: 'MAC Address',
+            cell: ({ row }) => (
+                <span className="font-mono text-sm">
+                    {row.original.mac_address ?? ''}
+                </span>
+            ),
+        },
+        {
             accessorKey: 'model',
             header: 'Model',
             cell: ({ row }) => row.original.model ?? '',
