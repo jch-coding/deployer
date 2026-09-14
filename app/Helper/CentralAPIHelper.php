@@ -81,6 +81,10 @@ class CentralAPIHelper
         'neighbours' => 'network-monitoring/v1/neighbours',
     ];
 
+    public array $clientMonitoring = [
+        'clients' => 'network-monitoring/v1/clients',
+    ];
+
     public array $troubleshooting = [
         'ap_reboot' => 'network-troubleshooting/v1/aps',
         'ap_show_commands' => 'network-troubleshooting/v1/aps',
@@ -2860,6 +2864,29 @@ class CentralAPIHelper
         }
 
         return $allItems;
+    }
+
+    /**
+     * GET client details by MAC address.
+     *
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     *
+     * @throws \Illuminate\Http\Client\ConnectionException
+     */
+    public function get_client_details(string $macAddress)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->get($this->client->base_url.$this->clientMonitoring['clients'].'/'.rawurlencode($macAddress));
+
+        if (! $response->ok()) {
+            return ['error' => 'failed to get client details from central.'];
+        }
+
+        return $response;
     }
 
     /**

@@ -783,6 +783,58 @@ test('get_bssids returns error when auth fails', function () {
     Http::assertNothingSent();
 });
 
+test('get_client_details returns client payload for a mac address', function () {
+    $macAddress = '05:50:35:a1:a0:01';
+
+    Http::fake(function (Request $request) use ($macAddress) {
+        expect($request->url())->toContain('network-monitoring/v1/clients/'.rawurlencode($macAddress));
+
+        return Http::response([
+            'type' => 'network-monitoring/client-monitoring',
+            'id' => $macAddress,
+            'macAddress' => $macAddress,
+            'clientName' => 'Client1',
+            'status' => 'Connected',
+            'ipv4' => '129.110.213.218',
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_client_details($macAddress);
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result->json('id'))->toBe($macAddress)
+        ->and($result->json('macAddress'))->toBe($macAddress)
+        ->and($result->json('clientName'))->toBe('Client1');
+
+    Http::assertSentCount(1);
+});
+
+test('get_client_details returns error when central fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/clients/*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_client_details('05:50:35:a1:a0:01');
+
+    expect($result)->toBe(['error' => 'failed to get client details from central.']);
+});
+
+test('get_client_details returns error when auth fails', function () {
+    Http::fake();
+
+    $client = mock(Client::class)->makePartial();
+    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnFalse();
+
+    $helper = new CentralAPIHelper($client);
+    $result = $helper->get_client_details('05:50:35:a1:a0:01');
+
+    expect($result)->toBe(['error' => 'failed to get access token from central.']);
+
+    Http::assertNothingSent();
+});
+
 test('get_all_switch_interfaces paginates with limit and offset until offset is null', function () {
     Http::fake(function (Request $request) {
         expect($request->url())->toContain('network-monitoring/v1/switches/SN123/interfaces');
