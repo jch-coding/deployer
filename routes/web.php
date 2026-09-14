@@ -121,6 +121,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/device-details/port-bounce', 'portBounce')->name('device-details.port-bounce');
         Route::get('/device-details/port-bounce/{serial}/{taskId}', 'portBounceResult')->name('device-details.port-bounce.result');
         Route::post('/device-details/bssids', 'bssids')->name('device-details.bssids');
+        Route::post('/device-details/neighbours', 'neighbours')->name('device-details.neighbours');
         Route::post('/device-details/reboot', 'reboot')->name('device-details.reboot');
         Route::post('/device-details/site-bssids', 'siteBssids')->name('device-details.site-bssids');
         Route::get('/device-details/deployments', 'deployments')->name('device-details.deployments');
