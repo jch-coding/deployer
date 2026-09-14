@@ -1573,6 +1573,9 @@ class CentralAPIHelper
     /**
      * Fetch neighbour devices for a given serial number.
      *
+     * Stack devices are addressed by stack UUID in the topology neighbours API.
+     * When a member serial returns 404, resolve stackId from switch monitoring and retry.
+     *
      * @return \Illuminate\Http\Client\Response|array{error: string}
      */
     public function get_neighbours(string $serialNumber)
@@ -1581,14 +1584,69 @@ class CentralAPIHelper
             return ['error' => 'failed to get access token from central.'];
         }
 
-        $response = Http::withToken($this->client->bearer_token)
-            ->get($this->client->base_url.$this->topologyMonitoring['neighbours'].'/'.$serialNumber);
+        $response = $this->request_neighbours($serialNumber);
 
-        if (! $response->ok()) {
-            return ['error' => 'failed to get neighbours from central.'];
+        if ($response->ok()) {
+            return $response;
         }
 
-        return $response;
+        if ($response->status() === 404) {
+            $stackId = $this->resolve_switch_stack_id($serialNumber);
+            if ($stackId !== null && $stackId !== $serialNumber) {
+                $stackResponse = $this->request_neighbours($stackId);
+                if ($stackResponse->ok()) {
+                    return $stackResponse;
+                }
+
+                $response = $stackResponse;
+            }
+        }
+
+        $message = trim((string) ($response->json('message') ?? ''));
+        if ($message !== '') {
+            return ['error' => $message];
+        }
+
+        return ['error' => 'failed to get neighbours from central.'];
+    }
+
+    /**
+     * @return \Illuminate\Http\Client\Response
+     */
+    private function request_neighbours(string $identifier)
+    {
+        return Http::withToken($this->client->bearer_token)
+            ->get($this->client->base_url.$this->topologyMonitoring['neighbours'].'/'.$identifier);
+    }
+
+    /**
+     * Look up a switch by hardware serial and return its stackId when present.
+     */
+    private function resolve_switch_stack_id(string $serialNumber): ?string
+    {
+        $escaped = str_replace("'", "''", $serialNumber);
+        $response = $this->get_switches([
+            'filter' => "serial eq '{$escaped}'",
+            'limit' => 1,
+        ]);
+
+        if (! $response->ok()) {
+            return null;
+        }
+
+        $items = $response->json('items', []);
+        if (! is_array($items) || $items === []) {
+            return null;
+        }
+
+        $first = $items[0];
+        if (! is_array($first)) {
+            return null;
+        }
+
+        $stackId = trim((string) ($first['stackId'] ?? ''));
+
+        return $stackId !== '' ? $stackId : null;
     }
 
     /**

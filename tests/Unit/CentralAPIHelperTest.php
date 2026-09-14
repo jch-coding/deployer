@@ -886,6 +886,91 @@ test('get_neighbours returns neighbour payload for a serial', function () {
     Http::assertSentCount(1);
 });
 
+test('get_neighbours retries with stack id when member serial returns 404', function () {
+    $stackId = '4fc4b712-791f-4ebb-a54d-f98b02e44024';
+    $memberSerial = 'VN5AM101K0';
+
+    Http::fake(function (Request $request) use ($stackId, $memberSerial) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/neighbours/'.$memberSerial)) {
+            return Http::response([
+                'httpStatusCode' => 404,
+                'message' => 'Neighbour device not found for the given serial (and site-id, if provided). Please recheck the serial / site-id (if provided) parameters.',
+                'errorCode' => 'HPE_GL_NETWORKING_ERROR_NOT_FOUND',
+            ], 404);
+        }
+
+        if (str_contains($url, 'network-monitoring/v1/switches')) {
+            parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $query);
+            expect($query['filter'] ?? null)->toBe("serial eq '{$memberSerial}'");
+
+            return Http::response([
+                'items' => [[
+                    'serialNumber' => $memberSerial,
+                    'stackId' => $stackId,
+                    'deployment' => 'Stack',
+                ]],
+                'count' => 1,
+                'total' => 1,
+                'next' => null,
+            ], 200);
+        }
+
+        if (str_contains($url, 'network-monitoring/v1/neighbours/'.$stackId)) {
+            return Http::response([
+                'id' => 'neighbours',
+                'type' => 'Topology',
+                'neighbours' => [[
+                    'memberSerial' => $memberSerial,
+                    'name' => 'BRH-AGG-1',
+                    'type' => 'Switch',
+                    'serial' => 'VN65M3N414',
+                    'health' => 'Good',
+                    'toPort' => '1/1/2',
+                    'localPort' => '1/1/52',
+                    'siteId' => '119473044585058304',
+                    'siteName' => '06 - BRH',
+                ]],
+            ], 200);
+        }
+
+        return Http::response(['detail' => 'unexpected'], 500);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_neighbours($memberSerial);
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result->json('neighbours.0.name'))->toBe('BRH-AGG-1')
+        ->and($result->json('neighbours.0.memberSerial'))->toBe($memberSerial);
+
+    Http::assertSentCount(3);
+});
+
+test('get_neighbours returns central message when neighbour is not found', function () {
+    Http::fake([
+        '*network-monitoring/v1/neighbours/*' => Http::response([
+            'httpStatusCode' => 404,
+            'message' => 'Neighbour device not found for the given serial (and site-id, if provided). Please recheck the serial / site-id (if provided) parameters.',
+            'errorCode' => 'HPE_GL_NETWORKING_ERROR_NOT_FOUND',
+        ], 404),
+        '*network-monitoring/v1/switches*' => Http::response([
+            'items' => [],
+            'count' => 0,
+            'total' => 0,
+            'next' => null,
+        ], 200),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_neighbours('SG99KN003F');
+
+    expect($result)->toBe([
+        'error' => 'Neighbour device not found for the given serial (and site-id, if provided). Please recheck the serial / site-id (if provided) parameters.',
+    ]);
+});
+
 test('get_neighbours returns error when central fails', function () {
     Http::fake([
         '*network-monitoring/v1/neighbours/*' => Http::response(['detail' => 'error'], 500),
