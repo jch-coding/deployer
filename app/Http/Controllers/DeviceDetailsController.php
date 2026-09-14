@@ -556,6 +556,51 @@ class DeviceDetailsController extends Controller
         ]);
     }
 
+    public function neighbours(Request $request): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'serial' => '',
+                'neighbours' => [],
+                'error' => 'Please set current client to view neighbours.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serial' => ['required', 'string', 'max:16'],
+        ]);
+
+        $serial = trim($validated['serial']);
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->get_neighbours($serial);
+
+        if (is_array($result) && array_key_exists('error', $result)) {
+            return response()->json([
+                'serial' => $serial,
+                'neighbours' => [],
+                'error' => (string) $result['error'],
+            ], 422);
+        }
+
+        $payload = $result->json();
+        $items = is_array($payload) && is_array($payload['neighbours'] ?? null)
+            ? $payload['neighbours']
+            : [];
+
+        $neighbours = array_map(
+            fn (array $item): array => $this->mapNeighbourItem($item),
+            $items,
+        );
+
+        return response()->json([
+            'serial' => $serial,
+            'neighbours' => $neighbours,
+            'error' => null,
+        ]);
+    }
+
     public function reboot(Request $request): JsonResponse
     {
         $currentClient = $request->user()->currentClient();
@@ -1001,6 +1046,35 @@ class DeviceDetailsController extends Controller
             'clusterId' => (string) ($item['clusterId'] ?? ''),
             'deviceName' => (string) ($item['deviceName'] ?? ''),
             'serialNumber' => (string) ($item['serialNumber'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{
+     *     memberSerial: string,
+     *     name: string,
+     *     type: string,
+     *     serial: string,
+     *     health: string,
+     *     toPort: string,
+     *     localPort: string,
+     *     siteId: string,
+     *     siteName: string
+     * }
+     */
+    private function mapNeighbourItem(array $item): array
+    {
+        return [
+            'memberSerial' => (string) ($item['memberSerial'] ?? ''),
+            'name' => (string) ($item['name'] ?? ''),
+            'type' => (string) ($item['type'] ?? ''),
+            'serial' => (string) ($item['serial'] ?? ''),
+            'health' => (string) ($item['health'] ?? ''),
+            'toPort' => (string) ($item['toPort'] ?? ''),
+            'localPort' => (string) ($item['localPort'] ?? ''),
+            'siteId' => (string) ($item['siteId'] ?? ''),
+            'siteName' => (string) ($item['siteName'] ?? ''),
         ];
     }
 

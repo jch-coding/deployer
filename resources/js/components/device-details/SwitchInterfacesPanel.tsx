@@ -3,9 +3,10 @@ import type {
     OnChangeFn,
     RowSelectionState,
 } from '@tanstack/react-table';
-import { Download, GitCompareArrows, Loader2, Terminal } from 'lucide-react';
+import { Download, GitCompareArrows, Loader2, Network, Terminal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import SwitchMacAddressTableCard from '@/components/device-details/SwitchMacAddressTableCard';
+import SwitchNeighboursCard from '@/components/device-details/SwitchNeighboursCard';
 import SwitchPortBounceDialog, {
     type PortBounceOutcome,
 } from '@/components/device-details/SwitchPortBounceDialog';
@@ -198,6 +199,7 @@ export default function SwitchInterfacesPanel({
         useState<ProfileCompareResult | null>(null);
     const [showCommandsOpen, setShowCommandsOpen] = useState(false);
     const [macAddressTableOpen, setMacAddressTableOpen] = useState(false);
+    const [neighboursOpen, setNeighboursOpen] = useState(false);
     const [selectedPortNames, setSelectedPortNames] = useState<string[]>([]);
     const [bounceOutcome, setBounceOutcome] =
         useState<PortBounceOutcome | null>(null);
@@ -240,6 +242,8 @@ export default function SwitchInterfacesPanel({
         setCompareResult(null);
         setCompareError(null);
         setShowCommandsOpen(false);
+        setMacAddressTableOpen(false);
+        setNeighboursOpen(false);
         setSelectedPortNames([]);
         setBounceOutcome(null);
         setBounceRunning(false);
@@ -573,6 +577,21 @@ export default function SwitchInterfacesPanel({
                             type="button"
                             variant="outline"
                             className="gap-2"
+                            disabled={Boolean(central_error)}
+                            onClick={() =>
+                                setNeighboursOpen((open) => !open)
+                            }
+                            data-test="device-details-neighbours"
+                        >
+                            <Network className="size-4" aria-hidden />
+                            Neighbors
+                        </Button>
+                    ) : null}
+                    {showLiveActions ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="gap-2"
                             disabled={compareLoading || Boolean(central_error)}
                             onClick={() => void runCompare()}
                             data-test="device-details-compare-profiles"
@@ -618,6 +637,13 @@ export default function SwitchInterfacesPanel({
                 <SwitchMacAddressTableCard
                     serial={serial}
                     onClose={() => setMacAddressTableOpen(false)}
+                />
+            ) : null}
+
+            {neighboursOpen ? (
+                <SwitchNeighboursCard
+                    serial={serial}
+                    onClose={() => setNeighboursOpen(false)}
                 />
             ) : null}
 

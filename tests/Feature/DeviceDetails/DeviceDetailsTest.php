@@ -680,6 +680,103 @@ test('device details bssids redirects gate when no current client is set', funct
         ]);
 });
 
+test('device details neighbours returns mapped rows for a serial', function () {
+    Http::fake(function (Request $request) {
+        expect($request->url())->toContain('network-monitoring/v1/neighbours/SG99KN003F');
+
+        return Http::response([
+            'id' => '00001',
+            'type' => 'Neighbours',
+            'neighbours' => [
+                [
+                    'memberSerial' => 'SG90KMX08R',
+                    'name' => 'DISTR-2-VSX-Primary',
+                    'type' => 'Switch',
+                    'serial' => 'TW8AK7206R',
+                    'health' => 'Good',
+                    'toPort' => '1/1/46',
+                    'localPort' => '1/1/23',
+                    'siteId' => '965498321',
+                    'siteName' => 'Site1',
+                ],
+                [
+                    'memberSerial' => '',
+                    'name' => 'Unmanaged-Peer',
+                    'type' => 'Unknown',
+                    'serial' => 'tpd_aabbccddeeff',
+                    'health' => 'Unknown',
+                    'toPort' => 'eth0',
+                    'localPort' => '1/1/24',
+                    'siteId' => null,
+                    'siteName' => null,
+                ],
+            ],
+        ], 200);
+    });
+
+    $this->postJson(route('device-details.neighbours'), ['serial' => 'SG99KN003F'])
+        ->assertOk()
+        ->assertJson([
+            'serial' => 'SG99KN003F',
+            'error' => null,
+            'neighbours' => [
+                [
+                    'memberSerial' => 'SG90KMX08R',
+                    'name' => 'DISTR-2-VSX-Primary',
+                    'type' => 'Switch',
+                    'serial' => 'TW8AK7206R',
+                    'health' => 'Good',
+                    'toPort' => '1/1/46',
+                    'localPort' => '1/1/23',
+                    'siteId' => '965498321',
+                    'siteName' => 'Site1',
+                ],
+                [
+                    'memberSerial' => '',
+                    'name' => 'Unmanaged-Peer',
+                    'type' => 'Unknown',
+                    'serial' => 'tpd_aabbccddeeff',
+                    'health' => 'Unknown',
+                    'toPort' => 'eth0',
+                    'localPort' => '1/1/24',
+                    'siteId' => '',
+                    'siteName' => '',
+                ],
+            ],
+        ]);
+});
+
+test('device details neighbours returns error when central fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/neighbours/*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $this->postJson(route('device-details.neighbours'), ['serial' => 'SG99KN003F'])
+        ->assertStatus(422)
+        ->assertJson([
+            'serial' => 'SG99KN003F',
+            'neighbours' => [],
+            'error' => 'failed to get neighbours from central.',
+        ]);
+});
+
+test('device details neighbours requires serial', function () {
+    $this->postJson(route('device-details.neighbours'), [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['serial']);
+});
+
+test('device details neighbours redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.neighbours'), ['serial' => 'SG99KN003F'])
+        ->assertStatus(422)
+        ->assertJson([
+            'neighbours' => [],
+            'error' => 'Please set current client to view neighbours.',
+        ]);
+});
+
 test('device details site bssids returns mapped ap_name and ap_mac rows', function () {
     Http::fake(function (Request $request) {
         expect($request->url())->toContain('network-monitoring/v1/bssids');

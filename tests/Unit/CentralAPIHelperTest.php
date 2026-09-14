@@ -856,6 +856,61 @@ test('get_switch_interfaces returns error when auth fails', function () {
     Http::assertNothingSent();
 });
 
+test('get_neighbours returns neighbour payload for a serial', function () {
+    Http::fake(function (Request $request) {
+        expect($request->url())->toContain('network-monitoring/v1/neighbours/SG99KN003F');
+
+        return Http::response([
+            'id' => '00001',
+            'type' => 'Neighbours',
+            'neighbours' => [[
+                'memberSerial' => 'SG90KMX08R',
+                'name' => 'DISTR-2-VSX-Primary',
+                'type' => 'Switch',
+                'serial' => 'TW8AK7206R',
+                'health' => 'Good',
+                'toPort' => '1/1/46',
+                'localPort' => '1/1/23',
+                'siteId' => '965498321',
+                'siteName' => 'Site1',
+            ]],
+        ], 200);
+    });
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_neighbours('SG99KN003F');
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result->json('neighbours.0.name'))->toBe('DISTR-2-VSX-Primary');
+
+    Http::assertSentCount(1);
+});
+
+test('get_neighbours returns error when central fails', function () {
+    Http::fake([
+        '*network-monitoring/v1/neighbours/*' => Http::response(['detail' => 'error'], 500),
+    ]);
+
+    $helper = makeCentralApiHelperForSwitches();
+    $result = $helper->get_neighbours('SG99KN003F');
+
+    expect($result)->toBe(['error' => 'failed to get neighbours from central.']);
+});
+
+test('get_neighbours returns error when auth fails', function () {
+    Http::fake();
+
+    $client = mock(Client::class)->makePartial();
+    $client->shouldReceive('handleBearerTokenAuth')->once()->andReturnFalse();
+
+    $helper = new CentralAPIHelper($client);
+    $result = $helper->get_neighbours('SG99KN003F');
+
+    expect($result)->toBe(['error' => 'failed to get access token from central.']);
+
+    Http::assertNothingSent();
+});
+
 test('get_all_switches returns error when a page request fails', function () {
     Http::fake([
         '*network-monitoring/v1/switches*' => Http::response(['detail' => 'error'], 500),

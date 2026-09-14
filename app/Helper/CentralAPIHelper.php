@@ -77,6 +77,10 @@ class CentralAPIHelper
         'bssids' => 'network-monitoring/v1/bssids',
     ];
 
+    public array $topologyMonitoring = [
+        'neighbours' => 'network-monitoring/v1/neighbours',
+    ];
+
     public array $troubleshooting = [
         'ap_reboot' => 'network-troubleshooting/v1/aps',
         'ap_show_commands' => 'network-troubleshooting/v1/aps',
@@ -1561,6 +1565,27 @@ class CentralAPIHelper
 
         if (! $response->ok()) {
             return ['error' => 'failed to get switch interfaces from central.'];
+        }
+
+        return $response;
+    }
+
+    /**
+     * Fetch neighbour devices for a given serial number.
+     *
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
+    public function get_neighbours(string $serialNumber)
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->get($this->client->base_url.$this->topologyMonitoring['neighbours'].'/'.$serialNumber);
+
+        if (! $response->ok()) {
+            return ['error' => 'failed to get neighbours from central.'];
         }
 
         return $response;
