@@ -1433,7 +1433,165 @@ test('device details cnac mac check reports registered neighbour mac and tags', 
         ->assertJsonPath('rows.0.interface', '1/1/10')
         ->assertJsonPath('rows.0.registered', true)
         ->assertJsonPath('rows.0.staticTags', ['CLIENT-TAG'])
-        ->assertJsonPath('rows.0.clientName', 'Phone');
+        ->assertJsonPath('rows.0.clientName', 'Phone')
+        ->assertJsonPath('availableStaticTags', ['CLIENT-TAG']);
+});
+
+test('device details cnac mac register creates a single unregistered mac', function () {
+    \App\Models\CentralScopeCache::query()->create([
+        'client_id' => $this->client->id,
+        'type' => \App\CentralScopeCacheType::MacRegistrations,
+        'items' => [],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        if ($request->method() === 'POST' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/import')) {
+            return Http::response([
+                'macAddress' => 'aa:bb:cc:dd:ee:01',
+                'enable' => true,
+                'staticTags' => ['TAG-A'],
+            ], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/export')) {
+            return Http::response([
+                'count' => 1,
+                'items' => [[
+                    'macAddress' => 'AA-BB-CC-DD-EE-01',
+                    'displayName' => '',
+                    'enable' => true,
+                    'staticTags' => ['TAG-A'],
+                ]],
+            ], 200);
+        }
+
+        return Http::response(['message' => 'unexpected'], 500);
+    });
+
+    $this->postJson(route('device-details.cnac-mac-register'), [
+        'macs' => ['AA-BB-CC-DD-EE-01'],
+        'static_tags' => ['TAG-A'],
+    ])
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('results.0.action', 'created')
+        ->assertJsonPath('results.0.macAddress', 'aa:bb:cc:dd:ee:01')
+        ->assertJsonPath('results.0.staticTags', ['TAG-A'])
+        ->assertJsonPath('availableStaticTags', ['TAG-A']);
+});
+
+test('device details cnac mac register updates a registered mac with merged tags', function () {
+    \App\Models\CentralScopeCache::query()->create([
+        'client_id' => $this->client->id,
+        'type' => \App\CentralScopeCacheType::MacRegistrations,
+        'items' => [
+            [
+                'mac_address' => 'aa:bb:cc:dd:ee:01',
+                'client_name' => 'Phone',
+                'enabled' => true,
+                'static_tags' => ['TAG-A'],
+            ],
+        ],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        if ($request->method() === 'PUT' && str_contains($url, 'cnac-mac-reg')) {
+            return Http::response([
+                'macAddress' => 'aa:bb:cc:dd:ee:01',
+                'enable' => true,
+                'staticTags' => ['TAG-A', 'TAG-B'],
+            ], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/export')) {
+            return Http::response([
+                'count' => 1,
+                'items' => [[
+                    'macAddress' => 'AA-BB-CC-DD-EE-01',
+                    'displayName' => 'Phone',
+                    'enable' => true,
+                    'staticTags' => ['TAG-A', 'TAG-B'],
+                ]],
+            ], 200);
+        }
+
+        return Http::response(['message' => 'unexpected'], 500);
+    });
+
+    $this->postJson(route('device-details.cnac-mac-register'), [
+        'macs' => ['aa:bb:cc:dd:ee:01'],
+        'static_tags' => ['TAG-B'],
+    ])
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('results.0.action', 'updated')
+        ->assertJsonPath('results.0.staticTags', ['TAG-A', 'TAG-B']);
+});
+
+test('device details cnac mac register imports csv for multiple macs', function () {
+    \App\Models\CentralScopeCache::query()->create([
+        'client_id' => $this->client->id,
+        'type' => \App\CentralScopeCacheType::MacRegistrations,
+        'items' => [
+            [
+                'mac_address' => 'aa:bb:cc:dd:ee:01',
+                'client_name' => '',
+                'enabled' => true,
+                'static_tags' => ['TAG-A'],
+            ],
+        ],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        if ($request->method() === 'POST' && str_contains($url, 'cnac-mac-reg/import')) {
+            return Http::response(['jobid' => ['job-1']], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/export')) {
+            return Http::response([
+                'count' => 2,
+                'items' => [
+                    [
+                        'macAddress' => 'AA-BB-CC-DD-EE-01',
+                        'displayName' => '',
+                        'enable' => true,
+                        'staticTags' => ['TAG-A', 'TAG-NEW'],
+                    ],
+                    [
+                        'macAddress' => 'AA-BB-CC-DD-EE-02',
+                        'displayName' => '',
+                        'enable' => true,
+                        'staticTags' => ['TAG-NEW'],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response(['message' => 'unexpected'], 500);
+    });
+
+    $this->postJson(route('device-details.cnac-mac-register'), [
+        'macs' => ['aa:bb:cc:dd:ee:01', 'aa:bb:cc:dd:ee:02'],
+        'static_tags' => ['TAG-NEW'],
+    ])
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('results.0.action', 'imported')
+        ->assertJsonPath('results.1.action', 'imported')
+        ->assertJsonPath('results.0.staticTags', ['TAG-A', 'TAG-NEW'])
+        ->assertJsonPath('results.1.staticTags', ['TAG-NEW']);
 });
 
 test('device details cnac mac check reports unregistered mac from address table', function () {

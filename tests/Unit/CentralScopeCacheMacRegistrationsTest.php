@@ -164,3 +164,254 @@ it('ensureMacRegistrations refreshes when cache row is missing', function () {
         ->and($result['entries'])->toHaveCount(1)
         ->and($result['entries'][0]['mac_address'])->toBe('aa:bb:cc:dd:ee:ff');
 });
+
+it('availableStaticTags returns unique sorted tags from cache', function () {
+    $client = Client::factory()->create();
+
+    CentralScopeCache::query()->create([
+        'client_id' => $client->id,
+        'type' => CentralScopeCacheType::MacRegistrations,
+        'items' => [
+            [
+                'mac_address' => 'aa:bb:cc:dd:ee:01',
+                'client_name' => '',
+                'enabled' => true,
+                'static_tags' => ['Zulu', 'Alpha'],
+            ],
+            [
+                'mac_address' => 'aa:bb:cc:dd:ee:02',
+                'client_name' => '',
+                'enabled' => true,
+                'static_tags' => ['Alpha', 'Bravo'],
+            ],
+        ],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    expect(app(CentralScopeCacheService::class)->availableStaticTags($client))
+        ->toBe(['Alpha', 'Bravo', 'Zulu']);
+});
+
+it('mergeStaticTags unions existing and added tags without duplicates', function () {
+    expect(CentralScopeCacheService::mergeStaticTags(['TAG-A', 'TAG-B'], ['TAG-B', 'TAG-C']))
+        ->toBe(['TAG-A', 'TAG-B', 'TAG-C']);
+});
+
+it('registerMacs creates a single unregistered MAC via POST', function () {
+    Http::fake(function (\Illuminate\Http\Client\Request $request) {
+        $url = $request->url();
+
+        if ($request->method() === 'POST' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/import')) {
+            return Http::response([
+                'macAddress' => 'aa:bb:cc:dd:ee:01',
+                'enable' => true,
+                'staticTags' => ['TAG-NEW'],
+            ], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/export')) {
+            return Http::response([
+                'count' => 1,
+                'items' => [[
+                    'macAddress' => 'AA-BB-CC-DD-EE-01',
+                    'displayName' => '',
+                    'enable' => true,
+                    'staticTags' => ['TAG-NEW'],
+                ]],
+            ], 200);
+        }
+
+        return Http::response(['message' => 'unexpected '.$request->method().' '.$url], 500);
+    });
+
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    CentralScopeCache::query()->create([
+        'client_id' => $client->id,
+        'type' => CentralScopeCacheType::MacRegistrations,
+        'items' => [],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    $result = app(CentralScopeCacheService::class)->registerMacs(
+        $client,
+        ['AA-BB-CC-DD-EE-01'],
+        ['TAG-NEW'],
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['results'])->toHaveCount(1)
+        ->and($result['results'][0])->toMatchArray([
+            'mac_address' => 'aa:bb:cc:dd:ee:01',
+            'action' => 'created',
+            'static_tags' => ['TAG-NEW'],
+            'error' => null,
+        ]);
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'cnac-mac-reg')
+            && ! str_contains($request->url(), '/import')
+            && data_get($request->data(), 'input.macAddress') === 'aa:bb:cc:dd:ee:01'
+            && data_get($request->data(), 'input.enable') === true
+            && data_get($request->data(), 'input.staticTags') === ['TAG-NEW'];
+    });
+});
+
+it('registerMacs updates a single registered MAC via PUT with merged tags', function () {
+    Http::fake(function (\Illuminate\Http\Client\Request $request) {
+        $url = $request->url();
+        if ($request->method() === 'PUT' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/import')) {
+            return Http::response([
+                'macAddress' => 'aa:bb:cc:dd:ee:01',
+                'enable' => true,
+                'staticTags' => ['TAG-A', 'TAG-B'],
+            ], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/export')) {
+            return Http::response([
+                'count' => 1,
+                'items' => [[
+                    'macAddress' => 'AA-BB-CC-DD-EE-01',
+                    'displayName' => 'Phone',
+                    'enable' => true,
+                    'staticTags' => ['TAG-A', 'TAG-B'],
+                ]],
+            ], 200);
+        }
+
+        return Http::response(['message' => 'unexpected'], 500);
+    });
+
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    CentralScopeCache::query()->create([
+        'client_id' => $client->id,
+        'type' => CentralScopeCacheType::MacRegistrations,
+        'items' => [
+            [
+                'mac_address' => 'aa:bb:cc:dd:ee:01',
+                'client_name' => 'Phone',
+                'enabled' => true,
+                'static_tags' => ['TAG-A'],
+            ],
+        ],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    $result = app(CentralScopeCacheService::class)->registerMacs(
+        $client,
+        ['aa:bb:cc:dd:ee:01'],
+        ['TAG-B'],
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['results'][0])->toMatchArray([
+            'mac_address' => 'aa:bb:cc:dd:ee:01',
+            'action' => 'updated',
+            'static_tags' => ['TAG-A', 'TAG-B'],
+            'error' => null,
+        ]);
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        return $request->method() === 'PUT'
+            && data_get($request->data(), 'input.staticTags') === ['TAG-A', 'TAG-B']
+            && data_get($request->data(), 'input.enable') === true;
+    });
+});
+
+it('registerMacs imports CSV for multiple MACs with per-row merged tags', function () {
+    Http::fake(function (\Illuminate\Http\Client\Request $request) {
+        $url = $request->url();
+        if ($request->method() === 'POST' && str_contains($url, 'cnac-mac-reg/import')) {
+            return Http::response(['jobid' => ['job-1']], 200);
+        }
+
+        if ($request->method() === 'GET' && str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/export')) {
+            return Http::response([
+                'count' => 2,
+                'items' => [
+                    [
+                        'macAddress' => 'AA-BB-CC-DD-EE-01',
+                        'displayName' => '',
+                        'enable' => true,
+                        'staticTags' => ['TAG-A', 'TAG-NEW'],
+                    ],
+                    [
+                        'macAddress' => 'AA-BB-CC-DD-EE-02',
+                        'displayName' => '',
+                        'enable' => true,
+                        'staticTags' => ['TAG-NEW'],
+                    ],
+                ],
+            ], 200);
+        }
+
+        return Http::response(['message' => 'unexpected'], 500);
+    });
+
+    $client = Client::factory()->create([
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    CentralScopeCache::query()->create([
+        'client_id' => $client->id,
+        'type' => CentralScopeCacheType::MacRegistrations,
+        'items' => [
+            [
+                'mac_address' => 'aa:bb:cc:dd:ee:01',
+                'client_name' => '',
+                'enabled' => true,
+                'static_tags' => ['TAG-A'],
+            ],
+        ],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    $result = app(CentralScopeCacheService::class)->registerMacs(
+        $client,
+        ['aa:bb:cc:dd:ee:01', 'aa:bb:cc:dd:ee:02'],
+        ['TAG-NEW'],
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['results'])->toHaveCount(2)
+        ->and($result['results'][0]['action'])->toBe('imported')
+        ->and($result['results'][0]['static_tags'])->toBe(['TAG-A', 'TAG-NEW'])
+        ->and($result['results'][1]['static_tags'])->toBe(['TAG-NEW']);
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        if ($request->method() !== 'POST' || ! str_contains($request->url(), '/import')) {
+            return false;
+        }
+
+        $data = $request->data();
+        $file = $data['file'] ?? null;
+        $contents = is_resource($file)
+            ? stream_get_contents($file)
+            : (is_array($file) ? (string) ($file['contents'] ?? $file[0] ?? '') : (string) $file);
+
+        if ($contents === '' && is_string($request->body())) {
+            $contents = $request->body();
+        }
+
+        return str_contains($contents, 'aa:bb:cc:dd:ee:01')
+            && str_contains($contents, 'TAG-A, TAG-NEW')
+            && str_contains($contents, 'aa:bb:cc:dd:ee:02');
+    });
+});

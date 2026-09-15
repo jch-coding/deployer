@@ -2225,6 +2225,7 @@ class TaskController extends Controller
                 'cache' => [
                     'refreshed_at' => $cache['refreshed_at'],
                     'error' => $cache['error'],
+                    'available_static_tags' => [],
                 ],
             ], 422);
         }
@@ -2293,6 +2294,7 @@ class TaskController extends Controller
             'cache' => [
                 'refreshed_at' => $cache['refreshed_at'],
                 'error' => $cache['error'],
+                'available_static_tags' => $centralScopeCacheService->availableStaticTags($currentClient),
             ],
         ]);
     }

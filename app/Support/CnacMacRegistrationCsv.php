@@ -317,6 +317,47 @@ class CnacMacRegistrationCsv
     }
 
     /**
+     * Build a Central NAC MAC registration import CSV.
+     *
+     * @param  list<array{mac_address: string, static_tags?: list<string>, client_name?: string, enabled?: bool}>  $rows
+     */
+    public static function buildImportCsv(array $rows): string
+    {
+        $handle = fopen('php://temp', 'r+');
+        if ($handle === false) {
+            throw new \RuntimeException('Unable to open temporary stream for MAC CSV.');
+        }
+
+        fputcsv($handle, ['MAC Address', 'Client Name', 'Enabled', 'Static Tags']);
+
+        foreach ($rows as $row) {
+            $tags = $row['static_tags'] ?? [];
+            if (! is_array($tags)) {
+                $tags = [];
+            }
+            $tags = array_values(array_filter(
+                array_map(static fn ($tag): string => trim((string) $tag), $tags),
+                static fn (string $tag): bool => $tag !== '',
+            ));
+
+            $enabled = array_key_exists('enabled', $row) ? (bool) $row['enabled'] : true;
+
+            fputcsv($handle, [
+                (string) ($row['mac_address'] ?? ''),
+                (string) ($row['client_name'] ?? ''),
+                $enabled ? 'true' : 'false',
+                implode(', ', $tags),
+            ]);
+        }
+
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+
+        return is_string($csv) ? $csv : '';
+    }
+
+    /**
      * @return list<string>
      */
     public static function parseStaticTags(string $value): array

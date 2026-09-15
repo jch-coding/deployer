@@ -14,6 +14,7 @@ import { refresh as refreshSites } from '@/routes/central-scope-cache/sites';
 export type CentralScopeCacheMeta = {
     refreshed_at?: string | null;
     error?: string | null;
+    available_static_tags?: string[];
 };
 
 export type CentralScopeGroupsCacheMeta = CentralScopeCacheMeta & {

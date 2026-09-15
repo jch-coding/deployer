@@ -63,6 +63,7 @@ import {
 const EMPTY_CNAC_MAC_CACHE: CentralScopeCacheMeta = {
     refreshed_at: null,
     error: null,
+    available_static_tags: [],
 };import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import {

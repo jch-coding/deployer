@@ -1,16 +1,22 @@
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, RowSelectionState } from '@tanstack/react-table';
 import { router } from '@inertiajs/react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import CnacStaticTagsPicker from '@/components/central/CnacStaticTagsPicker';
 import type { ClientDetailsInterfaceInput } from '@/components/device-details/SwitchClientDetailsCard';
 import { formatRefreshedAt } from '@/components/central/CentralScopeRefreshButtons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { csrfHeaders } from '@/lib/csrf';
 import { refresh as refreshMacRegistrations } from '@/routes/central-scope-cache/mac-registrations';
-import { cnacMacCheck as cnacMacCheckRoute } from '@/routes/device-details';
+import {
+    cnacMacCheck as cnacMacCheckRoute,
+    cnacMacRegister as cnacMacRegisterRoute,
+} from '@/routes/device-details';
 
 export type CnacMacCheckRow = {
     interface: string;
@@ -36,6 +42,23 @@ type CnacMacCheckResponse = {
     rows: CnacMacCheckRow[];
     errors: CnacMacCheckError[];
     error: string | null;
+    availableStaticTags?: string[];
+    cache?: {
+        refreshed_at?: string | null;
+        error?: string | null;
+    };
+};
+
+type CnacMacRegisterResponse = {
+    success: boolean;
+    error: string | null;
+    results: Array<{
+        macAddress: string;
+        action: string;
+        staticTags: string[];
+        error: string | null;
+    }>;
+    availableStaticTags?: string[];
     cache?: {
         refreshed_at?: string | null;
         error?: string | null;
@@ -50,9 +73,36 @@ type CardState =
           rows: CnacMacCheckRow[];
           errors: CnacMacCheckError[];
           refreshedAt: string | null;
+          availableStaticTags: string[];
       };
 
-const columns: ColumnDef<CnacMacCheckRow>[] = [
+const dataColumns: ColumnDef<CnacMacCheckRow>[] = [
+    {
+        id: 'select',
+        header: ({ table }) => (
+            <Checkbox
+                checked={
+                    table.getIsAllPageRowsSelected() ||
+                    (table.getIsSomePageRowsSelected() && 'indeterminate')
+                }
+                onCheckedChange={(value) =>
+                    table.toggleAllPageRowsSelected(!!value)
+                }
+                aria-label="Select all MAC rows"
+                data-test="device-details-cnac-mac-select-all"
+            />
+        ),
+        cell: ({ row }) => (
+            <Checkbox
+                checked={row.getIsSelected()}
+                onCheckedChange={(value) => row.toggleSelected(!!value)}
+                aria-label={`Select ${row.original.macAddress}`}
+                data-test="device-details-cnac-mac-select-row"
+            />
+        ),
+        enableSorting: false,
+        enableHiding: false,
+    },
     {
         accessorKey: 'interface',
         header: 'Port',
@@ -110,9 +160,13 @@ export default function SwitchCnacMacCheckCard({
 }: SwitchCnacMacCheckCardProps) {
     const [state, setState] = useState<CardState>({ kind: 'loading' });
     const [refreshingCache, setRefreshingCache] = useState(false);
+    const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+    const [staticTags, setStaticTags] = useState<string[]>([]);
+    const [registering, setRegistering] = useState(false);
 
     const runCheck = useCallback(async () => {
         setState({ kind: 'loading' });
+        setRowSelection({});
 
         try {
             const response = await fetch(cnacMacCheckRoute.url(), {
@@ -146,6 +200,7 @@ export default function SwitchCnacMacCheckCard({
                 rows: body?.rows ?? [],
                 errors: body?.errors ?? [],
                 refreshedAt: body?.cache?.refreshed_at ?? null,
+                availableStaticTags: body?.availableStaticTags ?? [],
             });
         } catch (error) {
             setState({
@@ -170,6 +225,31 @@ export default function SwitchCnacMacCheckCard({
         return state.rows.filter((row) => row.registered).length;
     }, [state]);
 
+    const selectedMacs = useMemo(() => {
+        if (state.kind !== 'ready') {
+            return [];
+        }
+
+        const selectedIds = new Set(
+            Object.entries(rowSelection)
+                .filter(([, selected]) => selected)
+                .map(([id]) => id),
+        );
+
+        const macs: string[] = [];
+        for (const row of state.rows) {
+            const id = `${row.interface}:${row.macAddress}`;
+            if (!selectedIds.has(id)) {
+                continue;
+            }
+            if (!macs.includes(row.macAddress)) {
+                macs.push(row.macAddress);
+            }
+        }
+
+        return macs;
+    }, [rowSelection, state]);
+
     const handleRefresh = () => {
         if (refreshingCache) {
             return;
@@ -187,6 +267,69 @@ export default function SwitchCnacMacCheckCard({
                 onError: () => setRefreshingCache(false),
             },
         );
+    };
+
+    const handleRegister = async () => {
+        if (selectedMacs.length === 0 || registering) {
+            return;
+        }
+
+        setRegistering(true);
+        try {
+            const response = await fetch(cnacMacRegisterRoute.url(), {
+                method: 'POST',
+                headers: {
+                    ...csrfHeaders(),
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    macs: selectedMacs,
+                    static_tags: staticTags,
+                }),
+            });
+
+            const body = (await response.json().catch(() => null)) as
+                | CnacMacRegisterResponse
+                | null;
+
+            if (!response.ok || !body?.success) {
+                const detail =
+                    body?.results?.find((row) => row.error)?.error ??
+                    body?.error ??
+                    `Failed to register MAC addresses (HTTP ${response.status}).`;
+                toast.error(detail);
+                return;
+            }
+
+            const created = body.results.filter((row) => row.action === 'created').length;
+            const updated = body.results.filter((row) => row.action === 'updated').length;
+            const imported = body.results.filter((row) => row.action === 'imported').length;
+            const parts = [
+                created > 0 ? `${created} created` : null,
+                updated > 0 ? `${updated} updated` : null,
+                imported > 0 ? `${imported} imported` : null,
+            ].filter(Boolean);
+
+            toast.success(
+                parts.length > 0
+                    ? `CNAC MAC registration: ${parts.join(', ')}.`
+                    : 'CNAC MAC registration succeeded.',
+            );
+            setStaticTags([]);
+            setRowSelection({});
+            await runCheck();
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to register MAC addresses.',
+            );
+        } finally {
+            setRegistering(false);
+        }
     };
 
     return (
@@ -298,12 +441,57 @@ export default function SwitchCnacMacCheckCard({
 
                         <div className="max-h-[28rem] overflow-auto rounded-md border border-border">
                             <DataTable
-                                columns={columns}
+                                columns={dataColumns}
                                 data={state.rows}
                                 getRowId={(row) =>
                                     `${row.interface}:${row.macAddress}`
                                 }
+                                enableRowSelection
+                                rowSelection={rowSelection}
+                                onRowSelectionChange={setRowSelection}
                             />
+                        </div>
+
+                        <div className="space-y-2 rounded-md border border-border p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <label className="text-sm font-medium">
+                                    Static tags to add (optional)
+                                </label>
+                                <span className="text-xs text-muted-foreground">
+                                    {selectedMacs.length} MAC
+                                    {selectedMacs.length === 1 ? '' : 's'} selected
+                                </span>
+                            </div>
+                            <CnacStaticTagsPicker
+                                value={staticTags}
+                                onChange={setStaticTags}
+                                availableTags={state.availableStaticTags}
+                                disabled={registering}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Existing registrations keep current tags and
+                                gain any tags you select here.
+                            </p>
+                            <Button
+                                type="button"
+                                disabled={
+                                    selectedMacs.length === 0 || registering
+                                }
+                                data-test="device-details-cnac-mac-register"
+                                onClick={() => void handleRegister()}
+                            >
+                                {registering ? (
+                                    <>
+                                        <Loader2
+                                            className="size-4 animate-spin"
+                                            aria-hidden
+                                        />
+                                        Adding…
+                                    </>
+                                ) : (
+                                    'Add to CNAC'
+                                )}
+                            </Button>
                         </div>
                     </div>
                 ) : null}

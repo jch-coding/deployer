@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { formatRefreshedAt, type CentralScopeCacheMeta } from '@/components/central/CentralScopeRefreshButtons';
+import CnacStaticTagsPicker from '@/components/central/CnacStaticTagsPicker';
 import { check_central_group, check_central_sites, check_cnac_mac_registrations, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, greenlake_locations, greenlake_service_regions, store } from '@/routes/tasks';
 import check_greenlake_inventory from '@/routes/tasks/check_greenlake_inventory';
 import { refresh as refreshMacRegistrations } from '@/routes/central-scope-cache/mac-registrations';
@@ -167,6 +168,7 @@ type CnacMacCheckResult = {
 const EMPTY_CNAC_MAC_CACHE: CentralScopeCacheMeta = {
     refreshed_at: null,
     error: null,
+    available_static_tags: [],
 };
 
 const selectClassName =
@@ -1825,72 +1827,19 @@ export default function TaskCard({
                 ) : null}
                 {isExportMacToCentral ? (
                     <div className="mt-3 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                            <label className="text-sm font-medium">
-                                Static tags (optional)
-                            </label>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                data-test="add-central-static-tag"
-                                onClick={() =>
-                                    setCentralStaticTags((prev) => [...prev, ''])
-                                }
-                            >
-                                <PlusIcon className="size-3.5" aria-hidden />
-                                Add tag
-                            </Button>
-                        </div>
-                        {centralStaticTags.length === 0 ? (
-                            <p className="text-muted-foreground text-xs">
-                                No tags. Add tag names to apply to all selected devices.
-                            </p>
-                        ) : (
-                            <div className="space-y-2">
-                                {centralStaticTags.map((tag, index) => (
-                                    <div
-                                        key={index}
-                                        className="flex flex-wrap items-center gap-2"
-                                        data-test="central-static-tag-row"
-                                    >
-                                        <Input
-                                            type="text"
-                                            placeholder="Tag name"
-                                            value={tag}
-                                            onChange={(e) =>
-                                                setCentralStaticTags((prev) =>
-                                                    prev.map((item, i) =>
-                                                        i === index ? e.target.value : item,
-                                                    ),
-                                                )
-                                            }
-                                            className="min-w-[7rem] flex-1"
-                                            autoComplete="off"
-                                            aria-label={`Static tag ${index + 1}`}
-                                            data-test="central-static-tag-input"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="shrink-0"
-                                            aria-label={`Remove static tag ${index + 1}`}
-                                            data-test="remove-central-static-tag"
-                                            onClick={() =>
-                                                setCentralStaticTags((prev) =>
-                                                    prev.filter((_, i) => i !== index),
-                                                )
-                                            }
-                                        >
-                                            <Trash2Icon className="size-4" aria-hidden />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        <label className="text-sm font-medium">
+                            Static tags (optional)
+                        </label>
+                        <CnacStaticTagsPicker
+                            value={centralStaticTags}
+                            onChange={setCentralStaticTags}
+                            availableTags={
+                                cnacMacCacheMeta.available_static_tags ?? []
+                            }
+                        />
                         <p className="text-muted-foreground text-xs">
                             Applied to all selected devices in the Central NAC MAC registration CSV.
+                            Select tags from the CNAC table or type new ones.
                         </p>
                     </div>
                 ) : null}

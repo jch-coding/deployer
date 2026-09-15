@@ -130,3 +130,25 @@ it('treats empty JSON items list as a successful empty export', function () {
     expect($result['error'])->toBeNull()
         ->and($result['entries'])->toBe([]);
 });
+
+it('builds import CSV with per-row static tags', function () {
+    $csv = CnacMacRegistrationCsv::buildImportCsv([
+        [
+            'mac_address' => 'aa:bb:cc:dd:ee:01',
+            'static_tags' => ['TAG-A', 'TAG-B'],
+        ],
+        [
+            'mac_address' => 'aa:bb:cc:dd:ee:02',
+            'static_tags' => ['TAG-NEW'],
+        ],
+    ]);
+
+    expect($csv)->toContain('MAC Address')
+        ->and($csv)->toContain('Client Name')
+        ->and($csv)->toContain('Enabled')
+        ->and($csv)->toContain('Static Tags')
+        ->and($csv)->toContain('aa:bb:cc:dd:ee:01')
+        ->and($csv)->toContain('TAG-A, TAG-B')
+        ->and($csv)->toContain('aa:bb:cc:dd:ee:02')
+        ->and($csv)->toContain('TAG-NEW');
+});

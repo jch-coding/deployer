@@ -47,6 +47,9 @@ test('refresh mac registrations endpoint persists cache and redirects back with 
         ->and($cache->items)->toHaveCount(1)
         ->and($cache->items[0]['mac_address'])->toBe('aa:bb:cc:dd:ee:01')
         ->and($cache->refreshed_at)->not->toBeNull();
+
+    $meta = app(\App\Services\CentralScopeCacheService::class)->getCacheMetadata($this->client);
+    expect($meta['central_mac_registrations_cache']['available_static_tags'])->toBe(['TAG-A']);
 });
 
 test('refresh mac registrations endpoint flashes error when Central list fails', function () {

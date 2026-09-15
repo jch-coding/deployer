@@ -4829,6 +4829,98 @@ class CentralAPIHelper
     }
 
     /**
+     * Create a single Central NAC MAC registration.
+     *
+     * @param  list<string>  $staticTags
+     * @return array{success: true, item: array<string, mixed>|null}|array{success: false, error: string}
+     */
+    public function createMacRegistration(string $macAddress, array $staticTags = [], bool $enable = true): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['success' => false, 'error' => 'failed to get access token from central.'];
+        }
+
+        try {
+            $response = Http::withToken($this->client->bearer_token)
+                ->post($this->client->base_url.$this->central_nac['mac_reg_list'], [
+                    'input' => [
+                        'enable' => $enable,
+                        'macAddress' => $macAddress,
+                        'staticTags' => array_values($staticTags),
+                    ],
+                ]);
+        } catch (RequestException|ConnectionException $e) {
+            Log::error('Central MAC registration create request failed: '.$e->getMessage());
+
+            return ['success' => false, 'error' => 'Central MAC registration create request failed.'];
+        }
+
+        if (! $response->ok()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return [
+                'success' => false,
+                'error' => $message !== '' ? $message : 'Central MAC registration create failed.',
+            ];
+        }
+
+        $item = $response->json();
+
+        return [
+            'success' => true,
+            'item' => is_array($item) ? $item : null,
+        ];
+    }
+
+    /**
+     * Update an existing Central NAC MAC registration (e.g. static tags).
+     *
+     * @param  list<string>  $staticTags
+     * @return array{success: true, item: array<string, mixed>|null}|array{success: false, error: string}
+     */
+    public function updateMacRegistration(string $macAddress, array $staticTags, ?bool $enable = null): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['success' => false, 'error' => 'failed to get access token from central.'];
+        }
+
+        $input = [
+            'macAddress' => $macAddress,
+            'staticTags' => array_values($staticTags),
+        ];
+        if ($enable !== null) {
+            $input['enable'] = $enable;
+        }
+
+        try {
+            $response = Http::withToken($this->client->bearer_token)
+                ->put($this->client->base_url.$this->central_nac['mac_reg_list'], [
+                    'input' => $input,
+                ]);
+        } catch (RequestException|ConnectionException $e) {
+            Log::error('Central MAC registration update request failed: '.$e->getMessage());
+
+            return ['success' => false, 'error' => 'Central MAC registration update request failed.'];
+        }
+
+        if (! $response->ok()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return [
+                'success' => false,
+                'error' => $message !== '' ? $message : 'Central MAC registration update failed.',
+            ];
+        }
+
+        $item = $response->json();
+
+        return [
+            'success' => true,
+            'item' => is_array($item) ? $item : null,
+        ];
+    }
+
+    /**
      * Import a MAC registration CSV into Central NAC.
      *
      * @return array{success: true, job_ids: list<string>}|array{success: false, error: string}

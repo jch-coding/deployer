@@ -696,6 +696,7 @@ class DeviceDetailsController extends Controller
                     'refreshed_at' => $cache['refreshed_at'],
                     'error' => $cache['error'],
                 ],
+                'availableStaticTags' => [],
             ], 422);
         }
 
@@ -730,7 +731,59 @@ class DeviceDetailsController extends Controller
                 'refreshed_at' => $cache['refreshed_at'],
                 'error' => $cache['error'],
             ],
+            'availableStaticTags' => $centralScopeCacheService->availableStaticTags($currentClient),
         ]);
+    }
+
+    public function cnacMacRegister(
+        Request $request,
+        CentralScopeCacheService $centralScopeCacheService,
+    ): JsonResponse {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Please set current client to register CNAC MAC addresses.',
+                'results' => [],
+                'cache' => [
+                    'refreshed_at' => null,
+                    'error' => null,
+                ],
+                'availableStaticTags' => [],
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'macs' => ['required', 'array', 'min:1'],
+            'macs.*' => ['required', 'string', 'max:64'],
+            'static_tags' => ['nullable', 'array'],
+            'static_tags.*' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $result = $centralScopeCacheService->registerMacs(
+            $currentClient,
+            $validated['macs'],
+            is_array($validated['static_tags'] ?? null) ? $validated['static_tags'] : [],
+        );
+
+        $status = $result['success'] ? 200 : 422;
+
+        return response()->json([
+            'success' => $result['success'],
+            'error' => $result['error'],
+            'results' => array_map(
+                static fn (array $row): array => [
+                    'macAddress' => $row['mac_address'],
+                    'action' => $row['action'],
+                    'staticTags' => $row['static_tags'],
+                    'error' => $row['error'],
+                ],
+                $result['results'],
+            ),
+            'cache' => $result['cache'],
+            'availableStaticTags' => $result['available_static_tags'],
+        ], $status);
     }
 
     public function reboot(Request $request): JsonResponse

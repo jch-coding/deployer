@@ -142,6 +142,7 @@ class DeploymentController extends Controller
             'central_mac_registrations_cache' => [
                 'refreshed_at' => null,
                 'error' => null,
+                'available_static_tags' => [],
             ],
         ];
         if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {

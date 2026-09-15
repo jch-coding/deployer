@@ -106,7 +106,11 @@ class CentralScopeCacheService
      * @return array{
      *     central_sites_cache: array{refreshed_at: string|null, error: string|null},
      *     central_groups_cache: array{refreshed_at: string|null, error: string|null, classic_error: string|null},
-     *     central_mac_registrations_cache: array{refreshed_at: string|null, error: string|null}
+     *     central_mac_registrations_cache: array{
+     *         refreshed_at: string|null,
+     *         error: string|null,
+     *         available_static_tags: list<string>
+     *     }
      * }
      */
     public function getCacheMetadata(Client $client): array
@@ -128,6 +132,7 @@ class CentralScopeCacheService
             'central_mac_registrations_cache' => [
                 'refreshed_at' => $macRegistrations['refreshed_at'],
                 'error' => $macRegistrations['error'],
+                'available_static_tags' => $this->availableStaticTags($client),
             ],
         ];
     }
@@ -163,6 +168,236 @@ class CentralScopeCacheService
             'entries' => $items,
             'error' => $cache->last_error,
             'refreshed_at' => $cache->refreshed_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Unique static tags from the cached CNAC MAC registration table.
+     *
+     * @return list<string>
+     */
+    public function availableStaticTags(Client $client): array
+    {
+        $tags = [];
+        foreach ($this->getMacRegistrations($client)['entries'] as $entry) {
+            $entryTags = $entry['static_tags'] ?? [];
+            if (! is_array($entryTags)) {
+                continue;
+            }
+            foreach ($entryTags as $tag) {
+                $trimmed = trim((string) $tag);
+                if ($trimmed === '') {
+                    continue;
+                }
+                $tags[$trimmed] = true;
+            }
+        }
+
+        $list = array_keys($tags);
+        natcasesort($list);
+
+        return array_values($list);
+    }
+
+    /**
+     * Normalize static tag strings: trim, drop empty, dedupe (preserve first-seen order).
+     *
+     * @param  list<mixed>  $tags
+     * @return list<string>
+     */
+    public static function normalizeStaticTags(array $tags): array
+    {
+        $normalized = [];
+        foreach ($tags as $tag) {
+            if (! is_scalar($tag)) {
+                continue;
+            }
+            $trimmed = trim((string) $tag);
+            if ($trimmed === '' || in_array($trimmed, $normalized, true)) {
+                continue;
+            }
+            $normalized[] = $trimmed;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Merge existing registration tags with tags to add.
+     *
+     * @param  list<string>  $existing
+     * @param  list<string>  $toAdd
+     * @return list<string>
+     */
+    public static function mergeStaticTags(array $existing, array $toAdd): array
+    {
+        return self::normalizeStaticTags([...$existing, ...$toAdd]);
+    }
+
+    /**
+     * Create or update CNAC MAC registrations for the given addresses.
+     *
+     * Single new → POST create; single existing → PUT update (merged tags);
+     * two or more → CSV import with per-MAC merged tags.
+     *
+     * @param  list<string>  $macAddresses
+     * @param  list<string>  $staticTagsToAdd
+     * @return array{
+     *     success: bool,
+     *     error: string|null,
+     *     results: list<array{
+     *         mac_address: string,
+     *         action: string,
+     *         static_tags: list<string>,
+     *         error: string|null
+     *     }>,
+     *     cache: array{
+     *         refreshed_at: string|null,
+     *         error: string|null
+     *     },
+     *     available_static_tags: list<string>
+     * }
+     */
+    public function registerMacs(
+        Client $client,
+        array $macAddresses,
+        array $staticTagsToAdd = [],
+        ?CentralAPIHelper $centralHelper = null,
+    ): array {
+        $centralHelper ??= new CentralAPIHelper($client);
+        $tagsToAdd = self::normalizeStaticTags($staticTagsToAdd);
+
+        $normalizedMacs = [];
+        foreach ($macAddresses as $rawMac) {
+            $mac = MacAddress::normalize((string) $rawMac);
+            if ($mac === null || in_array($mac, $normalizedMacs, true)) {
+                continue;
+            }
+            $normalizedMacs[] = $mac;
+        }
+
+        if ($normalizedMacs === []) {
+            return [
+                'success' => false,
+                'error' => 'Provide at least one valid MAC address.',
+                'results' => [],
+                'cache' => [
+                    'refreshed_at' => null,
+                    'error' => null,
+                ],
+                'available_static_tags' => $this->availableStaticTags($client),
+            ];
+        }
+
+        $cache = $this->ensureMacRegistrations($client, $centralHelper);
+        if ($cache['error'] !== null && $cache['entries'] === []) {
+            return [
+                'success' => false,
+                'error' => $cache['error'],
+                'results' => [],
+                'cache' => [
+                    'refreshed_at' => $cache['refreshed_at'],
+                    'error' => $cache['error'],
+                ],
+                'available_static_tags' => [],
+            ];
+        }
+
+        $byMac = [];
+        foreach ($cache['entries'] as $entry) {
+            $byMac[$entry['mac_address']] = $entry;
+        }
+
+        $planned = [];
+        foreach ($normalizedMacs as $mac) {
+            $existing = $byMac[$mac] ?? null;
+            $existingTags = is_array($existing['static_tags'] ?? null)
+                ? $existing['static_tags']
+                : [];
+            $finalTags = $existing !== null
+                ? self::mergeStaticTags($existingTags, $tagsToAdd)
+                : $tagsToAdd;
+
+            $planned[] = [
+                'mac_address' => $mac,
+                'registered' => $existing !== null,
+                'static_tags' => $finalTags,
+            ];
+        }
+
+        $results = [];
+
+        if (count($planned) === 1) {
+            $row = $planned[0];
+            if ($row['registered']) {
+                $response = $centralHelper->updateMacRegistration(
+                    $row['mac_address'],
+                    $row['static_tags'],
+                    true,
+                );
+                $action = 'updated';
+            } else {
+                $response = $centralHelper->createMacRegistration(
+                    $row['mac_address'],
+                    $row['static_tags'],
+                    true,
+                );
+                $action = 'created';
+            }
+
+            $results[] = [
+                'mac_address' => $row['mac_address'],
+                'action' => ($response['success'] ?? false) === true ? $action : 'failed',
+                'static_tags' => $row['static_tags'],
+                'error' => ($response['success'] ?? false) === true
+                    ? null
+                    : (string) ($response['error'] ?? 'Central request failed.'),
+            ];
+        } else {
+            $csv = CnacMacRegistrationCsv::buildImportCsv(
+                array_map(
+                    static fn (array $row): array => [
+                        'mac_address' => $row['mac_address'],
+                        'static_tags' => $row['static_tags'],
+                    ],
+                    $planned,
+                ),
+            );
+            $response = $centralHelper->importMacCsvFile($csv);
+            $importOk = ($response['success'] ?? false) === true;
+            $importError = $importOk
+                ? null
+                : (string) ($response['error'] ?? 'Central MAC CSV import failed.');
+
+            foreach ($planned as $row) {
+                $results[] = [
+                    'mac_address' => $row['mac_address'],
+                    'action' => $importOk ? 'imported' : 'failed',
+                    'static_tags' => $row['static_tags'],
+                    'error' => $importError,
+                ];
+            }
+        }
+
+        $success = $results !== [] && collect($results)->every(
+            static fn (array $result): bool => ($result['error'] ?? null) === null,
+        );
+
+        $refreshed = $this->refreshMacRegistrations($client, $centralHelper);
+
+        return [
+            'success' => $success,
+            'error' => $success
+                ? null
+                : (string) (collect($results)->first(
+                    static fn (array $result): bool => ($result['error'] ?? null) !== null,
+                )['error'] ?? 'Failed to register MAC addresses.'),
+            'results' => $results,
+            'cache' => [
+                'refreshed_at' => $refreshed['refreshed_at'],
+                'error' => $refreshed['error'],
+            ],
+            'available_static_tags' => $this->availableStaticTags($client),
         ];
     }
 
