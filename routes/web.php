@@ -124,6 +124,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/device-details/neighbours', 'neighbours')->name('device-details.neighbours');
         Route::post('/device-details/client-details', 'clientDetails')->name('device-details.client-details');
         Route::post('/device-details/cnac-mac-check', 'cnacMacCheck')->name('device-details.cnac-mac-check');
+        Route::post('/device-details/cnac-mac-register', 'cnacMacRegister')->name('device-details.cnac-mac-register');
         Route::post('/device-details/reboot', 'reboot')->name('device-details.reboot');
         Route::post('/device-details/site-bssids', 'siteBssids')->name('device-details.site-bssids');
         Route::get('/device-details/deployments', 'deployments')->name('device-details.deployments');
