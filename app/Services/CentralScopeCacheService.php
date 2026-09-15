@@ -6,6 +6,8 @@ use App\CentralScopeCacheType;
 use App\Helper\CentralAPIHelper;
 use App\Models\CentralScopeCache;
 use App\Models\Client;
+use App\Support\CnacMacRegistrationCsv;
+use App\Support\MacAddress;
 use Illuminate\Support\Facades\Log;
 
 class CentralScopeCacheService
@@ -13,6 +15,8 @@ class CentralScopeCacheService
     private const EMPTY_SITES_MESSAGE = 'Central sites have not been refreshed yet. Use Refresh sites to load from Central.';
 
     private const EMPTY_GROUPS_MESSAGE = 'Central groups have not been refreshed yet. Use Refresh groups to load from Central.';
+
+    private const EMPTY_MAC_REGISTRATIONS_MESSAGE = 'Central NAC MAC registrations have not been refreshed yet. Use Refresh MAC table to load from Central.';
 
     /**
      * @return array{
@@ -101,13 +105,15 @@ class CentralScopeCacheService
     /**
      * @return array{
      *     central_sites_cache: array{refreshed_at: string|null, error: string|null},
-     *     central_groups_cache: array{refreshed_at: string|null, error: string|null, classic_error: string|null}
+     *     central_groups_cache: array{refreshed_at: string|null, error: string|null, classic_error: string|null},
+     *     central_mac_registrations_cache: array{refreshed_at: string|null, error: string|null}
      * }
      */
     public function getCacheMetadata(Client $client): array
     {
         $sites = $this->getSites($client);
         $groups = $this->getGroups($client);
+        $macRegistrations = $this->getMacRegistrations($client);
 
         return [
             'central_sites_cache' => [
@@ -119,6 +125,176 @@ class CentralScopeCacheService
                 'error' => $groups['error'],
                 'classic_error' => $groups['classic_device_groups_error'],
             ],
+            'central_mac_registrations_cache' => [
+                'refreshed_at' => $macRegistrations['refreshed_at'],
+                'error' => $macRegistrations['error'],
+            ],
+        ];
+    }
+
+    /**
+     * @return array{
+     *     entries: list<array{
+     *         mac_address: string,
+     *         client_name: string,
+     *         enabled: bool|null,
+     *         static_tags: list<string>
+     *     }>,
+     *     error: string|null,
+     *     refreshed_at: string|null
+     * }
+     */
+    public function getMacRegistrations(Client $client): array
+    {
+        $cache = $this->findCache($client, CentralScopeCacheType::MacRegistrations);
+
+        if ($cache === null) {
+            return [
+                'entries' => [],
+                'error' => self::EMPTY_MAC_REGISTRATIONS_MESSAGE,
+                'refreshed_at' => null,
+            ];
+        }
+
+        /** @var list<array{mac_address: string, client_name: string, enabled: bool|null, static_tags: list<string>}> $items */
+        $items = is_array($cache->items) ? $cache->items : [];
+
+        return [
+            'entries' => $items,
+            'error' => $cache->last_error,
+            'refreshed_at' => $cache->refreshed_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Ensure MAC registrations are loaded; refresh from Central when the cache row is missing.
+     *
+     * @return array{
+     *     entries: list<array{
+     *         mac_address: string,
+     *         client_name: string,
+     *         enabled: bool|null,
+     *         static_tags: list<string>
+     *     }>,
+     *     error: string|null,
+     *     refreshed_at: string|null
+     * }
+     */
+    public function ensureMacRegistrations(Client $client, ?CentralAPIHelper $centralHelper = null): array
+    {
+        $cache = $this->findCache($client, CentralScopeCacheType::MacRegistrations);
+        if ($cache === null) {
+            return $this->refreshMacRegistrations($client, $centralHelper);
+        }
+
+        return $this->getMacRegistrations($client);
+    }
+
+    /**
+     * Look up MACs in the cached registration table.
+     *
+     * @param  list<string>  $macAddresses
+     * @return array<string, array{
+     *     mac_address: string,
+     *     client_name: string,
+     *     enabled: bool|null,
+     *     static_tags: list<string>
+     * }|null>
+     */
+    public function lookupMacs(Client $client, array $macAddresses, ?CentralAPIHelper $centralHelper = null): array
+    {
+        $payload = $this->ensureMacRegistrations($client, $centralHelper);
+        $byMac = [];
+        foreach ($payload['entries'] as $entry) {
+            $byMac[$entry['mac_address']] = $entry;
+        }
+
+        $result = [];
+        foreach ($macAddresses as $rawMac) {
+            $normalized = MacAddress::normalize((string) $rawMac);
+            if ($normalized === null) {
+                continue;
+            }
+            $result[$normalized] = $byMac[$normalized] ?? null;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array{
+     *     entries: list<array{
+     *         mac_address: string,
+     *         client_name: string,
+     *         enabled: bool|null,
+     *         static_tags: list<string>
+     *     }>,
+     *     error: string|null,
+     *     refreshed_at: string|null
+     * }
+     */
+    public function refreshMacRegistrations(Client $client, ?CentralAPIHelper $centralHelper = null): array
+    {
+        $centralHelper ??= new CentralAPIHelper($client);
+        $export = $centralHelper->exportMacCsvFile();
+        $refreshedAt = now();
+
+        if (($export['success'] ?? false) !== true) {
+            $error = (string) ($export['error'] ?? 'Central MAC CSV export failed.');
+            $this->persistCache(
+                $client,
+                CentralScopeCacheType::MacRegistrations,
+                [],
+                $refreshedAt,
+                $error,
+            );
+
+            Log::warning('Failed to refresh Central NAC MAC registrations cache.', [
+                'client_id' => $client->id,
+                'error' => $error,
+            ]);
+
+            return [
+                'entries' => [],
+                'error' => $error,
+                'refreshed_at' => $refreshedAt->toIso8601String(),
+            ];
+        }
+
+        $parsed = CnacMacRegistrationCsv::parse((string) ($export['csv'] ?? ''));
+        if ($parsed['error'] !== null) {
+            $this->persistCache(
+                $client,
+                CentralScopeCacheType::MacRegistrations,
+                [],
+                $refreshedAt,
+                $parsed['error'],
+            );
+
+            Log::warning('Failed to parse Central NAC MAC registrations CSV.', [
+                'client_id' => $client->id,
+                'error' => $parsed['error'],
+            ]);
+
+            return [
+                'entries' => [],
+                'error' => $parsed['error'],
+                'refreshed_at' => $refreshedAt->toIso8601String(),
+            ];
+        }
+
+        $this->persistCache(
+            $client,
+            CentralScopeCacheType::MacRegistrations,
+            $parsed['entries'],
+            $refreshedAt,
+            null,
+        );
+
+        return [
+            'entries' => $parsed['entries'],
+            'error' => null,
+            'refreshed_at' => $refreshedAt->toIso8601String(),
         ];
     }
 

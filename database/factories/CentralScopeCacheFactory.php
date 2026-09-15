@@ -55,4 +55,22 @@ class CentralScopeCacheFactory extends Factory
             'items' => $payload !== [] ? $payload : $defaultPayload,
         ]);
     }
+
+    /**
+     * @param  list<array{mac_address: string, client_name?: string, enabled?: bool|null, static_tags?: list<string>}>  $entries
+     */
+    public function macRegistrations(array $entries = []): static
+    {
+        return $this->state(fn () => [
+            'type' => CentralScopeCacheType::MacRegistrations,
+            'items' => $entries !== [] ? $entries : [
+                [
+                    'mac_address' => 'aa:bb:cc:dd:ee:01',
+                    'client_name' => '',
+                    'enabled' => true,
+                    'static_tags' => ['TAG-A'],
+                ],
+            ],
+        ]);
+    }
 }

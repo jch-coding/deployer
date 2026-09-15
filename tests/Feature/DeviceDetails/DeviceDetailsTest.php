@@ -1387,6 +1387,175 @@ test('device details client details returns soft errors when central fails', fun
         ->assertJsonPath('errors.0.message', 'failed to get client details from central.');
 });
 
+test('device details cnac mac check redirects gate when no current client is set', function () {
+    $this->client->update(['current' => false]);
+
+    $this->postJson(route('device-details.cnac-mac-check'), [
+        'serial' => 'SN12345',
+        'interfaces' => [[
+            'name' => '1/1/1',
+            'neighbour' => '',
+            'neighbourSerial' => '05:50:35:a1:a0:01',
+        ]],
+    ])
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'Please set current client to check CNAC MAC registrations.');
+});
+
+test('device details cnac mac check reports registered neighbour mac and tags', function () {
+    \App\Models\CentralScopeCache::query()->create([
+        'client_id' => $this->client->id,
+        'type' => \App\CentralScopeCacheType::MacRegistrations,
+        'items' => [
+            [
+                'mac_address' => '05:50:35:a1:a0:01',
+                'client_name' => 'Phone',
+                'enabled' => true,
+                'static_tags' => ['CLIENT-TAG'],
+            ],
+        ],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    $this->postJson(route('device-details.cnac-mac-check'), [
+        'serial' => 'SN12345',
+        'interfaces' => [[
+            'name' => '1/1/10',
+            'neighbour' => 'Phone',
+            'neighbourSerial' => '05:50:35:a1:a0:01',
+        ]],
+    ])
+        ->assertOk()
+        ->assertJsonPath('error', null)
+        ->assertJsonPath('errors', [])
+        ->assertJsonPath('rows.0.macAddress', '05:50:35:a1:a0:01')
+        ->assertJsonPath('rows.0.interface', '1/1/10')
+        ->assertJsonPath('rows.0.registered', true)
+        ->assertJsonPath('rows.0.staticTags', ['CLIENT-TAG'])
+        ->assertJsonPath('rows.0.clientName', 'Phone');
+});
+
+test('device details cnac mac check reports unregistered mac from address table', function () {
+    $taskId = 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0e';
+    $macTableOutput = <<<'OUTPUT'
+MAC Address          VLAN     Type                      Port      
+--------------------------------------------------------------
+11:22:33:44:55:66    10       dynamic                   1/1/5     
+OUTPUT;
+
+    Http::fake(function (Request $request) use ($taskId, $macTableOutput) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($url, 'showCommands')) {
+            return Http::response([
+                'location' => "/network-troubleshooting/v1/cx/SN12345/showCommands/async-operations/{$taskId}",
+                'status' => 'INITIATED',
+            ], 202);
+        }
+
+        if (str_contains($url, 'showCommands/async-operations/'.$taskId)) {
+            return Http::response([
+                'status' => 'COMPLETED',
+                'progressPercent' => 100,
+                'output' => [
+                    'results' => [[
+                        'command' => 'show mac-address-table',
+                        'output' => $macTableOutput,
+                    ]],
+                ],
+            ], 200);
+        }
+
+        if (str_contains($url, 'cnac-mac-reg/export')) {
+            return Http::response(
+                "MAC Address,Client Name,Enabled,Static Tags\nAA-BB-CC-DD-EE-FF,,true,\n",
+                200,
+            );
+        }
+
+        return Http::response([], 404);
+    });
+
+    $this->postJson(route('device-details.cnac-mac-check'), [
+        'serial' => 'SN12345',
+        'interfaces' => [[
+            'name' => '1/1/5',
+            'neighbour' => '',
+            'neighbourSerial' => '',
+        ]],
+    ])
+        ->assertOk()
+        ->assertJsonPath('error', null)
+        ->assertJsonPath('rows.0.macAddress', '11:22:33:44:55:66')
+        ->assertJsonPath('rows.0.registered', false)
+        ->assertJsonPath('rows.0.staticTags', []);
+});
+
+test('device details cnac mac check returns soft error when no mac found for port', function () {
+    \App\Models\CentralScopeCache::query()->create([
+        'client_id' => $this->client->id,
+        'type' => \App\CentralScopeCacheType::MacRegistrations,
+        'items' => [],
+        'refreshed_at' => now(),
+        'last_error' => null,
+    ]);
+
+    $taskId = 'c7a3f2d1-e8a9-4b7c-8d1e-0f9a3b2c1d0f';
+    $macTableOutput = <<<'OUTPUT'
+MAC Address          VLAN     Type                      Port      
+--------------------------------------------------------------
+11:22:33:44:55:66    10       dynamic                   1/1/99    
+OUTPUT;
+
+    Http::fake(function (Request $request) use ($taskId, $macTableOutput) {
+        $url = $request->url();
+
+        if (str_contains($url, 'network-monitoring/v1/switches')) {
+            return Http::response(['items' => []], 200);
+        }
+
+        if ($request->method() === 'POST' && str_contains($url, 'showCommands')) {
+            return Http::response([
+                'location' => "/network-troubleshooting/v1/cx/SN12345/showCommands/async-operations/{$taskId}",
+                'status' => 'INITIATED',
+            ], 202);
+        }
+
+        if (str_contains($url, 'showCommands/async-operations/'.$taskId)) {
+            return Http::response([
+                'status' => 'COMPLETED',
+                'progressPercent' => 100,
+                'output' => [
+                    'results' => [[
+                        'command' => 'show mac-address-table',
+                        'output' => $macTableOutput,
+                    ]],
+                ],
+            ], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $this->postJson(route('device-details.cnac-mac-check'), [
+        'serial' => 'SN12345',
+        'interfaces' => [[
+            'name' => '1/1/5',
+            'neighbour' => '',
+            'neighbourSerial' => '',
+        ]],
+    ])
+        ->assertOk()
+        ->assertJsonPath('rows', [])
+        ->assertJsonPath('errors.0.interface', '1/1/5')
+        ->assertJsonPath('errors.0.message', 'No client MAC address found for interface.');
+});
+
 test('device details poe bounce requires serial and ports', function () {
     $this->postJson(route('device-details.poe-bounce'), [])
         ->assertStatus(422)

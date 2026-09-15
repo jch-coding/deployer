@@ -112,6 +112,7 @@ class CentralAPIHelper
 
     public array $central_nac = [
         'mac_reg_import' => 'network-config/v1alpha1/cnac-mac-reg/import',
+        'mac_reg_export' => 'network-config/v1alpha1/cnac-mac-reg/export',
     ];
 
     public array $classic_monitoring = [
@@ -4867,6 +4868,38 @@ class CentralAPIHelper
         ));
 
         return ['success' => true, 'job_ids' => $jobIds];
+    }
+
+    /**
+     * Export the MAC registration CSV from Central NAC.
+     *
+     * @return array{success: true, csv: string}|array{success: false, error: string}
+     */
+    public function exportMacCsvFile(): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['success' => false, 'error' => 'failed to get access token from central.'];
+        }
+
+        try {
+            $response = Http::withToken($this->client->bearer_token)
+                ->get($this->client->base_url.$this->central_nac['mac_reg_export']);
+        } catch (RequestException|ConnectionException $e) {
+            Log::error('Central MAC CSV export request failed: '.$e->getMessage());
+
+            return ['success' => false, 'error' => 'Central MAC CSV export request failed.'];
+        }
+
+        if (! $response->ok()) {
+            $message = (string) ($response->json('message') ?? $response->body());
+
+            return [
+                'success' => false,
+                'error' => $message !== '' ? $message : 'Central MAC CSV export failed.',
+            ];
+        }
+
+        return ['success' => true, 'csv' => $response->body()];
     }
 
     protected function isSuccessfulCentralResponse(mixed $response): bool

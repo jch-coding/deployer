@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import SwitchClientDetailsCard, {
     type ClientDetailsInterfaceInput,
 } from '@/components/device-details/SwitchClientDetailsCard';
+import SwitchCnacMacCheckCard from '@/components/device-details/SwitchCnacMacCheckCard';
 import SwitchMacAddressTableCard from '@/components/device-details/SwitchMacAddressTableCard';
 import SwitchNeighboursCard from '@/components/device-details/SwitchNeighboursCard';
 import SwitchPortBounceDialog, {
@@ -207,6 +208,10 @@ export default function SwitchInterfacesPanel({
     const [clientDetailsInterfaces, setClientDetailsInterfaces] = useState<
         ClientDetailsInterfaceInput[]
     >([]);
+    const [cnacMacCheckOpen, setCnacMacCheckOpen] = useState(false);
+    const [cnacMacCheckInterfaces, setCnacMacCheckInterfaces] = useState<
+        ClientDetailsInterfaceInput[]
+    >([]);
     const [selectedPortNames, setSelectedPortNames] = useState<string[]>([]);
     const [bounceOutcome, setBounceOutcome] =
         useState<PortBounceOutcome | null>(null);
@@ -253,6 +258,8 @@ export default function SwitchInterfacesPanel({
         setNeighboursOpen(false);
         setClientDetailsOpen(false);
         setClientDetailsInterfaces([]);
+        setCnacMacCheckOpen(false);
+        setCnacMacCheckInterfaces([]);
         setSelectedPortNames([]);
         setBounceOutcome(null);
         setBounceRunning(false);
@@ -667,6 +674,17 @@ export default function SwitchInterfacesPanel({
                 />
             ) : null}
 
+            {cnacMacCheckOpen ? (
+                <SwitchCnacMacCheckCard
+                    serial={serial}
+                    interfaces={cnacMacCheckInterfaces}
+                    onClose={() => {
+                        setCnacMacCheckOpen(false);
+                        setCnacMacCheckInterfaces([]);
+                    }}
+                />
+            ) : null}
+
             <h3
                 className="mb-3 text-lg font-medium"
                 data-test="device-details-interfaces-heading"
@@ -854,6 +872,34 @@ export default function SwitchInterfacesPanel({
                                 data-test="device-details-client-details"
                             >
                                 Client Details
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                                disabled={
+                                    Boolean(central_error) ||
+                                    selectedPorts.length === 0 ||
+                                    bounceRunning
+                                }
+                                onClick={() => {
+                                    const selected = new Set(selectedPorts);
+                                    const payload = interfaces
+                                        .filter((row) =>
+                                            selected.has(row.name),
+                                        )
+                                        .map((row) => ({
+                                            name: row.name,
+                                            neighbour: row.neighbour,
+                                            neighbourSerial: row.neighbourSerial,
+                                        }));
+                                    setCnacMacCheckInterfaces(payload);
+                                    setCnacMacCheckOpen(true);
+                                }}
+                                data-test="device-details-cnac-mac-check"
+                            >
+                                Check CNAC MAC table
                             </Button>
                             <SwitchPortBounceDialog
                                 serial={serial}

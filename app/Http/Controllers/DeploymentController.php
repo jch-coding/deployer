@@ -139,6 +139,10 @@ class DeploymentController extends Controller
                 'error' => null,
                 'classic_error' => null,
             ],
+            'central_mac_registrations_cache' => [
+                'refreshed_at' => null,
+                'error' => null,
+            ],
         ];
         if ($currentClient && (int) $deployment->client_id === (int) $currentClient->id) {
             try {

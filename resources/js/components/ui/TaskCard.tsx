@@ -26,11 +26,14 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { check_central_group, check_central_sites, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, greenlake_locations, greenlake_service_regions, store } from '@/routes/tasks';
+import { formatRefreshedAt, type CentralScopeCacheMeta } from '@/components/central/CentralScopeRefreshButtons';
+import { check_central_group, check_central_sites, check_cnac_mac_registrations, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, greenlake_locations, greenlake_service_regions, store } from '@/routes/tasks';
 import check_greenlake_inventory from '@/routes/tasks/check_greenlake_inventory';
+import { refresh as refreshMacRegistrations } from '@/routes/central-scope-cache/mac-registrations';
 import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, PlusIcon, RefreshCw, Trash2Icon } from 'lucide-react';
+import { csrfHeaders } from '@/lib/csrf';
 
 type AssignSelectionMode = 'tag' | 'subscription';
 
@@ -136,6 +139,29 @@ type TaskCardProps = {
     cx_firmware_versions?: string[];
     central_firmware_error?: string | null;
     deployment_sites?: string[];
+    central_mac_registrations_cache?: CentralScopeCacheMeta;
+};
+
+type CnacMacCheckRow = {
+    device_id: number;
+    device_name: string;
+    serial: string;
+    mac_address: string;
+    registered: boolean;
+    invalid_mac: boolean;
+    client_name: string | null;
+    enabled: boolean | null;
+    static_tags: string[];
+};
+
+type CnacMacCheckResult = {
+    rows: CnacMacCheckRow[];
+    summary: {
+        registered: number;
+        not_registered: number;
+        invalid_mac: number;
+    };
+    cache: CentralScopeCacheMeta;
 };
 
 const selectClassName =
@@ -156,6 +182,7 @@ export default function TaskCard({
     cx_firmware_versions = [],
     central_firmware_error = null,
     deployment_sites = [],
+    central_mac_registrations_cache = { refreshed_at: null, error: null },
 }: TaskCardProps) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [isLaunching, setIsLaunching] = useState(false)
@@ -193,6 +220,13 @@ export default function TaskCard({
     } | null>(null);
     const [greenLakeTags, setGreenLakeTags] = useState<GreenLakeTagRow[]>([]);
     const [centralStaticTags, setCentralStaticTags] = useState<string[]>([]);
+    const [cnacMacCheckOpen, setCnacMacCheckOpen] = useState(false);
+    const [cnacMacCheckLoading, setCnacMacCheckLoading] = useState(false);
+    const [cnacMacRefreshLoading, setCnacMacRefreshLoading] = useState(false);
+    const [cnacMacCheckResult, setCnacMacCheckResult] = useState<CnacMacCheckResult | null>(null);
+    const [cnacMacCacheMeta, setCnacMacCacheMeta] = useState<CentralScopeCacheMeta>(
+        central_mac_registrations_cache,
+    );
     const [greenLakeLocations, setGreenLakeLocations] = useState<GreenLakeLocationOption[]>([]);
     const [greenLakeLocationId, setGreenLakeLocationId] = useState('');
     const [greenLakeLocationsLoading, setGreenLakeLocationsLoading] = useState(false);
@@ -230,6 +264,10 @@ export default function TaskCard({
     const isCreateSite = task === 'CREATE_SITE';
     const isUpdateSite = task === 'UPDATE_SITE';
     const isSiteTask = isCreateSite || isUpdateSite;
+
+    useEffect(() => {
+        setCnacMacCacheMeta(central_mac_registrations_cache);
+    }, [central_mac_registrations_cache]);
 
     useEffect(() => {
         if (!isSiteTask) {
@@ -612,6 +650,79 @@ export default function TaskCard({
             percent: 0,
             message: 'Starting GreenLake inventory check...',
         });
+    };
+
+    const checkCnacMacRegistrations = async (deviceIds: number[]) => {
+        if (cnacMacCheckLoading) {
+            return;
+        }
+
+        setCnacMacCheckLoading(true);
+        setCnacMacCheckOpen(true);
+
+        try {
+            const response = await fetch(check_cnac_mac_registrations(deployment.id).url, {
+                method: 'POST',
+                headers: {
+                    ...csrfHeaders(),
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ device_ids: deviceIds }),
+            });
+
+            const body = (await response.json().catch(() => null)) as
+                | (CnacMacCheckResult & { message?: string })
+                | null;
+
+            if (!response.ok) {
+                throw new Error(body?.message ?? `Check failed (HTTP ${response.status}).`);
+            }
+
+            if (!body?.rows || !body.summary) {
+                throw new Error('Unexpected CNAC MAC check response.');
+            }
+
+            setCnacMacCheckResult({
+                rows: body.rows,
+                summary: body.summary,
+                cache: body.cache ?? { refreshed_at: null, error: null },
+            });
+            if (body.cache) {
+                setCnacMacCacheMeta(body.cache);
+            }
+        } catch (error) {
+            setCnacMacCheckOpen(false);
+            setCnacMacCheckResult(null);
+            toast.error(
+                error instanceof Error ? error.message : 'Failed to check CNAC MAC registrations.',
+            );
+        } finally {
+            setCnacMacCheckLoading(false);
+        }
+    };
+
+    const refreshCnacMacRegistrationsCache = () => {
+        if (cnacMacRefreshLoading) {
+            return;
+        }
+
+        setCnacMacRefreshLoading(true);
+        router.post(
+            refreshMacRegistrations.url(),
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    router.reload({
+                        only: ['central_mac_registrations_cache'],
+                    });
+                },
+                onFinish: () => setCnacMacRefreshLoading(false),
+            },
+        );
     };
 
     const checkGreenLakeInventory = async () => {
@@ -2570,6 +2681,151 @@ export default function TaskCard({
                                         </Button>
                                     </DialogFooter>
                                 )}
+                            </DialogContent>
+                        </Dialog>
+                    </div>
+                )}
+                {isExportMacToCentral && (
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="refresh-cnac-mac-registrations"
+                                    aria-label="Refresh CNAC MAC table"
+                                    disabled={cnacMacRefreshLoading || cnacMacCheckLoading}
+                                    onClick={() => refreshCnacMacRegistrationsCache()}
+                                >
+                                    <RefreshCw
+                                        className={`size-4 ${cnacMacRefreshLoading ? 'animate-spin' : ''}`}
+                                        aria-hidden
+                                    />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>
+                                    Refresh CNAC MAC table
+                                    <br />
+                                    Last refreshed {formatRefreshedAt(cnacMacCacheMeta.refreshed_at)}
+                                </p>
+                            </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="rounded-full"
+                                    data-test="check-cnac-mac-registrations"
+                                    aria-label="Check CNAC MAC table"
+                                    disabled={cnacMacCheckLoading}
+                                    onClick={() => {
+                                        const ids =
+                                            taskDevices.length > 0
+                                                ? taskDevices.map((device) => device.id)
+                                                : devicesWithMac.map((device) => device.id);
+                                        void checkCnacMacRegistrations(ids);
+                                    }}
+                                >
+                                    <CircleCheck className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Check CNAC MAC table</p>
+                            </TooltipContent>
+                        </Tooltip>
+                        <Dialog
+                            open={cnacMacCheckOpen}
+                            onOpenChange={(open) => {
+                                if (!open && !cnacMacCheckLoading) {
+                                    setCnacMacCheckOpen(false);
+                                }
+                            }}
+                        >
+                            <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">
+                                <DialogTitle>CNAC MAC registration check</DialogTitle>
+                                <DialogDescription>
+                                    {cnacMacCheckLoading
+                                        ? 'Checking selected devices against the cached CNAC MAC table…'
+                                        : cnacMacCheckResult
+                                          ? `${cnacMacCheckResult.summary.registered} registered, ${cnacMacCheckResult.summary.not_registered} not registered${
+                                                cnacMacCheckResult.summary.invalid_mac > 0
+                                                    ? `, ${cnacMacCheckResult.summary.invalid_mac} invalid MAC`
+                                                    : ''
+                                            }.`
+                                          : 'No results yet.'}
+                                </DialogDescription>
+                                {cnacMacCheckLoading ? (
+                                    <div className="flex items-center justify-center gap-2 py-8">
+                                        <Spinner className="size-6" />
+                                        <span className="text-sm text-muted-foreground">
+                                            Checking CNAC MAC table…
+                                        </span>
+                                    </div>
+                                ) : cnacMacCheckResult ? (
+                                    <div className="max-h-[50vh] overflow-auto rounded-md border border-border">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                                                <tr className="border-b border-border">
+                                                    <th className="px-3 py-2 font-medium">Device</th>
+                                                    <th className="px-3 py-2 font-medium">Serial</th>
+                                                    <th className="px-3 py-2 font-medium">MAC</th>
+                                                    <th className="px-3 py-2 font-medium">Registered</th>
+                                                    <th className="px-3 py-2 font-medium">Static tags</th>
+                                                    <th className="px-3 py-2 font-medium">Client name</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {cnacMacCheckResult.rows.map((row) => (
+                                                    <tr
+                                                        key={row.device_id}
+                                                        className="border-b border-border last:border-0"
+                                                        data-test="cnac-mac-check-row"
+                                                    >
+                                                        <td className="px-3 py-2">{row.device_name || '—'}</td>
+                                                        <td className="px-3 py-2 font-mono text-xs">
+                                                            {row.serial || '—'}
+                                                        </td>
+                                                        <td className="px-3 py-2 font-mono text-xs">
+                                                            {row.mac_address || '—'}
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            {row.invalid_mac ? (
+                                                                <Badge variant="destructive">Invalid MAC</Badge>
+                                                            ) : row.registered ? (
+                                                                <Badge variant="default">Yes</Badge>
+                                                            ) : (
+                                                                <Badge variant="secondary">No</Badge>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            {row.static_tags.length > 0
+                                                                ? row.static_tags.join(', ')
+                                                                : '—'}
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            {row.client_name || '—'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : null}
+                                <DialogFooter>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={cnacMacCheckLoading}
+                                        onClick={() => setCnacMacCheckOpen(false)}
+                                    >
+                                        Close
+                                    </Button>
+                                </DialogFooter>
                             </DialogContent>
                         </Dialog>
                     </div>

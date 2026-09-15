@@ -23,6 +23,54 @@ class ClientDetailsLookupService
      */
     public function lookup(Client $client, string $serial, array $interfaces): array
     {
+        $resolved = $this->resolveInterfaceMacs($client, $serial, $interfaces);
+        $helper = new CentralAPIHelper($client);
+
+        $detailsByMac = [];
+        $rows = [];
+        $errors = $resolved['errors'];
+
+        foreach ($resolved['macTargets'] as $target) {
+            $mac = $target['macAddress'];
+            $interfaceName = $target['interface'];
+
+            if (! array_key_exists($mac, $detailsByMac)) {
+                $detailsByMac[$mac] = $this->fetchClientDetailsRow($helper, $mac);
+            }
+
+            $details = $detailsByMac[$mac];
+            if (array_key_exists('error', $details)) {
+                $errors[] = [
+                    'interface' => $interfaceName,
+                    'message' => (string) $details['error'],
+                ];
+
+                continue;
+            }
+
+            $rows[] = array_merge($details['row'], [
+                'macAddress' => $mac,
+                'interface' => $interfaceName,
+            ]);
+        }
+
+        return [
+            'rows' => $rows,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Resolve client MAC addresses for switch interfaces (neighbour fields or MAC address table).
+     *
+     * @param  list<array{name: string, neighbour?: string|null, neighbourSerial?: string|null}>  $interfaces
+     * @return array{
+     *     macTargets: list<array{interface: string, macAddress: string}>,
+     *     errors: list<array{interface: string, message: string}>
+     * }
+     */
+    public function resolveInterfaceMacs(Client $client, string $serial, array $interfaces): array
+    {
         $serial = trim($serial);
         $helper = new CentralAPIHelper($client);
 
@@ -107,35 +155,8 @@ class ClientDetailsLookupService
             }
         }
 
-        $detailsByMac = [];
-        $rows = [];
-
-        foreach ($macTargets as $target) {
-            $mac = $target['macAddress'];
-            $interfaceName = $target['interface'];
-
-            if (! array_key_exists($mac, $detailsByMac)) {
-                $detailsByMac[$mac] = $this->fetchClientDetailsRow($helper, $mac);
-            }
-
-            $details = $detailsByMac[$mac];
-            if (array_key_exists('error', $details)) {
-                $errors[] = [
-                    'interface' => $interfaceName,
-                    'message' => (string) $details['error'],
-                ];
-
-                continue;
-            }
-
-            $rows[] = array_merge($details['row'], [
-                'macAddress' => $mac,
-                'interface' => $interfaceName,
-            ]);
-        }
-
         return [
-            'rows' => $rows,
+            'macTargets' => $macTargets,
             'errors' => $errors,
         ];
     }

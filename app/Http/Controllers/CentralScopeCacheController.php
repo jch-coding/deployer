@@ -51,4 +51,25 @@ class CentralScopeCacheController extends Controller
 
         return back()->with('success', 'Central groups refreshed.');
     }
+
+    public function refreshMacRegistrations(Request $request, CentralScopeCacheService $centralScopeCacheService)
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            session()->flash('error', 'Please set current client to refresh Central NAC MAC registrations');
+
+            return to_route('clients.index');
+        }
+
+        $result = $centralScopeCacheService->refreshMacRegistrations($currentClient);
+
+        if ($result['error'] !== null) {
+            return back()->with('error', $result['error']);
+        }
+
+        $count = count($result['entries']);
+
+        return back()->with('success', "Central NAC MAC registrations refreshed ({$count} entries).");
+    }
 }

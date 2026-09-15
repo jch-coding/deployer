@@ -42,6 +42,7 @@ use App\Models\DeviceInterface;
 use App\Models\LicensingInventoryDevice;
 use App\Models\Site;
 use App\Models\Task;
+use App\Services\CentralScopeCacheService;
 use App\Services\DeploymentCriticalCheckService;
 use App\Services\DeviceCentralVerifier;
 use App\Services\EthernetInterfaceCentralVerifier;
@@ -58,6 +59,7 @@ use App\Services\Provisioning\ProvisioningWorkflowService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
 use App\Support\ClassicSiteTaskPayload;
+use App\Support\MacAddress;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -2174,6 +2176,125 @@ class TaskController extends Controller
         }
 
         return back();
+    }
+
+    public function checkCnacMacRegistrations(
+        Request $request,
+        Deployment $deployment,
+        CentralScopeCacheService $centralScopeCacheService,
+    ) {
+        $validated = $request->validate([
+            'device_ids' => ['nullable', 'array'],
+            'device_ids.*' => ['integer'],
+        ]);
+
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient || (int) $deployment->client_id !== (int) $currentClient->id) {
+            return response()->json([
+                'message' => 'Please set current client to match this deployment before checking CNAC MAC registrations.',
+            ], 403);
+        }
+
+        $deviceIds = array_values(array_unique(array_map(
+            static fn ($id): int => (int) $id,
+            $validated['device_ids'] ?? [],
+        )));
+
+        $devicesQuery = Device::query()->where('deployment_id', $deployment->id);
+        if ($deviceIds !== []) {
+            $devicesQuery->whereIn('id', $deviceIds);
+        }
+
+        $devices = $devicesQuery->orderBy('id')->get();
+        if ($devices->isEmpty()) {
+            return response()->json([
+                'message' => 'No devices are available to check.',
+            ], 422);
+        }
+
+        $cache = $centralScopeCacheService->ensureMacRegistrations($currentClient);
+        if ($cache['error'] !== null && $cache['entries'] === []) {
+            return response()->json([
+                'message' => $cache['error'],
+                'rows' => [],
+                'summary' => [
+                    'registered' => 0,
+                    'not_registered' => 0,
+                    'invalid_mac' => 0,
+                ],
+                'cache' => [
+                    'refreshed_at' => $cache['refreshed_at'],
+                    'error' => $cache['error'],
+                ],
+            ], 422);
+        }
+
+        $byMac = [];
+        foreach ($cache['entries'] as $entry) {
+            $byMac[$entry['mac_address']] = $entry;
+        }
+
+        $rows = [];
+        $registered = 0;
+        $notRegistered = 0;
+        $invalidMac = 0;
+
+        foreach ($devices as $device) {
+            $rawMac = (string) ($device->mac_address ?? '');
+            $normalized = MacAddress::normalize($rawMac);
+
+            if ($normalized === null) {
+                $invalidMac++;
+                $rows[] = [
+                    'device_id' => $device->id,
+                    'device_name' => (string) ($device->name ?? ''),
+                    'serial' => (string) ($device->serial ?? ''),
+                    'mac_address' => $rawMac,
+                    'registered' => false,
+                    'invalid_mac' => true,
+                    'client_name' => null,
+                    'enabled' => null,
+                    'static_tags' => [],
+                ];
+
+                continue;
+            }
+
+            $entry = $byMac[$normalized] ?? null;
+            $isRegistered = $entry !== null;
+            if ($isRegistered) {
+                $registered++;
+            } else {
+                $notRegistered++;
+            }
+
+            $rows[] = [
+                'device_id' => $device->id,
+                'device_name' => (string) ($device->name ?? ''),
+                'serial' => (string) ($device->serial ?? ''),
+                'mac_address' => $normalized,
+                'registered' => $isRegistered,
+                'invalid_mac' => false,
+                'client_name' => $isRegistered ? ($entry['client_name'] ?? '') : null,
+                'enabled' => $isRegistered ? ($entry['enabled'] ?? null) : null,
+                'static_tags' => $isRegistered
+                    ? (is_array($entry['static_tags'] ?? null) ? $entry['static_tags'] : [])
+                    : [],
+            ];
+        }
+
+        return response()->json([
+            'rows' => $rows,
+            'summary' => [
+                'registered' => $registered,
+                'not_registered' => $notRegistered,
+                'invalid_mac' => $invalidMac,
+            ],
+            'cache' => [
+                'refreshed_at' => $cache['refreshed_at'],
+                'error' => $cache['error'],
+            ],
+        ]);
     }
 
     public function checkCentralSites(Request $request, Deployment $deployment)

@@ -644,6 +644,95 @@ class DeviceDetailsController extends Controller
         ]);
     }
 
+    public function cnacMacCheck(
+        Request $request,
+        ClientDetailsLookupService $lookupService,
+        CentralScopeCacheService $centralScopeCacheService,
+    ): JsonResponse {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json([
+                'rows' => [],
+                'errors' => [],
+                'error' => 'Please set current client to check CNAC MAC registrations.',
+                'cache' => [
+                    'refreshed_at' => null,
+                    'error' => null,
+                ],
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'serial' => ['required', 'string', 'max:64'],
+            'interfaces' => ['required', 'array', 'min:1'],
+            'interfaces.*.name' => ['required', 'string', 'max:64'],
+            'interfaces.*.neighbour' => ['nullable', 'string', 'max:255'],
+            'interfaces.*.neighbourSerial' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $interfaces = array_map(
+            static fn (array $interface): array => [
+                'name' => trim((string) $interface['name']),
+                'neighbour' => trim((string) ($interface['neighbour'] ?? '')),
+                'neighbourSerial' => trim((string) ($interface['neighbourSerial'] ?? '')),
+            ],
+            $validated['interfaces'],
+        );
+
+        $resolved = $lookupService->resolveInterfaceMacs(
+            $currentClient,
+            trim($validated['serial']),
+            $interfaces,
+        );
+
+        $cache = $centralScopeCacheService->ensureMacRegistrations($currentClient);
+        if ($cache['error'] !== null && $cache['entries'] === []) {
+            return response()->json([
+                'rows' => [],
+                'errors' => $resolved['errors'],
+                'error' => $cache['error'],
+                'cache' => [
+                    'refreshed_at' => $cache['refreshed_at'],
+                    'error' => $cache['error'],
+                ],
+            ], 422);
+        }
+
+        $byMac = [];
+        foreach ($cache['entries'] as $entry) {
+            $byMac[$entry['mac_address']] = $entry;
+        }
+
+        $rows = [];
+        foreach ($resolved['macTargets'] as $target) {
+            $mac = $target['macAddress'];
+            $entry = $byMac[$mac] ?? null;
+            $isRegistered = $entry !== null;
+
+            $rows[] = [
+                'interface' => $target['interface'],
+                'macAddress' => $mac,
+                'registered' => $isRegistered,
+                'clientName' => $isRegistered ? ($entry['client_name'] ?? '') : null,
+                'enabled' => $isRegistered ? ($entry['enabled'] ?? null) : null,
+                'staticTags' => $isRegistered
+                    ? (is_array($entry['static_tags'] ?? null) ? $entry['static_tags'] : [])
+                    : [],
+            ];
+        }
+
+        return response()->json([
+            'rows' => $rows,
+            'errors' => $resolved['errors'],
+            'error' => null,
+            'cache' => [
+                'refreshed_at' => $cache['refreshed_at'],
+                'error' => $cache['error'],
+            ],
+        ]);
+    }
+
     public function reboot(Request $request): JsonResponse
     {
         $currentClient = $request->user()->currentClient();
