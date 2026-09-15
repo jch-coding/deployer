@@ -59,7 +59,11 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import AppLayout from '@/layouts/app-layout';
+
+const EMPTY_CNAC_MAC_CACHE: CentralScopeCacheMeta = {
+    refreshed_at: null,
+    error: null,
+};import AppLayout from '@/layouts/app-layout';
 import { index as clientsIndex } from '@/routes/clients';
 import {
     bulkMove,
@@ -280,7 +284,7 @@ type DeploymentPageProps = {
     classic_device_groups_error: string | null;
     central_sites_cache: CentralScopeCacheMeta;
     central_groups_cache: CentralScopeGroupsCacheMeta;
-    central_mac_registrations_cache: CentralScopeCacheMeta;
+    central_mac_registrations_cache?: CentralScopeCacheMeta;
 } & SharedData;
 export default function Show() {
     const {
@@ -366,7 +370,7 @@ export default function Show() {
         client_deployments = [],
         central_sites_cache,
         central_groups_cache,
-        central_mac_registrations_cache = { refreshed_at: null, error: null },
+        central_mac_registrations_cache,
     } = usePage<DeploymentPageProps>().props;
 
     const deviceTableColumns = useMemo(
@@ -800,7 +804,7 @@ export default function Show() {
                 }
                 central_mac_registrations_cache={
                     task.task_type === 'EXPORT_MAC_ADDRESSES_TO_CENTRAL'
-                        ? central_mac_registrations_cache
+                        ? (central_mac_registrations_cache ?? EMPTY_CNAC_MAC_CACHE)
                         : undefined
                 }
             />

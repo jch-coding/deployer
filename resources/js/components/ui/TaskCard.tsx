@@ -164,6 +164,11 @@ type CnacMacCheckResult = {
     cache: CentralScopeCacheMeta;
 };
 
+const EMPTY_CNAC_MAC_CACHE: CentralScopeCacheMeta = {
+    refreshed_at: null,
+    error: null,
+};
+
 const selectClassName =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
@@ -182,7 +187,7 @@ export default function TaskCard({
     cx_firmware_versions = [],
     central_firmware_error = null,
     deployment_sites = [],
-    central_mac_registrations_cache = { refreshed_at: null, error: null },
+    central_mac_registrations_cache = EMPTY_CNAC_MAC_CACHE,
 }: TaskCardProps) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [isLaunching, setIsLaunching] = useState(false)

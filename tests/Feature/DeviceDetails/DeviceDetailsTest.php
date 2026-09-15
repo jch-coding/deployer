@@ -1471,11 +1471,18 @@ OUTPUT;
             ], 200);
         }
 
-        if (str_contains($url, 'cnac-mac-reg/export')) {
-            return Http::response(
-                "MAC Address,Client Name,Enabled,Static Tags\nAA-BB-CC-DD-EE-FF,,true,\n",
-                200,
-            );
+        if (str_contains($url, 'cnac-mac-reg') && ! str_contains($url, '/export') && ! str_contains($url, '/import')) {
+            return Http::response([
+                'count' => 1,
+                'items' => [
+                    [
+                        'macAddress' => 'AA-BB-CC-DD-EE-FF',
+                        'displayName' => '',
+                        'enable' => true,
+                        'staticTags' => [],
+                    ],
+                ],
+            ], 200);
         }
 
         return Http::response([], 404);

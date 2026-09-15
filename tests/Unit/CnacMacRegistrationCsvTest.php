@@ -59,3 +59,74 @@ it('parses static tags with commas and whitespace', function () {
     expect(CnacMacRegistrationCsv::parseStaticTags(''))->toBe([])
         ->and(CnacMacRegistrationCsv::parseStaticTags(' A , B , '))->toBe(['A', 'B']);
 });
+
+it('parses camelCase export headers and BOM-prefixed CSV', function () {
+    $csv = "\xEF\xBB\xBFmacAddress,displayName,enable,staticTags\n"
+        ."AA-BB-CC-DD-EE-01,Lobby,true,\"TAG-A, TAG-B\"\n";
+
+    $result = CnacMacRegistrationCsv::parse($csv);
+
+    expect($result['error'])->toBeNull()
+        ->and($result['entries'])->toHaveCount(1)
+        ->and($result['entries'][0])->toMatchArray([
+            'mac_address' => 'aa:bb:cc:dd:ee:01',
+            'client_name' => 'Lobby',
+            'enabled' => true,
+            'static_tags' => ['TAG-A', 'TAG-B'],
+        ]);
+});
+
+it('unwraps JSON-encoded CSV string payloads', function () {
+    $inner = "MAC Address,Client Name,Enabled,Static Tags\nAA-BB-CC-DD-EE-02,,true,TAG\n";
+    $payload = json_encode($inner, JSON_THROW_ON_ERROR);
+
+    $result = CnacMacRegistrationCsv::parse($payload);
+
+    expect($result['error'])->toBeNull()
+        ->and($result['entries'])->toHaveCount(1)
+        ->and($result['entries'][0]['mac_address'])->toBe('aa:bb:cc:dd:ee:02');
+});
+
+it('parses JSON list export payloads with macAddress fields', function () {
+    $payload = json_encode([
+        'count' => 2,
+        'items' => [
+            [
+                'macAddress' => 'AA-BB-CC-DD-EE-01',
+                'displayName' => 'Lobby',
+                'enable' => true,
+                'staticTags' => ['TAG-A', 'TAG-B'],
+            ],
+            [
+                'macAddress' => '11:22:33:44:55:66',
+                'displayName' => '',
+                'enable' => false,
+                'staticTags' => [],
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    $result = CnacMacRegistrationCsv::parse($payload);
+
+    expect($result['error'])->toBeNull()
+        ->and($result['entries'])->toHaveCount(2)
+        ->and($result['entries'][0])->toMatchArray([
+            'mac_address' => 'aa:bb:cc:dd:ee:01',
+            'client_name' => 'Lobby',
+            'enabled' => true,
+            'static_tags' => ['TAG-A', 'TAG-B'],
+        ])
+        ->and($result['entries'][1])->toMatchArray([
+            'mac_address' => '11:22:33:44:55:66',
+            'client_name' => '',
+            'enabled' => false,
+            'static_tags' => [],
+        ]);
+});
+
+it('treats empty JSON items list as a successful empty export', function () {
+    $result = CnacMacRegistrationCsv::parse('{"count":0,"items":[]}');
+
+    expect($result['error'])->toBeNull()
+        ->and($result['entries'])->toBe([]);
+});

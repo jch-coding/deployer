@@ -20,11 +20,17 @@ beforeEach(function () {
 
 test('refresh mac registrations endpoint persists cache and redirects back with success', function () {
     Http::fake([
-        '*network-config/v1alpha1/cnac-mac-reg/export*' => Http::response(
-            "MAC Address,Client Name,Enabled,Static Tags\nAA-BB-CC-DD-EE-01,,true,TAG-A\n",
-            200,
-            ['Content-Type' => 'text/csv'],
-        ),
+        '*network-config/v1alpha1/cnac-mac-reg?*' => Http::response([
+            'count' => 1,
+            'items' => [
+                [
+                    'macAddress' => 'AA-BB-CC-DD-EE-01',
+                    'displayName' => '',
+                    'enable' => true,
+                    'staticTags' => ['TAG-A'],
+                ],
+            ],
+        ], 200),
     ]);
 
     $this->from(route('deployments.index'))
@@ -43,13 +49,13 @@ test('refresh mac registrations endpoint persists cache and redirects back with 
         ->and($cache->refreshed_at)->not->toBeNull();
 });
 
-test('refresh mac registrations endpoint flashes error when Central export fails', function () {
+test('refresh mac registrations endpoint flashes error when Central list fails', function () {
     Http::fake([
-        '*cnac-mac-reg/export*' => Http::response(['message' => 'export denied'], 403),
+        '*cnac-mac-reg?*' => Http::response(['message' => 'list denied'], 403),
     ]);
 
     $this->from(route('deployments.index'))
         ->post(route('central-scope-cache.mac-registrations.refresh'))
         ->assertRedirect(route('deployments.index'))
-        ->assertSessionHas('error', 'export denied');
+        ->assertSessionHas('error', 'list denied');
 });

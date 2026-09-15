@@ -78,10 +78,17 @@ test('check cnac mac registrations reports registered tags and unregistered devi
 
 test('check cnac mac registrations auto-refreshes when cache is empty', function () {
     Http::fake([
-        '*cnac-mac-reg/export*' => Http::response(
-            "MAC Address,Client Name,Enabled,Static Tags\nAA-BB-CC-DD-EE-01,,true,TAG-A\n",
-            200,
-        ),
+        '*cnac-mac-reg?*' => Http::response([
+            'count' => 1,
+            'items' => [
+                [
+                    'macAddress' => 'AA-BB-CC-DD-EE-01',
+                    'displayName' => '',
+                    'enable' => true,
+                    'staticTags' => ['TAG-A'],
+                ],
+            ],
+        ], 200),
     ]);
 
     $device = Device::factory()->create([

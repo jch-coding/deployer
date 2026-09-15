@@ -236,11 +236,12 @@ class CentralScopeCacheService
     public function refreshMacRegistrations(Client $client, ?CentralAPIHelper $centralHelper = null): array
     {
         $centralHelper ??= new CentralAPIHelper($client);
-        $export = $centralHelper->exportMacCsvFile();
+        // Export returns async job_id payloads; list returns the registration table.
+        $list = $centralHelper->listMacRegistrations();
         $refreshedAt = now();
 
-        if (($export['success'] ?? false) !== true) {
-            $error = (string) ($export['error'] ?? 'Central MAC CSV export failed.');
+        if (($list['success'] ?? false) !== true) {
+            $error = (string) ($list['error'] ?? 'Central MAC registration list failed.');
             $this->persistCache(
                 $client,
                 CentralScopeCacheType::MacRegistrations,
@@ -261,38 +262,20 @@ class CentralScopeCacheService
             ];
         }
 
-        $parsed = CnacMacRegistrationCsv::parse((string) ($export['csv'] ?? ''));
-        if ($parsed['error'] !== null) {
-            $this->persistCache(
-                $client,
-                CentralScopeCacheType::MacRegistrations,
-                [],
-                $refreshedAt,
-                $parsed['error'],
-            );
-
-            Log::warning('Failed to parse Central NAC MAC registrations CSV.', [
-                'client_id' => $client->id,
-                'error' => $parsed['error'],
-            ]);
-
-            return [
-                'entries' => [],
-                'error' => $parsed['error'],
-                'refreshed_at' => $refreshedAt->toIso8601String(),
-            ];
-        }
+        $entries = CnacMacRegistrationCsv::entriesFromJsonItems(
+            is_array($list['items'] ?? null) ? $list['items'] : [],
+        );
 
         $this->persistCache(
             $client,
             CentralScopeCacheType::MacRegistrations,
-            $parsed['entries'],
+            $entries,
             $refreshedAt,
             null,
         );
 
         return [
-            'entries' => $parsed['entries'],
+            'entries' => $entries,
             'error' => null,
             'refreshed_at' => $refreshedAt->toIso8601String(),
         ];

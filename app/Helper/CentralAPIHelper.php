@@ -111,6 +111,7 @@ class CentralAPIHelper
     ];
 
     public array $central_nac = [
+        'mac_reg_list' => 'network-config/v1alpha1/cnac-mac-reg',
         'mac_reg_import' => 'network-config/v1alpha1/cnac-mac-reg/import',
         'mac_reg_export' => 'network-config/v1alpha1/cnac-mac-reg/export',
     ];
@@ -4871,7 +4872,73 @@ class CentralAPIHelper
     }
 
     /**
+     * List all Central NAC MAC registrations (paginated).
+     *
+     * Prefer this over export: GET .../cnac-mac-reg/export returns an async
+     * { "job_id": [...] } payload rather than the registration table.
+     *
+     * @return array{success: true, items: list<array<string, mixed>>}|array{success: false, error: string}
+     */
+    public function listMacRegistrations(): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['success' => false, 'error' => 'failed to get access token from central.'];
+        }
+
+        $limit = 1000;
+        $next = null;
+        $items = [];
+        $maxPages = 100;
+
+        try {
+            for ($page = 0; $page < $maxPages; $page++) {
+                $query = ['limit' => $limit];
+                if ($next !== null && $next !== '') {
+                    $query['next'] = $next;
+                }
+
+                $response = Http::withToken($this->client->bearer_token)
+                    ->withQueryParameters($query)
+                    ->get($this->client->base_url.$this->central_nac['mac_reg_list']);
+
+                if (! $response->ok()) {
+                    $message = (string) ($response->json('message') ?? $response->body());
+
+                    return [
+                        'success' => false,
+                        'error' => $message !== '' ? $message : 'Central MAC registration list failed.',
+                    ];
+                }
+
+                $pageItems = $response->json('items');
+                if (! is_array($pageItems)) {
+                    $pageItems = $response->json('macs');
+                }
+                if (! is_array($pageItems)) {
+                    $pageItems = [];
+                }
+
+                $items = array_merge($items, $pageItems);
+
+                $next = $response->json('next');
+                if ($next === null || $next === '') {
+                    break;
+                }
+            }
+        } catch (RequestException|ConnectionException $e) {
+            Log::error('Central MAC registration list request failed: '.$e->getMessage());
+
+            return ['success' => false, 'error' => 'Central MAC registration list request failed.'];
+        }
+
+        return ['success' => true, 'items' => array_values($items)];
+    }
+
+    /**
      * Export the MAC registration CSV from Central NAC.
+     *
+     * Note: live Central often returns an async { "job_id": [...] } payload instead of
+     * the CSV body. Prefer {@see listMacRegistrations()} for cache refresh.
      *
      * @return array{success: true, csv: string}|array{success: false, error: string}
      */
@@ -4883,6 +4950,10 @@ class CentralAPIHelper
 
         try {
             $response = Http::withToken($this->client->bearer_token)
+                ->withHeaders([
+                    // Prefer raw CSV; Central docs mark this endpoint as binary download.
+                    'Accept' => 'text/csv, application/octet-stream, application/json',
+                ])
                 ->get($this->client->base_url.$this->central_nac['mac_reg_export']);
         } catch (RequestException|ConnectionException $e) {
             Log::error('Central MAC CSV export request failed: '.$e->getMessage());
@@ -4899,7 +4970,26 @@ class CentralAPIHelper
             ];
         }
 
-        return ['success' => true, 'csv' => $response->body()];
+        $csv = $response->body();
+        $decoded = $response->json();
+        if (is_array($decoded) && (isset($decoded['job_id']) || isset($decoded['jobid']))) {
+            return [
+                'success' => false,
+                'error' => 'Central MAC CSV export returned a job id instead of the registration table. Use the MAC list API instead.',
+            ];
+        }
+
+        $contentType = strtolower((string) $response->header('Content-Type'));
+
+        // Export is documented as application/json binary. Prefer the raw body for the
+        // parser, which understands both CSV and JSON { items: [...] } list shapes.
+        if (str_contains($contentType, 'json') || str_starts_with(ltrim($csv), '"')) {
+            if (is_string($decoded) && $decoded !== '') {
+                $csv = $decoded;
+            }
+        }
+
+        return ['success' => true, 'csv' => $csv];
     }
 
     protected function isSuccessfulCentralResponse(mixed $response): bool
