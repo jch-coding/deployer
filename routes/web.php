@@ -123,6 +123,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/device-details/bssids', 'bssids')->name('device-details.bssids');
         Route::post('/device-details/neighbours', 'neighbours')->name('device-details.neighbours');
         Route::post('/device-details/client-details', 'clientDetails')->name('device-details.client-details');
+        Route::post('/device-details/cnac-mac-check', 'cnacMacCheck')->name('device-details.cnac-mac-check');
         Route::post('/device-details/reboot', 'reboot')->name('device-details.reboot');
         Route::post('/device-details/site-bssids', 'siteBssids')->name('device-details.site-bssids');
         Route::get('/device-details/deployments', 'deployments')->name('device-details.deployments');
@@ -133,6 +134,7 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(CentralScopeCacheController::class)->group(function () {
         Route::post('/central-scope-cache/sites/refresh', 'refreshSites')->name('central-scope-cache.sites.refresh');
         Route::post('/central-scope-cache/groups/refresh', 'refreshGroups')->name('central-scope-cache.groups.refresh');
+        Route::post('/central-scope-cache/mac-registrations/refresh', 'refreshMacRegistrations')->name('central-scope-cache.mac-registrations.refresh');
     });
 
     Route::controller(LicensingController::class)->group(function () {
@@ -193,6 +195,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/tasks/{task}/remediation-check/step/{step}', 'remediationCheckStep')->name('tasks.remediation_check.step');
         Route::post('/tasks/deployment/{deployment}/check-central-group', 'checkCentralGroup')->name('tasks.check_central_group');
         Route::post('/tasks/deployment/{deployment}/check-central-sites', 'checkCentralSites')->name('tasks.check_central_sites');
+        Route::post('/tasks/deployment/{deployment}/check-cnac-mac-registrations', 'checkCnacMacRegistrations')->name('tasks.check_cnac_mac_registrations');
         Route::post('/tasks/deployment/{deployment}/check-lag-port-lists', 'checkLagPortLists')->name('tasks.check_lag_port_lists');
         Route::post('/tasks/deployment/{deployment}/check-vlan-ip-addresses', 'checkVlanIpAddresses')->name('tasks.check_vlan_ip_addresses');
         Route::get('/tasks/deployment/{deployment}/check-greenlake-inventory/step/{step}', 'checkGreenLakeInventoryStep')->name('tasks.check_greenlake_inventory.step');

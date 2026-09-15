@@ -280,6 +280,7 @@ type DeploymentPageProps = {
     classic_device_groups_error: string | null;
     central_sites_cache: CentralScopeCacheMeta;
     central_groups_cache: CentralScopeGroupsCacheMeta;
+    central_mac_registrations_cache: CentralScopeCacheMeta;
 } & SharedData;
 export default function Show() {
     const {
@@ -365,6 +366,7 @@ export default function Show() {
         client_deployments = [],
         central_sites_cache,
         central_groups_cache,
+        central_mac_registrations_cache = { refreshed_at: null, error: null },
     } = usePage<DeploymentPageProps>().props;
 
     const deviceTableColumns = useMemo(
@@ -794,6 +796,11 @@ export default function Show() {
                     task.task_type === 'CREATE_SITE' ||
                     task.task_type === 'UPDATE_SITE'
                         ? deploymentSites
+                        : undefined
+                }
+                central_mac_registrations_cache={
+                    task.task_type === 'EXPORT_MAC_ADDRESSES_TO_CENTRAL'
+                        ? central_mac_registrations_cache
                         : undefined
                 }
             />
