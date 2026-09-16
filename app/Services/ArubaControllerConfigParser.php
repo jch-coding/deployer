@@ -4,7 +4,7 @@ namespace App\Services;
 
 class ArubaControllerConfigParser
 {
-    private const AP_ROW_PATTERN = '/^(\S+)\s+(\S+)\s+.*?([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s+(\S+)/i';
+    private const AP_ROW_PATTERN = '/^(\S+)\s+(\S+)\s+.*?(\d{1,3}(?:\.\d{1,3}){3})\s+.*?([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s+(\S+)/i';
 
     private const LLDP_ROW_PATTERN = '/^(\S+)\s+\S+\s+\d+\s+(\S+)\s+(\S+)\s+/';
 
@@ -156,7 +156,7 @@ class ArubaControllerConfigParser
     /**
      * @return array{
      *     controller_name: string,
-     *     devices: array<int, array{name: string, serial: string, mac: string, group: string}>,
+     *     devices: array<int, array{name: string, serial: string, mac: string, group: string, controller_joined_ip: string}>,
      *     lldp_neighbors: array<int, array{switch: string, ports: array<int, string>}>,
      *     auth_servers: array<int, array{
      *         name: string,
@@ -265,7 +265,7 @@ class ArubaControllerConfigParser
     }
 
     /**
-     * @return array<int, array{name: string, serial: string, mac: string, group: string}>
+     * @return array<int, array{name: string, serial: string, mac: string, group: string, controller_joined_ip: string}>
      */
     private function parseApDatabase(string $content): array
     {
@@ -290,7 +290,7 @@ class ArubaControllerConfigParser
             }
 
             if (preg_match(self::AP_ROW_PATTERN, $line, $match)) {
-                $serial = $match[4];
+                $serial = $match[5];
 
                 if (isset($seenSerials[$serial])) {
                     continue;
@@ -300,7 +300,8 @@ class ArubaControllerConfigParser
                 $devices[] = [
                     'name' => $match[1],
                     'group' => $match[2],
-                    'mac' => strtolower($match[3]),
+                    'controller_joined_ip' => $match[3],
+                    'mac' => strtolower($match[4]),
                     'serial' => $serial,
                 ];
             }

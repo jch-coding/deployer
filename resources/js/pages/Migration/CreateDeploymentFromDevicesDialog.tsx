@@ -173,6 +173,7 @@ export default function CreateDeploymentFromDevicesDialog({
                     name: device.name,
                     serial: device.serial,
                     mac_address: device.mac || null,
+                    controller_joined_ip: device.controller_joined_ip || null,
                     site: assignments[device.serial]?.site ?? null,
                     group: assignments[device.serial]?.group ?? null,
                 })),

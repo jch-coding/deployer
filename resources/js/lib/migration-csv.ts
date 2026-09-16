@@ -4,6 +4,7 @@ export type MigrationDevice = {
     mac: string;
     group?: string;
     controller?: string;
+    controller_joined_ip?: string;
 };
 
 export type MigrationLldpNeighbor = {
@@ -58,10 +59,17 @@ export function downloadMigrationDevicesCsv(
     const includeGroupColumn = devices.some(
         (device) => device.group !== undefined && device.group !== '',
     );
+    const includeControllerJoinedIpColumn = devices.some(
+        (device) =>
+            device.controller_joined_ip !== undefined && device.controller_joined_ip !== '',
+    );
 
     const headers = ['name', 'serial', 'mac'];
     if (includeGroupColumn) {
         headers.push('group');
+    }
+    if (includeControllerJoinedIpColumn) {
+        headers.push('controller_joined_ip');
     }
     if (includeControllerColumn) {
         headers.push('controller');
@@ -74,6 +82,9 @@ export function downloadMigrationDevicesCsv(
             const row = [device.name, device.serial, device.mac];
             if (includeGroupColumn) {
                 row.push(device.group ?? '');
+            }
+            if (includeControllerJoinedIpColumn) {
+                row.push(device.controller_joined_ip ?? '');
             }
             if (includeControllerColumn) {
                 row.push(device.controller ?? '');

@@ -33,6 +33,7 @@ it('parses ap device fields from daytona fixture', function () {
     expect($first)->toMatchArray([
         'name' => 'DAY-H-IDF02-021',
         'group' => 'DAY-Hub-AGV',
+        'controller_joined_ip' => '10.44.30.27',
         'mac' => '50:e4:e0:c3:bb:6a',
         'serial' => 'PHS2KD006J',
     ]);

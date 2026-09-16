@@ -133,6 +133,7 @@ class MigrationController extends Controller
                         }
                     },
                 ],
+                'devices.*.controller_joined_ip' => ['nullable', 'ip'],
                 'devices.*.site' => ['nullable', 'string', 'max:255'],
                 'devices.*.group' => ['nullable', 'string', 'max:255'],
                 'parsed_controllers' => ['sometimes', 'array'],
@@ -166,6 +167,9 @@ class MigrationController extends Controller
                     'user_id' => $user->id,
                     'deployment_id' => $deployment->id,
                     'mac_address' => $normalizedMac,
+                    'controller_joined_ip' => filled($devicePayload['controller_joined_ip'] ?? null)
+                        ? $devicePayload['controller_joined_ip']
+                        : null,
                     'group' => filled($devicePayload['group'] ?? null)
                         ? $devicePayload['group']
                         : null,

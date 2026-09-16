@@ -58,6 +58,7 @@ it('includes site and group on devices and central scope options', function () {
         'site_id' => $site->id,
         'group' => 'Edge Switches',
         'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'controller_joined_ip' => '10.44.30.27',
     ]);
 
     $this->actingAs($this->user)
@@ -69,6 +70,7 @@ it('includes site and group on devices and central scope options', function () {
             ->where('devices.0.site', 'Warehouse')
             ->where('devices.0.group', 'Edge Switches')
             ->where('devices.0.mac_address', 'aa:bb:cc:dd:ee:ff')
+            ->where('devices.0.controller_joined_ip', '10.44.30.27')
             ->where('central_sites_error', null)
             ->where('central_device_groups_error', null)
             ->has('central_sites', 1)

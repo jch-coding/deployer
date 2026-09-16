@@ -46,6 +46,7 @@ export type DeviceDef = {
     in_greenlake_inventory?: boolean;
     device_function: string;
     mac_address?: string | null;
+    controller_joined_ip?: string | null;
     site?: string | null;
     group?: string | null;
     interfaces?: {
@@ -63,6 +64,7 @@ type DeploymentShowColumnOptions = {
     deviceGroupOptions: CentralScopeOption[];
     centralSitesError: string | null;
     centralDeviceGroupsError: string | null;
+    showControllerJoinedIp?: boolean;
 };
 
 function EditableDeviceNameCell({ id, name }: { id: number; name: string }) {
@@ -413,7 +415,7 @@ const interfacesColumn: ColumnDef<DeviceDef> = {
 export function createDeploymentShowColumns(
     options: DeploymentShowColumnOptions,
 ): ColumnDef<DeviceDef>[] {
-    return [
+    const columns: ColumnDef<DeviceDef>[] = [
         deploymentShowSelectColumn,
         ...sharedDeviceColumns.slice(0, 2),
         {
@@ -425,6 +427,21 @@ export function createDeploymentShowColumns(
                 </span>
             ),
         },
+    ];
+
+    if (options.showControllerJoinedIp) {
+        columns.push({
+            accessorKey: 'controller_joined_ip',
+            header: 'Controller Joined IP',
+            cell: ({ row }) => (
+                <span className="font-mono text-sm">
+                    {row.original.controller_joined_ip ?? ''}
+                </span>
+            ),
+        });
+    }
+
+    columns.push(
         {
             accessorKey: 'model',
             header: 'Model',
@@ -459,7 +476,9 @@ export function createDeploymentShowColumns(
             ),
         },
         deviceActionsColumn,
-    ];
+    );
+
+    return columns;
 }
 
 export const columns: ColumnDef<DeviceDef>[] = [

@@ -37,6 +37,7 @@ function migrationCreateDeploymentPayload(array $overrides = []): array
                 'name' => 'AP-Lobby-01',
                 'serial' => 'CN1234567890',
                 'mac_address' => 'aa:bb:cc:dd:ee:01',
+                'controller_joined_ip' => '10.44.30.27',
                 'site' => 'Central Site',
                 'group' => 'Central Group',
             ],
@@ -44,6 +45,7 @@ function migrationCreateDeploymentPayload(array $overrides = []): array
                 'name' => 'AP-Lobby-02',
                 'serial' => 'CN1234567891',
                 'mac_address' => 'aa-bb-cc-dd-ee-02',
+                'controller_joined_ip' => null,
                 'site' => null,
                 'group' => null,
             ],
@@ -101,6 +103,7 @@ test('create deployment creates deployment and campus ap devices for current cli
         ->and($first->name)->toBe('AP-Lobby-01')
         ->and($first->device_function)->toBe(DeviceFunction::CAMPUS_AP->name)
         ->and($first->mac_address)->toBe('aa:bb:cc:dd:ee:01')
+        ->and($first->controller_joined_ip)->toBe('10.44.30.27')
         ->and($first->group)->toBe('Central Group')
         ->and($first->deployment_id)->toBe($deployment->id)
         ->and($first->client_id)->toBe($this->client->id)
@@ -113,6 +116,7 @@ test('create deployment creates deployment and campus ap devices for current cli
     expect($second)->not->toBeNull()
         ->and($second->device_function)->toBe(DeviceFunction::CAMPUS_AP->name)
         ->and($second->mac_address)->toBe('aa:bb:cc:dd:ee:02')
+        ->and($second->controller_joined_ip)->toBeNull()
         ->and($second->group)->toBeNull()
         ->and($second->site_id)->toBeNull()
         ->and($second->deployment_id)->toBe($deployment->id);
@@ -185,6 +189,7 @@ test('create deployment upserts existing device by serial for the user', functio
                 'name' => 'AP-Lobby-01',
                 'serial' => 'CN1234567890',
                 'mac_address' => 'aa:bb:cc:dd:ee:01',
+                'controller_joined_ip' => '10.44.30.27',
                 'site' => 'Central Site',
                 'group' => 'Central Group',
             ],
@@ -205,6 +210,7 @@ test('create deployment upserts existing device by serial for the user', functio
         ->and($existing->device_function)->toBe(DeviceFunction::CAMPUS_AP->name)
         ->and($existing->deployment_id)->toBe($newDeployment->id)
         ->and($existing->mac_address)->toBe('aa:bb:cc:dd:ee:01')
+        ->and($existing->controller_joined_ip)->toBe('10.44.30.27')
         ->and($existing->group)->toBe('Central Group');
 });
 

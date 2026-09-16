@@ -107,6 +107,7 @@ class DeploymentController extends Controller
                 'in_greenlake_inventory' => $inventoryModelsBySerial->has($device->serial),
                 'device_function' => $device->device_function,
                 'mac_address' => $device->mac_address,
+                'controller_joined_ip' => $device->controller_joined_ip,
                 'site' => $device->site?->name,
                 'group' => $device->group,
             ])
