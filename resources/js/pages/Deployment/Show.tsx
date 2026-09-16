@@ -381,12 +381,18 @@ export default function Show() {
                 deviceGroupOptions: device_group_options,
                 centralSitesError: central_sites_error,
                 centralDeviceGroupsError: central_device_groups_error,
+                showControllerJoinedIp: devices.some(
+                    (device) =>
+                        typeof device.controller_joined_ip === 'string' &&
+                        device.controller_joined_ip.trim() !== '',
+                ),
             }),
         [
             central_sites,
             device_group_options,
             central_sites_error,
             central_device_groups_error,
+            devices,
         ],
     );
 
