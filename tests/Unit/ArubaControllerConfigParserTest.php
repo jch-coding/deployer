@@ -509,6 +509,39 @@ CONFIG;
         ->and($profile['body']['personal-security']['wpa-passphrase'])->toBe('sae-passphrase-123');
 });
 
+it('includes passphrase for unmapped opmode containing -psk-', function () {
+    $content = <<<'CONFIG'
+(WLC-PSK) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-PSK-001       default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERPSK001   N/A   N/A   N/A
+
+(WLC-PSK) #show running-config
+wlan ssid-profile "PSK_ssid_prof"
+    essid "PskSsid"
+    wpa-passphrase "unmapped-psk-passphrase"
+    opmode wpa2-psk-tkip
+!
+wlan virtual-ap "PSK"
+    vlan DAYKIT
+    ssid-profile "PSK_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "PSK"
+!
+CONFIG;
+
+    $parser = new ArubaControllerConfigParser;
+    $profile = $parser->parse($content)[0]['wlan_profiles'][0];
+
+    expect($profile['body']['opmode'])->toBe('WPA2_PERSONAL')
+        ->and($profile['body']['personal-security']['wpa-passphrase'])->toBe('unmapped-psk-passphrase')
+        ->and($profile['body'])->not->toHaveKey('dot1x')
+        ->and($profile['warnings'])->toContain('Unmapped opmode: wpa2-psk-tkip');
+});
+
 it('parses multiple controller blocks with isolated data', function () {
     $content = <<<'CONFIG'
 (WLC-ONE) #show ap database long

@@ -1881,9 +1881,15 @@ class ArubaControllerConfigParser
     private function isPersonalOpmodePath(array $tokens): bool
     {
         foreach ($tokens as $token) {
-            if (! in_array($token, self::PERSONAL_OPMODE_TOKENS, true)) {
-                return false;
+            if (in_array($token, self::PERSONAL_OPMODE_TOKENS, true)) {
+                continue;
             }
+
+            if (str_contains(strtolower($token), '-psk-')) {
+                continue;
+            }
+
+            return false;
         }
 
         return true;
