@@ -389,7 +389,8 @@ it('maps personal opmode wpa2-psk-aes to WPA2_PERSONAL', function () {
     $daykit = collect($profiles)->firstWhere('ssid_profile_name', 'DAYKIT');
 
     expect($daykit['body']['opmode'])->toBe('WPA2_PERSONAL')
-        ->and($daykit['body'])->toHaveKey('personal-security');
+        ->and($daykit['body'])->toHaveKey('personal-security')
+        ->and($daykit['warnings'])->not->toContain('deprecated opmode found: wpa2-psk-aes');
 });
 
 it('maps opensystem to OPEN without personal-security', function () {
@@ -539,7 +540,8 @@ CONFIG;
     expect($profile['body']['opmode'])->toBe('WPA2_PERSONAL')
         ->and($profile['body']['personal-security']['wpa-passphrase'])->toBe('unmapped-psk-passphrase')
         ->and($profile['body'])->not->toHaveKey('dot1x')
-        ->and($profile['warnings'])->toContain('Unmapped opmode: wpa2-psk-tkip');
+        ->and($profile['warnings'])->toContain('Unmapped opmode: wpa2-psk-tkip')
+        ->and($profile['warnings'])->toContain('deprecated opmode found: wpa2-psk-tkip');
 });
 
 it('parses multiple controller blocks with isolated data', function () {

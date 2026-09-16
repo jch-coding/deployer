@@ -2135,6 +2135,15 @@ class ArubaControllerConfigParser
             $warnings[] = 'Missing wpa-passphrase';
         }
 
+        if ($security['mode'] === 'personal' && $ssidData['opmode_tokens'] !== []) {
+            foreach ($ssidData['opmode_tokens'] as $token) {
+                if (! in_array($token, self::PERSONAL_OPMODE_TOKENS, true)) {
+                    $warnings[] = 'deprecated opmode found: '.implode(' ', $ssidData['opmode_tokens']);
+                    break;
+                }
+            }
+        }
+
         if ($security['unmapped_opmode']) {
             $warnings[] = 'Unmapped opmode: '.implode(' ', $ssidData['opmode_tokens']);
         }
