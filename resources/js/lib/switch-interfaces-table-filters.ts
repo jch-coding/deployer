@@ -127,3 +127,23 @@ export function filterSwitchInterfacesBySearchAll<T extends SwitchInterfaceRow>(
 ): T[] {
     return interfaces.filter((iface) => matchesSwitchInterfaceSearchAll(iface, query));
 }
+
+/** Sorted unique neighbourFunction values across devices (page-level filter options). */
+export function collectUniqueNeighbourFunctions(
+    devices: ReadonlyArray<{ interfaces: SwitchInterfaceRow[] }>,
+): string[] {
+    return uniqueSortedValues(
+        devices.flatMap((device) =>
+            device.interfaces.map((iface) => iface.neighbourFunction),
+        ),
+    );
+}
+
+export function filterSwitchInterfacesByNeighbourFunction<T extends SwitchInterfaceRow>(
+    interfaces: T[],
+    neighbourFunction: string,
+): T[] {
+    return interfaces.filter((iface) =>
+        matchesSwitchInterfaceExactFilter(iface.neighbourFunction, neighbourFunction),
+    );
+}

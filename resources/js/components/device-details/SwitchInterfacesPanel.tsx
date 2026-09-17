@@ -30,6 +30,7 @@ import {
     buildSwitchInterfaceFilterOptions,
     emptySwitchInterfacesTableFilters,
     filterSwitchInterfaces,
+    filterSwitchInterfacesByNeighbourFunction,
     filterSwitchInterfacesBySearchAll,
     hasActiveSwitchInterfacesTableFilters,
     type SwitchInterfacesTableFilters,
@@ -173,6 +174,7 @@ const filterFields: {
 type SwitchInterfacesPanelProps = {
     switchDetails: SwitchDetailsPayload;
     searchQuery?: string;
+    neighbourFunctionFilter?: string;
     snapshotMode?: boolean;
     capturedAt?: string | null;
 };
@@ -180,6 +182,7 @@ type SwitchInterfacesPanelProps = {
 export default function SwitchInterfacesPanel({
     switchDetails,
     searchQuery = '',
+    neighbourFunctionFilter = '',
     snapshotMode = false,
     capturedAt = null,
 }: SwitchInterfacesPanelProps) {
@@ -231,14 +234,23 @@ export default function SwitchInterfacesPanel({
         [interfaces, searchQuery],
     );
 
+    const pageFilteredInterfaces = useMemo(
+        () =>
+            filterSwitchInterfacesByNeighbourFunction(
+                searchFilteredInterfaces,
+                neighbourFunctionFilter,
+            ),
+        [neighbourFunctionFilter, searchFilteredInterfaces],
+    );
+
     const filterOptions = useMemo(
-        () => buildSwitchInterfaceFilterOptions(searchFilteredInterfaces),
-        [searchFilteredInterfaces],
+        () => buildSwitchInterfaceFilterOptions(pageFilteredInterfaces),
+        [pageFilteredInterfaces],
     );
 
     const filteredInterfaces = useMemo(
-        () => filterSwitchInterfaces(searchFilteredInterfaces, tableFilters),
-        [searchFilteredInterfaces, tableFilters],
+        () => filterSwitchInterfaces(pageFilteredInterfaces, tableFilters),
+        [pageFilteredInterfaces, tableFilters],
     );
 
     const hasActiveTableFilters = useMemo(
@@ -248,7 +260,7 @@ export default function SwitchInterfacesPanel({
 
     useEffect(() => {
         setPageIndex(0);
-    }, [tableFilters, pageSize, interfaces, searchQuery]);
+    }, [tableFilters, pageSize, interfaces, searchQuery, neighbourFunctionFilter]);
 
     useEffect(() => {
         setCompareResult(null);

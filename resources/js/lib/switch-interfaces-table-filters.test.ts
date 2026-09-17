@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { SwitchInterfaceRow } from '@/lib/switch-interfaces-csv';
 import {
+    collectUniqueNeighbourFunctions,
+    filterSwitchInterfacesByNeighbourFunction,
     filterSwitchInterfacesBySearchAll,
     matchesSwitchInterfaceSearchAll,
 } from './switch-interfaces-table-filters';
@@ -90,5 +92,66 @@ describe('filterSwitchInterfacesBySearchAll', () => {
             'c',
         ]);
         expect(filterSwitchInterfacesBySearchAll(rows, 'nope')).toEqual([]);
+    });
+});
+
+describe('collectUniqueNeighbourFunctions', () => {
+    it('returns sorted unique non-empty neighbourFunction values across devices', () => {
+        const devices = [
+            {
+                interfaces: [
+                    makeRow({ neighbourFunction: 'AP' }),
+                    makeRow({ neighbourFunction: 'CAMPUS' }),
+                    makeRow({ neighbourFunction: '' }),
+                    makeRow({ neighbourFunction: '   ' }),
+                ],
+            },
+            {
+                interfaces: [
+                    makeRow({ neighbourFunction: 'AP' }),
+                    makeRow({ neighbourFunction: 'GATEWAY' }),
+                ],
+            },
+        ];
+
+        expect(collectUniqueNeighbourFunctions(devices)).toEqual([
+            'AP',
+            'CAMPUS',
+            'GATEWAY',
+        ]);
+    });
+
+    it('returns an empty list when no devices have neighbour functions', () => {
+        expect(collectUniqueNeighbourFunctions([])).toEqual([]);
+        expect(
+            collectUniqueNeighbourFunctions([
+                { interfaces: [makeRow({ neighbourFunction: '' })] },
+            ]),
+        ).toEqual([]);
+    });
+});
+
+describe('filterSwitchInterfacesByNeighbourFunction', () => {
+    it('returns all interfaces when the filter is empty or whitespace', () => {
+        const rows = [
+            makeRow({ name: 'a', neighbourFunction: 'AP' }),
+            makeRow({ name: 'b', neighbourFunction: 'CAMPUS' }),
+        ];
+
+        expect(filterSwitchInterfacesByNeighbourFunction(rows, '')).toEqual(rows);
+        expect(filterSwitchInterfacesByNeighbourFunction(rows, '   ')).toEqual(rows);
+    });
+
+    it('exact-matches neighbourFunction', () => {
+        const rows = [
+            makeRow({ name: 'a', neighbourFunction: 'AP' }),
+            makeRow({ name: 'b', neighbourFunction: 'CAMPUS' }),
+            makeRow({ name: 'c', neighbourFunction: 'AP' }),
+        ];
+
+        expect(
+            filterSwitchInterfacesByNeighbourFunction(rows, 'AP').map((r) => r.name),
+        ).toEqual(['a', 'c']);
+        expect(filterSwitchInterfacesByNeighbourFunction(rows, 'GATEWAY')).toEqual([]);
     });
 });

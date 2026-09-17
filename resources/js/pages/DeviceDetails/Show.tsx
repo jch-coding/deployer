@@ -16,8 +16,12 @@ import { csrfHeaders } from '@/lib/csrf';
 import { clearMacAddressTableCache } from '@/lib/mac-address-table-cache';
 import { clearDatapathSessionTableCache } from '@/lib/datapath-session-table-cache';
 import { formatDeviceTitle } from '@/lib/device-label';
-import { downloadAllSwitchInterfacesCsv } from '@/lib/switch-interfaces-csv';
-import { filterSwitchInterfacesBySearchAll } from '@/lib/switch-interfaces-table-filters';
+import { downloadAllSwitchInterfacesCsv, type SwitchInterfaceRow } from '@/lib/switch-interfaces-csv';
+import {
+    collectUniqueNeighbourFunctions,
+    filterSwitchInterfacesByNeighbourFunction,
+    filterSwitchInterfacesBySearchAll,
+} from '@/lib/switch-interfaces-table-filters';
 import { isAccessPointDevice } from '@/lib/is-access-point';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as deviceDetailsIndex } from '@/routes/device-details';
@@ -53,6 +57,20 @@ function isAccessPoint(device: DeviceDetailsPayload): boolean {
     return isAccessPointDevice(device);
 }
 
+function filterInterfacesForPage(
+    interfaces: SwitchInterfaceRow[],
+    searchQuery: string,
+    neighbourFunction: string,
+): SwitchInterfaceRow[] {
+    return filterSwitchInterfacesByNeighbourFunction(
+        filterSwitchInterfacesBySearchAll(interfaces, searchQuery),
+        neighbourFunction,
+    );
+}
+
+const neighbourFunctionSelectClassName =
+    'h-9 w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
+
 export default function Show() {
     const {
         current_client,
@@ -60,6 +78,7 @@ export default function Show() {
         snapshot_summaries: initialSnapshotSummaries = [],
     } = usePage<DeviceDetailsShowProps>().props;
     const [searchAllQuery, setSearchAllQuery] = useState('');
+    const [neighbourFunctionFilter, setNeighbourFunctionFilter] = useState('');
     const [snapshotSummaries, setSnapshotSummaries] = useState<SnapshotSummary[]>(
         initialSnapshotSummaries,
     );
@@ -68,6 +87,8 @@ export default function Show() {
     const [snapshotLoading, setSnapshotLoading] = useState(false);
     const [snapshotDevices, setSnapshotDevices] = useState<SnapshotDevice[]>([]);
     const [snapshotSearchAllQuery, setSnapshotSearchAllQuery] = useState('');
+    const [snapshotNeighbourFunctionFilter, setSnapshotNeighbourFunctionFilter] =
+        useState('');
     const [snapshotError, setSnapshotError] = useState<string | null>(null);
 
     const clientCacheKey = String(current_client?.id ?? 'none');
@@ -88,6 +109,7 @@ export default function Show() {
         setSnapshotsVisible(false);
         setSnapshotDevices([]);
         setSnapshotSearchAllQuery('');
+        setSnapshotNeighbourFunctionFilter('');
         setSnapshotError(null);
     }, [clientCacheKey]);
 
@@ -109,9 +131,25 @@ export default function Show() {
     );
 
     const hasActiveSearchAll = searchAllQuery.trim() !== '';
+    const hasActiveNeighbourFunctionFilter = neighbourFunctionFilter.trim() !== '';
+    const hasActivePageFilters = hasActiveSearchAll || hasActiveNeighbourFunctionFilter;
+
+    const neighbourFunctionOptions = useMemo(
+        () => collectUniqueNeighbourFunctions(switches),
+        [switches],
+    );
+
+    useEffect(() => {
+        if (
+            neighbourFunctionFilter !== '' &&
+            !neighbourFunctionOptions.includes(neighbourFunctionFilter)
+        ) {
+            setNeighbourFunctionFilter('');
+        }
+    }, [neighbourFunctionFilter, neighbourFunctionOptions]);
 
     const visibleDevices = useMemo(() => {
-        if (!hasActiveSearchAll) {
+        if (!hasActivePageFilters) {
             return devices;
         }
 
@@ -120,18 +158,28 @@ export default function Show() {
                 return false;
             }
 
-            return filterSwitchInterfacesBySearchAll(device.interfaces, searchAllQuery).length > 0;
+            return (
+                filterInterfacesForPage(
+                    device.interfaces,
+                    searchAllQuery,
+                    neighbourFunctionFilter,
+                ).length > 0
+            );
         });
-    }, [devices, hasActiveSearchAll, searchAllQuery]);
+    }, [devices, hasActivePageFilters, neighbourFunctionFilter, searchAllQuery]);
 
     const exportableSwitches = useMemo(() => {
         return switches
             .map((item) => ({
                 switchName: formatDeviceTitle(item.device_name, item.serial),
-                interfaces: filterSwitchInterfacesBySearchAll(item.interfaces, searchAllQuery),
+                interfaces: filterInterfacesForPage(
+                    item.interfaces,
+                    searchAllQuery,
+                    neighbourFunctionFilter,
+                ),
             }))
             .filter((group) => group.interfaces.length > 0);
-    }, [searchAllQuery, switches]);
+    }, [neighbourFunctionFilter, searchAllQuery, switches]);
 
     const exportableInterfaceCount = useMemo(
         () => exportableSwitches.reduce((sum, item) => sum + item.interfaces.length, 0),
@@ -139,18 +187,44 @@ export default function Show() {
     );
 
     const hasActiveSnapshotSearchAll = snapshotSearchAllQuery.trim() !== '';
+    const hasActiveSnapshotNeighbourFunctionFilter =
+        snapshotNeighbourFunctionFilter.trim() !== '';
+    const hasActiveSnapshotPageFilters =
+        hasActiveSnapshotSearchAll || hasActiveSnapshotNeighbourFunctionFilter;
+
+    const snapshotNeighbourFunctionOptions = useMemo(
+        () => collectUniqueNeighbourFunctions(snapshotDevices),
+        [snapshotDevices],
+    );
+
+    useEffect(() => {
+        if (
+            snapshotNeighbourFunctionFilter !== '' &&
+            !snapshotNeighbourFunctionOptions.includes(snapshotNeighbourFunctionFilter)
+        ) {
+            setSnapshotNeighbourFunctionFilter('');
+        }
+    }, [snapshotNeighbourFunctionFilter, snapshotNeighbourFunctionOptions]);
 
     const visibleSnapshotDevices = useMemo(() => {
-        if (!hasActiveSnapshotSearchAll) {
+        if (!hasActiveSnapshotPageFilters) {
             return snapshotDevices;
         }
 
         return snapshotDevices.filter(
             (device) =>
-                filterSwitchInterfacesBySearchAll(device.interfaces, snapshotSearchAllQuery)
-                    .length > 0,
+                filterInterfacesForPage(
+                    device.interfaces,
+                    snapshotSearchAllQuery,
+                    snapshotNeighbourFunctionFilter,
+                ).length > 0,
         );
-    }, [hasActiveSnapshotSearchAll, snapshotDevices, snapshotSearchAllQuery]);
+    }, [
+        hasActiveSnapshotPageFilters,
+        snapshotDevices,
+        snapshotNeighbourFunctionFilter,
+        snapshotSearchAllQuery,
+    ]);
 
     const pageTitle = useMemo(() => {
         if (devices.length === 0) {
@@ -458,28 +532,49 @@ export default function Show() {
                     </div>
                 </div>
 
-                <div className="relative mt-4 max-w-md">
-                    <Search
-                        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden
-                    />
-                    <Input
-                        type="search"
-                        value={searchAllQuery}
-                        onChange={(event) => setSearchAllQuery(event.target.value)}
-                        placeholder="Search all by Neighbour Serial or Native VLAN"
-                        className="pl-9"
-                        aria-label="Search all by Neighbour Serial or Native VLAN"
-                        data-test="device-details-search-all"
-                    />
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="relative max-w-md flex-1">
+                        <Search
+                            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden
+                        />
+                        <Input
+                            type="search"
+                            value={searchAllQuery}
+                            onChange={(event) => setSearchAllQuery(event.target.value)}
+                            placeholder="Search all by Neighbour Serial or Native VLAN"
+                            className="pl-9"
+                            aria-label="Search all by Neighbour Serial or Native VLAN"
+                            data-test="device-details-search-all"
+                        />
+                    </div>
+                    {switches.length > 0 ? (
+                        <select
+                            value={neighbourFunctionFilter}
+                            onChange={(event) =>
+                                setNeighbourFunctionFilter(event.target.value)
+                            }
+                            className={neighbourFunctionSelectClassName}
+                            aria-label="Filter all by Neighbour Function"
+                            data-test="device-details-neighbour-function-filter"
+                            disabled={neighbourFunctionOptions.length === 0}
+                        >
+                            <option value="">All Neighbour Function</option>
+                            {neighbourFunctionOptions.map((option) => (
+                                <option key={option} value={option}>
+                                    {option}
+                                </option>
+                            ))}
+                        </select>
+                    ) : null}
                 </div>
 
-                {hasActiveSearchAll && visibleDevices.length === 0 ? (
+                {hasActivePageFilters && visibleDevices.length === 0 ? (
                     <p
                         className="mt-8 text-center text-sm text-muted-foreground"
                         data-test="device-details-search-all-empty"
                     >
-                        No devices match the current search.
+                        No devices match the current filters.
                     </p>
                 ) : null}
 
@@ -494,6 +589,7 @@ export default function Show() {
                             key={device.serial}
                             switchDetails={device}
                             searchQuery={searchAllQuery}
+                            neighbourFunctionFilter={neighbourFunctionFilter}
                         />
                     ),
                 )}
@@ -520,22 +616,41 @@ export default function Show() {
                             </div>
                         ) : null}
 
-                        <div className="relative mb-4 max-w-md">
-                            <Search
-                                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                                aria-hidden
-                            />
-                            <Input
-                                type="search"
-                                value={snapshotSearchAllQuery}
+                        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <div className="relative max-w-md flex-1">
+                                <Search
+                                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                                    aria-hidden
+                                />
+                                <Input
+                                    type="search"
+                                    value={snapshotSearchAllQuery}
+                                    onChange={(event) =>
+                                        setSnapshotSearchAllQuery(event.target.value)
+                                    }
+                                    placeholder="Search all by Neighbour Serial or Native VLAN"
+                                    className="pl-9"
+                                    aria-label="Search saved snapshots by Neighbour Serial or Native VLAN"
+                                    data-test="device-details-snapshot-search-all"
+                                />
+                            </div>
+                            <select
+                                value={snapshotNeighbourFunctionFilter}
                                 onChange={(event) =>
-                                    setSnapshotSearchAllQuery(event.target.value)
+                                    setSnapshotNeighbourFunctionFilter(event.target.value)
                                 }
-                                placeholder="Search all by Neighbour Serial or Native VLAN"
-                                className="pl-9"
-                                aria-label="Search saved snapshots by Neighbour Serial or Native VLAN"
-                                data-test="device-details-snapshot-search-all"
-                            />
+                                className={neighbourFunctionSelectClassName}
+                                aria-label="Filter saved snapshots by Neighbour Function"
+                                data-test="device-details-snapshot-neighbour-function-filter"
+                                disabled={snapshotNeighbourFunctionOptions.length === 0}
+                            >
+                                <option value="">All Neighbour Function</option>
+                                {snapshotNeighbourFunctionOptions.map((option) => (
+                                    <option key={option} value={option}>
+                                        {option}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         {snapshotLoading ? (
@@ -548,13 +663,13 @@ export default function Show() {
                         ) : null}
 
                         {!snapshotLoading &&
-                        hasActiveSnapshotSearchAll &&
+                        hasActiveSnapshotPageFilters &&
                         visibleSnapshotDevices.length === 0 ? (
                             <p
                                 className="mt-4 text-center text-sm text-muted-foreground"
                                 data-test="device-details-snapshot-search-all-empty"
                             >
-                                No saved snapshots match the current search.
+                                No saved snapshots match the current filters.
                             </p>
                         ) : null}
 
@@ -565,7 +680,7 @@ export default function Show() {
                                   );
 
                                   if (!snapshot) {
-                                      if (hasActiveSnapshotSearchAll) {
+                                      if (hasActiveSnapshotPageFilters) {
                                           return null;
                                       }
 
@@ -589,7 +704,7 @@ export default function Show() {
                                   }
 
                                   if (
-                                      hasActiveSnapshotSearchAll &&
+                                      hasActiveSnapshotPageFilters &&
                                       !visibleSnapshotDevices.some(
                                           (item) => item.serial === snapshot.serial,
                                       )
@@ -602,6 +717,9 @@ export default function Show() {
                                           key={`snapshot-${snapshot.serial}`}
                                           switchDetails={snapshot}
                                           searchQuery={snapshotSearchAllQuery}
+                                          neighbourFunctionFilter={
+                                              snapshotNeighbourFunctionFilter
+                                          }
                                           snapshotMode
                                           capturedAt={snapshot.captured_at}
                                       />
