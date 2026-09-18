@@ -1,16 +1,13 @@
-import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Download, FileUp, Loader2, Upload } from 'lucide-react';
+import { Head, useForm, usePage } from '@inertiajs/react';
+import { FileUp, Loader2, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import CentralScopeRefreshButtons, {
     type CentralScopeCacheMeta,
     type CentralScopeGroupsCacheMeta,
 } from '@/components/central/CentralScopeRefreshButtons';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     Select,
@@ -20,37 +17,15 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
-import AuthServersCard from '@/pages/Migration/AuthServersCard';
 import ControllerMigrationSection from '@/pages/Migration/ControllerMigrationSection';
-import CreateDeploymentFromDevicesDialog, {
-    type DeviceGroupOption,
-} from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
-import RadioProfilesCard from '@/pages/Migration/RadioProfilesCard';
-import UserRolesCard from '@/pages/Migration/UserRolesCard';
+import { type DeviceGroupOption } from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
 import {
-    buildDeployProfilePayload,
-    buildInitialDeploySteps,
-    deployStatusVariant,
-    inferScopeTypeFromId,
-    isFreezerSite,
-    scopeOptionsForType,
-    type AuthServerScopeType,
-    type DeployProgress,
     type DeployResult,
-    type DeployStep,
-    type DeployStepResponse,
-    type DeployStepStatus,
     type NamedVlanDeployResult,
     type ParsedController,
     type ScopeOption,
     type SiteOption,
 } from '@/pages/Migration/migration-types';
-import {
-    downloadMigrationDevicesCsv,
-    downloadMigrationLldpCsv,
-} from '@/lib/migration-csv';
-import { csrfHeaders } from '@/lib/csrf';
-import { cn } from '@/lib/utils';
 import { index as clientsIndex } from '@/routes/clients';
 import { index as migrationsIndex, parse as migrationsParse } from '@/routes/migrations';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -74,21 +49,6 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Migrations', href: migrationsIndex().url },
 ];
 
-function deployStepIcon(status: DeployStepStatus) {
-    switch (status) {
-        case 'running':
-            return <Loader2 className="size-4 shrink-0 animate-spin text-primary" />;
-        case 'success':
-            return <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />;
-        case 'error':
-            return <AlertCircle className="size-4 shrink-0 text-destructive" />;
-        case 'skipped':
-            return <span className="bg-muted-foreground size-2 shrink-0 rounded-full" />;
-        default:
-            return <span className="bg-muted size-2 shrink-0 rounded-full" />;
-    }
-}
-
 export default function Index() {
     const {
         current_client,
@@ -98,162 +58,41 @@ export default function Index() {
         site_collection_options_error = null,
         device_function_options = [],
         parsed_controllers,
-        deploy_results,
-        named_vlan_deploy_results,
-        selected_scope_id,
         central_sites_cache,
         central_groups_cache,
     } = usePage<MigrationIndexProps>().props;
 
-    const [scopeType, setScopeType] = useState<AuthServerScopeType>(() =>
-        selected_scope_id
-            ? inferScopeTypeFromId(
-                  selected_scope_id,
-                  site_options,
-                  site_collection_options,
-                  device_group_options,
-              )
-            : 'site',
+    const [selectedControllerName, setSelectedControllerName] = useState(
+        () => parsed_controllers[0]?.controller_name ?? '',
     );
-    const [scopeId, setScopeId] = useState(selected_scope_id ?? '');
-    const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
-    const [selectedProfileNames, setSelectedProfileNames] = useState<Set<string>>(
-        () => new Set(),
-    );
-    const [deploying, setDeploying] = useState(false);
-    const [deployStarted, setDeployStarted] = useState(false);
-    const [deploySteps, setDeploySteps] = useState<DeployStep[]>([]);
-    const [deployProgress, setDeployProgress] = useState<DeployProgress>({
-        current: 0,
-        total: 0,
-        percent: 0,
-        message: '',
-    });
-    const [deployError, setDeployError] = useState<string | null>(null);
-    const [liveDeployResults, setLiveDeployResults] = useState<DeployResult[]>(deploy_results);
-    const [liveNamedVlanDeployResults, setLiveNamedVlanDeployResults] = useState<
-        NamedVlanDeployResult[]
-    >(named_vlan_deploy_results);
-    const [vlanOverrides, setVlanOverrides] = useState<Record<string, string>>({});
-
-    useEffect(() => {
-        setLiveDeployResults(deploy_results);
-    }, [deploy_results]);
-
-    useEffect(() => {
-        setLiveNamedVlanDeployResults(named_vlan_deploy_results);
-    }, [named_vlan_deploy_results]);
 
     const parseForm = useForm<{ config_file: File | null }>({
         config_file: null,
     });
 
-    const allDevices = useMemo(
-        () =>
-            parsed_controllers.flatMap((controller) =>
-                controller.devices.map((device) => ({
-                    ...device,
-                    controller: controller.controller_name,
-                })),
-            ),
-        [parsed_controllers],
-    );
+    useEffect(() => {
+        if (parsed_controllers.length === 0) {
+            setSelectedControllerName('');
 
-    const allLldpNeighbors = useMemo(() => {
-        const bySwitch = new Map<string, Set<string>>();
-
-        for (const controller of parsed_controllers) {
-            for (const neighbor of controller.lldp_neighbors) {
-                if (!bySwitch.has(neighbor.switch)) {
-                    bySwitch.set(neighbor.switch, new Set());
-                }
-
-                for (const port of neighbor.ports) {
-                    bySwitch.get(neighbor.switch)?.add(port);
-                }
-            }
+            return;
         }
 
-        return Array.from(bySwitch.entries())
-            .map(([switchName, ports]) => ({
-                switch: switchName,
-                ports: Array.from(ports).sort(),
-            }))
-            .sort((a, b) => a.switch.localeCompare(b.switch));
-    }, [parsed_controllers]);
-
-    const allWlanProfiles = useMemo(
-        () => parsed_controllers.flatMap((controller) => controller.wlan_profiles),
-        [parsed_controllers],
-    );
-
-    const allRadioProfiles = useMemo(
-        () =>
-            parsed_controllers.flatMap((controller) => controller.radio_profiles ?? []),
-        [parsed_controllers],
-    );
-
-    const allAuthServers = useMemo(
-        () => parsed_controllers.flatMap((controller) => controller.auth_servers ?? []),
-        [parsed_controllers],
-    );
-
-    const allServerGroups = useMemo(
-        () => parsed_controllers.flatMap((controller) => controller.server_groups ?? []),
-        [parsed_controllers],
-    );
-
-    const allUserRoles = useMemo(
-        () => parsed_controllers.flatMap((controller) => controller.user_roles ?? []),
-        [parsed_controllers],
-    );
-
-    useEffect(() => {
-        setSelectedProfileNames(
-            new Set(allWlanProfiles.map((profile) => profile.ssid_profile_name)),
-        );
-    }, [allWlanProfiles]);
-
-    const selectedWlanProfiles = useMemo(
-        () =>
-            allWlanProfiles.filter((profile) =>
-                selectedProfileNames.has(profile.ssid_profile_name),
-            ),
-        [allWlanProfiles, selectedProfileNames],
-    );
-
-    const allProfilesSelected =
-        allWlanProfiles.length > 0 &&
-        allWlanProfiles.every((profile) =>
-            selectedProfileNames.has(profile.ssid_profile_name),
-        );
-    const someProfilesSelected =
-        !allProfilesSelected &&
-        allWlanProfiles.some((profile) =>
-            selectedProfileNames.has(profile.ssid_profile_name),
+        const stillPresent = parsed_controllers.some(
+            (controller) => controller.controller_name === selectedControllerName,
         );
 
-    const scopeOptions = useMemo(
-        () =>
-            scopeOptionsForType(
-                scopeType,
-                site_options,
-                site_collection_options,
-                device_group_options,
-            ),
-        [scopeType, site_options, site_collection_options, device_group_options],
-    );
+        if (!stillPresent) {
+            setSelectedControllerName(parsed_controllers[0].controller_name);
+        }
+    }, [parsed_controllers, selectedControllerName]);
 
-    const selectedSiteName = useMemo(
+    const selectedController = useMemo(
         () =>
-            scopeType === 'site'
-                ? (site_options.find((site) => site.siteId === scopeId)?.siteName ?? '')
-                : '',
-        [scopeType, site_options, scopeId],
+            parsed_controllers.find(
+                (controller) => controller.controller_name === selectedControllerName,
+            ) ?? null,
+        [parsed_controllers, selectedControllerName],
     );
-
-    const showFreezerHint = isFreezerSite(selectedSiteName);
-    const isMultiController = parsed_controllers.length > 1;
 
     const handleParseSubmit = (event: React.FormEvent) => {
         event.preventDefault();
@@ -276,187 +115,6 @@ export default function Index() {
                 );
             },
         });
-    };
-
-    const handleDeploy = async () => {
-        if (scopeId.trim() === '') {
-            toast.error('Please select a scope before deploying WLAN profiles');
-
-            return;
-        }
-
-        if (allWlanProfiles.length === 0) {
-            toast.error('No WLAN profiles to deploy');
-
-            return;
-        }
-
-        if (selectedWlanProfiles.length === 0) {
-            toast.error('Please select at least one WLAN profile to deploy');
-
-            return;
-        }
-
-        const profiles = selectedWlanProfiles.map((profile) =>
-            buildDeployProfilePayload(profile, vlanOverrides[profile.ssid_profile_name]),
-        );
-
-        const initialSteps = buildInitialDeploySteps(selectedWlanProfiles, showFreezerHint);
-
-        setDeployStarted(true);
-        setDeploySteps(initialSteps);
-        setLiveDeployResults([]);
-        setLiveNamedVlanDeployResults([]);
-        setDeployError(null);
-        setDeploying(true);
-        setDeployProgress({
-            current: 0,
-            total: initialSteps.length,
-            percent: 0,
-            message: 'Starting deployment...',
-        });
-
-        let context: DeployStepResponse['context'] = { named_vlan_profiles: [] };
-        let total = initialSteps.length;
-        let step = 0;
-
-        try {
-            while (step < total) {
-                setDeploySteps((current) =>
-                    current.map((deployStep, index) =>
-                        index === step ? { ...deployStep, status: 'running' } : deployStep,
-                    ),
-                );
-
-                const response = await fetch(`/migrations/deploy-wlan/step/${step}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Accept: 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        ...csrfHeaders(),
-                    },
-                    credentials: 'same-origin',
-                    body: JSON.stringify({
-                        scope_id: scopeId,
-                        profiles,
-                        context,
-                    }),
-                });
-
-                if (!response.ok) {
-                    const body = (await response.json().catch(() => null)) as {
-                        message?: string;
-                    } | null;
-                    throw new Error(
-                        body?.message ?? `Deploy failed (HTTP ${response.status}).`,
-                    );
-                }
-
-                const data = (await response.json()) as DeployStepResponse;
-
-                setDeployProgress(data.progress);
-                total = data.progress.total;
-                context = data.context ?? context;
-
-                setDeploySteps((current) => {
-                    let next = current.map((deployStep, index) =>
-                        index === step
-                            ? {
-                                  ...deployStep,
-                                  status: data.step.status,
-                                  message: data.step.message,
-                              }
-                            : deployStep,
-                    );
-
-                    if (
-                        data.step.key === 'named-vlan-fetch' &&
-                        data.context.named_vlan_profiles.length > 0
-                    ) {
-                        const existingKeys = new Set(next.map((deployStep) => deployStep.key));
-
-                        for (const profile of data.context.named_vlan_profiles) {
-                            const name = String(profile.name ?? '').trim();
-
-                            if (name === '' || existingKeys.has(`named-vlan-${name}`)) {
-                                continue;
-                            }
-
-                            next.push({
-                                key: `named-vlan-${name}`,
-                                label: `Deploy named VLAN: ${name} (+200 offset)`,
-                                status: 'pending',
-                            });
-                            existingKeys.add(`named-vlan-${name}`);
-                        }
-                    }
-
-                    return next;
-                });
-
-                setLiveDeployResults((current) => [
-                    ...current,
-                    ...data.partial.deploy_results,
-                ]);
-                setLiveNamedVlanDeployResults((current) => [
-                    ...current,
-                    ...data.partial.named_vlan_deploy_results,
-                ]);
-
-                step += 1;
-            }
-
-            setDeployProgress((current) => ({
-                ...current,
-                percent: 100,
-                message: 'Deployment complete.',
-            }));
-            toast.success('WLAN profile deployment finished');
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : 'WLAN profile deployment failed';
-            setDeployError(message);
-            setDeploySteps((current) =>
-                current.map((deployStep, index) =>
-                    index === step && deployStep.status === 'running'
-                        ? { ...deployStep, status: 'error', message }
-                        : deployStep,
-                ),
-            );
-            toast.error('WLAN profile deployment failed');
-        } finally {
-            setDeploying(false);
-        }
-    };
-
-    const toggleProfileExpanded = (profileName: string) => {
-        setExpandedProfiles((current) => ({
-            ...current,
-            [profileName]: !current[profileName],
-        }));
-    };
-
-    const toggleProfileSelected = (profileName: string, checked: boolean) => {
-        setSelectedProfileNames((current) => {
-            const next = new Set(current);
-
-            if (checked) {
-                next.add(profileName);
-            } else {
-                next.delete(profileName);
-            }
-
-            return next;
-        });
-    };
-
-    const toggleAllProfiles = (checked: boolean) => {
-        setSelectedProfileNames(
-            checked
-                ? new Set(allWlanProfiles.map((profile) => profile.ssid_profile_name))
-                : new Set(),
-        );
     };
 
     if (!current_client) {
@@ -491,7 +149,12 @@ export default function Index() {
                     <CentralScopeRefreshButtons
                         centralSitesCache={central_sites_cache}
                         centralGroupsCache={central_groups_cache}
-                        onRefreshed={() => router.reload({ only: ['site_options', 'central_sites_cache', 'central_groups_cache'] })}
+                        reloadOnly={[
+                            'site_options',
+                            'device_group_options',
+                            'central_sites_cache',
+                            'central_groups_cache',
+                        ]}
                     />
                 </div>
 
@@ -549,526 +212,53 @@ export default function Index() {
                     </CardContent>
                 </Card>
 
-                {parsed_controllers.length > 0 && isMultiController && (
-                    <>
-                        {parsed_controllers.map((controller) => (
-                            <ControllerMigrationSection
-                                key={controller.controller_name}
-                                controller={controller}
-                                siteOptions={site_options}
-                                groupOptions={device_group_options}
-                                siteCollectionOptions={site_collection_options}
-                                siteCollectionOptionsError={site_collection_options_error}
-                                deviceFunctionOptions={device_function_options}
-                                parsedControllers={parsed_controllers}
-                            />
-                        ))}
-                    </>
+                {parsed_controllers.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Controllers</CardTitle>
+                            <CardDescription>
+                                {parsed_controllers.length} controller
+                                {parsed_controllers.length === 1 ? '' : 's'} found in the uploaded
+                                file. Select a controller to load its migration cards.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="grid max-w-xl gap-2">
+                                <Label htmlFor="selected-controller">Controller</Label>
+                                <Select
+                                    value={selectedControllerName}
+                                    onValueChange={setSelectedControllerName}
+                                >
+                                    <SelectTrigger id="selected-controller">
+                                        <SelectValue placeholder="Select a controller" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {parsed_controllers.map((controller) => (
+                                            <SelectItem
+                                                key={controller.controller_name}
+                                                value={controller.controller_name}
+                                            >
+                                                {controller.controller_name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </CardContent>
+                    </Card>
                 )}
 
-                {parsed_controllers.length > 0 && !isMultiController && (
-                    <>
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Controllers</CardTitle>
-                                <CardDescription>
-                                    1 controller section found in the uploaded file.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="flex flex-wrap gap-2">
-                                {parsed_controllers.map((controller) => (
-                                    <Badge key={controller.controller_name} variant="secondary">
-                                        {controller.controller_name}
-                                    </Badge>
-                                ))}
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between gap-4">
-                                <div>
-                                    <CardTitle>AP devices</CardTitle>
-                                    <CardDescription>
-                                        {allDevices.length} access points extracted from `show ap
-                                        database long`.
-                                    </CardDescription>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <CreateDeploymentFromDevicesDialog
-                                        devices={allDevices}
-                                        siteOptions={site_options}
-                                        groupOptions={device_group_options}
-                                        parsedControllers={parsed_controllers}
-                                        showController
-                                        disabled={!current_client}
-                                    />
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => downloadMigrationDevicesCsv(allDevices)}
-                                        disabled={allDevices.length === 0}
-                                    >
-                                        <Download className="size-4" />
-                                        Download CSV
-                                    </Button>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr className="border-b text-left">
-                                            <th className="px-2 py-2 font-medium">Name</th>
-                                            <th className="px-2 py-2 font-medium">Group</th>
-                                            <th className="px-2 py-2 font-medium">IP Address</th>
-                                            <th className="px-2 py-2 font-medium">Serial</th>
-                                            <th className="px-2 py-2 font-medium">MAC</th>
-                                            <th className="px-2 py-2 font-medium">Controller</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {allDevices.map((device) => (
-                                            <tr key={`${device.controller}-${device.serial}`} className="border-b">
-                                                <td className="px-2 py-2">{device.name}</td>
-                                                <td className="px-2 py-2 font-mono text-xs">
-                                                    {device.group ?? '—'}
-                                                </td>
-                                                <td className="px-2 py-2 font-mono text-xs">
-                                                    {device.controller_joined_ip ?? '—'}
-                                                </td>
-                                                <td className="px-2 py-2 font-mono text-xs">
-                                                    {device.serial}
-                                                </td>
-                                                <td className="px-2 py-2 font-mono text-xs">
-                                                    {device.mac}
-                                                </td>
-                                                <td className="px-2 py-2">{device.controller}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between gap-4">
-                                <div>
-                                    <CardTitle>LLDP neighbors</CardTitle>
-                                    <CardDescription>
-                                        Switches and ports aggregated from `show ap lldp neighbors`.
-                                    </CardDescription>
-                                </div>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => downloadMigrationLldpCsv(allLldpNeighbors)}
-                                    disabled={allLldpNeighbors.length === 0}
-                                >
-                                    <Download className="size-4" />
-                                    Download CSV
-                                </Button>
-                            </CardHeader>
-                            <CardContent className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr className="border-b text-left">
-                                            <th className="px-2 py-2 font-medium">Switch</th>
-                                            <th className="px-2 py-2 font-medium">Ports</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {allLldpNeighbors.map((neighbor) => (
-                                            <tr key={neighbor.switch} className="border-b">
-                                                <td className="px-2 py-2">{neighbor.switch}</td>
-                                                <td className="px-2 py-2 font-mono text-xs">
-                                                    {neighbor.ports.join(', ')}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </CardContent>
-                        </Card>
-
-                        <UserRolesCard userRoles={allUserRoles} />
-
-                        <AuthServersCard
-                            authServers={allAuthServers}
-                            serverGroups={allServerGroups}
-                            siteOptions={site_options}
-                            siteCollectionOptions={site_collection_options}
-                            siteCollectionOptionsError={site_collection_options_error}
-                            deviceGroupOptions={device_group_options}
-                            deviceFunctionOptions={device_function_options}
-                        />
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>WLAN SSID profiles</CardTitle>
-                                <CardDescription>
-                                    Profiles extracted from `show running-config` with mapped VLAN
-                                    names for Central deployment.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="flex flex-col gap-4">
-                                <div className="grid max-w-xl gap-4 sm:grid-cols-2">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="wlan-scope-type">Scope type</Label>
-                                        <Select
-                                            value={scopeType}
-                                            onValueChange={(value) => {
-                                                setScopeType(value as AuthServerScopeType);
-                                                setScopeId('');
-                                            }}
-                                        >
-                                            <SelectTrigger id="wlan-scope-type">
-                                                <SelectValue placeholder="Select scope type" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="site-collection">
-                                                    Site collection
-                                                </SelectItem>
-                                                <SelectItem value="site">Site</SelectItem>
-                                                <SelectItem value="device-group">
-                                                    Device group
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="scope_id">Scope</Label>
-                                        <Select value={scopeId} onValueChange={setScopeId}>
-                                            <SelectTrigger id="scope_id">
-                                                <SelectValue placeholder="Select a scope" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {scopeOptions.map((option) => (
-                                                    <SelectItem
-                                                        key={option.scopeId}
-                                                        value={option.scopeId}
-                                                    >
-                                                        {option.scopeName} ({option.scopeId})
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        {scopeType === 'site-collection' &&
-                                            site_collection_options_error && (
-                                                <p className="text-destructive text-sm">
-                                                    {site_collection_options_error}
-                                                </p>
-                                            )}
-                                        {scopeId.trim() === '' && (
-                                            <p className="text-muted-foreground text-sm">
-                                                Select a scope to deploy WLAN profiles.
-                                            </p>
-                                        )}
-                                        {showFreezerHint && (
-                                            <p className="text-muted-foreground text-sm">
-                                                Named VLAN profiles will be offset by +200 after
-                                                WLAN deploy for this Freezer site.
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                        <thead>
-                                            <tr className="border-b text-left">
-                                                <th className="px-2 py-2 font-medium">
-                                                    <Checkbox
-                                                        checked={
-                                                            allProfilesSelected
-                                                                ? true
-                                                                : someProfilesSelected
-                                                                  ? 'indeterminate'
-                                                                  : false
-                                                        }
-                                                        aria-label="Select all WLAN profiles for deployment"
-                                                        onCheckedChange={(checked) =>
-                                                            toggleAllProfiles(checked === true)
-                                                        }
-                                                        disabled={allWlanProfiles.length === 0}
-                                                    />
-                                                </th>
-                                                <th className="px-2 py-2 font-medium">Profile</th>
-                                                <th className="px-2 py-2 font-medium">ESSID</th>
-                                                <th className="px-2 py-2 font-medium">Status</th>
-                                                <th className="px-2 py-2 font-medium">Opmode</th>
-                                                <th className="px-2 py-2 font-medium">VLAN</th>
-                                                <th className="px-2 py-2 font-medium">Passphrase</th>
-                                                <th className="px-2 py-2 font-medium">Warnings</th>
-                                                <th className="px-2 py-2 font-medium">Body</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {allWlanProfiles.map((profile) => {
-                                                const essid =
-                                                    (profile.body.essid as { name?: string } | undefined)
-                                                        ?.name ?? '';
-                                                const passphrase =
-                                                    (
-                                                        profile.body['personal-security'] as
-                                                            | { 'wpa-passphrase'?: string | null }
-                                                            | undefined
-                                                    )?.['wpa-passphrase'] ?? null;
-                                                const opmode =
-                                                    typeof profile.body.opmode === 'string'
-                                                        ? profile.body.opmode
-                                                        : null;
-
-                                                return (
-                                                    <tr
-                                                        key={profile.ssid_profile_name}
-                                                        className="border-b align-top"
-                                                    >
-                                                        <td className="px-2 py-2">
-                                                            <Checkbox
-                                                                id={`deploy-profile-${profile.ssid_profile_name}`}
-                                                                checked={selectedProfileNames.has(
-                                                                    profile.ssid_profile_name,
-                                                                )}
-                                                                aria-label={`Deploy ${profile.ssid_profile_name}`}
-                                                                onCheckedChange={(checked) =>
-                                                                    toggleProfileSelected(
-                                                                        profile.ssid_profile_name,
-                                                                        checked === true,
-                                                                    )
-                                                                }
-                                                            />
-                                                        </td>
-                                                        <td className="px-2 py-2 font-mono text-xs">
-                                                            <label
-                                                                htmlFor={`deploy-profile-${profile.ssid_profile_name}`}
-                                                                className="cursor-pointer"
-                                                            >
-                                                                {profile.ssid_profile_name}
-                                                            </label>
-                                                        </td>
-                                                        <td className="px-2 py-2">{essid || '—'}</td>
-                                                        <td className="px-2 py-2">
-                                                            {profile.enabled !== false
-                                                                ? 'ENABLED'
-                                                                : 'DISABLED'}
-                                                        </td>
-                                                        <td className="px-2 py-2 font-mono text-xs">
-                                                            {opmode || '—'}
-                                                        </td>
-                                                        <td className="px-2 py-2">
-                                                            {profile.raw_vlan ? (
-                                                                <span className="text-muted-foreground block text-xs">
-                                                                    {profile.raw_vlan} →{' '}
-                                                                    {profile.vlan_name ?? '—'}
-                                                                </span>
-                                                            ) : (
-                                                                <span className="text-muted-foreground block text-xs">
-                                                                    —
-                                                                </span>
-                                                            )}
-                                                            <Input
-                                                                id={`vlan-override-${profile.ssid_profile_name}`}
-                                                                className="mt-1 h-8 font-mono text-xs"
-                                                                placeholder={
-                                                                    profile.vlan_name ??
-                                                                    String(
-                                                                        profile.body['vlan-name'] ??
-                                                                            '',
-                                                                    )
-                                                                }
-                                                                value={
-                                                                    vlanOverrides[
-                                                                        profile.ssid_profile_name
-                                                                    ] ?? ''
-                                                                }
-                                                                onChange={(event) =>
-                                                                    setVlanOverrides((current) => ({
-                                                                        ...current,
-                                                                        [profile.ssid_profile_name]:
-                                                                            event.target.value,
-                                                                    }))
-                                                                }
-                                                                aria-label={`Named VLAN override for ${profile.ssid_profile_name}`}
-                                                            />
-                                                        </td>
-                                                        <td className="px-2 py-2">
-                                                            {passphrase ? 'Yes' : 'No'}
-                                                        </td>
-                                                        <td className="px-2 py-2">
-                                                            {profile.warnings.length > 0 ? (
-                                                                <span className="text-amber-600 text-xs">
-                                                                    {profile.warnings.join(', ')}
-                                                                </span>
-                                                            ) : (
-                                                                '—'
-                                                            )}
-                                                        </td>
-                                                        <td className="px-2 py-2">
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() =>
-                                                                    toggleProfileExpanded(
-                                                                        profile.ssid_profile_name,
-                                                                    )
-                                                                }
-                                                            >
-                                                                {expandedProfiles[
-                                                                    profile.ssid_profile_name
-                                                                ] ? (
-                                                                    <ChevronDown className="size-4" />
-                                                                ) : (
-                                                                    <ChevronRight className="size-4" />
-                                                                )}
-                                                            </Button>
-                                                            {expandedProfiles[
-                                                                profile.ssid_profile_name
-                                                            ] && (
-                                                                <pre className="mt-2 max-w-xl overflow-x-auto rounded-md bg-muted p-2 text-xs">
-                                                                    {JSON.stringify(
-                                                                        profile.body,
-                                                                        null,
-                                                                        2,
-                                                                    )}
-                                                                </pre>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                <Button
-                                    type="button"
-                                    onClick={() => void handleDeploy()}
-                                    disabled={
-                                        deploying ||
-                                        scopeId.trim() === '' ||
-                                        selectedWlanProfiles.length === 0
-                                    }
-                                >
-                                    {deploying ? (
-                                        <Loader2 className="size-4 animate-spin" />
-                                    ) : null}
-                                    Deploy {selectedWlanProfiles.length} WLAN profile
-                                    {selectedWlanProfiles.length === 1 ? '' : 's'}
-                                </Button>
-
-                                {deployStarted && (
-                                    <Card>
-                                        <CardHeader className="pb-2">
-                                            <CardTitle className="text-base">
-                                                Deploy progress
-                                            </CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="space-y-4">
-                                            <div className="space-y-2">
-                                                <div
-                                                    className="bg-muted h-2 w-full overflow-hidden rounded-full"
-                                                    role="progressbar"
-                                                    aria-valuenow={deployProgress.percent}
-                                                    aria-valuemin={0}
-                                                    aria-valuemax={100}
-                                                >
-                                                    <div
-                                                        className="bg-primary h-full rounded-full transition-all duration-300"
-                                                        style={{
-                                                            width: `${deployProgress.percent}%`,
-                                                        }}
-                                                    />
-                                                </div>
-                                                <p className="text-muted-foreground text-sm">
-                                                    Step {deployProgress.current} of{' '}
-                                                    {deployProgress.total}
-                                                    {deployProgress.percent > 0 &&
-                                                        ` (${deployProgress.percent}%)`}
-                                                </p>
-                                                <p className="text-sm font-medium">
-                                                    {deployProgress.message}
-                                                </p>
-                                                {deployError && (
-                                                    <p className="text-destructive text-sm">
-                                                        {deployError}
-                                                    </p>
-                                                )}
-                                            </div>
-
-                                            <div className="max-h-64 space-y-2 overflow-y-auto">
-                                                {deploySteps.map((deployStep) => (
-                                                    <div
-                                                        key={deployStep.key}
-                                                        className={cn(
-                                                            'flex items-start gap-2 text-sm',
-                                                            deployStep.status === 'pending' &&
-                                                                'text-muted-foreground',
-                                                        )}
-                                                    >
-                                                        {deployStepIcon(deployStep.status)}
-                                                        <div>
-                                                            <span className="font-medium">
-                                                                {deployStep.label}
-                                                            </span>
-                                                            {deployStep.message ? (
-                                                                <p className="text-muted-foreground text-xs">
-                                                                    {deployStep.message}
-                                                                </p>
-                                                            ) : null}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-                                )}
-
-                                {liveDeployResults.length > 0 && (
-                                    <div className="flex flex-col gap-2">
-                                        <h3 className="text-sm font-medium">WLAN deployment results</h3>
-                                        {liveDeployResults.map((result) => (
-                                            <div
-                                                key={result.ssid}
-                                                className="flex flex-wrap items-center gap-2 text-sm"
-                                            >
-                                                <Badge variant={deployStatusVariant(result.status)}>
-                                                    {result.status}
-                                                </Badge>
-                                                <span className="font-mono text-xs">{result.ssid}</span>
-                                                <span className="text-muted-foreground">
-                                                    {result.message}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {liveNamedVlanDeployResults.length > 0 && (
-                                    <div className="flex flex-col gap-2">
-                                        <h3 className="text-sm font-medium">Named VLAN deployment results</h3>
-                                        {liveNamedVlanDeployResults.map((result) => (
-                                            <div
-                                                key={result.name}
-                                                className="flex flex-wrap items-center gap-2 text-sm"
-                                            >
-                                                <Badge variant={deployStatusVariant(result.status)}>
-                                                    {result.status}
-                                                </Badge>
-                                                <span className="font-mono text-xs">{result.name}</span>
-                                                <span className="text-muted-foreground">
-                                                    {result.message}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        <RadioProfilesCard radioProfiles={allRadioProfiles} />
-                    </>
+                {selectedController && (
+                    <ControllerMigrationSection
+                        key={selectedController.controller_name}
+                        controller={selectedController}
+                        siteOptions={site_options}
+                        groupOptions={device_group_options}
+                        siteCollectionOptions={site_collection_options}
+                        siteCollectionOptionsError={site_collection_options_error}
+                        deviceFunctionOptions={device_function_options}
+                        parsedControllers={parsed_controllers}
+                    />
                 )}
             </div>
         </AppLayout>

@@ -365,15 +365,6 @@ export default function ControllerMigrationSection({
     return (
         <div className="flex flex-col gap-6">
             <Card>
-                <CardHeader>
-                    <CardTitle>{controller_name}</CardTitle>
-                    <CardDescription>
-                        Controller section with AP inventory, LLDP neighbors, and WLAN profiles.
-                    </CardDescription>
-                </CardHeader>
-            </Card>
-
-            <Card>
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                     <div>
                         <CardTitle>AP devices</CardTitle>
