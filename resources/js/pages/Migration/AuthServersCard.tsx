@@ -22,6 +22,7 @@ import {
     buildInitialAuthServerDeploySteps,
     buildInitialServerGroupDeploySteps,
     deployStatusVariant,
+    scopeOptionsForType,
     serverGroupSelectionKey,
     type AuthServer,
     type AuthServerDeployResult,
@@ -61,29 +62,6 @@ function deployStepIcon(status: DeployStepStatus) {
             return <span className="bg-muted-foreground size-2 shrink-0 rounded-full" />;
         default:
             return <span className="bg-muted size-2 shrink-0 rounded-full" />;
-    }
-}
-
-function scopeOptionsForType(
-    scopeType: AuthServerScopeType,
-    siteOptions: SiteOption[],
-    siteCollectionOptions: ScopeOption[],
-    deviceGroupOptions: DeviceGroupOption[],
-): ScopeOption[] {
-    switch (scopeType) {
-        case 'site-collection':
-            return siteCollectionOptions;
-        case 'device-group':
-            return deviceGroupOptions.map((group) => ({
-                scopeId: group.scopeId,
-                scopeName: group.scopeName,
-            }));
-        case 'site':
-        default:
-            return siteOptions.map((site) => ({
-                scopeId: site.siteId,
-                scopeName: site.siteName,
-            }));
     }
 }
 

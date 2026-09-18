@@ -12,6 +12,50 @@ export type ScopeOption = {
 
 export type AuthServerScopeType = 'site-collection' | 'site' | 'device-group';
 
+export function scopeOptionsForType(
+    scopeType: AuthServerScopeType,
+    siteOptions: SiteOption[],
+    siteCollectionOptions: ScopeOption[],
+    deviceGroupOptions: Array<{ scopeId: string; scopeName: string }>,
+): ScopeOption[] {
+    switch (scopeType) {
+        case 'site-collection':
+            return siteCollectionOptions;
+        case 'device-group':
+            return deviceGroupOptions.map((group) => ({
+                scopeId: group.scopeId,
+                scopeName: group.scopeName,
+            }));
+        case 'site':
+        default:
+            return siteOptions.map((site) => ({
+                scopeId: site.siteId,
+                scopeName: site.siteName,
+            }));
+    }
+}
+
+export function inferScopeTypeFromId(
+    scopeId: string,
+    siteOptions: SiteOption[],
+    siteCollectionOptions: ScopeOption[],
+    deviceGroupOptions: Array<{ scopeId: string; scopeName: string }>,
+): AuthServerScopeType {
+    if (siteCollectionOptions.some((option) => option.scopeId === scopeId)) {
+        return 'site-collection';
+    }
+
+    if (deviceGroupOptions.some((option) => option.scopeId === scopeId)) {
+        return 'device-group';
+    }
+
+    if (siteOptions.some((option) => option.siteId === scopeId)) {
+        return 'site';
+    }
+
+    return 'site';
+}
+
 export type AuthServer = {
     name: string;
     host: string | null;

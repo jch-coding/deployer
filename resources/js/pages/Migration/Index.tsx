@@ -31,7 +31,10 @@ import {
     buildDeployProfilePayload,
     buildInitialDeploySteps,
     deployStatusVariant,
+    inferScopeTypeFromId,
     isFreezerSite,
+    scopeOptionsForType,
+    type AuthServerScopeType,
     type DeployProgress,
     type DeployResult,
     type DeployStep,
@@ -102,6 +105,16 @@ export default function Index() {
         central_groups_cache,
     } = usePage<MigrationIndexProps>().props;
 
+    const [scopeType, setScopeType] = useState<AuthServerScopeType>(() =>
+        selected_scope_id
+            ? inferScopeTypeFromId(
+                  selected_scope_id,
+                  site_options,
+                  site_collection_options,
+                  device_group_options,
+              )
+            : 'site',
+    );
     const [scopeId, setScopeId] = useState(selected_scope_id ?? '');
     const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
     const [selectedProfileNames, setSelectedProfileNames] = useState<Set<string>>(
@@ -220,9 +233,23 @@ export default function Index() {
             selectedProfileNames.has(profile.ssid_profile_name),
         );
 
+    const scopeOptions = useMemo(
+        () =>
+            scopeOptionsForType(
+                scopeType,
+                site_options,
+                site_collection_options,
+                device_group_options,
+            ),
+        [scopeType, site_options, site_collection_options, device_group_options],
+    );
+
     const selectedSiteName = useMemo(
-        () => site_options.find((site) => site.siteId === scopeId)?.siteName ?? '',
-        [site_options, scopeId],
+        () =>
+            scopeType === 'site'
+                ? (site_options.find((site) => site.siteId === scopeId)?.siteName ?? '')
+                : '',
+        [scopeType, site_options, scopeId],
     );
 
     const showFreezerHint = isFreezerSite(selectedSiteName);
@@ -253,7 +280,7 @@ export default function Index() {
 
     const handleDeploy = async () => {
         if (scopeId.trim() === '') {
-            toast.error('Please select a site before deploying WLAN profiles');
+            toast.error('Please select a scope before deploying WLAN profiles');
 
             return;
         }
@@ -685,31 +712,65 @@ export default function Index() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="flex flex-col gap-4">
-                                <div className="grid max-w-md gap-2">
-                                    <Label htmlFor="scope_id">Target site</Label>
-                                    <Select value={scopeId} onValueChange={setScopeId}>
-                                        <SelectTrigger id="scope_id">
-                                            <SelectValue placeholder="Select a site" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {site_options.map((site) => (
-                                                <SelectItem key={site.siteId} value={site.siteId}>
-                                                    {site.siteName} ({site.siteId})
+                                <div className="grid max-w-xl gap-4 sm:grid-cols-2">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="wlan-scope-type">Scope type</Label>
+                                        <Select
+                                            value={scopeType}
+                                            onValueChange={(value) => {
+                                                setScopeType(value as AuthServerScopeType);
+                                                setScopeId('');
+                                            }}
+                                        >
+                                            <SelectTrigger id="wlan-scope-type">
+                                                <SelectValue placeholder="Select scope type" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="site-collection">
+                                                    Site collection
                                                 </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    {scopeId.trim() === '' && (
-                                        <p className="text-muted-foreground text-sm">
-                                            Select a site to deploy WLAN profiles.
-                                        </p>
-                                    )}
-                                    {showFreezerHint && (
-                                        <p className="text-muted-foreground text-sm">
-                                            Named VLAN profiles will be offset by +200 after WLAN
-                                            deploy for this Freezer site.
-                                        </p>
-                                    )}
+                                                <SelectItem value="site">Site</SelectItem>
+                                                <SelectItem value="device-group">
+                                                    Device group
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="scope_id">Scope</Label>
+                                        <Select value={scopeId} onValueChange={setScopeId}>
+                                            <SelectTrigger id="scope_id">
+                                                <SelectValue placeholder="Select a scope" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {scopeOptions.map((option) => (
+                                                    <SelectItem
+                                                        key={option.scopeId}
+                                                        value={option.scopeId}
+                                                    >
+                                                        {option.scopeName} ({option.scopeId})
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {scopeType === 'site-collection' &&
+                                            site_collection_options_error && (
+                                                <p className="text-destructive text-sm">
+                                                    {site_collection_options_error}
+                                                </p>
+                                            )}
+                                        {scopeId.trim() === '' && (
+                                            <p className="text-muted-foreground text-sm">
+                                                Select a scope to deploy WLAN profiles.
+                                            </p>
+                                        )}
+                                        {showFreezerHint && (
+                                            <p className="text-muted-foreground text-sm">
+                                                Named VLAN profiles will be offset by +200 after
+                                                WLAN deploy for this Freezer site.
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="overflow-x-auto">

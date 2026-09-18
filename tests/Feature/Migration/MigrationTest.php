@@ -951,6 +951,79 @@ test('migrations deploy wlan step 0 returns json progress and partial deploy res
     });
 });
 
+test('migrations deploy wlan step posts to central with site collection scope', function () {
+    Http::fake([
+        '*site-collections*' => Http::response([
+            'items' => [
+                ['scopeName' => 'WCD Collection', 'scopeId' => 'scope-collection'],
+            ],
+        ], 200),
+        '*wlan-ssids*' => Http::response(['ok' => true], 200),
+    ]);
+
+    $body = migrationWlanProfilePayload();
+
+    $this->postJson(route('migrations.deploy-wlan.step', ['step' => 0]), [
+        'scope_id' => 'scope-collection',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT',
+                'body' => $body,
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('step.key', 'wlan-DAYKIT')
+        ->assertJsonPath('step.status', 'success')
+        ->assertJsonPath('partial.deploy_results.0.ssid', 'DAYKIT')
+        ->assertJsonPath('partial.deploy_results.0.status', 'success');
+
+    Http::assertSent(function (Request $request) use ($body) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT')
+            && ($query['object-type'] ?? null) === 'LOCAL'
+            && ($query['view-type'] ?? null) === 'LOCAL'
+            && ($query['scope-id'] ?? null) === 'scope-collection'
+            && ($query['device-function'] ?? null) === 'CAMPUS_AP'
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
+test('migrations deploy wlan step posts to central with device group scope', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    $body = migrationWlanProfilePayload();
+
+    $this->postJson(route('migrations.deploy-wlan.step', ['step' => 0]), [
+        'scope_id' => 'scope-group',
+        'profiles' => [
+            [
+                'ssid_profile_name' => 'DAYKIT',
+                'body' => $body,
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('step.key', 'wlan-DAYKIT')
+        ->assertJsonPath('step.status', 'success')
+        ->assertJsonPath('partial.deploy_results.0.ssid', 'DAYKIT')
+        ->assertJsonPath('partial.deploy_results.0.status', 'success');
+
+    Http::assertSent(function (Request $request) use ($body) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), 'network-config/v1alpha1/wlan-ssids/DAYKIT')
+            && ($query['object-type'] ?? null) === 'LOCAL'
+            && ($query['view-type'] ?? null) === 'LOCAL'
+            && ($query['scope-id'] ?? null) === 'scope-group'
+            && ($query['device-function'] ?? null) === 'CAMPUS_AP'
+            && json_decode($request->body(), true) === $body;
+    });
+});
+
 test('migrations deploy wlan step endpoint deploys multiple profiles across steps', function () {
     Http::fake(['*' => Http::response(['ok' => true], 200)]);
 

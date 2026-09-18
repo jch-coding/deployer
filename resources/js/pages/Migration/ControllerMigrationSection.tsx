@@ -32,6 +32,8 @@ import {
     deployStatusVariant,
     isFreezerSite,
     profileSelectionKey,
+    scopeOptionsForType,
+    type AuthServerScopeType,
     type DeployProgress,
     type DeployResult,
     type DeployStep,
@@ -88,6 +90,7 @@ export default function ControllerMigrationSection({
         radio_profiles = [],
     } = controller;
 
+    const [scopeType, setScopeType] = useState<AuthServerScopeType>('site');
     const [scopeId, setScopeId] = useState('');
     const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
     const [selectedProfileKeys, setSelectedProfileKeys] = useState<Set<string>>(() => new Set());
@@ -117,6 +120,10 @@ export default function ControllerMigrationSection({
         );
     }, [controller_name, wlan_profiles]);
 
+    useEffect(() => {
+        setScopeId('');
+    }, [scopeType]);
+
     const selectedWlanProfiles = useMemo(
         () =>
             wlan_profiles.filter((profile) =>
@@ -142,17 +149,32 @@ export default function ControllerMigrationSection({
             ),
         );
 
+    const scopeOptions = useMemo(
+        () =>
+            scopeOptionsForType(
+                scopeType,
+                siteOptions,
+                siteCollectionOptions,
+                groupOptions,
+            ),
+        [scopeType, siteOptions, siteCollectionOptions, groupOptions],
+    );
+
     const selectedSiteName = useMemo(
-        () => siteOptions.find((site) => site.siteId === scopeId)?.siteName ?? '',
-        [siteOptions, scopeId],
+        () =>
+            scopeType === 'site'
+                ? (siteOptions.find((site) => site.siteId === scopeId)?.siteName ?? '')
+                : '',
+        [scopeType, siteOptions, scopeId],
     );
 
     const showFreezerHint = isFreezerSite(selectedSiteName);
     const scopeSelectId = `scope_id-${controller_name.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+    const scopeTypeSelectId = `wlan-scope-type-${controller_name.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
     const handleDeploy = async () => {
         if (scopeId.trim() === '') {
-            toast.error(`Please select a site before deploying WLAN profiles for ${controller_name}`);
+            toast.error(`Please select a scope before deploying WLAN profiles for ${controller_name}`);
 
             return;
         }
@@ -477,31 +499,56 @@ export default function ControllerMigrationSection({
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
-                    <div className="grid max-w-md gap-2">
-                        <Label htmlFor={scopeSelectId}>Target site</Label>
-                        <Select value={scopeId} onValueChange={setScopeId}>
-                            <SelectTrigger id={scopeSelectId}>
-                                <SelectValue placeholder="Select a site" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {siteOptions.map((site) => (
-                                    <SelectItem key={site.siteId} value={site.siteId}>
-                                        {site.siteName} ({site.siteId})
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        {scopeId.trim() === '' && (
-                            <p className="text-muted-foreground text-sm">
-                                Select a site to deploy WLAN profiles.
-                            </p>
-                        )}
-                        {showFreezerHint && (
-                            <p className="text-muted-foreground text-sm">
-                                Named VLAN profiles will be offset by +200 after WLAN deploy for
-                                this Freezer site.
-                            </p>
-                        )}
+                    <div className="grid max-w-xl gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor={scopeTypeSelectId}>Scope type</Label>
+                            <Select
+                                value={scopeType}
+                                onValueChange={(value) =>
+                                    setScopeType(value as AuthServerScopeType)
+                                }
+                            >
+                                <SelectTrigger id={scopeTypeSelectId}>
+                                    <SelectValue placeholder="Select scope type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="site-collection">Site collection</SelectItem>
+                                    <SelectItem value="site">Site</SelectItem>
+                                    <SelectItem value="device-group">Device group</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor={scopeSelectId}>Scope</Label>
+                            <Select value={scopeId} onValueChange={setScopeId}>
+                                <SelectTrigger id={scopeSelectId}>
+                                    <SelectValue placeholder="Select a scope" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {scopeOptions.map((option) => (
+                                        <SelectItem key={option.scopeId} value={option.scopeId}>
+                                            {option.scopeName} ({option.scopeId})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            {scopeType === 'site-collection' && siteCollectionOptionsError && (
+                                <p className="text-destructive text-sm">
+                                    {siteCollectionOptionsError}
+                                </p>
+                            )}
+                            {scopeId.trim() === '' && (
+                                <p className="text-muted-foreground text-sm">
+                                    Select a scope to deploy WLAN profiles.
+                                </p>
+                            )}
+                            {showFreezerHint && (
+                                <p className="text-muted-foreground text-sm">
+                                    Named VLAN profiles will be offset by +200 after WLAN deploy for
+                                    this Freezer site.
+                                </p>
+                            )}
+                        </div>
                     </div>
 
                     <div className="overflow-x-auto">

@@ -365,11 +365,10 @@ class MigrationController extends Controller
             'context.named_vlan_profiles' => ['sometimes', 'array'],
         ]);
 
-        $siteOptions = $centralScopeCacheService->getSiteOptions($currentClient);
-        $validScopeIds = array_column($siteOptions, 'siteId');
+        $validScopeIds = $this->validMigrationScopeIds($currentClient, $centralScopeCacheService);
 
         if (! in_array($validated['scope_id'], $validScopeIds, true)) {
-            abort(422, 'Selected site is not valid for the current client.');
+            abort(422, 'Selected scope is not valid for the current client.');
         }
 
         return $validated;
@@ -398,7 +397,7 @@ class MigrationController extends Controller
             'servers.*.body' => ['required', 'array'],
         ]);
 
-        $validScopeIds = $this->validAuthServerScopeIds($currentClient, $centralScopeCacheService);
+        $validScopeIds = $this->validMigrationScopeIds($currentClient, $centralScopeCacheService);
 
         if (! in_array($validated['scope_id'], $validScopeIds, true)) {
             abort(422, 'Selected scope is not valid for the current client.');
@@ -430,7 +429,7 @@ class MigrationController extends Controller
             'server_groups.*.body' => ['required', 'array'],
         ]);
 
-        $validScopeIds = $this->validAuthServerScopeIds($currentClient, $centralScopeCacheService);
+        $validScopeIds = $this->validMigrationScopeIds($currentClient, $centralScopeCacheService);
 
         if (! in_array($validated['scope_id'], $validScopeIds, true)) {
             abort(422, 'Selected scope is not valid for the current client.');
@@ -442,7 +441,7 @@ class MigrationController extends Controller
     /**
      * @return array<int, string>
      */
-    private function validAuthServerScopeIds(Client $currentClient, CentralScopeCacheService $centralScopeCacheService): array
+    private function validMigrationScopeIds(Client $currentClient, CentralScopeCacheService $centralScopeCacheService): array
     {
         $siteIds = array_column($centralScopeCacheService->getSiteOptions($currentClient), 'siteId');
         $groupIds = array_column(
