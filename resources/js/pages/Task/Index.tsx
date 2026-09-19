@@ -56,6 +56,8 @@ function statusBadgeClass(status: string): string {
             return 'bg-slate-200 text-slate-800 border-slate-300';
         case 'IN_PROGRESS':
             return 'bg-blue-100 text-blue-800 border-blue-200';
+        case 'SCHEDULED':
+            return 'bg-amber-100 text-amber-900 border-amber-200';
         case 'PENDING':
             return 'bg-amber-100 text-amber-900 border-amber-200';
         default:

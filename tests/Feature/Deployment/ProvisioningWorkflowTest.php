@@ -2133,3 +2133,236 @@ it('serializes user_overridden and can_override flags for the UI', function () {
         ->and($steps->firstWhere('step_key', ProvisioningStep::NameDevice->value)['user_overridden'])->toBeFalse()
         ->and($steps->firstWhere('step_key', ProvisioningStep::NameDevice->value)['can_override'])->toBeTrue();
 });
+
+it('schedules a custom workflow for a future start without dispatching jobs', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $scheduledAt = now()->addHour();
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 30,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'name' => 'Nightly run',
+        'scheduled_at' => $scheduledAt->toIso8601String(),
+    ])->assertRedirect();
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    $task = Task::query()->where('provisioning_workflow_id', $workflow->id)->first();
+
+    expect($workflow->status)->toBe('scheduled')
+        ->and($workflow->started_at)->toBeNull()
+        ->and($workflow->scheduled_at)->not->toBeNull()
+        ->and($task->status)->toBe('SCHEDULED')
+        ->and($task->scheduled_at)->not->toBeNull()
+        ->and($task->expires_at->equalTo($task->scheduled_at->copy()->addMinutes(30)))->toBeTrue()
+        ->and($task->devices()->first()->pivot->status)->toBe('PENDING');
+
+    Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class);
+
+    $this->get(route('tasks.show', $task))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Task/CustomProvisionTask')
+            ->where('task.status', 'SCHEDULED')
+            ->where('workflow.status', 'scheduled')
+            ->where('workflow.can_cancel', true)
+            ->where('workflow.can_pause', false)
+        );
+});
+
+it('rejects a past scheduled_at when creating a custom workflow', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'scheduled_at' => now()->subMinute()->toIso8601String(),
+    ])->assertSessionHasErrors('scheduled_at');
+
+    expect(ProvisioningWorkflow::query()->count())->toBe(0);
+});
+
+it('rejects scheduled_at for non-custom provisioning workflows', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'scheduled_at' => now()->addHour()->toIso8601String(),
+    ])->assertSessionHasErrors('scheduled_at');
+});
+
+it('cancels a scheduled custom workflow before it starts', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'scheduled_at' => now()->addHour()->toIso8601String(),
+    ])->assertRedirect();
+
+    $workflow = ProvisioningWorkflow::query()->first();
+
+    $this->post(route('provisioning_workflows.cancel', $workflow))
+        ->assertRedirect();
+
+    $workflow->refresh();
+    $task = Task::query()->where('provisioning_workflow_id', $workflow->id)->first();
+
+    expect($workflow->status)->toBe('cancelled')
+        ->and($task->status)->toBe('CANCELLED');
+
+    Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('launches a due scheduled custom workflow via the artisan command', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 30,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'scheduled_at' => now()->addHour()->toIso8601String(),
+    ])->assertRedirect();
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    $task = Task::query()->where('provisioning_workflow_id', $workflow->id)->first();
+    $originalExpiresAt = $task->expires_at->copy();
+
+    $workflow->update(['scheduled_at' => now()->subMinute()]);
+    $task->update(['scheduled_at' => now()->subMinute()]);
+
+    \Illuminate\Support\Facades\Artisan::call('tasks:start-scheduled');
+
+    $workflow->refresh();
+    $task->refresh();
+
+    expect($workflow->status)->toBe('running')
+        ->and($workflow->started_at)->not->toBeNull()
+        ->and($task->status)->toBe('IN_PROGRESS')
+        ->and($task->expires_at->equalTo($originalExpiresAt))->toBeTrue();
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('launches a due scheduled custom workflow when opening the deployment page', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 30,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'scheduled_at' => now()->addHour()->toIso8601String(),
+    ])->assertRedirect();
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    $task = Task::query()->where('provisioning_workflow_id', $workflow->id)->first();
+
+    $workflow->update(['scheduled_at' => now()->subMinute()]);
+    $task->update(['scheduled_at' => now()->subMinute()]);
+
+    $this->get(route('deployments.show', $this->deployment))->assertOk();
+
+    expect($workflow->fresh()->status)->toBe('running')
+        ->and($task->fresh()->status)->toBe('IN_PROGRESS');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('times out a scheduled custom workflow whose window was missed', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'scheduled_at' => now()->addHour()->toIso8601String(),
+    ])->assertRedirect();
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    $task = Task::query()->where('provisioning_workflow_id', $workflow->id)->first();
+
+    $workflow->update(['scheduled_at' => now()->subHours(2)]);
+    $task->update([
+        'scheduled_at' => now()->subHours(2),
+        'expires_at' => now()->subHour(),
+    ]);
+
+    \Illuminate\Support\Facades\Artisan::call('tasks:start-scheduled');
+
+    expect($workflow->fresh()->status)->toBe('cancelled')
+        ->and($task->fresh()->status)->toBe('TIMED_OUT');
+
+    Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('does not finalize scheduled tasks via tasks:finalize-expired', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'scheduled_at' => now()->addHour()->toIso8601String(),
+    ])->assertRedirect();
+
+    $task = Task::query()->where('task_type', 'CUSTOM_PROVISION')->latest('id')->first();
+    $task->timestamps = false;
+    $task->update([
+        'expires_at' => now()->subMinute(),
+    ]);
+
+    \Illuminate\Support\Facades\Artisan::call('tasks:finalize-expired');
+
+    expect($task->fresh()->status)->toBe('SCHEDULED');
+});
+
+it('lists scheduled custom provision tasks on the tasks index', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client);
+    $this->actingAs($this->user);
+
+    $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'name' => 'Scheduled named run',
+        'scheduled_at' => now()->addHour()->toIso8601String(),
+    ])->assertRedirect();
+
+    $this->get(route('tasks.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Task/Index')
+            ->where('tasks.data.0.task_name', 'Custom Task. — Scheduled named run')
+            ->where('tasks.data.0.status', 'SCHEDULED')
+        );
+});

@@ -15,6 +15,7 @@ class ProvisioningWorkflow extends Model
         'classic_poller_active' => 'boolean',
         'online_detection_mode' => OnlineDetectionMode::class,
         'started_at' => 'datetime',
+        'scheduled_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
 
@@ -67,17 +68,31 @@ class ProvisioningWorkflow extends Model
 
     public function isHalted(): bool
     {
-        return in_array($this->status, ['completed', 'cancelled', 'paused'], true);
+        return in_array($this->status, ['completed', 'cancelled', 'paused', 'scheduled'], true);
     }
 
     public function isResumable(): bool
     {
-        return in_array($this->status, ['cancelled', 'paused'], true);
+        if (! in_array($this->status, ['cancelled', 'paused'], true)) {
+            return false;
+        }
+
+        // Scheduled runs that never started (cancelled or missed window) cannot be resumed.
+        if ($this->scheduled_at !== null && $this->started_at === null) {
+            return false;
+        }
+
+        return true;
     }
 
     public function canPause(): bool
     {
         return $this->status === 'running';
+    }
+
+    public function canCancel(): bool
+    {
+        return in_array($this->status, ['running', 'scheduled'], true);
     }
 
     /**

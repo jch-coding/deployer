@@ -100,6 +100,7 @@ class ProvisioningWorkflowController extends Controller
             'device_ids.*' => ['integer'],
             'deployment_time' => ['required', 'integer', 'min:1'],
             'wait_time' => ['required', 'integer', 'min:1', 'max:60'],
+            'scheduled_at' => ['nullable', 'date', 'after:now'],
             'online_detection_mode' => ['nullable', Rule::in(array_map(
                 fn (OnlineDetectionMode $mode) => $mode->value,
                 OnlineDetectionMode::cases(),
@@ -125,6 +126,12 @@ class ProvisioningWorkflowController extends Controller
             'query_central_for_online' => ['nullable', 'boolean'],
             'only_update_different_names' => ['nullable', 'boolean'],
         ]);
+
+        if (isset($validated['scheduled_at']) && ! isset($validated['steps'])) {
+            throw ValidationException::withMessages([
+                'scheduled_at' => 'Scheduling is only supported for custom workflows.',
+            ]);
+        }
 
         if (isset($validated['steps'])) {
             $workflowService->resolveCustomSteps($validated);
@@ -220,9 +227,14 @@ class ProvisioningWorkflowController extends Controller
                 abort(500, 'Custom workflow task was not created.');
             }
 
+            $deviceCount = $workflow->workflowDevices()->count();
+            $message = $workflow->status === 'scheduled'
+                ? 'Custom workflow scheduled for '.$deviceCount.' device(s).'
+                : 'Provisioning workflow started for '.$deviceCount.' device(s).';
+
             return redirect()
                 ->route('tasks.show', $task)
-                ->with('success', 'Provisioning workflow started for '.$workflow->workflowDevices()->count().' device(s).');
+                ->with('success', $message);
         }
 
         return redirect()

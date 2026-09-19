@@ -19,6 +19,7 @@ type CustomProvisionTaskPageProps = SharedData & {
         deployment_time: number;
         wait_time: number;
         expires_at: string | null;
+        scheduled_at?: string | null;
         can_extend: boolean;
     };
     deployment: {
@@ -84,7 +85,16 @@ export default function CustomProvisionTask() {
                             taskId={task.id}
                             expiresAt={task.expires_at}
                             canExtend={task.can_extend}
-                            status={workflow.status}
+                            status={
+                                task.status === 'SCHEDULED'
+                                    ? 'SCHEDULED'
+                                    : workflow.status
+                            }
+                            scheduledAt={
+                                task.scheduled_at ??
+                                workflow.scheduled_at ??
+                                null
+                            }
                         />
                     </div>
                     <Button variant="outline" asChild>

@@ -28,7 +28,9 @@ export type CustomWorkflowRunPayload = {
         message: string | null;
     }>;
     can_pause: boolean;
+    can_cancel: boolean;
     can_resume: boolean;
+    scheduled_at?: string | null;
 };
 
 function SummaryCard({
@@ -75,6 +77,23 @@ export default function CustomWorkflowRunPanel({
                     <p className="text-sm text-muted-foreground capitalize">
                         Status: {workflow.status.replace('_', ' ')}
                     </p>
+                    {workflow.status === 'scheduled' && workflow.scheduled_at ? (
+                        <p
+                            className="text-sm text-muted-foreground"
+                            data-test="custom-workflow-starts-at"
+                        >
+                            Starts{' '}
+                            {new Intl.DateTimeFormat('en-US', {
+                                timeZone: 'America/New_York',
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                timeZoneName: 'short',
+                            }).format(new Date(workflow.scheduled_at))}
+                        </p>
+                    ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <Button
@@ -97,7 +116,7 @@ export default function CustomWorkflowRunPanel({
                             Pause workflow
                         </Button>
                     ) : null}
-                    {workflow.can_pause ? (
+                    {workflow.can_cancel ? (
                         <Button
                             variant="destructive"
                             onClick={() =>

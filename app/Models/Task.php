@@ -25,6 +25,7 @@ class Task extends Model
         'mirror_fallback_mode' => 'boolean',
         'only_update_different_names' => 'boolean',
         'expires_at' => 'datetime',
+        'scheduled_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -37,6 +38,12 @@ class Task extends Model
             $minutes = $task->deployment_time !== null && $task->deployment_time > 0
                 ? (int) $task->deployment_time
                 : self::DEFAULT_DEPLOYMENT_MINUTES;
+
+            if ($task->status === 'SCHEDULED' && $task->scheduled_at !== null) {
+                $task->expires_at = $task->scheduled_at->copy()->addMinutes($minutes);
+
+                return;
+            }
 
             $task->expires_at = now()->addMinutes($minutes);
         });

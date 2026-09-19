@@ -9,4 +9,5 @@ enum TaskStatus
     case TIMED_OUT;
     case PAUSED;
     case CANCELED;
+    case SCHEDULED;
 }

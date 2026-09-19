@@ -13,27 +13,39 @@ class ProvisioningWorkflowTaskSync
     {
         $workflow->loadMissing('workflowDevices');
 
+        $isScheduled = $workflow->status === 'scheduled';
+        $expiresAt = null;
+        if ($isScheduled && $workflow->scheduled_at !== null) {
+            $expiresAt = $workflow->scheduled_at->copy()->addMinutes(
+                max(1, (int) $workflow->deployment_time)
+            );
+        }
+
         $task = $deployment->tasks()->create([
             'task_type' => 'CUSTOM_PROVISION',
             'name' => 'custom_provision_'.$deployment->name.now(),
-            'status' => 'IN_PROGRESS',
+            'status' => $isScheduled ? 'SCHEDULED' : 'IN_PROGRESS',
             'deployment_time' => $workflow->deployment_time,
             'wait_time' => $workflow->wait_time,
             'job_queue' => $workflow->job_queue,
             'provisioning_workflow_id' => $workflow->id,
+            'scheduled_at' => $workflow->scheduled_at,
+            'expires_at' => $expiresAt,
         ]);
 
         $attachData = [];
         foreach ($workflow->workflowDevices as $workflowDevice) {
             $attachData[$workflowDevice->device_id] = [
-                'status' => $this->mapDevicePivotStatus($workflowDevice),
+                'status' => $this->mapDevicePivotStatus($workflowDevice, $isScheduled),
             ];
         }
         if ($attachData !== []) {
             $task->devices()->attach($attachData);
         }
 
-        $this->syncFromWorkflow($workflow->fresh(['workflowDevices']));
+        if (! $isScheduled) {
+            $this->syncFromWorkflow($workflow->fresh(['workflowDevices']));
+        }
 
         return $task->fresh(['provisioningWorkflow', 'devices']);
     }
@@ -50,22 +62,33 @@ class ProvisioningWorkflowTaskSync
 
         $workflow->loadMissing('workflowDevices');
 
+        // Preserve TIMED_OUT for missed scheduled windows (workflow is cancelled but task timed out).
+        $resolvedStatus = $this->resolveTaskStatus($workflow);
+        if ($task->status === 'TIMED_OUT' && $workflow->status === 'cancelled') {
+            $resolvedStatus = 'TIMED_OUT';
+        }
+
         $task->update([
-            'status' => $this->resolveTaskStatus($workflow),
+            'status' => $resolvedStatus,
             'deployment_time' => $workflow->deployment_time,
             'wait_time' => $workflow->wait_time,
         ]);
 
+        $isScheduled = $workflow->status === 'scheduled';
         foreach ($workflow->workflowDevices as $workflowDevice) {
             $task->devices()->updateExistingPivot(
                 $workflowDevice->device_id,
-                ['status' => $this->mapDevicePivotStatus($workflowDevice)],
+                ['status' => $this->mapDevicePivotStatus($workflowDevice, $isScheduled)],
             );
         }
     }
 
     private function resolveTaskStatus(ProvisioningWorkflow $workflow): string
     {
+        if ($workflow->status === 'scheduled') {
+            return 'SCHEDULED';
+        }
+
         if ($workflow->status === 'cancelled') {
             return 'CANCELLED';
         }
@@ -82,8 +105,12 @@ class ProvisioningWorkflowTaskSync
         return 'IN_PROGRESS';
     }
 
-    private function mapDevicePivotStatus(ProvisioningWorkflowDevice $workflowDevice): string
+    private function mapDevicePivotStatus(ProvisioningWorkflowDevice $workflowDevice, bool $isScheduled = false): string
     {
+        if ($isScheduled) {
+            return 'PENDING';
+        }
+
         return match ($workflowDevice->overall_status) {
             'completed' => 'COMPLETED',
             'failed' => 'FAILED',

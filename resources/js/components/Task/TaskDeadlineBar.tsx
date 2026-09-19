@@ -44,6 +44,7 @@ export type TaskDeadlineProps = {
     expiresAt: string | null;
     canExtend: boolean;
     status?: string;
+    scheduledAt?: string | null;
     className?: string;
 };
 
@@ -52,6 +53,7 @@ export default function TaskDeadlineBar({
     expiresAt,
     canExtend,
     status,
+    scheduledAt,
     className,
 }: TaskDeadlineProps) {
     const [extendHours, setExtendHours] = useState(0);
@@ -112,10 +114,11 @@ export default function TaskDeadlineBar({
         );
     };
 
-    if (!expiresAt) {
+    if (!expiresAt && !scheduledAt) {
         return null;
     }
 
+    const isScheduled = status === 'SCHEDULED' || status === 'scheduled';
     const runningLike =
         status === 'IN_PROGRESS' ||
         status === 'running' ||
@@ -129,17 +132,25 @@ export default function TaskDeadlineBar({
             )}
             data-test="task-deadline-bar"
         >
-            <p
-                className={cn(
-                    'text-muted-foreground',
-                    isOverdue && runningLike && 'font-medium text-destructive',
-                )}
-            >
-                <span className="font-medium text-foreground">Ends</span>{' '}
-                {formatDeadline(expiresAt)}
-                {isOverdue && runningLike ? ' (overdue)' : ''}
-            </p>
-            {canExtend ? (
+            {isScheduled && scheduledAt ? (
+                <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Starts</span>{' '}
+                    {formatDeadline(scheduledAt)}
+                </p>
+            ) : null}
+            {expiresAt ? (
+                <p
+                    className={cn(
+                        'text-muted-foreground',
+                        isOverdue && runningLike && 'font-medium text-destructive',
+                    )}
+                >
+                    <span className="font-medium text-foreground">Ends</span>{' '}
+                    {formatDeadline(expiresAt)}
+                    {isOverdue && runningLike ? ' (overdue)' : ''}
+                </p>
+            ) : null}
+            {canExtend && !isScheduled ? (
                 <Dialog>
                     <DialogTrigger asChild>
                         <Button

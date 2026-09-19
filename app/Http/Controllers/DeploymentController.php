@@ -16,6 +16,7 @@ use App\Services\DeviceInterfacePayloadSync;
 use App\Services\FinalizeExpiredTasksService;
 use App\Services\LicensingInventoryService;
 use App\Services\RelaunchFailedCriticalConfigService;
+use App\Services\StartScheduledCustomWorkflowsService;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -48,14 +49,16 @@ class DeploymentController extends Controller
         Request $request,
         Deployment $deployment,
         FinalizeExpiredTasksService $finalizeExpiredTasks,
+        StartScheduledCustomWorkflowsService $startScheduledCustomWorkflows,
         LicensingInventoryService $licensingInventoryService,
         CentralScopeCacheService $centralScopeCacheService,
     ) {
         $finalizeExpiredTasks->run((int) $deployment->id);
+        $startScheduledCustomWorkflows->run((int) $deployment->id);
 
         $latest_tasks = $deployment->tasks()->withCount('devices')->with('provisioningWorkflow')->latest()->get()
             ->map(function ($task) {
-                if ($task->status !== 'COMPLETED') {
+                if ($task->status !== 'COMPLETED' && $task->status !== 'SCHEDULED') {
                     $task_completed = $task->processTaskStatus();
                     if ($task_completed) {
                         $task->status = 'COMPLETED';

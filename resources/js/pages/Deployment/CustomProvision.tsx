@@ -105,6 +105,30 @@ type PreflightPayload = {
 const selectClassName =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
+const DEADLINE_TIMEZONE = 'America/New_York';
+
+function minScheduleDateTime(): string {
+    const date = new Date();
+    date.setMinutes(date.getMinutes() + 1);
+    date.setSeconds(0, 0);
+    const offset = date.getTimezoneOffset();
+    const local = new Date(date.getTime() - offset * 60_000);
+
+    return local.toISOString().slice(0, 16);
+}
+
+function formatScheduledDeadline(iso: string): string {
+    return new Intl.DateTimeFormat('en-US', {
+        timeZone: DEADLINE_TIMEZONE,
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+    }).format(new Date(iso));
+}
+
 function statusColor(status: string): string {
     switch (status) {
         case 'completed':
@@ -161,6 +185,7 @@ export default function CustomProvision() {
     const [deploymentTimeHours, setDeploymentTimeHours] = useState(0);
     const [deploymentTimeMinutes, setDeploymentTimeMinutes] = useState(10);
     const [waitTimeMinutes, setWaitTimeMinutes] = useState(1);
+    const [scheduledAtLocal, setScheduledAtLocal] = useState('');
     const [onlineDetectionMode, setOnlineDetectionMode] = useState<
         'poll' | 'webhook' | 'stream'
     >('poll');
@@ -225,6 +250,28 @@ export default function CustomProvision() {
     const includesLicensing = selectedSteps.includes('verify_licensing');
     const includesNameDevice = selectedSteps.includes('name_device');
     const includesWaitOnline = selectedSteps.includes('wait_for_online');
+    const isScheduling = scheduledAtLocal.trim() !== '';
+    const scheduledEndPreview = useMemo(() => {
+        if (!isScheduling) {
+            return null;
+        }
+        const start = new Date(scheduledAtLocal);
+        if (Number.isNaN(start.getTime())) {
+            return null;
+        }
+        const durationMinutes = deploymentTimeHours * 60 + deploymentTimeMinutes;
+        const end = new Date(start.getTime() + durationMinutes * 60_000);
+
+        return {
+            start: formatScheduledDeadline(start.toISOString()),
+            end: formatScheduledDeadline(end.toISOString()),
+        };
+    }, [
+        isScheduling,
+        scheduledAtLocal,
+        deploymentTimeHours,
+        deploymentTimeMinutes,
+    ]);
 
     const needsLicensingDialog =
         includesLicensing &&
@@ -345,6 +392,13 @@ export default function CustomProvision() {
                 ? Number(selectedTemplateId)
                 : undefined,
         };
+
+        if (scheduledAtLocal.trim() !== '') {
+            const parsed = new Date(scheduledAtLocal);
+            if (!Number.isNaN(parsed.getTime())) {
+                payload.scheduled_at = parsed.toISOString();
+            }
+        }
 
         if (includesWaitOnline) {
             payload.query_central_for_online = queryCentralForOnline;
@@ -547,7 +601,7 @@ export default function CustomProvision() {
                             ) : (
                                 <Play className="mr-2 size-4" />
                             )}
-                            Run workflow
+                            {isScheduling ? 'Schedule workflow' : 'Run workflow'}
                         </Button>
                     </div>
                 </div>
@@ -862,6 +916,35 @@ export default function CustomProvision() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
+                                <div className="space-y-2">
+                                    <p className="mb-1 text-xs text-muted-foreground">
+                                        Start at (optional)
+                                    </p>
+                                    <Input
+                                        type="datetime-local"
+                                        min={minScheduleDateTime()}
+                                        value={scheduledAtLocal}
+                                        onChange={(e) =>
+                                            setScheduledAtLocal(e.target.value)
+                                        }
+                                        data-test="custom-workflow-scheduled-at"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Leave empty to start immediately. Duration
+                                        below is the run window from the start
+                                        time.
+                                    </p>
+                                    {scheduledEndPreview ? (
+                                        <p
+                                            className="text-xs text-muted-foreground"
+                                            data-test="custom-workflow-schedule-preview"
+                                        >
+                                            Starts {scheduledEndPreview.start}.
+                                            Ends {scheduledEndPreview.end}.
+                                        </p>
+                                    ) : null}
+                                </div>
+
                                 <div className="grid grid-cols-3 gap-3">
                                     <div>
                                         <p className="mb-1 text-xs text-muted-foreground">

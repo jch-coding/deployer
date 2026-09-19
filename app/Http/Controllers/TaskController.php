@@ -56,6 +56,7 @@ use App\Services\LicensingSyncException;
 use App\Services\LicensingSyncService;
 use App\Services\Provisioning\ClassicDeviceOnlineService;
 use App\Services\Provisioning\ProvisioningWorkflowService;
+use App\Services\StartScheduledCustomWorkflowsService;
 use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
 use App\Support\ClassicSiteTaskPayload;
@@ -263,9 +264,13 @@ class TaskController extends Controller
         return [];
     }
 
-    public function index(Request $request)
+    public function index(Request $request, StartScheduledCustomWorkflowsService $startScheduledCustomWorkflows)
     {
         $currentClient = $request->user()?->currentClient();
+        if ($currentClient) {
+            $startScheduledCustomWorkflows->run();
+        }
+
         $taskName = trim((string) $request->query('task_name', ''));
         $deploymentName = trim((string) $request->query('deployment_name', ''));
         $status = trim((string) $request->query('status', ''));
@@ -406,11 +411,19 @@ class TaskController extends Controller
         ]);
     }
 
-    public function show(Task $task, ProvisioningWorkflowService $workflowService)
-    {
+    public function show(
+        Task $task,
+        ProvisioningWorkflowService $workflowService,
+        StartScheduledCustomWorkflowsService $startScheduledCustomWorkflows,
+    ) {
         $task->loadMissing('deployment');
 
         if ($task->task_type === 'CUSTOM_PROVISION') {
+            if ($task->deployment_id !== null) {
+                $startScheduledCustomWorkflows->run((int) $task->deployment_id);
+                $task->refresh();
+            }
+
             $task->loadMissing('provisioningWorkflow');
             $workflow = $task->provisioningWorkflow;
 
@@ -420,14 +433,14 @@ class TaskController extends Controller
 
             return Inertia::render('Task/CustomProvisionTask', [
                 'task' => array_merge(
-                    $task->only(['id', 'status', 'deployment_time', 'wait_time']),
+                    $task->only(['id', 'status', 'deployment_time', 'wait_time', 'scheduled_at']),
                     $this->deadlinePropsForTask($task),
                 ),
                 'deployment' => [
                     'id' => $task->deployment->id,
                     'name' => $task->deployment->name,
                 ],
-                'workflow' => $workflowService->serializeForUi($workflow),
+                'workflow' => $workflowService->serializeForUi($workflow->fresh()),
             ]);
         }
 
