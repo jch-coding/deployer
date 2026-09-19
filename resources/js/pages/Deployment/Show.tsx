@@ -76,7 +76,7 @@ import {
     refreshScopeIds,
     show as showDeployment,
 } from '@/routes/deployments';
-import { show as showTask } from '@/routes/tasks';
+import { relaunch, show as showTask } from '@/routes/tasks';
 import {
     groupTasksByLaunchCategory,
     TASK_LAUNCH_CATEGORIES,
@@ -107,6 +107,10 @@ type Task = {
 };
 
 type LaunchTask = TaskLaunchSearchable;
+
+function canRelaunchTask(status: string): boolean {
+    return status === 'FAILED' || status === 'TIMED_OUT' || status === 'CANCELLED';
+}
 
 function formatCsvUploadErrorMessage(message: string | string[]): string {
     return Array.isArray(message) ? message.join(' ') : message;
@@ -1127,11 +1131,17 @@ export default function Show() {
 
                 <div className="mt-6 space-y-10">
                 <section className="w-full">
-                    <h2 className="text-xl font-semibold">Latest Tasks</h2>
+                    <h2 className="text-xl font-semibold">Tasks</h2>
                     {latest_tasks.length > 0 ? (
-                        <div className="mx-auto mt-2 flex flex-wrap justify-center gap-2">
+                        <div
+                            className="mt-2 flex flex-nowrap gap-2 overflow-x-auto pb-2"
+                            data-test="deployment-tasks-scroller"
+                        >
                             {latest_tasks.map((task) => (
-                                <Card key={task.id} className="max-w-sm px-2">
+                                <Card
+                                    key={task.id}
+                                    className="w-64 shrink-0 px-2"
+                                >
                                     <CardTitle className="text-center text-xs">
                                         {task.friendly_name}
                                     </CardTitle>
@@ -1143,12 +1153,30 @@ export default function Show() {
                                             <p>Devices: {task.devices_count}</p>
                                             <p>Status: {task.status}</p>
                                         </div>
-                                        <a
-                                            href={showTask(task.id).url}
-                                            className="text-emerald-500 hover:underline"
-                                        >
-                                            View Details
-                                        </a>
+                                        <div className="mt-2 flex items-center justify-between gap-2">
+                                            <a
+                                                href={showTask(task.id).url}
+                                                className="text-emerald-500 hover:underline"
+                                            >
+                                                View Details
+                                            </a>
+                                            {canRelaunchTask(task.status) ? (
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    data-test={`deployment-task-relaunch-${task.id}`}
+                                                    onClick={() => {
+                                                        router.post(
+                                                            relaunch(task.id)
+                                                                .url,
+                                                        );
+                                                    }}
+                                                >
+                                                    Relaunch
+                                                </Button>
+                                            ) : null}
+                                        </div>
                                     </CardContent>
                                 </Card>
                             ))}
