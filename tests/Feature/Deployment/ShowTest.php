@@ -201,6 +201,57 @@ it('finalizes expired in-progress tasks when viewing the deployment', function (
     expect($task->fresh()->status)->toBe('TIMED_OUT');
 });
 
+it('returns all deployment tasks newest first including relaunchable statuses', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+
+    Task::factory(5)->for($deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'COMPLETED',
+        'created_at' => now()->subHours(2),
+        'updated_at' => now()->subHours(2),
+    ]);
+    $failed = Task::factory()->for($deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'FAILED',
+        'created_at' => now()->subMinutes(30),
+        'updated_at' => now()->subMinutes(30),
+    ]);
+    $timedOut = Task::factory()->for($deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'TIMED_OUT',
+        'created_at' => now()->subMinutes(20),
+        'updated_at' => now()->subMinutes(20),
+    ]);
+    $cancelled = Task::factory()->for($deployment)->create([
+        'task_type' => 'UPDATE_SYSTEM_INFO',
+        'status' => 'CANCELLED',
+        'created_at' => now()->subMinutes(10),
+        'updated_at' => now()->subMinutes(10),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('deployments.show', $deployment))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Show')
+            ->has('latest_tasks', 8)
+            ->where('latest_tasks.0.id', $cancelled->id)
+            ->where('latest_tasks.0.status', 'CANCELLED')
+            ->where('latest_tasks.1.id', $timedOut->id)
+            ->where('latest_tasks.1.status', 'TIMED_OUT')
+            ->where('latest_tasks.2.id', $failed->id)
+            ->where('latest_tasks.2.status', 'FAILED')
+            ->where('latest_tasks', function ($tasks) use ($failed, $timedOut, $cancelled) {
+                $ids = collect($tasks)->pluck('id');
+
+                return $ids->contains($failed->id)
+                    && $ids->contains($timedOut->id)
+                    && $ids->contains($cancelled->id)
+                    && $ids->count() === 8;
+            })
+        );
+});
+
 it('has an upload devices button', function () {
     $this->actingAs($this->user);
     $deployment = Deployment::factory()->for($this->client)->create();

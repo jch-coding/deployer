@@ -53,7 +53,7 @@ class DeploymentController extends Controller
     ) {
         $finalizeExpiredTasks->run((int) $deployment->id);
 
-        $latest_tasks = $deployment->tasks()->withCount('devices')->with('provisioningWorkflow')->latest()->take(6)->get()
+        $latest_tasks = $deployment->tasks()->withCount('devices')->with('provisioningWorkflow')->latest()->get()
             ->map(function ($task) {
                 if ($task->status !== 'COMPLETED') {
                     $task_completed = $task->processTaskStatus();
