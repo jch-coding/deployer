@@ -16,6 +16,7 @@ use App\Models\Task;
 use App\Models\User;
 use App\Services\LicensingInventoryService;
 use App\Services\LicensingPoolResolver;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -103,13 +104,21 @@ class ProvisioningWorkflowService
             $templateId = null;
         }
 
+        $scheduledAt = $this->resolveScheduledAt($options, $isCustom);
+        $isScheduled = $scheduledAt !== null;
+
         $alreadyOnlineReasons = [];
-        if ($this->includesWaitForOnline($isCustom, $customSteps, $startStep, $omitSteps)) {
+        if (! $isScheduled
+            && $this->includesWaitForOnline($isCustom, $customSteps, $startStep, $omitSteps)) {
             $alreadyOnlineReasons = $this->deviceAlreadyOnlineResolver->resolve(
                 $deployment->client,
                 $devices,
                 (bool) ($options['query_central_for_online'] ?? false),
             );
+        }
+
+        if ($isScheduled) {
+            $licensingConfig['query_central_for_online'] = (bool) ($options['query_central_for_online'] ?? false);
         }
 
         return DB::transaction(function () use (
@@ -131,12 +140,14 @@ class ProvisioningWorkflowService
             $workflowName,
             $templateId,
             $alreadyOnlineReasons,
+            $scheduledAt,
+            $isScheduled,
         ): ProvisioningWorkflow {
             $workflow = ProvisioningWorkflow::query()->create([
                 'deployment_id' => $deployment->id,
                 'user_id' => $user->id,
                 'name' => $workflowName,
-                'status' => 'running',
+                'status' => $isScheduled ? 'scheduled' : 'running',
                 'job_queue' => $jobQueue,
                 'deployment_time' => $deploymentTime,
                 'wait_time' => $waitTime,
@@ -144,7 +155,8 @@ class ProvisioningWorkflowService
                 'licensing_config' => $licensingConfig,
                 'steps' => $stepKeys,
                 'provisioning_workflow_template_id' => $templateId,
-                'started_at' => now(),
+                'started_at' => $isScheduled ? null : now(),
+                'scheduled_at' => $scheduledAt,
             ]);
 
             foreach ($devices as $device) {
@@ -152,8 +164,10 @@ class ProvisioningWorkflowService
                     'provisioning_workflow_id' => $workflow->id,
                     'device_id' => $device->id,
                     'overall_status' => 'in_progress',
-                    'current_step_key' => $startStep->value,
-                    'status_message' => 'Starting '.$startStep->label().'...',
+                    'current_step_key' => $isScheduled ? null : $startStep->value,
+                    'status_message' => $isScheduled
+                        ? 'Scheduled to start '.$scheduledAt->toIso8601String().'.'
+                        : 'Starting '.$startStep->label().'...',
                 ]);
 
                 $alreadyOnlineReason = $alreadyOnlineReasons[(int) $device->id] ?? null;
@@ -166,7 +180,8 @@ class ProvisioningWorkflowService
                             $device,
                             $stepContext,
                         );
-                        if ($status === 'pending'
+                        if (! $isScheduled
+                            && $status === 'pending'
                             && $step === ProvisioningStep::WaitForOnline
                             && $alreadyOnlineReason !== null) {
                             $status = 'skipped';
@@ -209,29 +224,14 @@ class ProvisioningWorkflowService
                     }
                 }
 
-                $firstStepRow = $workflowDevice->steps()
-                    ->where('status', 'pending')
-                    ->orderBy('step_order')
-                    ->first();
-
-                if ($firstStepRow !== null) {
-                    $firstStep = ProvisioningStep::from($firstStepRow->step_key);
-                    $firstStepRow->markInProgress($firstStep->label().'...');
-                    $workflowDevice->update([
-                        'current_step_key' => $firstStep->value,
-                        'status_message' => $firstStep->label().'...',
-                    ]);
-                    $this->orchestrator->dispatchStep($workflowDevice, $firstStep);
-                } else {
-                    $workflowDevice->update([
-                        'overall_status' => 'completed',
-                        'current_step_key' => null,
-                        'status_message' => 'No applicable steps for this device.',
-                    ]);
+                if (! $isScheduled) {
+                    $this->dispatchFirstPendingStep($workflowDevice);
                 }
             }
 
-            $workflow->refreshOverallStatus();
+            if (! $isScheduled) {
+                $workflow->refreshOverallStatus();
+            }
 
             if ($isCustom) {
                 $this->taskSync->createForWorkflow($workflow, $deployment);
@@ -239,6 +239,154 @@ class ProvisioningWorkflowService
 
             return $workflow->load(['workflowDevices.device', 'workflowDevices.steps', 'task']);
         });
+    }
+
+    /**
+     * Launch a previously prepared scheduled custom workflow (or the immediate-start dispatch path).
+     */
+    public function launchPreparedWorkflow(ProvisioningWorkflow $workflow): void
+    {
+        if ($workflow->status !== 'scheduled') {
+            return;
+        }
+
+        $workflow->loadMissing([
+            'deployment.client',
+            'workflowDevices.device',
+            'workflowDevices.steps',
+        ]);
+
+        $devices = $workflow->workflowDevices->map(fn (ProvisioningWorkflowDevice $wd) => $wd->device)->filter();
+        $licensingConfig = is_array($workflow->licensing_config) ? $workflow->licensing_config : [];
+        $queryCentral = (bool) ($licensingConfig['query_central_for_online'] ?? false);
+
+        $alreadyOnlineReasons = [];
+        $hasWaitForOnline = $workflow->workflowDevices->contains(
+            fn (ProvisioningWorkflowDevice $wd) => $wd->steps->contains(
+                fn (ProvisioningWorkflowDeviceStep $row) => $row->step_key === ProvisioningStep::WaitForOnline->value
+                    && $row->status === 'pending'
+            )
+        );
+
+        if ($hasWaitForOnline && $workflow->deployment?->client !== null) {
+            $alreadyOnlineReasons = $this->deviceAlreadyOnlineResolver->resolve(
+                $workflow->deployment->client,
+                $devices,
+                $queryCentral,
+            );
+        }
+
+        DB::transaction(function () use ($workflow, $alreadyOnlineReasons): void {
+            $workflow->update([
+                'status' => 'running',
+                'started_at' => now(),
+            ]);
+
+            foreach ($workflow->workflowDevices as $workflowDevice) {
+                $alreadyOnlineReason = $alreadyOnlineReasons[(int) $workflowDevice->device_id] ?? null;
+
+                if ($alreadyOnlineReason !== null) {
+                    $waitRow = $workflowDevice->steps
+                        ->first(fn (ProvisioningWorkflowDeviceStep $row) => $row->step_key === ProvisioningStep::WaitForOnline->value
+                            && $row->status === 'pending');
+                    if ($waitRow !== null) {
+                        $waitRow->update([
+                            'status' => 'skipped',
+                            'message' => $alreadyOnlineReason,
+                            'completed_at' => now(),
+                        ]);
+                    }
+                }
+
+                $workflowDevice->update([
+                    'status_message' => 'Starting...',
+                ]);
+
+                $this->dispatchFirstPendingStep($workflowDevice->fresh(['steps', 'device', 'workflow']));
+            }
+
+            $workflow->refreshOverallStatus();
+
+            $task = $this->taskForWorkflow($workflow);
+            if ($task !== null && $task->status === 'SCHEDULED') {
+                $task->update(['status' => 'IN_PROGRESS']);
+            }
+
+            $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
+        });
+    }
+
+    public function markScheduledMissed(ProvisioningWorkflow $workflow): void
+    {
+        if ($workflow->status !== 'scheduled') {
+            return;
+        }
+
+        $workflow->update([
+            'status' => 'cancelled',
+            'completed_at' => now(),
+            'classic_poller_active' => false,
+        ]);
+
+        $task = $this->taskForWorkflow($workflow);
+        if ($task !== null && $task->status === 'SCHEDULED') {
+            $task->update(['status' => 'TIMED_OUT']);
+            $task->processTaskStatusLog(
+                'Scheduled workflow window ended before the run started.',
+                true,
+            );
+        }
+
+        $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
+    }
+
+    private function dispatchFirstPendingStep(ProvisioningWorkflowDevice $workflowDevice): void
+    {
+        $firstStepRow = $workflowDevice->steps()
+            ->where('status', 'pending')
+            ->orderBy('step_order')
+            ->first();
+
+        if ($firstStepRow !== null) {
+            $firstStep = ProvisioningStep::from($firstStepRow->step_key);
+            $firstStepRow->markInProgress($firstStep->label().'...');
+            $workflowDevice->update([
+                'overall_status' => 'in_progress',
+                'current_step_key' => $firstStep->value,
+                'status_message' => $firstStep->label().'...',
+            ]);
+            $this->orchestrator->dispatchStep($workflowDevice, $firstStep);
+
+            return;
+        }
+
+        $workflowDevice->update([
+            'overall_status' => 'completed',
+            'current_step_key' => null,
+            'status_message' => 'No applicable steps for this device.',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function resolveScheduledAt(array $options, bool $isCustom): ?CarbonInterface
+    {
+        if (! $isCustom || ! array_key_exists('scheduled_at', $options) || $options['scheduled_at'] === null || $options['scheduled_at'] === '') {
+            return null;
+        }
+
+        $scheduledAt = $options['scheduled_at'] instanceof CarbonInterface
+            ? $options['scheduled_at']
+            : \Illuminate\Support\Carbon::parse((string) $options['scheduled_at']);
+
+        if (! $scheduledAt->isFuture()) {
+            throw ValidationException::withMessages([
+                'scheduled_at' => 'The scheduled start time must be in the future.',
+            ]);
+        }
+
+        return $scheduledAt;
     }
 
     /**
@@ -352,7 +500,7 @@ class ProvisioningWorkflowService
 
     public function cancel(ProvisioningWorkflow $workflow): void
     {
-        if ($workflow->status !== 'running') {
+        if (! $workflow->canCancel()) {
             return;
         }
 
@@ -618,12 +766,14 @@ class ProvisioningWorkflowService
             'wait_time' => $workflow->wait_time,
             'online_detection_mode' => $workflow->onlineDetectionMode()->value,
             'started_at' => $workflow->started_at?->toIso8601String(),
+            'scheduled_at' => $workflow->scheduled_at?->toIso8601String(),
             'completed_at' => $workflow->completed_at?->toIso8601String(),
             'summary' => $summary,
             'licensing_failures' => $licensingFailures,
             'devices' => $deviceCards,
             'is_terminal' => $workflow->isTerminal(),
             'can_pause' => $workflow->canPause(),
+            'can_cancel' => $workflow->canCancel(),
             'can_resume' => $workflow->isResumable(),
         ];
     }
