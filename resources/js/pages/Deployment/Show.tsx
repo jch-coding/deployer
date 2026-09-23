@@ -6,6 +6,7 @@ import type { FormEvent } from 'react';
 import { toast } from 'sonner';
 import { buildDeploymentBulkSelectionPayload } from '@/lib/deployment-bulk-selection';
 import type { LicenseTypeOption } from '@/lib/license-types';
+import { downloadDeploymentDevicesCsv } from '@/lib/deployment-devices-csv';
 import { downloadSampleDeviceCsv } from '@/lib/sample-device-csv';
 import { storeMany, updateMany } from '@/actions/App/Http/Controllers/DeviceController';
 import { Badge } from '@/components/ui/badge';
@@ -902,6 +903,22 @@ export default function Show() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <h1 className="text-3xl font-semibold">{deployment.name}</h1>
                     <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="gap-2"
+                            disabled={filteredDevices.length === 0}
+                            data-test="export-devices-csv"
+                            onClick={() =>
+                                downloadDeploymentDevicesCsv(
+                                    filteredDevices,
+                                    deployment.name,
+                                )
+                            }
+                        >
+                            <Download className="size-4" aria-hidden />
+                            Export CSV
+                        </Button>
                         <Button
                             type="button"
                             variant="outline"
