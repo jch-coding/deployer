@@ -399,6 +399,7 @@ export default function ControllerMigrationSection({
                             <tr className="border-b text-left">
                                 <th className="px-2 py-2 font-medium">Name</th>
                                 <th className="px-2 py-2 font-medium">Group</th>
+                                <th className="px-2 py-2 font-medium">AP Type</th>
                                 <th className="px-2 py-2 font-medium">IP Address</th>
                                 <th className="px-2 py-2 font-medium">Serial</th>
                                 <th className="px-2 py-2 font-medium">MAC</th>
@@ -410,6 +411,9 @@ export default function ControllerMigrationSection({
                                     <td className="px-2 py-2">{device.name}</td>
                                     <td className="px-2 py-2 font-mono text-xs">
                                         {device.group ?? '—'}
+                                    </td>
+                                    <td className="px-2 py-2 font-mono text-xs">
+                                        {device.ap_type ?? '—'}
                                     </td>
                                     <td className="px-2 py-2 font-mono text-xs">
                                         {device.controller_joined_ip ?? '—'}

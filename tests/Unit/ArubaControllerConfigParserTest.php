@@ -33,9 +33,54 @@ it('parses ap device fields from daytona fixture', function () {
     expect($first)->toMatchArray([
         'name' => 'DAY-H-IDF02-021',
         'group' => 'DAY-Hub-AGV',
+        'ap_type' => '514',
         'controller_joined_ip' => '10.44.30.27',
         'mac' => '50:e4:e0:c3:bb:6a',
         'serial' => 'PHS2KD006J',
+    ]);
+});
+
+it('parses ap type and groups that contain spaces', function () {
+    $content = <<<'TXT'
+(LSU-WLC) #show ap database long
+
+AP Database
+-----------
+Name           Group                          AP Type  IP Address     Status               Flags  Switch IP    Standby IP  Wired MAC Address  Serial #
+----           -----                          -------  ----------     ------               -----  ---------    ----------  -----------------  --------
+LSU-AP401      LSU-4TH & 5TH Floor-Active-AP  535      172.18.4.6     Up 262d:5h:6m:22s    2      172.18.1.89  0.0.0.0     aa:bb:cc:dd:ee:01  SNLSUAP401
+LSU-4B-C06     LSU-CP-AP-GRP                  505      172.18.4.219   Up 265d:5h:9m:40s    2      172.18.1.89  0.0.0.0     aa:bb:cc:dd:ee:02  SNLSU4BC06
+
+Flags: 2 = Using IKE version 2
+
+Total APs:2
+
+(LSU-WLC) #show running-config
+version 8.10
+TXT;
+
+    $parser = new ArubaControllerConfigParser;
+    $devices = $parser->parse($content)[0]['devices'];
+
+    expect($devices)->toHaveCount(2);
+
+    $spaced = collect($devices)->firstWhere('name', 'LSU-AP401');
+    $simple = collect($devices)->firstWhere('name', 'LSU-4B-C06');
+
+    expect($spaced)->toMatchArray([
+        'name' => 'LSU-AP401',
+        'group' => 'LSU-4TH & 5TH Floor-Active-AP',
+        'ap_type' => '535',
+        'controller_joined_ip' => '172.18.4.6',
+        'mac' => 'aa:bb:cc:dd:ee:01',
+        'serial' => 'SNLSUAP401',
+    ])->and($simple)->toMatchArray([
+        'name' => 'LSU-4B-C06',
+        'group' => 'LSU-CP-AP-GRP',
+        'ap_type' => '505',
+        'controller_joined_ip' => '172.18.4.219',
+        'mac' => 'aa:bb:cc:dd:ee:02',
+        'serial' => 'SNLSU4BC06',
     ]);
 });
 

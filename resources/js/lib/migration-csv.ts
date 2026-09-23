@@ -3,6 +3,7 @@ export type MigrationDevice = {
     serial: string;
     mac: string;
     group?: string;
+    ap_type?: string;
     controller?: string;
     controller_joined_ip?: string;
 };
@@ -59,6 +60,9 @@ export function downloadMigrationDevicesCsv(
     const includeGroupColumn = devices.some(
         (device) => device.group !== undefined && device.group !== '',
     );
+    const includeApTypeColumn = devices.some(
+        (device) => device.ap_type !== undefined && device.ap_type !== '',
+    );
     const includeControllerJoinedIpColumn = devices.some(
         (device) =>
             device.controller_joined_ip !== undefined && device.controller_joined_ip !== '',
@@ -67,6 +71,9 @@ export function downloadMigrationDevicesCsv(
     const headers = ['name', 'serial', 'mac'];
     if (includeGroupColumn) {
         headers.push('group');
+    }
+    if (includeApTypeColumn) {
+        headers.push('ap_type');
     }
     if (includeControllerJoinedIpColumn) {
         headers.push('controller_joined_ip');
@@ -82,6 +89,9 @@ export function downloadMigrationDevicesCsv(
             const row = [device.name, device.serial, device.mac];
             if (includeGroupColumn) {
                 row.push(device.group ?? '');
+            }
+            if (includeApTypeColumn) {
+                row.push(device.ap_type ?? '');
             }
             if (includeControllerJoinedIpColumn) {
                 row.push(device.controller_joined_ip ?? '');
