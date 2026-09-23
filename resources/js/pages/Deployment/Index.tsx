@@ -1,7 +1,7 @@
 import { Field } from '@headlessui/react';
 import { Form, Link, router, usePage } from '@inertiajs/react';
-import { Rocket, TrashIcon } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Rocket, Search, TrashIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/DeploymentController';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,12 +51,23 @@ export default function Index() {
     } = usePage<DeploymentIndexProps>().props;
     const dialogCloseRef = useRef<HTMLButtonElement | null>(null);
     const [success, setSuccess] = useState(false);
+    const [nameFilter, setNameFilter] = useState('');
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: current_client?.name ?? 'Clients',
             href: clientsIndex().url,
         },
     ];
+    const filteredDeployments = useMemo(() => {
+        const query = nameFilter.trim().toLowerCase();
+        if (query === '') {
+            return deployments;
+        }
+
+        return deployments.filter((deployment) =>
+            deployment.name.toLowerCase().includes(query),
+        );
+    }, [deployments, nameFilter]);
     useEffect(() => {
         if (!success) return;
         dialogCloseRef.current?.click();
@@ -77,55 +88,76 @@ export default function Index() {
                     />
                 </div>
                 {deployments.length > 0 ? (
-                    <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {deployments.map((deployment) => (
-                            <Card key={deployment.id}>
-                                <CardHeader>
-                                    <CardTitle>{deployment.name}</CardTitle>
-                                </CardHeader>
-                                <CardContent className="flex flex-col gap-3">
-                                    <p className="text-muted-foreground text-sm">
-                                        {deployment.devices_count === 1
-                                            ? '1 device'
-                                            : `${deployment.devices_count} devices`}
-                                    </p>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <Button
-                                            asChild
-                                            variant="outline"
-                                            size="sm"
-                                            className="gap-1.5"
-                                            data-test="deployment-link"
-                                        >
-                                            <Link href={showDeployment(deployment.id).url}>
-                                                <Rocket
-                                                    className="size-4 shrink-0"
-                                                    aria-hidden
-                                                />
-                                                View deployment
-                                            </Link>
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="gap-1.5 border-destructive text-destructive hover:border-destructive hover:bg-destructive hover:text-white"
-                                            data-test="delete"
-                                            onClick={() =>
-                                                router.delete(destroy(deployment.id))
-                                            }
-                                        >
-                                            <TrashIcon
-                                                className="mr-1 size-4"
-                                                aria-hidden
-                                            />
-                                            Delete
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
+                    <>
+                        <div className="relative mx-auto mt-6 w-full max-w-md">
+                            <Search
+                                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                                aria-hidden
+                            />
+                            <Input
+                                type="search"
+                                value={nameFilter}
+                                onChange={(e) => setNameFilter(e.target.value)}
+                                placeholder="Search by name"
+                                className="pl-9"
+                                data-test="deployments-filter-name"
+                                aria-label="Search deployments by name"
+                            />
+                        </div>
+                        {filteredDeployments.length > 0 ? (
+                            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                {filteredDeployments.map((deployment) => (
+                                    <Card key={deployment.id}>
+                                        <CardHeader>
+                                            <CardTitle>{deployment.name}</CardTitle>
+                                        </CardHeader>
+                                        <CardContent className="flex flex-col gap-3">
+                                            <p className="text-muted-foreground text-sm">
+                                                {deployment.devices_count === 1
+                                                    ? '1 device'
+                                                    : `${deployment.devices_count} devices`}
+                                            </p>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Button
+                                                    asChild
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="gap-1.5"
+                                                    data-test="deployment-link"
+                                                >
+                                                    <Link href={showDeployment(deployment.id).url}>
+                                                        <Rocket
+                                                            className="size-4 shrink-0"
+                                                            aria-hidden
+                                                        />
+                                                        View deployment
+                                                    </Link>
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="gap-1.5 border-destructive text-destructive hover:border-destructive hover:bg-destructive hover:text-white"
+                                                    data-test="delete"
+                                                    onClick={() =>
+                                                        router.delete(destroy(deployment.id))
+                                                    }
+                                                >
+                                                    <TrashIcon
+                                                        className="mr-1 size-4"
+                                                        aria-hidden
+                                                    />
+                                                    Delete
+                                                </Button>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="mt-6">No deployments match your search.</p>
+                        )}
+                    </>
                 ) : (
                     <p>No deployments found</p>
                 )}
