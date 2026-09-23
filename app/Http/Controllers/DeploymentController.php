@@ -37,7 +37,23 @@ class DeploymentController extends Controller
             return to_route('clients.index');
         }
 
-        $deployments = $currentClient->deployments()->withCount('devices')->get();
+        $deployments = $currentClient->deployments()
+            ->withCount('devices')
+            ->with(['devices.site'])
+            ->get()
+            ->map(fn (Deployment $deployment) => [
+                'id' => $deployment->id,
+                'name' => $deployment->name,
+                'devices_count' => $deployment->devices_count,
+                'devices' => $deployment->devices->map(fn (Device $device) => [
+                    'name' => $device->name,
+                    'serial' => $device->serial,
+                    'mac_address' => $device->mac_address,
+                    'site' => $device->site?->name,
+                    'group' => $device->group,
+                    'controller_joined_ip' => $device->controller_joined_ip,
+                ])->values()->all(),
+            ]);
 
         return Inertia::render('Deployment/Index', [
             'deployments' => $deployments,
