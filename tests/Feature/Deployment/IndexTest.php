@@ -2,6 +2,8 @@
 
 use App\Models\Client;
 use App\Models\Deployment;
+use App\Models\Device;
+use App\Models\Site;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -51,6 +53,37 @@ test('a user can click on a deployment to view it', function () {
             ->where('deployments.0.name', $deployment->name)
             ->has('central_sites_cache.refreshed_at')
             ->has('central_groups_cache.refreshed_at')
+        );
+});
+
+test('index page includes slim device fields for search', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    seedCentralScopeCache($client);
+    $deployment = Deployment::factory()->for($client)->create();
+    $site = Site::factory()->for($client)->create(['name' => 'Warehouse']);
+    Device::factory()->for($client)->for($deployment)->create([
+        'name' => 'AP-Lobby',
+        'serial' => 'CN12345678',
+        'mac_address' => 'aa:bb:cc:dd:ee:ff',
+        'group' => 'Floor-1',
+        'controller_joined_ip' => '10.44.30.27',
+        'site_id' => $site->id,
+    ]);
+    $this->actingAs($user);
+    $this->get(route('deployments.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Deployment/Index')
+            ->where('deployments.0.id', $deployment->id)
+            ->where('deployments.0.devices_count', 1)
+            ->where('deployments.0.devices.0.name', 'AP-Lobby')
+            ->where('deployments.0.devices.0.serial', 'CN12345678')
+            ->where('deployments.0.devices.0.mac_address', 'aa:bb:cc:dd:ee:ff')
+            ->where('deployments.0.devices.0.site', 'Warehouse')
+            ->where('deployments.0.devices.0.group', 'Floor-1')
+            ->where('deployments.0.devices.0.controller_joined_ip', '10.44.30.27')
         );
 });
 

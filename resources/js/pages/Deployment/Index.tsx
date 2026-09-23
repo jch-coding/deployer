@@ -26,15 +26,26 @@ import CentralScopeRefreshButtons, {
     type CentralScopeGroupsCacheMeta,
 } from '@/components/central/CentralScopeRefreshButtons';
 import AppLayout from '@/layouts/app-layout';
+import { filterDeploymentsByIndexSearch } from '@/lib/deployment-index-search';
 import { index as clientsIndex } from '@/routes/clients';
 import { destroy, show as showDeployment } from '@/routes/deployments';
 import type { BreadcrumbItem, SharedData } from '@/types';
+
+type DeploymentDevice = {
+    name: string;
+    serial: string;
+    mac_address: string | null;
+    site: string | null;
+    group: string | null;
+    controller_joined_ip?: string | null;
+};
 
 type Deployment = {
     id: number;
     name: string;
     devices_count: number;
-}
+    devices: DeploymentDevice[];
+};
 
 type DeploymentIndexProps = {
     deployments: Deployment[];
@@ -51,23 +62,17 @@ export default function Index() {
     } = usePage<DeploymentIndexProps>().props;
     const dialogCloseRef = useRef<HTMLButtonElement | null>(null);
     const [success, setSuccess] = useState(false);
-    const [nameFilter, setNameFilter] = useState('');
+    const [search, setSearch] = useState('');
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: current_client?.name ?? 'Clients',
             href: clientsIndex().url,
         },
     ];
-    const filteredDeployments = useMemo(() => {
-        const query = nameFilter.trim().toLowerCase();
-        if (query === '') {
-            return deployments;
-        }
-
-        return deployments.filter((deployment) =>
-            deployment.name.toLowerCase().includes(query),
-        );
-    }, [deployments, nameFilter]);
+    const filteredDeployments = useMemo(
+        () => filterDeploymentsByIndexSearch(deployments, search),
+        [deployments, search],
+    );
     useEffect(() => {
         if (!success) return;
         dialogCloseRef.current?.click();
@@ -96,12 +101,12 @@ export default function Index() {
                             />
                             <Input
                                 type="search"
-                                value={nameFilter}
-                                onChange={(e) => setNameFilter(e.target.value)}
-                                placeholder="Search by name"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="Search by deployment or device name, serial, MAC, site, group, or IP"
                                 className="pl-9"
                                 data-test="deployments-filter-name"
-                                aria-label="Search deployments by name"
+                                aria-label="Search by deployment or device name, serial, MAC, site, group, or IP"
                             />
                         </div>
                         {filteredDeployments.length > 0 ? (
