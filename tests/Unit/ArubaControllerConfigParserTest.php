@@ -154,7 +154,7 @@ AP Database
 -----------
 Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
 ----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
-AP-SECOND-001    default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERSECOND1  N/A   N/A   N/A
+AP-FIRST-001     default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    00:11:22:33:44:55  SERFIRST1   N/A   N/A   N/A
 
 (DAY-HUB-WLC2) #show running-config
 aaa authentication-server radius "ECPPM"
@@ -740,6 +740,25 @@ it('deduplicates identical wlan ssids when merging paired controllers', function
         ->and($results[0]['wlan_profiles'][0]['raw_vlan'])->toBe('DAYKIT');
 });
 
+it('keeps name-paired controllers separate when AP inventories differ', function () {
+    $parser = new ArubaControllerConfigParser;
+    $results = $parser->parse(pairedControllerConfigWithDifferentAp('DAY-HUB-WLC1', 'DAY-HUB-WLC2'));
+
+    expect($results)->toHaveCount(2)
+        ->and($results[0]['controller_name'])->toBe('DAY-HUB-WLC1')
+        ->and($results[1]['controller_name'])->toBe('DAY-HUB-WLC2')
+        ->and($results[0]['devices'])->toHaveCount(1)
+        ->and($results[1]['devices'])->toHaveCount(1)
+        ->and($results[0]['devices'][0]['name'])->toBe('AP-FIRST-001')
+        ->and($results[0]['devices'][0]['serial'])->toBe('SERFIRST1')
+        ->and($results[0]['devices'][0]['mac'])->toBe('00:11:22:33:44:55')
+        ->and($results[1]['devices'][0]['name'])->toBe('AP-SECOND-001')
+        ->and($results[1]['devices'][0]['serial'])->toBe('SERSECOND1')
+        ->and($results[1]['devices'][0]['mac'])->toBe('aa:bb:cc:dd:ee:ff')
+        ->and($results[0]['wlan_profiles'][0]['ssid_profile_name'])->toBe('FIRST')
+        ->and($results[1]['wlan_profiles'][0]['ssid_profile_name'])->toBe('SECOND');
+});
+
 it('deduplicates wlan ssids from multiple ssid-profile blocks with the same essid', function () {
     $content = <<<'CONFIG'
 (WLC-ONE) #show ap database long
@@ -1313,16 +1332,16 @@ AP Database
 -----------
 Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
 ----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
-AP-SECOND-001    default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERSECOND1  N/A   N/A   N/A
+AP-FIRST-001     default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    00:11:22:33:44:55  SERFIRST1   N/A   N/A   N/A
 
 ({$secondName}) #show ap lldp neighbors
 AP LLDP Neighbors (Updated every 300 seconds)
 ---------------------------------------------
 AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
 --               ---------  --------  ---------------               -------   ---------  -------------  ------------
-AP-SECOND-001    bond0      0         SW-A.example.com              Te1/0/2   AP         10.2.2.10      B
-AP-SECOND-002    bond0      0         SW-A.example.com              Te1/0/1   AP         10.2.2.10      B
-AP-SECOND-003    bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.11      B
+AP-FIRST-001     bond0      0         SW-A.example.com              Te1/0/2   AP         10.2.2.10      B
+AP-FIRST-001     bond0      0         SW-A.example.com              Te1/0/1   AP         10.2.2.10      B
+AP-FIRST-001     bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.11      B
 
 ({$secondName}) #show running-config
 wlan ssid-profile "SECOND_ssid_prof"
@@ -1371,14 +1390,14 @@ AP Database
 -----------
 Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
 ----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
-AP-SECOND-001    default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERSECOND1  N/A   N/A   N/A
+AP-FIRST-001     default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    00:11:22:33:44:55  SERFIRST1   N/A   N/A   N/A
 
 ({$secondName}) #show ap lldp neighbors
 AP LLDP Neighbors (Updated every 300 seconds)
 ---------------------------------------------
 AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
 --               ---------  --------  ---------------               -------   ---------  -------------  ------------
-AP-SECOND-001    bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.10      B
+AP-FIRST-001     bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.10      B
 
 ({$secondName}) #show running-config
 wlan ssid-profile "DAYKIT_ssid_prof"
@@ -1432,14 +1451,14 @@ AP Database
 -----------
 Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
 ----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
-AP-SECOND-001    default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERSECOND1  N/A   N/A   N/A
+AP-FIRST-001     default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    00:11:22:33:44:55  SERFIRST1   N/A   N/A   N/A
 
 ({$secondName}) #show ap lldp neighbors
 AP LLDP Neighbors (Updated every 300 seconds)
 ---------------------------------------------
 AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
 --               ---------  --------  ---------------               -------   ---------  -------------  ------------
-AP-SECOND-001    bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.10      B
+AP-FIRST-001     bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.10      B
 
 ({$secondName}) #show running-config
 wlan ssid-profile "DAYKIT_ssid_prof"
@@ -1453,6 +1472,67 @@ wlan virtual-ap "DAYKIT"
 !
 ap-group "default"
     virtual-ap "DAYKIT"
+!
+CONFIG;
+}
+
+function pairedControllerConfigWithDifferentAp(string $firstName, string $secondName): string
+{
+    return <<<CONFIG
+({$firstName}) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-FIRST-001     default      514      10.1.1.1      Up 1d:0h:0m:0s     2      10.1.1.2    10.1.1.3    00:11:22:33:44:55  SERFIRST1   N/A   N/A   N/A
+
+({$firstName}) #show ap lldp neighbors
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+AP-FIRST-001     bond0      0         SW-A.example.com              Te1/0/1   AP         10.1.1.10      B
+
+({$firstName}) #show running-config
+wlan ssid-profile "FIRST_ssid_prof"
+    essid "FIRST"
+    wpa-passphrase "first-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "FIRST"
+    vlan FIRST
+    ssid-profile "FIRST_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "FIRST"
+!
+
+({$secondName}) #show ap database long
+AP Database
+-----------
+Name             Group        AP Type  IP Address    Status             Flags  Switch IP   Standby IP  Wired MAC Address  Serial #    Port  FQLN  Outer IP  User
+----             -----        -------  ----------    ------             -----  ---------   ----------  -----------------  --------    ----  ----  --------  ----
+AP-SECOND-001    default      514      10.2.2.1      Up 1d:0h:0m:0s     2      10.2.2.2    10.2.2.3    aa:bb:cc:dd:ee:ff  SERSECOND1  N/A   N/A   N/A
+
+({$secondName}) #show ap lldp neighbors
+AP LLDP Neighbors (Updated every 300 seconds)
+---------------------------------------------
+AP               Interface  Neighbor  Chassis Name/ID               Port ID   Port Desc  Mgmt. Address  Capabilities
+--               ---------  --------  ---------------               -------   ---------  -------------  ------------
+AP-SECOND-001    bond0      0         SW-B.example.com              Te2/0/1   AP         10.2.2.10      B
+
+({$secondName}) #show running-config
+wlan ssid-profile "SECOND_ssid_prof"
+    essid "SECOND"
+    wpa-passphrase "second-passphrase-12345"
+    opmode wpa2-psk-aes
+!
+wlan virtual-ap "SECOND"
+    vlan SECOND
+    ssid-profile "SECOND_ssid_prof"
+!
+ap-group "default"
+    virtual-ap "SECOND"
 !
 CONFIG;
 }

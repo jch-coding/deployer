@@ -46,35 +46,38 @@ class ArubaControllerConfigParser
             if ($pairedName !== null) {
                 $pairedIndex = array_search($pairedName, $parsedNames, true);
                 $partnerDevices = $this->parseApDatabase($blockContent);
-                $partnerApGroups = $this->uniqueApGroups($partnerDevices);
 
-                $parsedControllers[$pairedIndex]['lldp_neighbors'] = $this->mergeLldpNeighbors(
-                    $parsedControllers[$pairedIndex]['lldp_neighbors'],
-                    $this->parseLldpNeighbors($blockContent),
-                );
-                $partnerWlanProfiles = $this->parseWlanProfiles($blockContent, $partnerApGroups);
-                $parsedControllers[$pairedIndex]['wlan_profiles'] = $this->mergeWlanProfiles(
-                    $parsedControllers[$pairedIndex]['wlan_profiles'],
-                    $partnerWlanProfiles,
-                );
-                $parsedControllers[$pairedIndex]['radio_profiles'] = $this->mergeRadioProfiles(
-                    $parsedControllers[$pairedIndex]['radio_profiles'],
-                    $this->parseRadioProfiles($blockContent, $partnerApGroups),
-                );
-                $parsedControllers[$pairedIndex]['auth_servers'] = $this->mergeAuthServers(
-                    $parsedControllers[$pairedIndex]['auth_servers'],
-                    $this->parseAuthServers($blockContent),
-                );
-                $parsedControllers[$pairedIndex]['server_groups'] = $this->mergeServerGroups(
-                    $parsedControllers[$pairedIndex]['server_groups'],
-                    $this->parseServerGroups($blockContent, $partnerWlanProfiles),
-                );
-                $parsedControllers[$pairedIndex]['user_roles'] = $this->mergeUserRoles(
-                    $parsedControllers[$pairedIndex]['user_roles'],
-                    $this->parseUserRoles($blockContent),
-                );
+                if ($this->apDatabasesMatch($parsedControllers[$pairedIndex]['devices'], $partnerDevices)) {
+                    $partnerApGroups = $this->uniqueApGroups($partnerDevices);
 
-                continue;
+                    $parsedControllers[$pairedIndex]['lldp_neighbors'] = $this->mergeLldpNeighbors(
+                        $parsedControllers[$pairedIndex]['lldp_neighbors'],
+                        $this->parseLldpNeighbors($blockContent),
+                    );
+                    $partnerWlanProfiles = $this->parseWlanProfiles($blockContent, $partnerApGroups);
+                    $parsedControllers[$pairedIndex]['wlan_profiles'] = $this->mergeWlanProfiles(
+                        $parsedControllers[$pairedIndex]['wlan_profiles'],
+                        $partnerWlanProfiles,
+                    );
+                    $parsedControllers[$pairedIndex]['radio_profiles'] = $this->mergeRadioProfiles(
+                        $parsedControllers[$pairedIndex]['radio_profiles'],
+                        $this->parseRadioProfiles($blockContent, $partnerApGroups),
+                    );
+                    $parsedControllers[$pairedIndex]['auth_servers'] = $this->mergeAuthServers(
+                        $parsedControllers[$pairedIndex]['auth_servers'],
+                        $this->parseAuthServers($blockContent),
+                    );
+                    $parsedControllers[$pairedIndex]['server_groups'] = $this->mergeServerGroups(
+                        $parsedControllers[$pairedIndex]['server_groups'],
+                        $this->parseServerGroups($blockContent, $partnerWlanProfiles),
+                    );
+                    $parsedControllers[$pairedIndex]['user_roles'] = $this->mergeUserRoles(
+                        $parsedControllers[$pairedIndex]['user_roles'],
+                        $this->parseUserRoles($blockContent),
+                    );
+
+                    continue;
+                }
             }
 
             $parsedControllers[] = $this->parseControllerBlock($block['name'], $blockContent);
@@ -113,6 +116,36 @@ class ArubaControllerConfigParser
         }
 
         return strcasecmp(substr($first, 0, -1), substr($second, 0, -1)) === 0;
+    }
+
+    /**
+     * @param  array<int, array{name: string, serial: string, mac: string}>  $left
+     * @param  array<int, array{name: string, serial: string, mac: string}>  $right
+     */
+    private function apDatabasesMatch(array $left, array $right): bool
+    {
+        $leftKeys = $this->apDatabaseIdentityKeys($left);
+        $rightKeys = $this->apDatabaseIdentityKeys($right);
+
+        return $leftKeys === $rightKeys;
+    }
+
+    /**
+     * @param  array<int, array{name: string, serial: string, mac: string}>  $devices
+     * @return array<int, string>
+     */
+    private function apDatabaseIdentityKeys(array $devices): array
+    {
+        $keys = [];
+
+        foreach ($devices as $device) {
+            $keys[] = $device['name']."\0".$device['serial']."\0".$device['mac'];
+        }
+
+        $keys = array_values(array_unique($keys));
+        sort($keys);
+
+        return $keys;
     }
 
     /**
