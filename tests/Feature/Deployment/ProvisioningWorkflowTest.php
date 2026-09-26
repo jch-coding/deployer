@@ -2366,3 +2366,361 @@ it('lists scheduled custom provision tasks on the tasks index', function () {
             ->where('tasks.data.0.status', 'SCHEDULED')
         );
 });
+
+it('appends steps to a running custom workflow and redispatches completed devices', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'started_at' => now(),
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'completed',
+        'current_step_key' => null,
+        'status_message' => 'Workflow completed successfully.',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'completed_at' => now(),
+    ]);
+
+    app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::NameDevice->value],
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $workflow->refresh();
+    $workflowDevice->refresh();
+
+    expect($workflow->steps)->toBe([
+        ProvisioningStep::AssociateSite->value,
+        ProvisioningStep::NameDevice->value,
+    ])
+        ->and($workflow->status)->toBe('running')
+        ->and($workflowDevice->overall_status)->toBe('in_progress')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::NameDevice->value)
+        ->and($workflowDevice->steps()->orderBy('step_order')->pluck('step_key')->all())->toBe([
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ])
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->value('step_order'))->toBe(2);
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) {
+        return $job->stepKey === ProvisioningStep::NameDevice->value;
+    });
+});
+
+it('keeps the current step for in-progress devices when appending', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'started_at' => now(),
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+        'status_message' => 'Associating...',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::NameDevice->value, ProvisioningStep::WaitForOnline->value],
+    ])->assertRedirect();
+
+    $workflowDevice->refresh();
+
+    expect($workflowDevice->overall_status)->toBe('in_progress')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::AssociateSite->value)
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->value('status'))->toBe('pending')
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->value('step_order'))->toBe(2)
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::WaitForOnline->value)->value('step_order'))->toBe(3);
+
+    Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('rejects appending a duplicate step key', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'started_at' => now(),
+    ]);
+    $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::AssociateSite->value],
+    ])->assertSessionHasErrors('steps');
+});
+
+it('rejects appending steps that break the custom step order', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'started_at' => now(),
+    ]);
+    $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::VerifyLicensing->value],
+    ])->assertSessionHasErrors('steps');
+});
+
+it('rejects appending steps to a cancelled workflow', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'cancelled',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'completed_at' => now(),
+    ]);
+    $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'completed',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::NameDevice->value],
+    ])->assertSessionHasErrors('steps');
+});
+
+it('rejects appending steps to a classic non-custom workflow', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => null,
+        'started_at' => now(),
+    ]);
+    $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::NameDevice->value],
+    ])->assertSessionHasErrors('steps');
+});
+
+it('appends steps to a scheduled custom workflow without dispatching', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'scheduled',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'scheduled_at' => now()->addHour(),
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => null,
+        'status_message' => 'Scheduled...',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::NameDevice->value],
+    ])->assertRedirect();
+
+    $workflow->refresh();
+    $workflowDevice->refresh();
+
+    expect($workflow->status)->toBe('scheduled')
+        ->and($workflow->steps)->toBe([
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::NameDevice->value,
+        ])
+        ->and($workflowDevice->steps()->where('step_key', ProvisioningStep::NameDevice->value)->value('status'))->toBe('pending')
+        ->and($workflowDevice->current_step_key)->toBeNull();
+
+    Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class);
+});
+
+it('reopens a completed custom workflow when appending steps', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'completed',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'started_at' => now()->subHour(),
+        'completed_at' => now()->subMinute(),
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'completed',
+        'current_step_key' => null,
+        'status_message' => 'Workflow completed successfully.',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'completed_at' => now()->subMinute(),
+    ]);
+
+    $task = app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+    $task->update(['status' => 'COMPLETED']);
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::NameDevice->value],
+    ])->assertRedirect();
+
+    $workflow->refresh();
+    $workflowDevice->refresh();
+
+    expect($workflow->status)->toBe('running')
+        ->and($workflow->completed_at)->toBeNull()
+        ->and($workflowDevice->overall_status)->toBe('in_progress')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::NameDevice->value)
+        ->and($task->fresh()->status)->toBe('IN_PROGRESS');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) {
+        return $job->stepKey === ProvisioningStep::NameDevice->value;
+    });
+});
+
+it('serializes append-step controls for custom workflows', function () {
+    $device = Device::factory()->for($this->deployment)->create();
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'started_at' => now(),
+    ]);
+    $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+
+    $payload = app(ProvisioningWorkflowService::class)->serializeForUi($workflow->fresh());
+
+    expect($payload['can_append_steps'])->toBeTrue()
+        ->and($payload['needs_licensing_for_append'])->toBeTrue()
+        ->and(collect($payload['appendable_steps'])->pluck('step_key')->all())
+        ->not->toContain(ProvisioningStep::AssociateSite->value)
+        ->and(collect($payload['appendable_steps'])->pluck('step_key')->all())
+        ->toContain(ProvisioningStep::NameDevice->value);
+});
