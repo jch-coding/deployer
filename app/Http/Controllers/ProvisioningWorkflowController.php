@@ -271,6 +271,33 @@ class ProvisioningWorkflowController extends Controller
         return back()->with('success', 'Provisioning workflow resumed.');
     }
 
+    public function appendSteps(Request $request, ProvisioningWorkflow $workflow, ProvisioningWorkflowService $workflowService)
+    {
+        $this->authorizeWorkflow($request, $workflow);
+
+        $stepValues = array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases());
+
+        $validated = $request->validate([
+            'steps' => ['required', 'array', 'min:1'],
+            'steps.*' => ['string', Rule::in($stepValues)],
+            'licensing_mode' => ['nullable', Rule::in(['uniform', 'per_device'])],
+            'license_tag' => ['nullable', 'string'],
+            'license_type' => ['nullable', 'string'],
+            'devices' => ['nullable', 'array'],
+            'devices.*.id' => ['nullable', 'integer'],
+            'devices.*.license_tag' => ['nullable', 'string'],
+            'devices.*.license_type' => ['nullable', 'string'],
+        ]);
+
+        try {
+            $workflowService->appendSteps($workflow, $validated['steps'], $validated);
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->errors());
+        }
+
+        return back()->with('success', 'Steps appended to the custom workflow.');
+    }
+
     public function restart(Request $request, ProvisioningWorkflowDevice $workflowDevice, ProvisioningWorkflowService $workflowService)
     {
         $workflowDevice->loadMissing('workflow.deployment');

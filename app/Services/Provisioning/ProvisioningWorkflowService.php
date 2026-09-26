@@ -678,6 +678,137 @@ class ProvisioningWorkflowService
         $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 
+    /**
+     * Append new steps to a launched custom workflow (all devices).
+     *
+     * @param  list<string>  $stepKeys
+     * @param  array<string, mixed>  $options
+     */
+    public function appendSteps(ProvisioningWorkflow $workflow, array $stepKeys, array $options = []): void
+    {
+        $workflow->loadMissing(['deployment.client', 'workflowDevices.device', 'workflowDevices.steps']);
+
+        $existingKeys = $workflow->customStepKeys();
+        if ($existingKeys === null) {
+            throw ValidationException::withMessages([
+                'steps' => 'Steps can only be appended to custom workflows.',
+            ]);
+        }
+
+        if ($workflow->status === 'cancelled') {
+            throw ValidationException::withMessages([
+                'steps' => 'Cannot append steps to a cancelled workflow.',
+            ]);
+        }
+
+        $newSteps = CustomWorkflowStepOrder::validate($stepKeys);
+        $newKeys = array_map(fn (ProvisioningStep $step) => $step->value, $newSteps);
+
+        foreach ($newKeys as $key) {
+            if (in_array($key, $existingKeys, true)) {
+                throw ValidationException::withMessages([
+                    'steps' => "Step \"{$key}\" is already part of this workflow.",
+                ]);
+            }
+        }
+
+        $mergedKeys = array_values(array_merge($existingKeys, $newKeys));
+        CustomWorkflowStepOrder::validate($mergedKeys);
+
+        $licensingConfig = is_array($workflow->licensing_config) ? $workflow->licensing_config : [];
+        $appendingLicensing = in_array(ProvisioningStep::VerifyLicensing->value, $newKeys, true);
+        $licensingSkipped = ($licensingConfig['mode'] ?? null) === 'skipped';
+
+        if ($appendingLicensing && $licensingSkipped) {
+            $devices = $workflow->workflowDevices
+                ->map(fn (ProvisioningWorkflowDevice $wd) => $wd->device)
+                ->filter();
+            $licensingConfig = $this->buildLicensingConfig($workflow->deployment, $devices, $options);
+            $naming = is_array($workflow->licensing_config['naming'] ?? null)
+                ? $workflow->licensing_config['naming']
+                : ['per_device' => [], 'only_update_different_names' => false];
+            $licensingConfig['naming'] = $naming;
+        }
+
+        $originalStatus = $workflow->status;
+        $shouldDispatch = in_array($originalStatus, ['running', 'completed'], true);
+        $stepContext = ProvisioningStepContext::forWorkflow($workflow);
+
+        DB::transaction(function () use (
+            $workflow,
+            $mergedKeys,
+            $newSteps,
+            $licensingConfig,
+            $appendingLicensing,
+            $licensingSkipped,
+            $originalStatus,
+            $shouldDispatch,
+            $stepContext,
+        ): void {
+            $updates = ['steps' => $mergedKeys];
+            if ($appendingLicensing && $licensingSkipped) {
+                $updates['licensing_config'] = $licensingConfig;
+            }
+            if ($shouldDispatch) {
+                $updates['status'] = 'running';
+                $updates['completed_at'] = null;
+            }
+            $workflow->update($updates);
+
+            foreach ($workflow->workflowDevices as $workflowDevice) {
+                $maxOrder = (int) $workflowDevice->steps->max('step_order');
+                $order = $maxOrder + 1;
+                $wasCompleted = $workflowDevice->overall_status === 'completed';
+
+                foreach ($newSteps as $step) {
+                    [$status, $message] = $this->initialCustomStepStatus(
+                        $step,
+                        $workflowDevice->device,
+                        $stepContext,
+                    );
+                    ProvisioningWorkflowDeviceStep::query()->create([
+                        'provisioning_workflow_device_id' => $workflowDevice->id,
+                        'step_key' => $step->value,
+                        'step_order' => $order,
+                        'status' => $status,
+                        'message' => $message,
+                        'completed_at' => $status === 'skipped' ? now() : null,
+                    ]);
+                    $order++;
+                }
+
+                if (! $wasCompleted) {
+                    continue;
+                }
+
+                $workflowDevice->update([
+                    'overall_status' => 'in_progress',
+                    'failed_step_key' => null,
+                    'vsx_wait_state' => null,
+                    'current_step_key' => null,
+                    'status_message' => 'New steps appended...',
+                ]);
+
+                if ($shouldDispatch) {
+                    $this->dispatchFirstPendingStep(
+                        $workflowDevice->fresh(['steps', 'device', 'workflow']),
+                    );
+                }
+            }
+
+            if ($shouldDispatch) {
+                $workflow->refreshOverallStatus();
+            }
+
+            if ($originalStatus === 'completed' || $shouldDispatch) {
+                $linkedTask = $this->taskForWorkflow($workflow);
+                $linkedTask?->refreshDeadlineFromDuration();
+            }
+
+            $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
+        });
+    }
+
     public function taskForWorkflow(ProvisioningWorkflow $workflow): ?Task
     {
         return Task::query()
@@ -775,7 +906,47 @@ class ProvisioningWorkflowService
             'can_pause' => $workflow->canPause(),
             'can_cancel' => $workflow->canCancel(),
             'can_resume' => $workflow->isResumable(),
+            'can_append_steps' => $this->canAppendSteps($workflow),
+            'appendable_steps' => $this->appendableStepsForUi($workflow),
+            'needs_licensing_for_append' => $this->needsLicensingForAppend($workflow),
         ];
+    }
+
+    public function canAppendSteps(ProvisioningWorkflow $workflow): bool
+    {
+        return $workflow->customStepKeys() !== null && $workflow->status !== 'cancelled';
+    }
+
+    /**
+     * @return list<array{step_key: string, label: string, order: int}>
+     */
+    public function appendableStepsForUi(ProvisioningWorkflow $workflow): array
+    {
+        $existing = $workflow->customStepKeys() ?? [];
+        if ($existing === [] || $workflow->status === 'cancelled') {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $this->availableStepsForUi(),
+            fn (array $step) => ! in_array($step['step_key'], $existing, true),
+        ));
+    }
+
+    public function needsLicensingForAppend(ProvisioningWorkflow $workflow): bool
+    {
+        if (! $this->canAppendSteps($workflow)) {
+            return false;
+        }
+
+        $existing = $workflow->customStepKeys() ?? [];
+        if (in_array(ProvisioningStep::VerifyLicensing->value, $existing, true)) {
+            return false;
+        }
+
+        $licensingConfig = is_array($workflow->licensing_config) ? $workflow->licensing_config : [];
+
+        return ($licensingConfig['mode'] ?? null) === 'skipped';
     }
 
     /**

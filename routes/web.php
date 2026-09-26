@@ -77,6 +77,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/provisioning-workflows/{workflow}/cancel', 'cancel')->name('provisioning_workflows.cancel');
         Route::post('/provisioning-workflows/{workflow}/pause', 'pause')->name('provisioning_workflows.pause');
         Route::post('/provisioning-workflows/{workflow}/resume', 'resume')->name('provisioning_workflows.resume');
+        Route::post('/provisioning-workflows/{workflow}/append-steps', 'appendSteps')->name('provisioning_workflows.append_steps');
         Route::post('/provisioning-workflow-devices/{workflowDevice}/restart', 'restart')->name('provisioning_workflow_devices.restart');
         Route::post('/provisioning-workflow-devices/{workflowDevice}/override', 'overrideStep')->name('provisioning_workflow_devices.override');
     });
