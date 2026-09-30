@@ -166,3 +166,43 @@ test('registry loads roles and policy endpoints', function () {
 
     expect($tags)->toContain('Role', 'Policy', 'Role Acl', 'Object Group', 'Policy Group');
 });
+
+test('registry loads auth server endpoints', function () {
+    $registry = app(CentralOpenApiRegistry::class);
+
+    expect($registry->hasOperation('readAuthServers'))->toBeTrue()
+        ->and($registry->hasOperation('readAuthServersAuthServerByID'))->toBeTrue()
+        ->and($registry->hasOperation('createAuthServersAuthServerByID'))->toBeTrue()
+        ->and($registry->hasOperation('updateAuthServersAuthServerByID'))->toBeTrue()
+        ->and($registry->hasOperation('deleteAuthServersAuthServerByID'))->toBeTrue();
+
+    $authServers = $registry->operation('readAuthServers');
+
+    expect($authServers['method'])->toBe('GET')
+        ->and($authServers['path'])->toBe('/network-config/v1alpha1/auth-servers')
+        ->and($authServers['tags'])->toContain('Auth Server')
+        ->and($authServers['reference_url'])->toBe('https://developer.arubanetworks.com/new-central-config/reference/readauthservers')
+        ->and(collect($authServers['parameters'])->pluck('name'))->toContain('view-type', 'scope-id')
+        ->and($authServers['requires_body'])->toBeFalse();
+
+    $createAuthServer = $registry->operation('createAuthServersAuthServerByID');
+
+    expect($createAuthServer['method'])->toBe('POST')
+        ->and($createAuthServer['path'])->toBe('/network-config/v1alpha1/auth-servers/{name}')
+        ->and($createAuthServer['requires_body'])->toBeTrue()
+        ->and(collect($createAuthServer['parameters'])->pluck('name'))->toContain('name', 'object-type', 'scope-id', 'device-function');
+
+    $updateAuthServer = $registry->operation('updateAuthServersAuthServerByID');
+
+    expect($updateAuthServer['method'])->toBe('PATCH')
+        ->and($updateAuthServer['requires_body'])->toBeTrue();
+
+    $deleteAuthServer = $registry->operation('deleteAuthServersAuthServerByID');
+
+    expect($deleteAuthServer['method'])->toBe('DELETE')
+        ->and($deleteAuthServer['requires_body'])->toBeFalse();
+
+    $tags = collect($registry->tags())->pluck('name');
+
+    expect($tags)->toContain('Auth Server');
+});

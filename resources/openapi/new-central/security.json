@@ -1,0 +1,329 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Security",
+        "description": "External RADIUS and other auth server profiles for user authentication.",
+        "version": "v1alpha1"
+    },
+    "tags": [
+        {
+            "name": "Auth Server",
+            "description": "External RADIUS server profiles for user authentication (server IP, ports, shared key, etc.)."
+        }
+    ],
+    "paths": {
+        "/network-config/v1alpha1/auth-servers": {
+            "get": {
+                "operationId": "readAuthServers",
+                "summary": "Read configuration of auth server profile",
+                "description": "Use this API to configure an external RADIUS server for user authentication. You can configure parameters such as server IP, authentication port, accounting port, shared key, etc. This feature is applicable for all devices.",
+                "tags": [
+                    "Auth Server"
+                ],
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "description": "LIBRARY or LOCAL.",
+                        "schema": {
+                            "type": "string",
+                            "default": "LIBRARY"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "description": "Required when view-type is LOCAL.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            }
+        },
+        "/network-config/v1alpha1/auth-servers/{name}": {
+            "get": {
+                "operationId": "readAuthServersAuthServerByID",
+                "summary": "Read existing auth server profile configuration",
+                "description": "Auth Server profile.",
+                "tags": [
+                    "Auth Server"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "The name of the Auth Server.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "view-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "effective",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "detailed",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "createAuthServersAuthServerByID",
+                "summary": "Create a new auth server profile by unique name",
+                "description": "Auth Server profile.",
+                "tags": [
+                    "Auth Server"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "The name of the Auth Server.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "updateAuthServersAuthServerByID",
+                "summary": "Update existing auth server profile configuration",
+                "description": "Auth Server profile.",
+                "tags": [
+                    "Auth Server"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "The name of the Auth Server.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "deleteAuthServersAuthServerByID",
+                "summary": "Delete the auth server profile",
+                "description": "Auth Server profile.",
+                "tags": [
+                    "Auth Server"
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "description": "The name of the Auth Server.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "object-type",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "scope-id",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "device-function",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+}

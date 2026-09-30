@@ -172,6 +172,48 @@ test('execute proxies createPortchannel post with body and query parameters', fu
         ->assertJsonPath('body.name', 'lag1');
 });
 
+test('execute proxies createAuthServersAuthServerByID post with body and query parameters', function () {
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), 'sso.common.cloud.hpe.com')) {
+            return Http::response(['access_token' => 'refreshed-bearer-token'], 200);
+        }
+
+        if (
+            $request->method() === 'POST'
+            && str_contains($request->url(), 'auth-servers/ECPPM')
+            && str_contains($request->url(), 'scope-id=scope-123')
+        ) {
+            expect($request->hasHeader('Authorization', 'Bearer refreshed-bearer-token'))->toBeTrue();
+            expect($request->data())->toBe([
+                'auth-server-address' => '10.232.188.4',
+                'auth-server-shared-key' => 'secret',
+            ]);
+
+            return Http::response(['name' => 'ECPPM'], 200);
+        }
+
+        return Http::response([], 404);
+    });
+
+    $this->postJson(route('central-api.execute'), [
+        'operation_id' => 'createAuthServersAuthServerByID',
+        'query' => [
+            'name' => 'ECPPM',
+            'scope-id' => 'scope-123',
+            'object-type' => 'LOCAL',
+            'device-function' => 'CAMPUS_AP',
+        ],
+        'body' => [
+            'auth-server-address' => '10.232.188.4',
+            'auth-server-shared-key' => 'secret',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('ok', true)
+        ->assertJsonPath('status', 200)
+        ->assertJsonPath('body.name', 'ECPPM');
+});
+
 test('execute rejects write operations without required body', function () {
     $this->postJson(route('central-api.execute'), [
         'operation_id' => 'createPortchannel',
