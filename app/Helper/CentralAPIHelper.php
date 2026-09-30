@@ -127,6 +127,8 @@ class CentralAPIHelper
         'preprovision_devices_to_group' => 'configuration/v1/preassign',
         'groups' => 'configuration/v2/groups',
         'groupsv3' => 'configuration/v3/groups',
+        'full_wlan' => 'configuration/full_wlan',
+        'wlan_v2' => 'configuration/v2/wlan',
     ];
 
     public array $classic_subscription = [
@@ -3692,6 +3694,39 @@ class CentralAPIHelper
 
             return $response;
         }
+    }
+
+    /**
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
+    public function classic_get_full_wlan(string $groupNameOrGuidOrSerial, string $wlanName)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $path = $this->classic_configuration['full_wlan']
+            .'/'.$groupNameOrGuidOrSerial.'/'.$wlanName;
+
+        return Http::withToken($this->client->classic_access_token)
+            ->get($this->classicApiUrl($path));
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
+    public function classic_create_wlan_v2(string $groupNameOrGuidOrSerial, string $wlanName, array $body)
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $path = $this->classic_configuration['wlan_v2']
+            .'/'.$groupNameOrGuidOrSerial.'/'.$wlanName;
+
+        return Http::withToken($this->client->classic_access_token)
+            ->post($this->classicApiUrl($path), $body);
     }
 
     /**
