@@ -281,6 +281,31 @@ test('a user cannot save classic tokens without providing refresh or access toke
         ->assertSessionHasErrors(['classic_refresh_token', 'classic_access_token']);
 });
 
+test('a user can save classic client secret username and password from the edit form', function () {
+    $user = User::factory()->create();
+    $client = classicClientForRefreshToken($user, [
+        'classic_client_secret' => 'old-classic-client-secret',
+        'classic_username' => 'old-classic-user',
+        'classic_password' => 'old-classic-password',
+    ]);
+
+    $this->actingAs($user)
+        ->put(route('clients.edit', $client), [
+            'classic_client_id' => 'updated-classic-client-id',
+            'classic_client_secret' => 'new-classic-client-secret',
+            'classic_username' => 'new-classic-user',
+            'classic_password' => 'new-classic-password',
+        ])
+        ->assertRedirect(route('clients.index'))
+        ->assertSessionHas('success', 'Client updated successfully.');
+
+    $client->refresh();
+    expect($client->classic_client_id)->toBe('updated-classic-client-id')
+        ->and($client->classic_client_secret)->toBe('new-classic-client-secret')
+        ->and($client->classic_username)->toBe('new-classic-user')
+        ->and($client->classic_password)->toBe('new-classic-password');
+});
+
 test('a user can save a classic client id from the classic central tokens form', function () {
     $user = User::factory()->create();
     $client = classicClientForRefreshToken($user);

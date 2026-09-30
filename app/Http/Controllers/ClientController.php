@@ -35,6 +35,10 @@ class ClientController extends Controller
         ])['type'];
 
         if ($type === 'classic') {
+            if ($client->classic_access_token !== null && $client->validateClassicAccessToken()) {
+                return to_route('clients.index')->with('success', 'Classic Central credentials validated successfully.');
+            }
+
             if (! $client->hasClassicCentralCredentials()) {
                 return to_route('clients.index')->with('error', 'Classic credentials are not configured for this client.');
             }
@@ -122,35 +126,47 @@ class ClientController extends Controller
         if ($request->has('base_url')) {
             $validated = array_merge($validated, $request->validate(['base_url' => 'string']));
         }
+        if ($request->has('classic_client_id')) {
+            $validated = array_merge($validated, $request->validate(['classic_client_id' => 'string|min:12|max:255']));
+        }
+        if ($request->has('classic_client_secret')) {
+            $validated = array_merge($validated, $request->validate(['classic_client_secret' => 'string|min:12|max:255']));
+        }
+        if ($request->has('classic_username')) {
+            $validated = array_merge($validated, $request->validate(['classic_username' => 'string|min:8|max:255']));
+        }
+        if ($request->has('classic_password')) {
+            $validated = array_merge($validated, $request->validate(['classic_password' => 'string|min:8|max:255']));
+        }
 
-        if ($request->has('classic_refresh_token') || $request->has('classic_access_token') || $request->has('classic_client_id')) {
-            $validated = $request->validate([
-                'classic_client_id' => 'sometimes|required|string|min:12|max:255',
+        if ($request->has('classic_refresh_token') || $request->has('classic_access_token')) {
+            $tokenValidated = $request->validate([
                 'classic_refresh_token' => 'sometimes|required|string|min:12|max:65535',
                 'classic_access_token' => 'sometimes|required|string|min:12|max:65535',
             ]);
 
-            $classicClientId = $validated['classic_client_id'] ?? null;
-            $classicRefreshToken = $validated['classic_refresh_token'] ?? null;
-            $classicAccessToken = $validated['classic_access_token'] ?? null;
-
-            if ($classicClientId !== null) {
-                $client->update(['classic_client_id' => $classicClientId]);
+            if ($validated !== []) {
+                $client->update($validated);
             }
 
-            if ($classicRefreshToken !== null || $classicAccessToken !== null) {
-                if (! $client->updateClassicCentralTokens($classicRefreshToken, $classicAccessToken)) {
-                    return to_route('clients.index')->with(
-                        'error',
-                        'Failed to save Classic Central tokens.',
-                    );
-                }
-
+            if (! $client->updateClassicCentralTokens(
+                $tokenValidated['classic_refresh_token'] ?? null,
+                $tokenValidated['classic_access_token'] ?? null,
+            )) {
                 return to_route('clients.index')->with(
-                    'success',
-                    'Classic Central tokens saved.',
+                    'error',
+                    'Failed to save Classic Central tokens.',
                 );
             }
+
+            return to_route('clients.index')->with(
+                'success',
+                'Classic Central tokens saved.',
+            );
+        }
+
+        if ($validated !== [] && array_keys($validated) === ['classic_client_id']) {
+            $client->update($validated);
 
             return to_route('clients.index')->with(
                 'success',

@@ -279,6 +279,30 @@ class Client extends Model
         return $this->classic_client_id !== null && $this->classic_client_secret !== null && $this->classic_username !== null && $this->classic_password !== null;
     }
 
+    public function validateClassicAccessToken(): bool
+    {
+        if (blank($this->classic_access_token) || blank($this->classicBaseUrlString())) {
+            return false;
+        }
+
+        try {
+            $response = Http::withToken($this->classic_access_token)
+                ->get($this->classicBaseUrlString().'central/v2/sites', ['limit' => 1]);
+
+            if ($response->ok()) {
+                return true;
+            }
+
+            $this->logClassicOAuthFailure('access_token_probe', $response);
+
+            return false;
+        } catch (Throwable $exception) {
+            $this->logClassicOAuthFailure('access_token_probe_exception', exception: $exception);
+
+            return false;
+        }
+    }
+
     public function classicBaseUrlString(): string
     {
         $base = $this->classic_base_url;

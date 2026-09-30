@@ -158,7 +158,7 @@ export default function ClientCard({ client, errors, base_urls, isCurrentClient 
                                 </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                Verify Classic Central credentials (legacy client ID, secret, and user login) for this client.
+                                Verify Classic Central access (saved access token, or refresh/login using client ID, secret, and user credentials).
                             </TooltipContent>
                         </Tooltip>
                         <Tooltip>

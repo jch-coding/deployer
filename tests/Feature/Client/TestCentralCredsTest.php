@@ -40,6 +40,38 @@ test('a user sees an error when central credential validation fails', function (
         ->assertSessionHas('error', 'Failed to validate Central credentials.');
 });
 
+test('a user can validate classic credentials via a saved access token', function () {
+    $user = User::factory()->create();
+    $client = Client::factory()->recycle($user)->create([
+        'classic_client_id' => 'classic-client-id-0001',
+        'classic_client_secret' => 'classic-client-secret-0001',
+        'classic_username' => 'classic-user',
+        'classic_password' => 'classic-password',
+        'classic_base_url' => 'https://apigw-uswest4.central.arubanetworks.com/',
+        'classic_access_token' => 'saved-classic-access-token',
+        'classic_refresh_token' => 'classic-refresh-token',
+        'classic_expires_in' => now()->addHour(),
+        'classic_refresh_expires_in' => now()->addDays(10),
+    ]);
+
+    Http::fake([
+        'https://apigw-uswest4.central.arubanetworks.com/central/v2/sites*' => Http::response([
+            'count' => 0,
+            'sites' => [],
+        ], 200),
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('clients.test_central_creds', $client), ['type' => 'classic'])
+        ->assertRedirect(route('clients.index'))
+        ->assertSessionHas('success', 'Classic Central credentials validated successfully.');
+
+    expect($client->fresh()->classic_access_token)->toBe('saved-classic-access-token');
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'central/v2/sites'));
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), 'oauth2/token'));
+});
+
 test('a user can validate classic credentials for their client', function () {
     $user = User::factory()->create();
     $client = Client::factory()->recycle($user)->create([
@@ -48,6 +80,7 @@ test('a user can validate classic credentials for their client', function () {
         'classic_username' => 'classic-user',
         'classic_password' => 'classic-password',
         'classic_base_url' => 'https://apigw-uswest4.central.arubanetworks.com/',
+        'classic_access_token' => null,
         'classic_refresh_token' => 'classic-refresh-token',
         'classic_expires_in' => now()->subMinute(),
         'classic_refresh_expires_in' => now()->addDays(10),
@@ -82,6 +115,7 @@ test('a user can validate classic credentials via OAuth when the refresh token i
         'classic_password' => 'classic-password',
         'customer_id' => 'customer-id-0001',
         'classic_base_url' => 'https://apigw-uswest4.central.arubanetworks.com/',
+        'classic_access_token' => null,
         'classic_refresh_token' => 'expired-classic-refresh-token',
         'classic_expires_in' => now()->subMinute(),
         'classic_refresh_expires_in' => now()->subDay(),
