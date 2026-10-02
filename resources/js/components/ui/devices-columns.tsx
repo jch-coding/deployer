@@ -13,13 +13,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
     Tooltip,
     TooltipContent,
@@ -178,6 +172,17 @@ function DeviceMetadataSelectCell({
         return [...options, { scopeName: trimmed, scopeId: '' }];
     }, [options, value]);
 
+    const selectOptions = useMemo(
+        () => [
+            { value: '__none__', label: 'None' },
+            ...mergedOptions.map((option) => ({
+                value: option.scopeName,
+                label: option.scopeName,
+            })),
+        ],
+        [mergedOptions],
+    );
+
     const editable = centralError === null && !saving;
     const selectValue = value?.trim() || '__none__';
 
@@ -212,42 +217,37 @@ function DeviceMetadataSelectCell({
     }
 
     return (
-        <Select
+        <SearchableSelect
             value={selectValue}
             disabled={!editable}
             onValueChange={handleChange}
-        >
-            <SelectTrigger
-                className="h-8 min-w-[8rem] text-sm"
-                aria-label={field}
-                data-test={`device-${field}-select-${deviceId}`}
-            >
-                <SelectValue placeholder="None" />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value="__none__">None</SelectItem>
-                {mergedOptions.map((option) => (
-                    <SelectItem
-                        key={option.scopeName}
-                        value={option.scopeName}
-                    >
-                        {showClassicTag && option.isClassic ? (
-                            <span className="flex items-center gap-2">
-                                {option.scopeName}
-                                <Badge
-                                    variant="outline"
-                                    className="text-xs font-normal"
-                                >
-                                    classic
-                                </Badge>
-                            </span>
-                        ) : (
-                            option.scopeName
-                        )}
-                    </SelectItem>
-                ))}
-            </SelectContent>
-        </Select>
+            options={selectOptions}
+            placeholder="None"
+            className="h-8 min-w-[8rem]"
+            aria-label={field}
+            data-test={`device-${field}-select-${deviceId}`}
+            renderOptionLabel={(option) => {
+                const classic =
+                    showClassicTag &&
+                    mergedOptions.find((row) => row.scopeName === option.value)
+                        ?.isClassic;
+                if (!classic) {
+                    return option.label;
+                }
+
+                return (
+                    <span className="flex items-center gap-2">
+                        {option.label}
+                        <Badge
+                            variant="outline"
+                            className="text-xs font-normal"
+                        >
+                            classic
+                        </Badge>
+                    </span>
+                );
+            }}
+        />
     );
 }
 
