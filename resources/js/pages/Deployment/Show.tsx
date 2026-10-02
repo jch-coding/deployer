@@ -49,6 +49,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import TaskCard from '@/components/ui/TaskCard';
 import TaskItemsCard from '@/components/ui/TaskItemsCard';
 import CentralScopeRefreshButtons, {
@@ -399,6 +400,30 @@ export default function Show() {
             central_device_groups_error,
             devices,
         ],
+    );
+
+    const bulkSiteOptions = useMemo(
+        () => [
+            { value: BULK_NO_CHANGE, label: 'No change' },
+            { value: BULK_NONE, label: 'None' },
+            ...central_sites.map((site) => ({
+                value: site.scopeName,
+                label: site.scopeName,
+            })),
+        ],
+        [central_sites],
+    );
+
+    const bulkGroupOptions = useMemo(
+        () => [
+            { value: BULK_NO_CHANGE, label: 'No change' },
+            { value: BULK_NONE, label: 'None' },
+            ...device_group_options.map((option) => ({
+                value: option.scopeName,
+                label: option.scopeName,
+            })),
+        ],
+        [device_group_options],
     );
 
     const classicCentralTaskTypes = new Set([
@@ -1216,134 +1241,80 @@ export default function Show() {
                         <>
                             {selectedCount > 0 ? (
                                 <div className="mt-2 mb-2 flex flex-wrap items-center gap-2">
-                                    <Select
-                                                value={
-                                                    bulkSite === BULK_NO_CHANGE
-                                                        ? undefined
-                                                        : bulkSite
-                                                }
-                                                onValueChange={setBulkSite}
-                                                disabled={
-                                                    central_sites_error !==
-                                                        null ||
-                                                    applyingMetadata
-                                                }
-                                            >
-                                                <SelectTrigger
-                                                    className="h-9 w-36"
-                                                    aria-label="Bulk assign site"
-                                                    data-test="bulk-site-select"
-                                                >
-                                                    <SelectValue placeholder="Select site" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem
-                                                        value={BULK_NO_CHANGE}
+                                    <SearchableSelect
+                                        value={
+                                            bulkSite === BULK_NO_CHANGE
+                                                ? undefined
+                                                : bulkSite
+                                        }
+                                        onValueChange={setBulkSite}
+                                        disabled={
+                                            central_sites_error !== null ||
+                                            applyingMetadata
+                                        }
+                                        options={bulkSiteOptions}
+                                        placeholder="Select site"
+                                        className="w-36"
+                                        aria-label="Bulk assign site"
+                                        data-test="bulk-site-select"
+                                    />
+                                    <SearchableSelect
+                                        value={
+                                            bulkGroup === BULK_NO_CHANGE
+                                                ? undefined
+                                                : bulkGroup
+                                        }
+                                        onValueChange={setBulkGroup}
+                                        disabled={
+                                            (central_device_groups_error !==
+                                                null &&
+                                                device_group_options.length ===
+                                                    0) ||
+                                            applyingMetadata
+                                        }
+                                        options={bulkGroupOptions}
+                                        placeholder="Select group"
+                                        className="w-44"
+                                        aria-label="Bulk assign group"
+                                        data-test="bulk-group-select"
+                                        renderOptionLabel={(option) => {
+                                            const classic =
+                                                device_group_options.find(
+                                                    (row) =>
+                                                        row.scopeName ===
+                                                        option.value,
+                                                )?.isClassic;
+                                            if (!classic) {
+                                                return option.label;
+                                            }
+
+                                            return (
+                                                <span className="flex items-center gap-2">
+                                                    {option.label}
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="text-xs font-normal"
                                                     >
-                                                        No change
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value={BULK_NONE}
-                                                    >
-                                                        None
-                                                    </SelectItem>
-                                                    {central_sites.map(
-                                                        (site) => (
-                                                            <SelectItem
-                                                                key={
-                                                                    site.scopeName
-                                                                }
-                                                                value={
-                                                                    site.scopeName
-                                                                }
-                                                            >
-                                                                {
-                                                                    site.scopeName
-                                                                }
-                                                            </SelectItem>
-                                                        ),
-                                                    )}
-                                                </SelectContent>
-                                            </Select>
-                                            <Select
-                                                value={
-                                                    bulkGroup === BULK_NO_CHANGE
-                                                        ? undefined
-                                                        : bulkGroup
-                                                }
-                                                onValueChange={setBulkGroup}
-                                                disabled={
-                                                    (central_device_groups_error !==
-                                                        null &&
-                                                        device_group_options.length ===
-                                                            0) ||
-                                                    applyingMetadata
-                                                }
-                                            >
-                                                <SelectTrigger
-                                                    className="h-9 w-44"
-                                                    aria-label="Bulk assign group"
-                                                    data-test="bulk-group-select"
-                                                >
-                                                    <SelectValue placeholder="Select group" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem
-                                                        value={BULK_NO_CHANGE}
-                                                    >
-                                                        No change
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value={BULK_NONE}
-                                                    >
-                                                        None
-                                                    </SelectItem>
-                                                    {device_group_options.map(
-                                                        (option) => (
-                                                            <SelectItem
-                                                                key={
-                                                                    option.scopeName
-                                                                }
-                                                                value={
-                                                                    option.scopeName
-                                                                }
-                                                            >
-                                                                {option.isClassic ? (
-                                                                    <span className="flex items-center gap-2">
-                                                                        {
-                                                                            option.scopeName
-                                                                        }
-                                                                        <Badge
-                                                                            variant="outline"
-                                                                            className="text-xs font-normal"
-                                                                        >
-                                                                            classic
-                                                                        </Badge>
-                                                                    </span>
-                                                                ) : (
-                                                                    option.scopeName
-                                                                )}
-                                                            </SelectItem>
-                                                        ),
-                                                    )}
-                                                </SelectContent>
-                                            </Select>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                disabled={
-                                                    !canApplyBulkMetadata ||
-                                                    applyingMetadata
-                                                }
-                                                data-test="bulk-update-device-metadata"
-                                                onClick={
-                                                    handleBulkUpdateMetadata
-                                                }
-                                            >
-                                                {isAllFilteredSelected
-                                                    ? 'Apply to all matching'
-                                                    : `Apply to selected (${selectedCount})`}
-                                            </Button>
+                                                        classic
+                                                    </Badge>
+                                                </span>
+                                            );
+                                        }}
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={
+                                            !canApplyBulkMetadata ||
+                                            applyingMetadata
+                                        }
+                                        data-test="bulk-update-device-metadata"
+                                        onClick={handleBulkUpdateMetadata}
+                                    >
+                                        {isAllFilteredSelected
+                                            ? 'Apply to all matching'
+                                            : `Apply to selected (${selectedCount})`}
+                                    </Button>
                                             {client_deployments.length > 0 ? (
                                                 <>
                                                     <Select
