@@ -121,13 +121,12 @@ function AppendStepsDialog({
         return map;
     }, [appendable, existingSteps]);
 
-    const availableToAdd = appendable.filter(
-        (step) => !selectedSteps.includes(step.step_key),
-    );
+    const availableToAdd = appendable;
 
     const stepOrderError = validateCustomWorkflowStepOrder(
         [...existingSteps, ...selectedSteps],
         labelsByKey,
+        { allowDuplicates: true },
     );
 
     const includesLicensing = selectedSteps.includes('verify_licensing');
@@ -151,7 +150,7 @@ function AppendStepsDialog({
     };
 
     const addStep = (stepKey: string) => {
-        if (!stepKey || selectedSteps.includes(stepKey)) {
+        if (!stepKey) {
             return;
         }
         setSelectedSteps((prev) => [...prev, stepKey]);

@@ -252,8 +252,11 @@ it('restarts a failed device workflow from the selected step', function () {
 
     $this->actingAs($this->user);
 
+    $fromOrder = $workflowDevice->steps()
+        ->where('step_key', ProvisioningStep::ConfigureVlanInterfaces->value)
+        ->value('step_order');
     $this->post(route('provisioning_workflow_devices.restart', $workflowDevice), [
-        'from_step' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'from_step_order' => $fromOrder,
     ])->assertRedirect();
 
     $workflowDevice->refresh();
@@ -416,9 +419,10 @@ it('starts the classic poller for poll-mode wait_for_online retries', function (
         'status' => 'in_progress',
     ]);
 
+    $workflowDevice->load('steps');
     app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
         $workflowDevice,
-        ProvisioningStep::WaitForOnline,
+        $workflowDevice->stepFor(ProvisioningStep::WaitForOnline),
         ProvisioningStepResult::retry('Waiting for device to come online (status: Down).'),
     );
 
@@ -454,9 +458,10 @@ it('does not start the classic poller for webhook-mode wait_for_online', functio
         'status' => 'pending',
     ]);
 
+    $freshDevice = $workflowDevice->fresh(['steps', 'workflow', 'device']);
     app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
-        $workflowDevice->fresh(['steps', 'workflow', 'device']),
-        ProvisioningStep::WaitForOnline,
+        $freshDevice,
+        $freshDevice->stepFor(ProvisioningStep::WaitForOnline),
         ProvisioningStepResult::waitingPeer('Waiting for device to come online via webhook (status: Down).'),
     );
 
@@ -726,9 +731,10 @@ it('advances past omitted steps after a completed step', function () {
         ]);
     }
 
+    $freshDevice = $workflowDevice->fresh(['steps', 'workflow', 'device']);
     app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
-        $workflowDevice->fresh(['steps', 'workflow', 'device']),
-        ProvisioningStep::AssociateSite,
+        $freshDevice,
+        $freshDevice->stepFor(ProvisioningStep::AssociateSite),
         ProvisioningStepResult::completed('Associated to site.'),
     );
 
@@ -894,9 +900,10 @@ it('advances a custom workflow in the user-defined step order', function () {
     $workflowDevice = ProvisioningWorkflowDevice::query()->first();
     $orchestrator = app(ProvisioningWorkflowOrchestrator::class);
 
+    $freshDevice = $workflowDevice->fresh(['steps', 'device', 'workflow']);
     $orchestrator->processStepResult(
-        $workflowDevice->fresh(['steps', 'device', 'workflow']),
-        ProvisioningStep::AssignDeviceFunction,
+        $freshDevice,
+        $freshDevice->stepFor(ProvisioningStep::AssignDeviceFunction),
         ProvisioningStepResult::completed('Function assigned'),
     );
 
@@ -1273,9 +1280,10 @@ it('pauses a running workflow and halts further step dispatch', function () {
     expect($workflow->status)->toBe('paused')
         ->and($workflow->classic_poller_active)->toBeFalse();
 
+    $freshDevice = $workflowDevice->fresh(['workflow', 'steps']);
     app(ProvisioningWorkflowOrchestrator::class)->dispatchStep(
-        $workflowDevice->fresh(['workflow']),
-        ProvisioningStep::AssociateSite,
+        $freshDevice,
+        $freshDevice->stepFor(ProvisioningStep::AssociateSite),
     );
 
     Queue::assertNothingPushed();
@@ -1716,7 +1724,7 @@ it('overrides an in-progress step as completed and advances to the next step', f
     $this->actingAs($this->user);
 
     $this->post(route('provisioning_workflow_devices.override', $workflowDevice), [
-        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('step_order'),
     ])->assertRedirect();
 
     $workflowDevice->refresh();
@@ -1779,7 +1787,7 @@ it('overrides a failed step and resumes the device workflow', function () {
     $this->actingAs($this->user);
 
     $this->post(route('provisioning_workflow_devices.override', $workflowDevice), [
-        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('step_order'),
     ])->assertRedirect();
 
     $workflowDevice->refresh();
@@ -1828,7 +1836,7 @@ it('completes the device when the overridden step is the last step', function ()
     $this->actingAs($this->user);
 
     $this->post(route('provisioning_workflow_devices.override', $workflowDevice), [
-        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('step_order'),
     ])->assertRedirect();
 
     $workflowDevice->refresh();
@@ -1883,7 +1891,12 @@ it('does not re-advance when a released step job runs after a user override', fu
         'message' => 'Name device...',
     ]);
 
-    $job = new RunProvisioningWorkflowStepJob($workflowDevice->id, ProvisioningStep::AssociateSite->value);
+    $associateStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->first();
+    $job = new RunProvisioningWorkflowStepJob(
+        $workflowDevice->id,
+        $associateStep->id,
+        ProvisioningStep::AssociateSite->value,
+    );
     $job->handle(
         app(\App\Services\Provisioning\ProvisioningStepRunner::class),
         app(ProvisioningWorkflowOrchestrator::class),
@@ -1937,9 +1950,10 @@ it('ignores in-flight step results after a user override', function () {
         'status' => 'in_progress',
     ]);
 
+    $freshDevice = $workflowDevice->fresh(['steps', 'workflow', 'device']);
     app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
-        $workflowDevice->fresh(['steps', 'workflow', 'device']),
-        ProvisioningStep::AssociateSite,
+        $freshDevice,
+        $freshDevice->stepFor(ProvisioningStep::AssociateSite),
         ProvisioningStepResult::failed('Late failure from in-flight API call'),
     );
 
@@ -1995,7 +2009,7 @@ it('clears user_overridden when restarting from an overridden step', function ()
     $this->actingAs($this->user);
 
     $this->post(route('provisioning_workflow_devices.restart', $workflowDevice), [
-        'from_step' => ProvisioningStep::AssociateSite->value,
+        'from_step_order' => $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('step_order'),
     ])->assertRedirect();
 
     $associateStep = $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->first();
@@ -2044,10 +2058,10 @@ it('rejects overriding a non-current step', function () {
 
     $this->from(route('deployments.provision', $this->deployment))
         ->post(route('provisioning_workflow_devices.override', $workflowDevice), [
-            'step_key' => ProvisioningStep::AssociateSite->value,
+            'step_order' => $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('step_order'),
         ])
         ->assertRedirect(route('deployments.provision', $this->deployment))
-        ->assertSessionHasErrors('step_key');
+        ->assertSessionHasErrors('step_order');
 });
 
 it('rejects overriding a step on a cancelled workflow', function () {
@@ -2082,10 +2096,10 @@ it('rejects overriding a step on a cancelled workflow', function () {
 
     $this->from(route('deployments.provision', $this->deployment))
         ->post(route('provisioning_workflow_devices.override', $workflowDevice), [
-            'step_key' => ProvisioningStep::AssociateSite->value,
+            'step_order' => $workflowDevice->steps()->where('step_key', ProvisioningStep::AssociateSite->value)->value('step_order'),
         ])
         ->assertRedirect(route('deployments.provision', $this->deployment))
-        ->assertSessionHasErrors('step_key');
+        ->assertSessionHasErrors('step_order');
 });
 
 it('serializes user_overridden and can_override flags for the UI', function () {
@@ -2537,10 +2551,80 @@ it('keeps the current step for in-progress devices when appending', function () 
     Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class);
 });
 
-it('rejects appending a duplicate step key', function () {
+it('allows appending a duplicate step key', function () {
     Queue::fake();
 
-    $device = Device::factory()->for($this->deployment)->create();
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'completed',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => ['mode' => 'skipped'],
+        'steps' => [ProvisioningStep::NameDevice->value],
+        'started_at' => now(),
+        'completed_at' => now(),
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'completed',
+        'current_step_key' => null,
+        'status_message' => 'Workflow completed successfully.',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'completed_at' => now(),
+    ]);
+
+    app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::NameDevice->value],
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $workflow->refresh();
+    $workflowDevice->refresh();
+
+    expect($workflow->steps)->toBe([
+        ProvisioningStep::NameDevice->value,
+        ProvisioningStep::NameDevice->value,
+    ])
+        ->and($workflowDevice->steps()->orderBy('step_order')->pluck('step_key')->all())->toBe([
+            ProvisioningStep::NameDevice->value,
+            ProvisioningStep::NameDevice->value,
+        ])
+        ->and($workflowDevice->steps()->orderBy('step_order')->pluck('step_order')->all())->toBe([1, 2])
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::NameDevice->value);
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($workflowDevice) {
+        $secondStep = $workflowDevice->steps()->where('step_order', 2)->first();
+
+        return $job->workflowDeviceId === $workflowDevice->id
+            && $job->deviceStepId === $secondStep->id
+            && $job->stepKey === ProvisioningStep::NameDevice->value;
+    });
+});
+
+it('advances through duplicate step instances in order', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
     $workflow = ProvisioningWorkflow::query()->create([
         'deployment_id' => $this->deployment->id,
         'user_id' => $this->user->id,
@@ -2549,20 +2633,63 @@ it('rejects appending a duplicate step key', function () {
         'deployment_time' => 10,
         'wait_time' => 1,
         'licensing_config' => ['mode' => 'skipped'],
-        'steps' => [ProvisioningStep::AssociateSite->value],
+        'steps' => [
+            ProvisioningStep::NameDevice->value,
+            ProvisioningStep::NameDevice->value,
+        ],
         'started_at' => now(),
     ]);
-    $workflow->workflowDevices()->create([
+
+    $workflowDevice = $workflow->workflowDevices()->create([
         'device_id' => $device->id,
         'overall_status' => 'in_progress',
-        'current_step_key' => ProvisioningStep::AssociateSite->value,
+        'current_step_key' => ProvisioningStep::NameDevice->value,
+    ]);
+    $first = $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+    $second = $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::NameDevice->value,
+        'step_order' => 2,
+        'status' => 'pending',
     ]);
 
-    $this->actingAs($this->user);
+    $fresh = $workflowDevice->fresh(['steps', 'device', 'workflow']);
+    app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
+        $fresh,
+        $fresh->steps->firstWhere('id', $first->id),
+        ProvisioningStepResult::completed('Named once'),
+    );
 
-    $this->post(route('provisioning_workflows.append_steps', $workflow), [
-        'steps' => [ProvisioningStep::AssociateSite->value],
-    ])->assertSessionHasErrors('steps');
+    $workflowDevice->refresh();
+    $first->refresh();
+    $second->refresh();
+
+    expect($first->status)->toBe('completed')
+        ->and($second->status)->toBe('in_progress')
+        ->and($workflowDevice->current_step_key)->toBe(ProvisioningStep::NameDevice->value)
+        ->and($workflowDevice->overall_status)->toBe('in_progress');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($workflowDevice, $second) {
+        return $job->workflowDeviceId === $workflowDevice->id
+            && $job->deviceStepId === $second->id;
+    });
+
+    $fresh = $workflowDevice->fresh(['steps', 'device', 'workflow']);
+    app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
+        $fresh,
+        $fresh->steps->firstWhere('id', $second->id),
+        ProvisioningStepResult::completed('Named twice'),
+    );
+
+    $workflowDevice->refresh();
+    $second->refresh();
+
+    expect($second->status)->toBe('completed')
+        ->and($workflowDevice->overall_status)->toBe('completed')
+        ->and($workflowDevice->current_step_key)->toBeNull();
 });
 
 it('rejects appending steps that break the custom step order', function () {
@@ -2778,7 +2905,7 @@ it('serializes append-step controls for custom workflows', function () {
     expect($payload['can_append_steps'])->toBeTrue()
         ->and($payload['needs_licensing_for_append'])->toBeTrue()
         ->and(collect($payload['appendable_steps'])->pluck('step_key')->all())
-        ->not->toContain(ProvisioningStep::AssociateSite->value)
+        ->toContain(ProvisioningStep::AssociateSite->value)
         ->and(collect($payload['appendable_steps'])->pluck('step_key')->all())
         ->toContain(ProvisioningStep::NameDevice->value);
 });

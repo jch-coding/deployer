@@ -26,7 +26,7 @@ class CustomWorkflowStepOrder
      * @param  list<mixed>  $rawSteps
      * @return list<ProvisioningStep>
      */
-    public static function validate(array $rawSteps): array
+    public static function validate(array $rawSteps, bool $allowDuplicates = false): array
     {
         if ($rawSteps === []) {
             throw ValidationException::withMessages([
@@ -45,7 +45,7 @@ class CustomWorkflowStepOrder
                     'steps' => "Invalid step \"{$value}\".",
                 ]);
             }
-            if (isset($seen[$value])) {
+            if (! $allowDuplicates && isset($seen[$value])) {
                 throw ValidationException::withMessages([
                     'steps' => "Duplicate step \"{$value}\".",
                 ]);
@@ -74,10 +74,10 @@ class CustomWorkflowStepOrder
     /**
      * @param  list<string>  $stepKeys
      */
-    public static function isValid(array $stepKeys): bool
+    public static function isValid(array $stepKeys, bool $allowDuplicates = false): bool
     {
         try {
-            self::validate($stepKeys);
+            self::validate($stepKeys, $allowDuplicates);
 
             return true;
         } catch (ValidationException) {

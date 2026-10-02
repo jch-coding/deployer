@@ -196,9 +196,10 @@ it('does not start the classic poller for stream-mode wait_for_online', function
     Queue::fake();
     $ctx = createStreamWaitingWorkflow();
 
+    $freshDevice = $ctx['workflowDevice']->fresh(['steps', 'workflow', 'device']);
     app(ProvisioningWorkflowOrchestrator::class)->processStepResult(
-        $ctx['workflowDevice']->fresh(['steps', 'workflow', 'device']),
-        ProvisioningStep::WaitForOnline,
+        $freshDevice,
+        $freshDevice->stepFor(ProvisioningStep::WaitForOnline),
         ProvisioningStepResult::waitingPeer('Waiting for device to come online via streaming (status: Down).'),
     );
 

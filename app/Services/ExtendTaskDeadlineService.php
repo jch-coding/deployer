@@ -172,8 +172,11 @@ class ExtendTaskDeadlineService
                 continue;
             }
 
-            RunProvisioningWorkflowStepJob::dispatch($workflowDevice->id, $nextStep->value)
-                ->onQueue(JobQueueShard::resolve($workflow->job_queue));
+            RunProvisioningWorkflowStepJob::dispatch(
+                $workflowDevice->id,
+                $nextStepRow->id,
+                $nextStepRow->step_key,
+            )->onQueue(JobQueueShard::resolve($workflow->job_queue));
         }
     }
 }

@@ -41,7 +41,7 @@ class FailWaitForOnlineOnTimeoutJob implements ShouldQueue
             return;
         }
 
-        $stepRow = $workflowDevice->steps->firstWhere('step_key', ProvisioningStep::WaitForOnline->value);
+        $stepRow = $workflowDevice->stepFor(ProvisioningStep::WaitForOnline);
         if ($stepRow === null || $stepRow->status !== 'in_progress') {
             return;
         }
@@ -51,7 +51,7 @@ class FailWaitForOnlineOnTimeoutJob implements ShouldQueue
 
         $orchestrator->processStepResult(
             $workflowDevice,
-            ProvisioningStep::WaitForOnline,
+            $stepRow,
             ProvisioningStepResult::failed("Timed out waiting for device to come online via {$via}."),
         );
     }

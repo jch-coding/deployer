@@ -355,7 +355,7 @@ class ProvisioningWorkflowService
                 'current_step_key' => $firstStep->value,
                 'status_message' => $firstStep->label().'...',
             ]);
-            $this->orchestrator->dispatchStep($workflowDevice, $firstStep);
+            $this->orchestrator->dispatchStep($workflowDevice, $firstStepRow);
 
             return;
         }
@@ -573,7 +573,7 @@ class ProvisioningWorkflowService
             ]);
 
             $nextStepRow->markInProgress($nextStep->label().'...');
-            $this->orchestrator->dispatchStep($workflowDevice, $nextStep);
+            $this->orchestrator->dispatchStep($workflowDevice, $nextStepRow);
         }
 
         $workflow->refreshOverallStatus();
@@ -582,7 +582,7 @@ class ProvisioningWorkflowService
         $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 
-    public function restartFromStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $fromStep): void
+    public function restartFromStep(ProvisioningWorkflowDevice $workflowDevice, int $fromStepOrder): void
     {
         $workflowDevice->loadMissing('device', 'workflow', 'steps');
         $workflow = $workflowDevice->workflow;
@@ -591,13 +591,14 @@ class ProvisioningWorkflowService
             return;
         }
 
-        $fromRow = $workflowDevice->steps->firstWhere('step_key', $fromStep->value);
+        $fromRow = $workflowDevice->steps->firstWhere('step_order', $fromStepOrder);
         if ($fromRow === null) {
             throw ValidationException::withMessages([
-                'from_step' => 'That step is not part of this workflow.',
+                'from_step_order' => 'That step is not part of this workflow.',
             ]);
         }
 
+        $fromStep = ProvisioningStep::from($fromRow->step_key);
         $fromOrder = (int) $fromRow->step_order;
         $stepContext = ProvisioningStepContext::forWorkflow($workflow);
 
@@ -626,39 +627,38 @@ class ProvisioningWorkflowService
             $workflow->update(['status' => 'running', 'completed_at' => null]);
         }
 
-        $stepRow = $workflowDevice->steps->firstWhere('step_key', $fromStep->value);
-        $stepRow?->markInProgress('Restarting...');
-        $this->orchestrator->dispatchStep($workflowDevice, $fromStep);
+        $fromRow = $workflowDevice->steps->firstWhere('step_order', $fromStepOrder);
+        $fromRow?->markInProgress('Restarting...');
+        if ($fromRow !== null) {
+            $this->orchestrator->dispatchStep($workflowDevice, $fromRow);
+        }
         $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 
-    public function overrideStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $step): void
+    public function overrideStep(ProvisioningWorkflowDevice $workflowDevice, int $stepOrder): void
     {
         $workflowDevice->loadMissing('device', 'workflow', 'steps');
         $workflow = $workflowDevice->workflow;
 
         if ($workflow->isTerminal()) {
             throw ValidationException::withMessages([
-                'step_key' => 'Cannot override a step on a completed or cancelled workflow.',
+                'step_order' => 'Cannot override a step on a completed or cancelled workflow.',
             ]);
         }
 
-        $stepRow = $workflowDevice->steps->firstWhere('step_key', $step->value);
+        $stepRow = $workflowDevice->steps->firstWhere('step_order', $stepOrder);
         if ($stepRow === null) {
             throw ValidationException::withMessages([
-                'step_key' => 'That step is not part of this workflow.',
+                'step_order' => 'That step is not part of this workflow.',
             ]);
         }
 
-        if ($workflowDevice->current_step_key !== $step->value) {
-            throw ValidationException::withMessages([
-                'step_key' => 'Only the current step can be overridden.',
-            ]);
-        }
+        $step = ProvisioningStep::from($stepRow->step_key);
 
-        if (! in_array($stepRow->status, ['in_progress', 'failed'], true)) {
+        if ($workflowDevice->current_step_key !== $step->value
+            || ! in_array($stepRow->status, ['in_progress', 'failed'], true)) {
             throw ValidationException::withMessages([
-                'step_key' => 'Only an in-progress or failed step can be overridden.',
+                'step_order' => 'Only the current in-progress or failed step can be overridden.',
             ]);
         }
 
@@ -674,7 +674,10 @@ class ProvisioningWorkflowService
             'status_message' => 'Marked complete by user.',
         ]);
 
-        $this->orchestrator->advanceToNextStep($workflowDevice->fresh(['steps', 'device', 'workflow']), $step);
+        $this->orchestrator->advanceToNextStep(
+            $workflowDevice->fresh(['steps', 'device', 'workflow']),
+            $stepRow->fresh() ?? $stepRow,
+        );
         $this->taskSync->syncFromWorkflow($workflow->fresh(['workflowDevices']));
     }
 
@@ -701,19 +704,11 @@ class ProvisioningWorkflowService
             ]);
         }
 
-        $newSteps = CustomWorkflowStepOrder::validate($stepKeys);
+        $newSteps = CustomWorkflowStepOrder::validate($stepKeys, allowDuplicates: true);
         $newKeys = array_map(fn (ProvisioningStep $step) => $step->value, $newSteps);
 
-        foreach ($newKeys as $key) {
-            if (in_array($key, $existingKeys, true)) {
-                throw ValidationException::withMessages([
-                    'steps' => "Step \"{$key}\" is already part of this workflow.",
-                ]);
-            }
-        }
-
         $mergedKeys = array_values(array_merge($existingKeys, $newKeys));
-        CustomWorkflowStepOrder::validate($mergedKeys);
+        CustomWorkflowStepOrder::validate($mergedKeys, allowDuplicates: true);
 
         $licensingConfig = is_array($workflow->licensing_config) ? $workflow->licensing_config : [];
         $appendingLicensing = in_array(ProvisioningStep::VerifyLicensing->value, $newKeys, true);
@@ -858,6 +853,7 @@ class ProvisioningWorkflowService
                     && in_array($row->status, ['in_progress', 'failed'], true);
 
                 return [
+                    'id' => $row->id,
                     'step_key' => $row->step_key,
                     'label' => ProvisioningStep::from($row->step_key)->label(),
                     'status' => $row->status,
@@ -941,10 +937,7 @@ class ProvisioningWorkflowService
             return [];
         }
 
-        return array_values(array_filter(
-            $this->availableStepsForUi(),
-            fn (array $step) => ! in_array($step['step_key'], $existing, true),
-        ));
+        return $this->availableStepsForUi();
     }
 
     public function needsLicensingForAppend(ProvisioningWorkflow $workflow): bool
@@ -1135,7 +1128,11 @@ class ProvisioningWorkflowService
             return [];
         }
 
-        $failedRow = $workflowDevice->steps->firstWhere('step_key', $workflowDevice->failed_step_key);
+        $failedRow = $workflowDevice->steps
+            ->where('step_key', $workflowDevice->failed_step_key)
+            ->sortBy('step_order')
+            ->first(fn (ProvisioningWorkflowDeviceStep $row) => $row->status === 'failed')
+            ?? $workflowDevice->steps->firstWhere('step_key', $workflowDevice->failed_step_key);
         if ($failedRow === null) {
             return [];
         }
@@ -1150,8 +1147,10 @@ class ProvisioningWorkflowService
 
             $step = ProvisioningStep::from($stepRow->step_key);
             $steps[] = [
+                'id' => $stepRow->id,
                 'step_key' => $step->value,
                 'label' => $step->label(),
+                'order' => $stepRow->step_order,
             ];
         }
 

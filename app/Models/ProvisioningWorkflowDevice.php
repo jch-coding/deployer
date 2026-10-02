@@ -26,7 +26,27 @@ class ProvisioningWorkflowDevice extends Model
 
     public function stepFor(ProvisioningStep $step): ?ProvisioningWorkflowDeviceStep
     {
-        return $this->steps->firstWhere('step_key', $step->value);
+        $rows = $this->steps
+            ->where('step_key', $step->value)
+            ->sortBy('step_order')
+            ->values();
+
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $active = $rows->first(
+            fn (ProvisioningWorkflowDeviceStep $row) => in_array($row->status, ['in_progress', 'failed'], true),
+        );
+        if ($active !== null) {
+            return $active;
+        }
+
+        $pending = $rows->first(
+            fn (ProvisioningWorkflowDeviceStep $row) => $row->status === 'pending',
+        );
+
+        return $pending ?? $rows->first();
     }
 
     public function applicableStepsCount(): int

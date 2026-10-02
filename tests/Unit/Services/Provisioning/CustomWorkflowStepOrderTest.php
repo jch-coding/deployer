@@ -80,6 +80,20 @@ it('rejects empty and duplicate steps', function () {
     ]))->toThrow(ValidationException::class);
 });
 
+it('allows duplicate steps when allowDuplicates is enabled', function () {
+    $steps = CustomWorkflowStepOrder::validate([
+        ProvisioningStep::NameDevice->value,
+        ProvisioningStep::NameDevice->value,
+        ProvisioningStep::WaitForOnline->value,
+    ], allowDuplicates: true);
+
+    expect(array_map(fn ($step) => $step->value, $steps))->toBe([
+        ProvisioningStep::NameDevice->value,
+        ProvisioningStep::NameDevice->value,
+        ProvisioningStep::WaitForOnline->value,
+    ]);
+});
+
 it('rejects unknown step keys', function () {
     expect(fn () => CustomWorkflowStepOrder::validate(['not_a_real_step']))
         ->toThrow(ValidationException::class);

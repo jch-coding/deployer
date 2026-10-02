@@ -305,12 +305,12 @@ class ProvisioningWorkflowController extends Controller
         $this->authorizeWorkflow($request, $workflowDevice->workflow);
 
         $validated = $request->validate([
-            'from_step' => ['required', 'string', Rule::in(array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases()))],
+            'from_step_order' => ['required', 'integer', 'min:1'],
         ]);
 
         $workflowService->restartFromStep(
             $workflowDevice,
-            ProvisioningStep::from($validated['from_step']),
+            (int) $validated['from_step_order'],
         );
 
         return back()->with('success', 'Device workflow restarted.');
@@ -322,13 +322,13 @@ class ProvisioningWorkflowController extends Controller
         $this->authorizeWorkflow($request, $workflowDevice->workflow);
 
         $validated = $request->validate([
-            'step_key' => ['required', 'string', Rule::in(array_map(fn (ProvisioningStep $step) => $step->value, ProvisioningStep::cases()))],
+            'step_order' => ['required', 'integer', 'min:1'],
         ]);
 
         try {
             $workflowService->overrideStep(
                 $workflowDevice,
-                ProvisioningStep::from($validated['step_key']),
+                (int) $validated['step_order'],
             );
         } catch (ValidationException $exception) {
             return back()->withErrors($exception->errors());

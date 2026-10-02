@@ -21,11 +21,14 @@ const selectClassName =
     'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
 export type WorkflowDeviceRestartableStep = {
+    id?: number;
     step_key: string;
     label: string;
+    order: number;
 };
 
 export type WorkflowDeviceStatusStep = {
+    id?: number;
     step_key: string;
     label: string;
     status: string;
@@ -86,6 +89,14 @@ function deviceCurrentStepSummary(device: WorkflowDeviceStatusRow): string {
     return 'Waiting';
 }
 
+function stepInstanceKey(step: { id?: number; order: number; step_key: string }): string {
+    if (step.id != null) {
+        return String(step.id);
+    }
+
+    return `${step.order}-${step.step_key}`;
+}
+
 function WorkflowDeviceRow({
     device,
     forceOpen,
@@ -98,8 +109,8 @@ function WorkflowDeviceRow({
     const [open, setOpen] = useState(false);
     const isOpen = forceOpen || open;
     const restartableSteps = device.restartable_steps ?? [];
-    const [restartStep, setRestartStep] = useState(
-        restartableSteps[0]?.step_key ?? '',
+    const [restartStepOrder, setRestartStepOrder] = useState(
+        restartableSteps[0]?.order != null ? String(restartableSteps[0].order) : '',
     );
 
     return (
@@ -148,9 +159,9 @@ function WorkflowDeviceRow({
                 <div className="space-y-1">
                     {device.steps.map((step) => (
                         <div
-                            key={step.step_key}
+                            key={stepInstanceKey(step)}
                             className="flex items-start gap-2 text-xs"
-                            data-test={`workflow-device-step-${device.device_id}-${step.step_key}`}
+                            data-test={`workflow-device-step-${device.device_id}-${step.order}-${step.step_key}`}
                         >
                             <span
                                 className={cn(
@@ -168,7 +179,7 @@ function WorkflowDeviceRow({
                                         <Badge
                                             variant="outline"
                                             className="font-normal"
-                                            data-test={`workflow-step-user-override-${device.device_id}-${step.step_key}`}
+                                            data-test={`workflow-step-user-override-${device.device_id}-${step.order}-${step.step_key}`}
                                         >
                                             User override
                                         </Badge>
@@ -179,14 +190,14 @@ function WorkflowDeviceRow({
                                             size="sm"
                                             variant="outline"
                                             className="h-6 px-2 text-xs"
-                                            data-test={`workflow-step-skip-${device.device_id}-${step.step_key}`}
+                                            data-test={`workflow-step-skip-${device.device_id}-${step.order}-${step.step_key}`}
                                             onClick={() =>
                                                 router.post(
                                                     overrideWorkflowDeviceStep(
                                                         device.id,
                                                     ).url,
                                                     {
-                                                        step_key: step.step_key,
+                                                        step_order: step.order,
                                                     },
                                                 )
                                             }
@@ -209,17 +220,22 @@ function WorkflowDeviceRow({
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
                         <select
                             className={cn(selectClassName, 'max-w-[220px]')}
-                            value={restartStep}
+                            value={restartStepOrder}
                             onChange={(event) =>
-                                setRestartStep(event.target.value)
+                                setRestartStepOrder(event.target.value)
                             }
                         >
                             {restartableSteps.map((step) => (
                                 <option
-                                    key={step.step_key}
-                                    value={step.step_key}
+                                    key={stepInstanceKey(step)}
+                                    value={String(step.order)}
                                 >
                                     {step.label}
+                                    {restartableSteps.filter(
+                                        (other) => other.step_key === step.step_key,
+                                    ).length > 1
+                                        ? ` (#${step.order})`
+                                        : ''}
                                 </option>
                             ))}
                         </select>
@@ -229,7 +245,9 @@ function WorkflowDeviceRow({
                             onClick={() =>
                                 router.post(
                                     restartWorkflowDevice(device.id).url,
-                                    { from_step: restartStep },
+                                    {
+                                        from_step_order: Number(restartStepOrder),
+                                    },
                                 )
                             }
                         >

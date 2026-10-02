@@ -19,26 +19,29 @@ class ProvisioningWorkflowOrchestrator
         private readonly ProvisioningWorkflowTaskSync $taskSync,
     ) {}
 
-    public function dispatchStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $step): void
-    {
+    public function dispatchStep(
+        ProvisioningWorkflowDevice $workflowDevice,
+        ProvisioningWorkflowDeviceStep $stepRow,
+    ): void {
         $workflow = $workflowDevice->workflow;
         if ($workflow->isHalted() || $workflowDevice->isTerminal()) {
             return;
         }
 
-        RunProvisioningWorkflowStepJob::dispatch($workflowDevice->id, $step->value)
+        RunProvisioningWorkflowStepJob::dispatch($workflowDevice->id, $stepRow->id, $stepRow->step_key)
             ->onQueue(JobQueueShard::resolve($workflow->job_queue));
     }
 
     public function processStepResult(
         ProvisioningWorkflowDevice $workflowDevice,
-        ProvisioningStep $step,
+        ProvisioningWorkflowDeviceStep $stepRow,
         ProvisioningStepResult $result,
     ): void {
         $workflowDevice->loadMissing('workflow', 'steps', 'device');
-        $stepRow = $workflowDevice->steps->firstWhere('step_key', $step->value);
+        $stepRow = $workflowDevice->steps->firstWhere('id', $stepRow->id) ?? $stepRow;
+        $step = ProvisioningStep::from($stepRow->step_key);
 
-        if ($stepRow === null || $workflowDevice->workflow->isHalted()) {
+        if ($workflowDevice->workflow->isHalted()) {
             return;
         }
 
@@ -67,7 +70,7 @@ class ProvisioningWorkflowOrchestrator
 
         if ($result->isSkipped()) {
             $this->completeStep($workflowDevice, $stepRow, $step, $result->message !== '' ? $result->message : 'Skipped');
-            $this->advanceToNextStep($workflowDevice, $step);
+            $this->advanceToNextStep($workflowDevice, $stepRow);
 
             return;
         }
@@ -80,7 +83,7 @@ class ProvisioningWorkflowOrchestrator
             } else {
                 $this->completeStep($workflowDevice, $stepRow, $step, $result->message);
             }
-            $this->advanceToNextStep($workflowDevice, $step);
+            $this->advanceToNextStep($workflowDevice, $stepRow);
 
             return;
         }
@@ -104,8 +107,10 @@ class ProvisioningWorkflowOrchestrator
         }
     }
 
-    public function advanceToNextStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $completedStep): void
-    {
+    public function advanceToNextStep(
+        ProvisioningWorkflowDevice $workflowDevice,
+        ProvisioningWorkflowDeviceStep $completedStepRow,
+    ): void {
         $workflowDevice->refresh();
         $workflowDevice->loadMissing('steps', 'device', 'workflow');
 
@@ -113,8 +118,8 @@ class ProvisioningWorkflowOrchestrator
             return;
         }
 
-        $nextStep = $this->nextApplicableStep($workflowDevice, $completedStep);
-        if ($nextStep === null) {
+        $nextStepRow = $this->nextApplicableStepRow($workflowDevice, (int) $completedStepRow->step_order);
+        if ($nextStepRow === null) {
             $workflowDevice->update([
                 'overall_status' => 'completed',
                 'current_step_key' => null,
@@ -126,10 +131,8 @@ class ProvisioningWorkflowOrchestrator
             return;
         }
 
-        $nextStepRow = $workflowDevice->steps->firstWhere('step_key', $nextStep->value);
-        if ($nextStepRow instanceof ProvisioningWorkflowDeviceStep) {
-            $nextStepRow->markInProgress($nextStep->label().'...');
-        }
+        $nextStep = ProvisioningStep::from($nextStepRow->step_key);
+        $nextStepRow->markInProgress($nextStep->label().'...');
 
         $workflowDevice->update([
             'current_step_key' => $nextStep->value,
@@ -141,7 +144,7 @@ class ProvisioningWorkflowOrchestrator
             $this->ensureClassicPollerRunning($workflowDevice->workflow);
         }
 
-        $this->dispatchStep($workflowDevice, $nextStep);
+        $this->dispatchStep($workflowDevice, $nextStepRow);
     }
 
     public function ensureClassicPollerRunning(ProvisioningWorkflow $workflow): void
@@ -207,27 +210,28 @@ class ProvisioningWorkflowOrchestrator
         $this->taskSync->syncFromWorkflow($workflow->load('workflowDevices'));
     }
 
-    private function nextApplicableStep(ProvisioningWorkflowDevice $workflowDevice, ProvisioningStep $after): ?ProvisioningStep
-    {
+    private function nextApplicableStepRow(
+        ProvisioningWorkflowDevice $workflowDevice,
+        int $afterOrder,
+    ): ?ProvisioningWorkflowDeviceStep {
         $device = $workflowDevice->device;
-        $foundCurrent = false;
         $context = ProvisioningStepContext::forWorkflow($workflowDevice->workflow);
 
         foreach ($workflowDevice->steps->sortBy('step_order')->values() as $stepRow) {
+            if ((int) $stepRow->step_order <= $afterOrder) {
+                continue;
+            }
+
             $step = ProvisioningStep::tryFrom($stepRow->step_key);
             if ($step === null) {
                 continue;
             }
 
-            if (! $foundCurrent) {
-                if ($step === $after) {
-                    $foundCurrent = true;
-                }
-
+            if ($stepRow->status === 'skipped') {
                 continue;
             }
 
-            if ($stepRow->status === 'skipped') {
+            if (in_array($stepRow->status, ['completed'], true)) {
                 continue;
             }
 
@@ -239,7 +243,7 @@ class ProvisioningWorkflowOrchestrator
                 continue;
             }
 
-            return $step;
+            return $stepRow;
         }
 
         return null;

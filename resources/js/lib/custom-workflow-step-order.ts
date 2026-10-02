@@ -17,17 +17,19 @@ export function customWorkflowStepRank(stepKey: string): number {
 export function validateCustomWorkflowStepOrder(
     stepKeys: string[],
     labelsByKey: Record<string, string> = {},
+    options: { allowDuplicates?: boolean } = {},
 ): string | null {
     if (stepKeys.length === 0) {
         return 'Select at least one provisioning step.';
     }
 
+    const allowDuplicates = options.allowDuplicates === true;
     const seen = new Set<string>();
     let previousRank = -1;
     let previousLabel: string | null = null;
 
     for (const key of stepKeys) {
-        if (seen.has(key)) {
+        if (!allowDuplicates && seen.has(key)) {
             return `Duplicate step "${labelsByKey[key] ?? key}".`;
         }
         seen.add(key);

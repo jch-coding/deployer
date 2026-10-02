@@ -168,7 +168,10 @@ class ProvisioningStepRunner
     private function previousScopeIdBeforeVsf(ProvisioningWorkflowDevice $workflowDevice): ?string
     {
         $createStep = $workflowDevice->steps
-            ->firstWhere('step_key', ProvisioningStep::CreateStackProfile->value);
+            ->where('step_key', ProvisioningStep::CreateStackProfile->value)
+            ->sortByDesc('step_order')
+            ->first(fn ($row) => $row->status === 'completed' && $row->message !== null && str_contains($row->message, 'scope_before:'))
+            ?? $workflowDevice->stepFor(ProvisioningStep::CreateStackProfile);
 
         if ($createStep === null) {
             return null;

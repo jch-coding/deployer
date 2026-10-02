@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Actions\Provisioning\CreateVsxProfilePairAction;
+use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Models\ProvisioningWorkflowDevice;
@@ -88,9 +89,7 @@ class ProvisioningVsxCoordinator
                 return null;
             }
 
-            $step = $peerWorkflowDevice->steps()
-                ->where('step_key', 'create_stack_profile')
-                ->first();
+            $step = $peerWorkflowDevice->stepFor(ProvisioningStep::CreateStackProfile);
             if ($step === null || ! in_array($step->status, ['in_progress', 'pending'], true)) {
                 return null;
             }

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
 use App\Models\ProvisioningWorkflowDevice;
+use App\Models\ProvisioningWorkflowDeviceStep;
 use App\Models\Task;
 use App\Services\Provisioning\ProvisioningStepRunner;
 use App\Services\Provisioning\ProvisioningWorkflowOrchestrator;
@@ -22,7 +23,8 @@ class RunProvisioningWorkflowStepJob implements ShouldQueue
 
     public function __construct(
         public int $workflowDeviceId,
-        public string $stepKey,
+        public int $deviceStepId,
+        public string $stepKey = '',
     ) {}
 
     public function handle(
@@ -42,11 +44,13 @@ class RunProvisioningWorkflowStepJob implements ShouldQueue
             return;
         }
 
-        $step = ProvisioningStep::from($this->stepKey);
-        $stepRow = $workflowDevice->steps->firstWhere('step_key', $step->value);
-        if ($stepRow === null) {
+        $stepRow = $workflowDevice->steps->firstWhere('id', $this->deviceStepId)
+            ?? ProvisioningWorkflowDeviceStep::query()->find($this->deviceStepId);
+        if ($stepRow === null || (int) $stepRow->provisioning_workflow_device_id !== (int) $workflowDevice->id) {
             return;
         }
+
+        $step = ProvisioningStep::from($stepRow->step_key);
 
         if ($stepRow->status === 'completed' || $stepRow->status === 'skipped') {
             return;
@@ -63,7 +67,7 @@ class RunProvisioningWorkflowStepJob implements ShouldQueue
 
         try {
             $result = $stepRunner->run($workflowDevice, $step, $centralAPIHelper);
-            $orchestrator->processStepResult($workflowDevice, $step, $result);
+            $orchestrator->processStepResult($workflowDevice, $stepRow->fresh() ?? $stepRow, $result);
 
             if ($result->isRetry()) {
                 $this->release(max(60, $workflow->wait_time * 60));
@@ -72,7 +76,7 @@ class RunProvisioningWorkflowStepJob implements ShouldQueue
             Log::error($exception);
             $orchestrator->processStepResult(
                 $workflowDevice,
-                $step,
+                $stepRow->fresh() ?? $stepRow,
                 \App\Services\Provisioning\ProvisioningStepResult::failed($exception->getMessage()),
             );
         }
