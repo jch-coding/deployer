@@ -105,6 +105,8 @@ function AppendStepsDialog({
     const [submitting, setSubmitting] = useState(false);
     const [licenseTag, setLicenseTag] = useState('');
     const [licenseType, setLicenseType] = useState('');
+    const [onlyUpdateDifferentNames, setOnlyUpdateDifferentNames] =
+        useState(false);
 
     const labelsByKey = useMemo(() => {
         const map: Record<string, string> = {};
@@ -129,6 +131,7 @@ function AppendStepsDialog({
     );
 
     const includesLicensing = selectedSteps.includes('verify_licensing');
+    const includesNameDevice = selectedSteps.includes('name_device');
     const showLicensingFields =
         Boolean(workflow.needs_licensing_for_append) && includesLicensing;
 
@@ -136,6 +139,7 @@ function AppendStepsDialog({
         setSelectedSteps([]);
         setLicenseTag('');
         setLicenseType('');
+        setOnlyUpdateDifferentNames(false);
         setSubmitting(false);
     };
 
@@ -184,6 +188,9 @@ function AppendStepsDialog({
         const payload: Record<string, unknown> = {
             steps: selectedSteps,
         };
+        if (includesNameDevice) {
+            payload.only_update_different_names = onlyUpdateDifferentNames;
+        }
         if (showLicensingFields) {
             payload.licensing_mode = 'uniform';
             if (licenseTag.trim() !== '') {
@@ -318,6 +325,29 @@ function AppendStepsDialog({
                             )}
                         </div>
                     </div>
+
+                    {includesNameDevice ? (
+                        <label className="flex items-start gap-2 text-sm">
+                            <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={onlyUpdateDifferentNames}
+                                onChange={(e) =>
+                                    setOnlyUpdateDifferentNames(e.target.checked)
+                                }
+                                data-test="only-update-different-names"
+                            />
+                            <span>
+                                Only update names that differ from Central
+                                <span className="block text-xs text-muted-foreground">
+                                    Queries Central system info first and skips
+                                    devices whose hostname already matches.
+                                    Devices that are not Up in Classic Central
+                                    are always marked failed.
+                                </span>
+                            </span>
+                        </label>
+                    ) : null}
 
                     {showLicensingFields ? (
                         <div

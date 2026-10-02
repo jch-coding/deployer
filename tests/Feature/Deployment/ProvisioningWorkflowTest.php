@@ -2432,6 +2432,64 @@ it('appends steps to a running custom workflow and redispatches completed device
     });
 });
 
+it('stores only_update_different_names when appending name_device', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'completed',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'licensing_config' => [
+            'mode' => 'skipped',
+            'naming' => [
+                'per_device' => [],
+                'only_update_different_names' => false,
+            ],
+        ],
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'started_at' => now(),
+        'completed_at' => now(),
+    ]);
+
+    $workflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $device->id,
+        'overall_status' => 'completed',
+        'current_step_key' => null,
+        'status_message' => 'Workflow completed successfully.',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'completed_at' => now(),
+    ]);
+
+    app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+
+    $this->actingAs($this->user);
+
+    $this->post(route('provisioning_workflows.append_steps', $workflow), [
+        'steps' => [ProvisioningStep::NameDevice->value],
+        'only_update_different_names' => true,
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $workflow->refresh();
+
+    expect($workflow->licensing_config['naming']['only_update_different_names'] ?? false)->toBeTrue()
+        ->and(ProvisioningStepContext::forWorkflow($workflow)->onlyUpdateDifferentNames)->toBeTrue();
+});
+
 it('keeps the current step for in-progress devices when appending', function () {
     Queue::fake();
 

@@ -717,7 +717,9 @@ class ProvisioningWorkflowService
 
         $licensingConfig = is_array($workflow->licensing_config) ? $workflow->licensing_config : [];
         $appendingLicensing = in_array(ProvisioningStep::VerifyLicensing->value, $newKeys, true);
+        $appendingNameDevice = in_array(ProvisioningStep::NameDevice->value, $newKeys, true);
         $licensingSkipped = ($licensingConfig['mode'] ?? null) === 'skipped';
+        $shouldUpdateLicensingConfig = false;
 
         if ($appendingLicensing && $licensingSkipped) {
             $devices = $workflow->workflowDevices
@@ -728,6 +730,19 @@ class ProvisioningWorkflowService
                 ? $workflow->licensing_config['naming']
                 : ['per_device' => [], 'only_update_different_names' => false];
             $licensingConfig['naming'] = $naming;
+            $shouldUpdateLicensingConfig = true;
+        }
+
+        if ($appendingNameDevice) {
+            $naming = is_array($licensingConfig['naming'] ?? null)
+                ? $licensingConfig['naming']
+                : ['per_device' => [], 'only_update_different_names' => false];
+            $naming['only_update_different_names'] = (bool) ($options['only_update_different_names'] ?? false);
+            if (! isset($naming['per_device']) || ! is_array($naming['per_device'])) {
+                $naming['per_device'] = [];
+            }
+            $licensingConfig['naming'] = $naming;
+            $shouldUpdateLicensingConfig = true;
         }
 
         $originalStatus = $workflow->status;
@@ -739,14 +754,13 @@ class ProvisioningWorkflowService
             $mergedKeys,
             $newSteps,
             $licensingConfig,
-            $appendingLicensing,
-            $licensingSkipped,
+            $shouldUpdateLicensingConfig,
             $originalStatus,
             $shouldDispatch,
             $stepContext,
         ): void {
             $updates = ['steps' => $mergedKeys];
-            if ($appendingLicensing && $licensingSkipped) {
+            if ($shouldUpdateLicensingConfig) {
                 $updates['licensing_config'] = $licensingConfig;
             }
             if ($shouldDispatch) {

@@ -287,6 +287,7 @@ class ProvisioningWorkflowController extends Controller
             'devices.*.id' => ['nullable', 'integer'],
             'devices.*.license_tag' => ['nullable', 'string'],
             'devices.*.license_type' => ['nullable', 'string'],
+            'only_update_different_names' => ['nullable', 'boolean'],
         ]);
 
         try {
