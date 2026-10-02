@@ -29,7 +29,7 @@ class MarkDeviceOnlineIfWaiting
             return false;
         }
 
-        $stepRow = $workflowDevice->steps->firstWhere('step_key', ProvisioningStep::WaitForOnline->value);
+        $stepRow = $workflowDevice->stepFor(ProvisioningStep::WaitForOnline);
         if ($stepRow === null || $stepRow->status !== 'in_progress') {
             return false;
         }
@@ -40,7 +40,7 @@ class MarkDeviceOnlineIfWaiting
 
         $this->orchestrator->processStepResult(
             $workflowDevice,
-            ProvisioningStep::WaitForOnline,
+            $stepRow,
             ProvisioningStepResult::completed('Device is online (Up).'),
         );
 
