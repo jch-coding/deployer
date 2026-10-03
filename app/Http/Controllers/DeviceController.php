@@ -60,6 +60,7 @@ class DeviceController extends Controller
         'license_tag',
         'license_type',
         'mac_address',
+        'is_installed',
     ];
 
     /**
@@ -173,9 +174,10 @@ class DeviceController extends Controller
         $hasLicenseColumns = Schema::hasColumn('devices', 'license_tag');
         $csvHasLicenseTag = in_array('license_tag', $headers, true);
         $csvHasLicenseType = in_array('license_type', $headers, true);
+        $csvHasInstalled = in_array('installed', $headers, true);
 
         $withDeployment = array_map(
-            function ($arr) use ($currentClient, $user, $deployment, $hasLicenseColumns, $csvHasLicenseTag, $csvHasLicenseType, $isUpdate) {
+            function ($arr) use ($currentClient, $user, $deployment, $hasLicenseColumns, $csvHasLicenseTag, $csvHasLicenseType, $csvHasInstalled, $isUpdate) {
                 $name = trim((string) ($arr['name'] ?? ''));
                 $serial = trim((string) ($arr['serial'] ?? ''));
                 $deviceFunction = trim((string) ($arr['device_function'] ?? ''));
@@ -217,6 +219,13 @@ class DeviceController extends Controller
 
                 if ($hasLicenseColumns && $csvHasLicenseType) {
                     $row['license_type'] = ($arr['license_type'] ?? '') === '' ? null : $arr['license_type'];
+                }
+
+                if ($csvHasInstalled) {
+                    $installed = $arr['installed'] ?? '';
+                    $row['is_installed'] = $installed === '' || $installed === null
+                        ? null
+                        : (bool) $installed;
                 }
 
                 return $row;
@@ -354,6 +363,7 @@ class DeviceController extends Controller
                 'license_tag' => '',
                 'license_type' => '',
                 'mac_address' => '',
+                'installed' => '',
             ];
             foreach ($device as $device_info) {
                 foreach (array_keys($empty) as $key) {

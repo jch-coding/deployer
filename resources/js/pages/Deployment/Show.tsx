@@ -392,6 +392,11 @@ export default function Show() {
                         typeof device.controller_joined_ip === 'string' &&
                         device.controller_joined_ip.trim() !== '',
                 ),
+                showIsInstalled: devices.some(
+                    (device) =>
+                        device.is_installed !== null &&
+                        device.is_installed !== undefined,
+                ),
             }),
         [
             central_sites,

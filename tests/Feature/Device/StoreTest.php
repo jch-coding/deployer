@@ -944,3 +944,115 @@ it('rejects serials that belong to another deployment on update-many', function 
     ]);
     $this->assertDatabaseCount('devices', 1);
 });
+
+it('persists is_installed from the installed csv column', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,installed'.PHP_EOL.
+        'SW-1,SN_INSTALLED01,ACCESS_SWITCH,true'.PHP_EOL.
+        'SW-2,SN_INSTALLED02,ACCESS_SWITCH,false'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    expect(Device::query()->where('serial', 'SN_INSTALLED01')->firstOrFail()->is_installed)->toBeTrue()
+        ->and(Device::query()->where('serial', 'SN_INSTALLED02')->firstOrFail()->is_installed)->toBeFalse();
+});
+
+it('updates is_installed via update-many and keeps it when installed column is absent', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    Device::factory()
+        ->recycle($client)
+        ->create([
+            'serial' => 'SN_INSTALLED03',
+            'device_function' => DeviceFunction::ACCESS_SWITCH,
+            'deployment_id' => $deployment->id,
+            'user_id' => $user->id,
+            'is_installed' => true,
+            'group' => 'Original-Group',
+        ]);
+    $this->actingAs($user);
+
+    $updateInstalled = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'serial,installed'.PHP_EOL.
+        'SN_INSTALLED03,false'.PHP_EOL
+    );
+
+    $this->post(route('devices.update-many', $deployment), ['devices' => $updateInstalled])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    expect(Device::query()->where('serial', 'SN_INSTALLED03')->firstOrFail()->is_installed)->toBeFalse();
+
+    $withoutInstalled = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'serial,group'.PHP_EOL.
+        'SN_INSTALLED03,Updated-Group'.PHP_EOL
+    );
+
+    $this->post(route('devices.update-many', $deployment), ['devices' => $withoutInstalled])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $this->assertDatabaseHas('devices', [
+        'serial' => 'SN_INSTALLED03',
+        'is_installed' => false,
+        'group' => 'Updated-Group',
+    ]);
+});
+
+it('keeps existing is_installed when installed csv cell is blank', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $initialUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,installed'.PHP_EOL.
+        'SW-1,SN_INSTALLED04,ACCESS_SWITCH,true'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $initialUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    $secondUpload = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,installed'.PHP_EOL.
+        'SW-1,SN_INSTALLED04,ACCESS_SWITCH,'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $secondUpload])
+        ->assertRedirect(route('deployments.show', $deployment));
+
+    expect(Device::query()->where('serial', 'SN_INSTALLED04')->firstOrFail()->is_installed)->toBeTrue();
+});
+
+it('rejects invalid installed csv boolean values', function () {
+    $user = User::factory()->has(Client::factory())->create();
+    $client = $user->clients()->first();
+    $client->update(['current' => true]);
+    $deployment = Deployment::factory()->recycle($client)->create();
+    $this->actingAs($user);
+
+    $uploadedFile = UploadedFile::fake()->createWithContent(
+        'devices.csv',
+        'name,serial,device_function,installed'.PHP_EOL.
+        'SW-1,SN_INSTALLED05,ACCESS_SWITCH,maybe'.PHP_EOL
+    );
+
+    $this->post(route('devices.store-many', $deployment), ['devices' => $uploadedFile])
+        ->assertSessionHasErrors();
+
+    $this->assertDatabaseMissing('devices', ['serial' => 'SN_INSTALLED05']);
+});

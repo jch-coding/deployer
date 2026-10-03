@@ -58,6 +58,7 @@ class CSVHelper
         'license_tag',
         'license_type',
         'mac_address',
+        'installed',
     ];
 
     private const MAX_ROW_ERRORS = 50;
@@ -83,6 +84,7 @@ class CSVHelper
         'bpdu_guard',
         'loop_guard',
         'shutdown_on_split',
+        'installed',
     ];
 
     private const ROUTED_ETHERNET_L2_CONFLICT_COLUMNS = [
