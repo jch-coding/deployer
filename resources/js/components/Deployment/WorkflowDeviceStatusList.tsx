@@ -10,6 +10,13 @@ import {
 } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { formatDeviceTitle } from '@/lib/device-label';
+import {
+    INSTALL_ONLINE_BADGE_OPTIONS,
+    installOnlineBadgeClass,
+    installOnlineBadgeKey,
+    installOnlineBadgeLabel,
+    type InstallOnlineBadgeKey,
+} from '@/lib/workflow-device-install-online';
 import { workflowDeviceMatchesSearch } from '@/lib/workflow-device-search';
 import { cn } from '@/lib/utils';
 import {
@@ -47,6 +54,8 @@ export type WorkflowDeviceStatusRow = {
     mac_address?: string | null;
     site_name?: string | null;
     group?: string | null;
+    is_installed?: boolean | null;
+    is_online?: boolean;
     overall_status: string;
     current_step_label: string | null;
     status_message: string | null;
@@ -112,6 +121,10 @@ function WorkflowDeviceRow({
     const [restartStepOrder, setRestartStepOrder] = useState(
         restartableSteps[0]?.order != null ? String(restartableSteps[0].order) : '',
     );
+    const badgeKey = installOnlineBadgeKey(
+        device.is_installed,
+        device.is_online,
+    );
 
     return (
         <Collapsible
@@ -131,8 +144,20 @@ function WorkflowDeviceRow({
                                 : `Expand ${formatDeviceTitle(device.name, device.serial)}`
                         }
                     >
-                        <span className="truncate text-left text-sm font-medium">
-                            {formatDeviceTitle(device.name, device.serial)}
+                        <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-left text-sm font-medium">
+                                {formatDeviceTitle(device.name, device.serial)}
+                            </span>
+                            <Badge
+                                variant="outline"
+                                className={cn(
+                                    'shrink-0 font-normal',
+                                    installOnlineBadgeClass(badgeKey),
+                                )}
+                                data-test={`workflow-device-install-online-${device.device_id}`}
+                            >
+                                {installOnlineBadgeLabel(badgeKey)}
+                            </Badge>
                         </span>
                         <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
                             {deviceCurrentStepSummary(device)}
@@ -269,31 +294,66 @@ export default function WorkflowDeviceStatusList({
     showRestartControls?: boolean;
 }) {
     const [search, setSearch] = useState('');
+    const [installOnlineFilter, setInstallOnlineFilter] = useState<
+        '' | InstallOnlineBadgeKey
+    >('');
 
     const filteredDevices = useMemo(
         () =>
-            devices.filter((device) =>
-                workflowDeviceMatchesSearch(device, search),
-            ),
-        [devices, search],
+            devices.filter((device) => {
+                if (!workflowDeviceMatchesSearch(device, search)) {
+                    return false;
+                }
+
+                if (installOnlineFilter === '') {
+                    return true;
+                }
+
+                return (
+                    installOnlineBadgeKey(
+                        device.is_installed,
+                        device.is_online,
+                    ) === installOnlineFilter
+                );
+            }),
+        [devices, search, installOnlineFilter],
     );
 
     const forceOpen = search.trim() !== '';
 
     return (
         <div className="space-y-3">
-            <div className="relative">
-                <Search
-                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                />
-                <Input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search devices and steps…"
-                    className="pl-9"
-                    data-test="workflow-device-search"
-                />
+            <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative min-w-0 flex-1">
+                    <Search
+                        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden
+                    />
+                    <Input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Search devices and steps…"
+                        className="pl-9"
+                        data-test="workflow-device-search"
+                    />
+                </div>
+                <select
+                    value={installOnlineFilter}
+                    onChange={(event) =>
+                        setInstallOnlineFilter(
+                            event.target.value as '' | InstallOnlineBadgeKey,
+                        )
+                    }
+                    className={selectClassName}
+                    data-test="workflow-device-install-online-filter"
+                >
+                    <option value="">All install/online statuses</option>
+                    {INSTALL_ONLINE_BADGE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                            {option.label}
+                        </option>
+                    ))}
+                </select>
             </div>
             {filteredDevices.length === 0 ? (
                 <p className="text-sm text-muted-foreground">

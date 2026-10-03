@@ -41,6 +41,7 @@ export type DeviceDef = {
     device_function: string;
     mac_address?: string | null;
     controller_joined_ip?: string | null;
+    is_installed?: boolean | null;
     site?: string | null;
     group?: string | null;
     interfaces?: {
@@ -59,6 +60,7 @@ type DeploymentShowColumnOptions = {
     centralSitesError: string | null;
     centralDeviceGroupsError: string | null;
     showControllerJoinedIp?: boolean;
+    showIsInstalled?: boolean;
 };
 
 function EditableDeviceNameCell({ id, name }: { id: number; name: string }) {
@@ -438,6 +440,21 @@ export function createDeploymentShowColumns(
                     {row.original.controller_joined_ip ?? ''}
                 </span>
             ),
+        });
+    }
+
+    if (options.showIsInstalled) {
+        columns.push({
+            accessorKey: 'is_installed',
+            header: 'Installed',
+            cell: ({ row }) => {
+                const value = row.original.is_installed;
+                if (value === null || value === undefined) {
+                    return '';
+                }
+
+                return value ? 'Yes' : 'No';
+            },
         });
     }
 

@@ -3,6 +3,7 @@ export type DeploymentDeviceCsvRow = {
     serial: string | number;
     mac_address?: string | null;
     controller_joined_ip?: string | null;
+    is_installed?: boolean | null;
     model?: string | null;
     device_function: string;
     site?: string | null;
@@ -68,12 +69,17 @@ export function downloadDeploymentDevicesCsv(
             device.controller_joined_ip !== null &&
             device.controller_joined_ip !== '',
     );
+    const includeIsInstalled = devices.some(
+        (device) =>
+            device.is_installed !== undefined && device.is_installed !== null,
+    );
 
     const headers = [
         'name',
         'serial',
         'mac_address',
         ...(includeControllerJoinedIp ? ['controller_joined_ip'] : []),
+        ...(includeIsInstalled ? ['installed'] : []),
         'model',
         'device_function',
         'site',
@@ -91,6 +97,16 @@ export function downloadDeploymentDevicesCsv(
             ];
             if (includeControllerJoinedIp) {
                 row.push(cellValue(device.controller_joined_ip));
+            }
+            if (includeIsInstalled) {
+                row.push(
+                    device.is_installed === null ||
+                        device.is_installed === undefined
+                        ? ''
+                        : device.is_installed
+                          ? 'true'
+                          : 'false',
+                );
             }
             row.push(
                 cellValue(device.model),

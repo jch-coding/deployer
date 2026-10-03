@@ -13,6 +13,10 @@ class Device extends Model
     /** @use HasFactory<\Database\Factories\DeviceFactory> */
     use HasFactory;
 
+    protected $casts = [
+        'is_installed' => 'boolean',
+    ];
+
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);

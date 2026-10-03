@@ -127,6 +127,7 @@ class DeploymentController extends Controller
                 'device_function' => $device->device_function,
                 'mac_address' => $device->mac_address,
                 'controller_joined_ip' => $device->controller_joined_ip,
+                'is_installed' => $device->is_installed,
                 'site' => $device->site?->name,
                 'group' => $device->group,
             ])

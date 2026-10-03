@@ -11,6 +11,8 @@ export type WorkflowDeviceSearchRow = {
     serial: string;
     overall_status: string;
     status_message: string | null;
+    is_installed?: boolean | null;
+    is_online?: boolean;
     steps: WorkflowDeviceSearchStep[];
 };
 
@@ -29,6 +31,8 @@ function haystackForDevice(device: WorkflowDeviceSearchRow): string {
         device.serial,
         device.overall_status,
         device.status_message ?? '',
+        device.is_installed === true ? 'installed' : 'not installed',
+        device.is_online === true ? 'online' : 'offline',
     ];
 
     for (const step of device.steps) {

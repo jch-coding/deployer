@@ -873,6 +873,11 @@ class ProvisioningWorkflowService
                 ];
             }
 
+            $isOnline = $workflowDevice->steps->contains(
+                fn (ProvisioningWorkflowDeviceStep $row) => $row->step_key === ProvisioningStep::WaitForOnline->value
+                    && $row->status === 'completed',
+            );
+
             $deviceCards[] = [
                 'id' => $workflowDevice->id,
                 'device_id' => $device->id,
@@ -882,6 +887,8 @@ class ProvisioningWorkflowService
                 'mac_address' => $device->mac_address,
                 'site_name' => $device->site?->name,
                 'group' => $device->group,
+                'is_installed' => $device->is_installed,
+                'is_online' => $isOnline,
                 'overall_status' => $workflowDevice->overall_status,
                 'current_step_key' => $workflowDevice->current_step_key,
                 'current_step_label' => $workflowDevice->current_step_key

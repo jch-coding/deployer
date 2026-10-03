@@ -296,6 +296,51 @@ it('serializes workflow summary counts for the UI', function () {
         ->and($payload['online_detection_mode'])->toBe('poll');
 });
 
+it('serializes is_installed and is_online from wait_for_online step completion', function () {
+    $installedOnline = Device::factory()->for($this->deployment)->create(['is_installed' => true]);
+    $notInstalledOffline = Device::factory()->for($this->deployment)->create(['is_installed' => false]);
+
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'online_detection_mode' => OnlineDetectionMode::Poll,
+    ]);
+
+    $onlineWorkflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $installedOnline->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+    ]);
+    $onlineWorkflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::WaitForOnline->value,
+        'step_order' => ProvisioningStep::WaitForOnline->order(),
+        'status' => 'completed',
+    ]);
+
+    $offlineWorkflowDevice = $workflow->workflowDevices()->create([
+        'device_id' => $notInstalledOffline->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::WaitForOnline->value,
+    ]);
+    $offlineWorkflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::WaitForOnline->value,
+        'step_order' => ProvisioningStep::WaitForOnline->order(),
+        'status' => 'in_progress',
+    ]);
+
+    $payload = app(ProvisioningWorkflowService::class)->serializeForUi($workflow->fresh());
+    $bySerial = collect($payload['devices'])->keyBy('serial');
+
+    expect($bySerial[$installedOnline->serial]['is_installed'])->toBeTrue()
+        ->and($bySerial[$installedOnline->serial]['is_online'])->toBeTrue()
+        ->and($bySerial[$notInstalledOffline->serial]['is_installed'])->toBeFalse()
+        ->and($bySerial[$notInstalledOffline->serial]['is_online'])->toBeFalse();
+});
+
 it('persists poll online detection mode by default', function () {
     Queue::fake();
 

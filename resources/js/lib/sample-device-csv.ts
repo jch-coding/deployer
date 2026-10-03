@@ -36,6 +36,7 @@ const SAMPLE_DEVICE_HEADERS = [
     'license_tag',
     'license_type',
     'mac_address',
+    'installed',
 ] as const;
 
 type SampleDeviceRow = Partial<
