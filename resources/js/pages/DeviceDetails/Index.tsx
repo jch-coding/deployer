@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import AppLayout from '@/layouts/app-layout';
 import { downloadSiteBssidsCsv, type SiteBssidRow } from '@/lib/bssids-csv';
 import { csrfHeaders } from '@/lib/csrf';
@@ -276,6 +277,28 @@ export default function Index() {
             });
         },
         [site_options, updateFilter],
+    );
+
+    const siteIdSelectOptions = useMemo(
+        () => [
+            { value: '', label: 'All sites (by ID)' },
+            ...site_options.map((site) => ({
+                value: site.siteId,
+                label: `${site.siteName} (${site.siteId})`,
+            })),
+        ],
+        [site_options],
+    );
+
+    const siteNameSelectOptions = useMemo(
+        () => [
+            { value: '', label: 'All sites (by name)' },
+            ...site_options.map((site) => ({
+                value: site.siteName,
+                label: site.siteName,
+            })),
+        ],
+        [site_options],
     );
 
     const submitSearch = useCallback(() => {
@@ -582,32 +605,22 @@ export default function Index() {
                 )}
 
                 <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <select
+                    <SearchableSelect
                         value={localFilters.site_id}
-                        onChange={(e) => handleSiteIdChange(e.target.value)}
-                        className={selectClassName}
+                        onValueChange={handleSiteIdChange}
+                        options={siteIdSelectOptions}
+                        placeholder="All sites (by ID)"
+                        aria-label="Site by ID"
                         data-test="device-details-filter-site-id"
-                    >
-                        <option value="">All sites (by ID)</option>
-                        {site_options.map((site) => (
-                            <option key={site.siteId} value={site.siteId}>
-                                {site.siteName} ({site.siteId})
-                            </option>
-                        ))}
-                    </select>
-                    <select
+                    />
+                    <SearchableSelect
                         value={localFilters.site_name}
-                        onChange={(e) => handleSiteNameChange(e.target.value)}
-                        className={selectClassName}
+                        onValueChange={handleSiteNameChange}
+                        options={siteNameSelectOptions}
+                        placeholder="All sites (by name)"
+                        aria-label="Site by name"
                         data-test="device-details-filter-site-name"
-                    >
-                        <option value="">All sites (by name)</option>
-                        {site_options.map((site) => (
-                            <option key={site.siteId} value={site.siteName}>
-                                {site.siteName}
-                            </option>
-                        ))}
-                    </select>
+                    />
                     <div className="relative">
                         <Search
                             className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
