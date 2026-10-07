@@ -170,6 +170,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/migrations', 'index')->name('migrations.index');
         Route::post('/migrations/parse', 'parse')->name('migrations.parse');
         Route::post('/migrations/create-deployment', 'createDeployment')->name('migrations.create-deployment');
+        Route::post('/migrations/add-to-deployment', 'addToDeployment')->name('migrations.add-to-deployment');
         Route::post('/migrations/deploy-wlan', 'deployWlan')->name('migrations.deploy-wlan');
         Route::post('/migrations/deploy-wlan/step/{step}', 'deployWlanStep')->name('migrations.deploy-wlan.step');
         Route::post('/migrations/deploy-auth-servers/step/{step}', 'deployAuthServerStep')->name('migrations.deploy-auth-servers.step');

@@ -22,6 +22,7 @@ import { csrfHeaders } from '@/lib/csrf';
 import { cn } from '@/lib/utils';
 import AuthServersCard from '@/pages/Migration/AuthServersCard';
 import CreateDeploymentFromDevicesDialog, {
+    type DeploymentOption,
     type DeviceGroupOption,
 } from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
 import RadioProfilesCard from '@/pages/Migration/RadioProfilesCard';
@@ -53,6 +54,7 @@ type ControllerMigrationSectionProps = {
     siteCollectionOptionsError?: string | null;
     deviceFunctionOptions: string[];
     parsedControllers: ParsedController[];
+    deployments?: DeploymentOption[];
 };
 
 function deployStepIcon(status: DeployStepStatus) {
@@ -78,6 +80,7 @@ export default function ControllerMigrationSection({
     siteCollectionOptionsError = null,
     deviceFunctionOptions = [],
     parsedControllers,
+    deployments = [],
 }: ControllerMigrationSectionProps) {
     const {
         controller_name,
@@ -378,6 +381,14 @@ export default function ControllerMigrationSection({
                             siteOptions={siteOptions}
                             groupOptions={groupOptions}
                             parsedControllers={parsedControllers}
+                        />
+                        <CreateDeploymentFromDevicesDialog
+                            mode="add"
+                            devices={devices}
+                            siteOptions={siteOptions}
+                            groupOptions={groupOptions}
+                            parsedControllers={parsedControllers}
+                            deployments={deployments}
                         />
                         <Button
                             type="button"

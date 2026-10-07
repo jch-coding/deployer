@@ -1,5 +1,5 @@
 import { router } from '@inertiajs/react';
-import { Rocket } from 'lucide-react';
+import { FolderPlus, Rocket } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -26,12 +26,17 @@ import {
 } from '@/components/ui/select';
 import type { MigrationDevice } from '@/lib/migration-csv';
 import type { ParsedController, SiteOption } from '@/pages/Migration/migration-types';
-import { createDeployment } from '@/routes/migrations';
+import { addToDeployment, createDeployment } from '@/routes/migrations';
 
 export type DeviceGroupOption = {
     scopeName: string;
     scopeId: string;
     isClassic?: boolean;
+};
+
+export type DeploymentOption = {
+    id: number;
+    name: string;
 };
 
 type DeviceAssignment = {
@@ -46,9 +51,11 @@ type CreateDeploymentFromDevicesDialogProps = {
     parsedControllers: ParsedController[];
     showController?: boolean;
     disabled?: boolean;
+    mode?: 'create' | 'add';
+    deployments?: DeploymentOption[];
 };
 
-type LastCreatedDeployment = {
+type LastDeploymentFlash = {
     name: string;
     device_count: number;
 };
@@ -63,9 +70,13 @@ export default function CreateDeploymentFromDevicesDialog({
     parsedControllers,
     showController = false,
     disabled = false,
+    mode = 'create',
+    deployments = [],
 }: CreateDeploymentFromDevicesDialogProps) {
+    const isAddMode = mode === 'add';
     const [open, setOpen] = useState(false);
     const [deploymentName, setDeploymentName] = useState('');
+    const [selectedDeploymentId, setSelectedDeploymentId] = useState('');
     const [selectedSerials, setSelectedSerials] = useState<Set<string>>(() => new Set());
     const [assignments, setAssignments] = useState<Record<string, DeviceAssignment>>({});
     const [bulkSite, setBulkSite] = useState(NO_CHANGE);
@@ -80,9 +91,12 @@ export default function CreateDeploymentFromDevicesDialog({
         (bulkSite !== NO_CHANGE || bulkGroup !== NO_CHANGE);
 
     const selectedCount = selectedSerials.size;
+    const triggerDisabled =
+        disabled || devices.length === 0 || (isAddMode && deployments.length === 0);
 
     const resetState = () => {
         setDeploymentName('');
+        setSelectedDeploymentId('');
         setSelectedSerials(new Set());
         setAssignments({});
         setBulkSite(NO_CHANGE);
@@ -152,6 +166,16 @@ export default function CreateDeploymentFromDevicesDialog({
         return { withSite, withGroup };
     }, [assignments, devices]);
 
+    const devicePayload = () =>
+        devices.map((device) => ({
+            name: device.name,
+            serial: device.serial,
+            mac_address: device.mac || null,
+            controller_joined_ip: device.controller_joined_ip || null,
+            site: assignments[device.serial]?.site ?? null,
+            group: assignments[device.serial]?.group ?? null,
+        }));
+
     const handleCreate = () => {
         const trimmedName = deploymentName.trim();
         if (trimmedName.length < 3) {
@@ -169,20 +193,13 @@ export default function CreateDeploymentFromDevicesDialog({
             createDeployment.url(),
             {
                 name: trimmedName,
-                devices: devices.map((device) => ({
-                    name: device.name,
-                    serial: device.serial,
-                    mac_address: device.mac || null,
-                    controller_joined_ip: device.controller_joined_ip || null,
-                    site: assignments[device.serial]?.site ?? null,
-                    group: assignments[device.serial]?.group ?? null,
-                })),
+                devices: devicePayload(),
                 parsed_controllers: parsedControllers,
             },
             {
                 preserveScroll: true,
                 onSuccess: (page) => {
-                    const created = (page.props as { last_created_deployment?: LastCreatedDeployment | null })
+                    const created = (page.props as { last_created_deployment?: LastDeploymentFlash | null })
                         .last_created_deployment;
                     const count = created?.device_count ?? devices.length;
                     const name = created?.name ?? trimmedName;
@@ -203,6 +220,58 @@ export default function CreateDeploymentFromDevicesDialog({
         );
     };
 
+    const handleAdd = () => {
+        if (!selectedDeploymentId) {
+            toast.error('Select a deployment');
+            return;
+        }
+        if (devices.length === 0) {
+            toast.error('No devices to add to the deployment');
+            return;
+        }
+
+        const selectedDeployment = deployments.find(
+            (deployment) => String(deployment.id) === selectedDeploymentId,
+        );
+
+        setSubmitting(true);
+
+        router.post(
+            addToDeployment.url(),
+            {
+                deployment_id: Number(selectedDeploymentId),
+                devices: devicePayload(),
+                parsed_controllers: parsedControllers,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: (page) => {
+                    const added = (page.props as { last_added_to_deployment?: LastDeploymentFlash | null })
+                        .last_added_to_deployment;
+                    const count = added?.device_count ?? devices.length;
+                    const name = added?.name ?? selectedDeployment?.name ?? 'deployment';
+                    toast.success(`Added ${count} devices to "${name}".`);
+                    resetState();
+                    setOpen(false);
+                },
+                onError: (errors) => {
+                    const firstError = Object.values(errors)[0];
+                    toast.error(
+                        typeof firstError === 'string'
+                            ? firstError
+                            : 'Failed to add devices to deployment',
+                    );
+                },
+                onFinish: () => setSubmitting(false),
+            },
+        );
+    };
+
+    const submitDisabled =
+        submitting ||
+        devices.length === 0 ||
+        (isAddMode ? selectedDeploymentId === '' : false);
+
     return (
         <Dialog
             open={open}
@@ -218,33 +287,75 @@ export default function CreateDeploymentFromDevicesDialog({
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={disabled || devices.length === 0}
-                    data-test="create-deployment-from-aps-trigger"
+                    disabled={triggerDisabled}
+                    data-test={
+                        isAddMode
+                            ? 'add-to-deployment-from-aps-trigger'
+                            : 'create-deployment-from-aps-trigger'
+                    }
                 >
-                    <Rocket className="size-4" />
-                    Create deployment
+                    {isAddMode ? (
+                        <FolderPlus className="size-4" />
+                    ) : (
+                        <Rocket className="size-4" />
+                    )}
+                    {isAddMode ? 'Add to deployment' : 'Create deployment'}
                 </Button>
             </DialogTrigger>
             <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col gap-4 overflow-hidden">
                 <DialogHeader>
-                    <DialogTitle>Create deployment from AP devices</DialogTitle>
+                    <DialogTitle>
+                        {isAddMode
+                            ? 'Add AP devices to deployment'
+                            : 'Create deployment from AP devices'}
+                    </DialogTitle>
                     <DialogDescription>
-                        Name the deployment, optionally assign site and group to device subsets, then
-                        create. All listed devices become CAMPUS_AP devices on the new deployment.
+                        {isAddMode
+                            ? 'Choose an existing deployment, optionally assign site and group to device subsets, then add. All listed devices become CAMPUS_AP devices on that deployment.'
+                            : 'Name the deployment, optionally assign site and group to device subsets, then create. All listed devices become CAMPUS_AP devices on the new deployment.'}
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-2">
-                    <Label htmlFor="migration-deployment-name">Deployment name</Label>
-                    <Input
-                        id="migration-deployment-name"
-                        value={deploymentName}
-                        onChange={(event) => setDeploymentName(event.target.value)}
-                        placeholder="Deployment name"
-                        data-test="migration-deployment-name"
-                        disabled={submitting}
-                    />
-                </div>
+                {isAddMode ? (
+                    <div className="space-y-2">
+                        <Label htmlFor="migration-existing-deployment">Deployment</Label>
+                        <Select
+                            value={selectedDeploymentId || undefined}
+                            onValueChange={setSelectedDeploymentId}
+                            disabled={submitting}
+                        >
+                            <SelectTrigger
+                                id="migration-existing-deployment"
+                                className="w-full"
+                                data-test="migration-existing-deployment-select"
+                            >
+                                <SelectValue placeholder="Select deployment" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {deployments.map((deployment) => (
+                                    <SelectItem
+                                        key={deployment.id}
+                                        value={String(deployment.id)}
+                                    >
+                                        {deployment.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <Label htmlFor="migration-deployment-name">Deployment name</Label>
+                        <Input
+                            id="migration-deployment-name"
+                            value={deploymentName}
+                            onChange={(event) => setDeploymentName(event.target.value)}
+                            placeholder="Deployment name"
+                            data-test="migration-deployment-name"
+                            disabled={submitting}
+                        />
+                    </div>
+                )}
 
                 <div className="flex flex-wrap items-center gap-2">
                     <Select
@@ -394,11 +505,21 @@ export default function CreateDeploymentFromDevicesDialog({
                     </DialogClose>
                     <Button
                         type="button"
-                        onClick={handleCreate}
-                        disabled={submitting || devices.length === 0}
-                        data-test="migration-create-deployment-submit"
+                        onClick={isAddMode ? handleAdd : handleCreate}
+                        disabled={submitDisabled}
+                        data-test={
+                            isAddMode
+                                ? 'migration-add-to-deployment-submit'
+                                : 'migration-create-deployment-submit'
+                        }
                     >
-                        {submitting ? 'Creating…' : `Create with ${devices.length} devices`}
+                        {submitting
+                            ? isAddMode
+                                ? 'Adding…'
+                                : 'Creating…'
+                            : isAddMode
+                              ? `Add ${devices.length} devices`
+                              : `Create with ${devices.length} devices`}
                     </Button>
                 </DialogFooter>
             </DialogContent>

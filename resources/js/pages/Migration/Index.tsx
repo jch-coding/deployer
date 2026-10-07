@@ -18,7 +18,10 @@ import {
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import ControllerMigrationSection from '@/pages/Migration/ControllerMigrationSection';
-import { type DeviceGroupOption } from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
+import {
+    type DeploymentOption,
+    type DeviceGroupOption,
+} from '@/pages/Migration/CreateDeploymentFromDevicesDialog';
 import {
     type DeployResult,
     type NamedVlanDeployResult,
@@ -36,11 +39,13 @@ type MigrationIndexProps = {
     site_collection_options: ScopeOption[];
     site_collection_options_error?: string | null;
     device_function_options: string[];
+    deployments: DeploymentOption[];
     parsed_controllers: ParsedController[];
     deploy_results: DeployResult[];
     named_vlan_deploy_results: NamedVlanDeployResult[];
     selected_scope_id?: string;
     last_created_deployment?: { name: string; device_count: number } | null;
+    last_added_to_deployment?: { name: string; device_count: number } | null;
     central_sites_cache: CentralScopeCacheMeta;
     central_groups_cache: CentralScopeGroupsCacheMeta;
 } & SharedData;
@@ -57,6 +62,7 @@ export default function Index() {
         site_collection_options = [],
         site_collection_options_error = null,
         device_function_options = [],
+        deployments = [],
         parsed_controllers,
         central_sites_cache,
         central_groups_cache,
@@ -258,6 +264,7 @@ export default function Index() {
                         siteCollectionOptionsError={site_collection_options_error}
                         deviceFunctionOptions={device_function_options}
                         parsedControllers={parsed_controllers}
+                        deployments={deployments}
                     />
                 )}
             </div>

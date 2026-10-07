@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\Site;
+use App\Models\User;
 use App\Services\ArubaControllerConfigParser;
 use App\Services\CentralScopeCacheService;
 use App\Services\MigrationDeployService;
@@ -23,6 +24,8 @@ class MigrationController extends Controller
     private const SESSION_PARSED_CONTROLLERS = 'migration.parsed_controllers';
 
     private const SESSION_LAST_CREATED_DEPLOYMENT = 'migration.last_created_deployment';
+
+    private const SESSION_LAST_ADDED_TO_DEPLOYMENT = 'migration.last_added_to_deployment';
 
     private const SESSION_DEPLOY_RESULTS = 'migration.deploy_results';
 
@@ -47,6 +50,7 @@ class MigrationController extends Controller
             deployResults: session()->pull(self::SESSION_DEPLOY_RESULTS, []),
             namedVlanDeployResults: session()->pull(self::SESSION_NAMED_VLAN_DEPLOY_RESULTS, []),
             lastCreatedDeployment: session()->pull(self::SESSION_LAST_CREATED_DEPLOYMENT),
+            lastAddedToDeployment: session()->pull(self::SESSION_LAST_ADDED_TO_DEPLOYMENT),
             selectedScopeId: session()->pull(self::SESSION_SELECTED_SCOPE_ID),
         ));
     }
@@ -116,36 +120,13 @@ class MigrationController extends Controller
                         fn ($query) => $query->where('client_id', $currentClient->id)
                     ),
                 ],
-                'devices' => ['required', 'array', 'min:1'],
-                'devices.*.name' => ['required', 'string', 'min:3', 'max:255'],
-                'devices.*.serial' => ['required', 'string', 'min:10', 'max:255'],
-                'devices.*.mac_address' => [
-                    'nullable',
-                    'string',
-                    'max:17',
-                    function (string $attribute, mixed $value, \Closure $fail): void {
-                        if (! is_string($value) || trim($value) === '') {
-                            return;
-                        }
-
-                        if (! MacAddress::isValid($value)) {
-                            $fail('The mac address format is invalid.');
-                        }
-                    },
-                ],
-                'devices.*.controller_joined_ip' => ['nullable', 'ip'],
-                'devices.*.site' => ['nullable', 'string', 'max:255'],
-                'devices.*.group' => ['nullable', 'string', 'max:255'],
-                'parsed_controllers' => ['sometimes', 'array'],
+                ...$this->migrationDeviceValidationRules(),
             ]);
         } catch (\Illuminate\Validation\ValidationException $exception) {
             throw $exception->redirectTo(route('migrations.index'));
         }
 
-        $parsedControllers = $request->input('parsed_controllers');
-        if (is_array($parsedControllers)) {
-            $this->storeParsedControllers($parsedControllers);
-        }
+        $this->persistParsedControllersFromRequest($request);
 
         $result = DB::transaction(function () use ($validated, $currentClient, $user) {
             $deployment = Deployment::create([
@@ -153,53 +134,74 @@ class MigrationController extends Controller
                 'client_id' => $currentClient->id,
             ]);
 
-            foreach ($validated['devices'] as $devicePayload) {
-                $mac = $devicePayload['mac_address'] ?? null;
-                $normalizedMac = is_string($mac) && trim($mac) !== ''
-                    ? MacAddress::normalize($mac)
-                    : null;
-
-                $attributes = [
-                    'name' => $devicePayload['name'],
-                    'serial' => $devicePayload['serial'],
-                    'device_function' => DeviceFunction::CAMPUS_AP->name,
-                    'client_id' => $currentClient->id,
-                    'user_id' => $user->id,
-                    'deployment_id' => $deployment->id,
-                    'mac_address' => $normalizedMac,
-                    'controller_joined_ip' => filled($devicePayload['controller_joined_ip'] ?? null)
-                        ? $devicePayload['controller_joined_ip']
-                        : null,
-                    'group' => filled($devicePayload['group'] ?? null)
-                        ? $devicePayload['group']
-                        : null,
-                ];
-
-                $device = Device::query()
-                    ->where('serial', $devicePayload['serial'])
-                    ->where('user_id', $user->id)
-                    ->first();
-
-                if ($device) {
-                    $device->update($attributes);
-                } else {
-                    $device = Device::create($attributes);
-                }
-
-                $this->applyDeviceSiteLocally($device, $devicePayload['site'] ?? null);
-            }
-
-            $deviceCount = $deployment->devices()->count();
+            $this->syncMigrationDevicesToDeployment(
+                $validated['devices'],
+                $deployment,
+                $currentClient,
+                $user,
+            );
 
             return [
                 'deployment' => $deployment,
-                'device_count' => $deviceCount,
+                'device_count' => $deployment->devices()->count(),
             ];
         });
 
         session()->flash(self::SESSION_LAST_CREATED_DEPLOYMENT, [
             'name' => $result['deployment']->name,
             'device_count' => $result['device_count'],
+        ]);
+
+        return to_route('migrations.index');
+    }
+
+    public function addToDeployment(Request $request): \Illuminate\Http\RedirectResponse
+    {
+        $user = $request->user();
+        $currentClient = $user->currentClient();
+
+        if (! $currentClient) {
+            session()->flash('error', 'Please set current client before adding devices to a deployment');
+
+            return to_route('clients.index');
+        }
+
+        try {
+            $validated = $request->validate([
+                'deployment_id' => [
+                    'required',
+                    'integer',
+                    Rule::exists('deployments', 'id')->where(
+                        fn ($query) => $query->where('client_id', $currentClient->id)
+                    ),
+                ],
+                ...$this->migrationDeviceValidationRules(),
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            throw $exception->redirectTo(route('migrations.index'));
+        }
+
+        $this->persistParsedControllersFromRequest($request);
+
+        $deployment = Deployment::query()
+            ->where('client_id', $currentClient->id)
+            ->where('id', $validated['deployment_id'])
+            ->firstOrFail();
+
+        $deviceCount = DB::transaction(function () use ($validated, $deployment, $currentClient, $user) {
+            $this->syncMigrationDevicesToDeployment(
+                $validated['devices'],
+                $deployment,
+                $currentClient,
+                $user,
+            );
+
+            return count($validated['devices']);
+        });
+
+        session()->flash(self::SESSION_LAST_ADDED_TO_DEPLOYMENT, [
+            'name' => $deployment->name,
+            'device_count' => $deviceCount,
         ]);
 
         return to_route('migrations.index');
@@ -461,6 +463,7 @@ class MigrationController extends Controller
      * @param  array<int, mixed>  $deployResults
      * @param  array<int, mixed>  $namedVlanDeployResults
      * @param  array{name: string, device_count: int}|null  $lastCreatedDeployment
+     * @param  array{name: string, device_count: int}|null  $lastAddedToDeployment
      * @return array<string, mixed>
      */
     private function migrationPageProps(
@@ -470,6 +473,7 @@ class MigrationController extends Controller
         array $deployResults = [],
         array $namedVlanDeployResults = [],
         ?array $lastCreatedDeployment = null,
+        ?array $lastAddedToDeployment = null,
         ?string $selectedScopeId = null,
     ): array {
         $siteCollections = (new CentralAPIHelper($currentClient))->collectScopeManagementSiteCollections();
@@ -483,10 +487,20 @@ class MigrationController extends Controller
                 fn (DeviceFunction $deviceFunction): string => $deviceFunction->name,
                 DeviceFunction::cases(),
             ),
+            'deployments' => $currentClient->deployments()
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (Deployment $deployment) => [
+                    'id' => $deployment->id,
+                    'name' => $deployment->name,
+                ])
+                ->values()
+                ->all(),
             'parsed_controllers' => $parsedControllers,
             'deploy_results' => $deployResults,
             'named_vlan_deploy_results' => $namedVlanDeployResults,
             'last_created_deployment' => $lastCreatedDeployment,
+            'last_added_to_deployment' => $lastAddedToDeployment,
             ...$centralScopeCacheService->getCacheMetadata($currentClient),
         ];
 
@@ -495,6 +509,82 @@ class MigrationController extends Controller
         }
 
         return $props;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function migrationDeviceValidationRules(): array
+    {
+        return [
+            'devices' => ['required', 'array', 'min:1'],
+            'devices.*.name' => ['required', 'string', 'min:3', 'max:255'],
+            'devices.*.serial' => ['required', 'string', 'min:10', 'max:255'],
+            'devices.*.mac_address' => [
+                'nullable',
+                'string',
+                'max:17',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! is_string($value) || trim($value) === '') {
+                        return;
+                    }
+
+                    if (! MacAddress::isValid($value)) {
+                        $fail('The mac address format is invalid.');
+                    }
+                },
+            ],
+            'devices.*.controller_joined_ip' => ['nullable', 'ip'],
+            'devices.*.site' => ['nullable', 'string', 'max:255'],
+            'devices.*.group' => ['nullable', 'string', 'max:255'],
+            'parsed_controllers' => ['sometimes', 'array'],
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $devices
+     */
+    private function syncMigrationDevicesToDeployment(
+        array $devices,
+        Deployment $deployment,
+        Client $currentClient,
+        User $user,
+    ): void {
+        foreach ($devices as $devicePayload) {
+            $mac = $devicePayload['mac_address'] ?? null;
+            $normalizedMac = is_string($mac) && trim($mac) !== ''
+                ? MacAddress::normalize($mac)
+                : null;
+
+            $attributes = [
+                'name' => $devicePayload['name'],
+                'serial' => $devicePayload['serial'],
+                'device_function' => DeviceFunction::CAMPUS_AP->name,
+                'client_id' => $currentClient->id,
+                'user_id' => $user->id,
+                'deployment_id' => $deployment->id,
+                'mac_address' => $normalizedMac,
+                'controller_joined_ip' => filled($devicePayload['controller_joined_ip'] ?? null)
+                    ? $devicePayload['controller_joined_ip']
+                    : null,
+                'group' => filled($devicePayload['group'] ?? null)
+                    ? $devicePayload['group']
+                    : null,
+            ];
+
+            $device = Device::query()
+                ->where('serial', $devicePayload['serial'])
+                ->where('user_id', $user->id)
+                ->first();
+
+            if ($device) {
+                $device->update($attributes);
+            } else {
+                $device = Device::create($attributes);
+            }
+
+            $this->applyDeviceSiteLocally($device, $devicePayload['site'] ?? null);
+        }
     }
 
     private function applyDeviceSiteLocally(Device $device, ?string $siteName): void
@@ -507,6 +597,14 @@ class MigrationController extends Controller
 
         $site = Site::firstOrCreateForClient($device->client, $siteName);
         $device->update(['site_id' => $site->id]);
+    }
+
+    private function persistParsedControllersFromRequest(Request $request): void
+    {
+        $parsedControllers = $request->input('parsed_controllers');
+        if (is_array($parsedControllers)) {
+            $this->storeParsedControllers($parsedControllers);
+        }
     }
 
     /**
