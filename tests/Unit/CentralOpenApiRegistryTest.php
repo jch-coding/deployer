@@ -206,3 +206,43 @@ test('registry loads auth server endpoints', function () {
 
     expect($tags)->toContain('Auth Server');
 });
+
+test('registry loads alias endpoints', function () {
+    $registry = app(CentralOpenApiRegistry::class);
+
+    expect($registry->hasOperation('readAliases'))->toBeTrue()
+        ->and($registry->hasOperation('readAliasesAliasByID'))->toBeTrue()
+        ->and($registry->hasOperation('createAliasesAliasByID'))->toBeTrue()
+        ->and($registry->hasOperation('updateAliasesAliasByID'))->toBeTrue()
+        ->and($registry->hasOperation('deleteAliasesAliasByID'))->toBeTrue();
+
+    $aliases = $registry->operation('readAliases');
+
+    expect($aliases['method'])->toBe('GET')
+        ->and($aliases['path'])->toBe('/network-config/v1alpha1/aliases')
+        ->and($aliases['tags'])->toContain('Alias')
+        ->and($aliases['reference_url'])->toBe('https://developer.arubanetworks.com/new-central-config/reference/readaliases')
+        ->and(collect($aliases['parameters'])->pluck('name'))->toContain('view-type', 'scope-id')
+        ->and($aliases['requires_body'])->toBeFalse();
+
+    $createAlias = $registry->operation('createAliasesAliasByID');
+
+    expect($createAlias['method'])->toBe('POST')
+        ->and($createAlias['path'])->toBe('/network-config/v1alpha1/aliases/{name}')
+        ->and($createAlias['requires_body'])->toBeTrue()
+        ->and(collect($createAlias['parameters'])->pluck('name'))->toContain('name', 'object-type', 'scope-id', 'device-function');
+
+    $updateAlias = $registry->operation('updateAliasesAliasByID');
+
+    expect($updateAlias['method'])->toBe('PATCH')
+        ->and($updateAlias['requires_body'])->toBeTrue();
+
+    $deleteAlias = $registry->operation('deleteAliasesAliasByID');
+
+    expect($deleteAlias['method'])->toBe('DELETE')
+        ->and($deleteAlias['requires_body'])->toBeFalse();
+
+    $tags = collect($registry->tags())->pluck('name');
+
+    expect($tags)->toContain('Alias');
+});
