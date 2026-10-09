@@ -108,6 +108,7 @@ class CentralAPIHelper
     public array $security = [
         'auth_servers' => 'network-config/v1alpha1/auth-servers',
         'server_groups' => 'network-config/v1alpha1/server-groups',
+        'aliases' => 'network-config/v1alpha1/aliases',
     ];
 
     public array $central_nac = [
@@ -918,6 +919,35 @@ class CentralAPIHelper
 
             return $response;
         }
+    }
+
+    /**
+     * Create a named alias at a LOCAL site scope.
+     *
+     * @param  array<string, mixed>  $body
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     */
+    public function create_alias(
+        string $name,
+        array $body,
+        string $scopeId,
+        string $deviceFunction = 'CAMPUS_AP',
+    ) {
+        if (trim($scopeId) === '') {
+            return ['error' => 'site scope id is required.'];
+        }
+
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        return Http::withToken($this->client->bearer_token)
+            ->withQueryParameters([
+                'object-type' => 'LOCAL',
+                'scope-id' => $scopeId,
+                'device-function' => $deviceFunction,
+            ])
+            ->post($this->client->base_url.$this->security['aliases'].'/'.$name, $body);
     }
 
     public function post_vsf_profile(Device $device, array $vsf_profile = [])

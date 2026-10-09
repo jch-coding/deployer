@@ -28,6 +28,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { formatRefreshedAt, type CentralScopeCacheMeta } from '@/components/central/CentralScopeRefreshButtons';
 import CnacStaticTagsPicker from '@/components/central/CnacStaticTagsPicker';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { check_central_group, check_central_sites, check_cnac_mac_registrations, check_lag_port_lists, check_vlan_ip_addresses, force_update_site_scope_ids, greenlake_locations, greenlake_service_regions, store } from '@/routes/tasks';
 import check_greenlake_inventory from '@/routes/tasks/check_greenlake_inventory';
 import { refresh as refreshMacRegistrations } from '@/routes/central-scope-cache/mac-registrations';
@@ -35,6 +36,21 @@ import FilterIcon from '@/components/ui/FilterIcon';
 import { TaskRequiredColumnsInfo } from '@/components/ui/TaskRequiredColumnsInfo';
 import { AlarmClockIcon, BoltIcon, CircleCheck, ListIcon, NetworkIcon, PlusIcon, RefreshCw, Trash2Icon } from 'lucide-react';
 import { csrfHeaders } from '@/lib/csrf';
+
+type CentralSiteOption = {
+    scopeName: string;
+    scopeId: string;
+};
+
+function defaultNetworkCidrFromSiteName(siteName: string): string | null {
+    const match = siteName.trim().match(/^(\d{2})\s*-\s*.+/);
+
+    if (!match) {
+        return null;
+    }
+
+    return `10.${Number(match[1])}.9.0/24`;
+}
 
 type AssignSelectionMode = 'tag' | 'subscription';
 
@@ -141,6 +157,8 @@ type TaskCardProps = {
     central_firmware_error?: string | null;
     deployment_sites?: string[];
     central_mac_registrations_cache?: CentralScopeCacheMeta;
+    central_sites?: CentralSiteOption[];
+    central_sites_error?: string | null;
 };
 
 type CnacMacCheckRow = {
@@ -190,6 +208,8 @@ export default function TaskCard({
     central_firmware_error = null,
     deployment_sites = [],
     central_mac_registrations_cache = EMPTY_CNAC_MAC_CACHE,
+    central_sites = [],
+    central_sites_error = null,
 }: TaskCardProps) {
     const [taskDevices, setTaskDevices] = useState<DeviceType[]>([])
     const [isLaunching, setIsLaunching] = useState(false)
@@ -202,6 +222,8 @@ export default function TaskCard({
     const [vlanSitePrefix, setVlanSitePrefix] = useState('')
     const [firmwareComplianceVersion, setFirmwareComplianceVersion] = useState('')
     const [onlyUpdateDifferentNames, setOnlyUpdateDifferentNames] = useState(false)
+    const [networkAliasSiteScopeId, setNetworkAliasSiteScopeId] = useState('')
+    const [networkAliasIpv4Override, setNetworkAliasIpv4Override] = useState('')
     const [bulkLicenseTag, setBulkLicenseTag] = useState('');
     const [bulkLicenseType, setBulkLicenseType] = useState<LicenseTypeOption | ''>('');
     const [bulkSubscriptionKey, setBulkSubscriptionKey] = useState('');
@@ -271,6 +293,32 @@ export default function TaskCard({
     const isCreateSite = task === 'CREATE_SITE';
     const isUpdateSite = task === 'UPDATE_SITE';
     const isSiteTask = isCreateSite || isUpdateSite;
+    const isCreateNetworkAlias = task === 'CREATE_NETWORK_ALIAS';
+    const selectedNetworkAliasSite = useMemo(
+        () =>
+            central_sites.find((site) => site.scopeId === networkAliasSiteScopeId) ??
+            null,
+        [central_sites, networkAliasSiteScopeId],
+    );
+    const networkAliasSiteOptions = useMemo(
+        () =>
+            central_sites.map((site) => ({
+                value: site.scopeId,
+                label: site.scopeName,
+            })),
+        [central_sites],
+    );
+    const derivedNetworkAliasCidr = useMemo(() => {
+        if (!selectedNetworkAliasSite) {
+            return null;
+        }
+
+        return defaultNetworkCidrFromSiteName(selectedNetworkAliasSite.scopeName);
+    }, [selectedNetworkAliasSite]);
+    const networkAliasCidrPreview =
+        networkAliasIpv4Override.trim() !== ''
+            ? networkAliasIpv4Override.trim()
+            : derivedNetworkAliasCidr;
 
     useEffect(() => {
         setCnacMacCacheMeta(central_mac_registrations_cache);
@@ -1372,6 +1420,54 @@ export default function TaskCard({
         );
     };
 
+    const dispatch_network_alias_task = () => {
+        if (!selectedNetworkAliasSite) {
+            toast.error('Select a Central site.');
+
+            return;
+        }
+
+        const override = networkAliasIpv4Override.trim();
+        const networkIpv4 =
+            override !== ''
+                ? override
+                : defaultNetworkCidrFromSiteName(selectedNetworkAliasSite.scopeName);
+
+        if (!networkIpv4) {
+            toast.error(
+                'Site name must match "nn - …" (two-digit prefix) or provide a network IPv4 address override.',
+            );
+
+            return;
+        }
+
+        setIsLaunching(true);
+        const deploymentTimeTotalMinutes = deploymentTimeHours * 60 + deploymentTimeMinutes;
+
+        router.post(
+            store(deployment.id).url,
+            {
+                task_type: task,
+                deployment_time: deploymentTimeTotalMinutes,
+                wait_time: waitTimeMinutes,
+                site_name: selectedNetworkAliasSite.scopeName,
+                site_scope_id: selectedNetworkAliasSite.scopeId,
+                ...(override !== '' ? { network_ipv4_address: override } : {}),
+            },
+            {
+                onError: (errors) => {
+                    setIsLaunching(false);
+                    const message = Object.values(errors)
+                        .flat()
+                        .find((value) => typeof value === 'string' && value.trim() !== '');
+                    if (message) {
+                        toast.error(message);
+                    }
+                },
+            },
+        );
+    };
+
     const updateSiteForm = (
         siteName: string,
         updater: (current: SiteFormEntry) => SiteFormEntry,
@@ -1472,6 +1568,73 @@ export default function TaskCard({
                                 ) : null}
                             </div>
                         ) : null}
+                    </div>
+                ) : null}
+                {isCreateNetworkAlias ? (
+                    <div className="mt-3 space-y-3">
+                        <div className="space-y-1">
+                            <label
+                                htmlFor="network-alias-site"
+                                className="text-sm font-medium"
+                            >
+                                Central site
+                            </label>
+                            <SearchableSelect
+                                value={networkAliasSiteScopeId || undefined}
+                                onValueChange={setNetworkAliasSiteScopeId}
+                                options={networkAliasSiteOptions}
+                                placeholder={
+                                    central_sites_error
+                                        ? 'Could not load sites'
+                                        : central_sites.length === 0
+                                          ? 'No sites available'
+                                          : 'Select a site'
+                                }
+                                disabled={
+                                    central_sites_error !== null ||
+                                    central_sites.length === 0
+                                }
+                                className="w-full"
+                                aria-label="Central site for network alias"
+                                data-test="network-alias-site-select"
+                            />
+                            {central_sites_error ? (
+                                <p className="text-destructive text-xs">{central_sites_error}</p>
+                            ) : (
+                                <p className="text-muted-foreground text-xs">
+                                    Creates LOCAL alias BVSD-VIVI-SUBNET for CAMPUS_AP at this site
+                                    scope.
+                                </p>
+                            )}
+                        </div>
+                        <div className="space-y-1">
+                            <label
+                                htmlFor="network-alias-ipv4"
+                                className="text-sm font-medium"
+                            >
+                                Network IPv4 address (optional)
+                            </label>
+                            <Input
+                                id="network-alias-ipv4"
+                                type="text"
+                                placeholder="e.g. 10.7.9.0/24"
+                                value={networkAliasIpv4Override}
+                                onChange={(event) =>
+                                    setNetworkAliasIpv4Override(event.target.value)
+                                }
+                                className="w-full"
+                                autoComplete="off"
+                                data-test="network-alias-ipv4-override"
+                            />
+                            <p className="text-muted-foreground text-xs">
+                                {`Leave blank to derive 10.{nn}.9.0/24 from the site name (nn - …).`}
+                                {networkAliasCidrPreview
+                                    ? ` Will use ${networkAliasCidrPreview}.`
+                                    : selectedNetworkAliasSite
+                                      ? ' Selected site name does not match nn - …; enter an override.'
+                                      : ''}
+                            </p>
+                        </div>
                     </div>
                 ) : null}
                 {isSiteTask ? (
@@ -2009,7 +2172,7 @@ export default function TaskCard({
                         </DialogClose>
                     }
                 />
-                {!isSiteTask ? (
+                {!isSiteTask && !isCreateNetworkAlias ? (
                 <Dialog>
                     <Tooltip>
                         <TooltipTrigger asChild>
@@ -2385,7 +2548,25 @@ export default function TaskCard({
                     </Dialog>
                 ) : null}
                 <Dialog open={isLaunching}>
-                    {isSiteTask ? (
+                    {isCreateNetworkAlias ? (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    className="rounded-full"
+                                    aria-label="Create network alias"
+                                    data-test="create-network-alias-deploy"
+                                    onClick={() => dispatch_network_alias_task()}
+                                >
+                                    <BoltIcon className="size-4" aria-hidden />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>Create network alias</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    ) : isSiteTask ? (
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button

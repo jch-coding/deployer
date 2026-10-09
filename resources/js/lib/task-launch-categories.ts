@@ -53,6 +53,7 @@ const TASK_TYPE_TO_CATEGORY: Record<string, TaskLaunchCategoryId> = {
     REMOVE_VSF_PROFILE_LOCAL_OVERRIDES: 'misc',
     ADD_VLANS_TO_DEVICE_GROUP: 'misc',
     RELAUNCH_FAILED_CRITICAL_CONFIG: 'misc',
+    CREATE_NETWORK_ALIAS: 'misc',
 };
 
 const TASK_SEARCH_ALIASES: Record<string, string[]> = {
@@ -112,6 +113,7 @@ const TASK_SEARCH_ALIASES: Record<string, string[]> = {
     REMOVE_VSF_PROFILE_LOCAL_OVERRIDES: ['vsf', 'override', 'local'],
     ADD_VLANS_TO_DEVICE_GROUP: ['vlan', 'whse', 'template'],
     RELAUNCH_FAILED_CRITICAL_CONFIG: ['relaunch', 'retry', 'critical', 'failed'],
+    CREATE_NETWORK_ALIAS: ['alias', 'network', 'subnet', 'vivi', 'bvsd'],
 };
 
 const CATEGORY_BY_ID = Object.fromEntries(
