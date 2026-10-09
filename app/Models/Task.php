@@ -298,6 +298,8 @@ class Task extends Model
                 return 'Assign Service to GreenLake Devices';
             case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
                 return 'Export MAC Addresses to Central';
+            case 'CREATE_NETWORK_ALIAS':
+                return 'Create Network Alias';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Add VLANs to device group (single group)';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -394,6 +396,8 @@ class Task extends Model
                 return 'Assign a provisioned GreenLake service (application and region) to selected devices that are already in the HPE GreenLake workspace inventory.';
             case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
                 return 'Import selected device MAC addresses into Central NAC MAC Registration. Optionally apply the same static tags to every selected device.';
+            case 'CREATE_NETWORK_ALIAS':
+                return 'Create a LOCAL ALIAS_NETWORK alias BVSD-VIVI-SUBNET for CAMPUS_AP at a chosen site. Derives 10.{site}.9.0/24 from the site name (nn - …) unless you override the network address.';
             case 'ADD_VLANS_FOR_DEVICE_GROUP':
                 return 'Adds VLAN definitions to one Central device group.';
             case 'CREATE_NEW_CENTRAL_CX_GROUP':
@@ -450,6 +454,8 @@ class Task extends Model
                 return ['name', 'serial', 'device_function', 'mac_address'];
             case 'EXPORT_MAC_ADDRESSES_TO_CENTRAL':
                 return ['mac_address'];
+            case 'CREATE_NETWORK_ALIAS':
+                return [];
             case 'ADD_TAGS_TO_GREENLAKE_DEVICES':
             case 'ADD_LOCATION_TO_GREENLAKE_DEVICES':
             case 'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES':

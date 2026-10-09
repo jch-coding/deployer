@@ -748,6 +748,7 @@ export default function Show() {
         'ADD_LOCATION_TO_GREENLAKE_DEVICES',
         'ASSIGN_SERVICE_TO_GREENLAKE_DEVICES',
         'EXPORT_MAC_ADDRESSES_TO_CENTRAL',
+        'CREATE_NETWORK_ALIAS',
     ]);
 
     const isDeviceBasedTask = (task_type: string) =>
@@ -847,6 +848,16 @@ export default function Show() {
                 central_mac_registrations_cache={
                     task.task_type === 'EXPORT_MAC_ADDRESSES_TO_CENTRAL'
                         ? (central_mac_registrations_cache ?? EMPTY_CNAC_MAC_CACHE)
+                        : undefined
+                }
+                central_sites={
+                    task.task_type === 'CREATE_NETWORK_ALIAS'
+                        ? central_sites
+                        : undefined
+                }
+                central_sites_error={
+                    task.task_type === 'CREATE_NETWORK_ALIAS'
+                        ? central_sites_error
                         : undefined
                 }
             />

@@ -19,6 +19,7 @@ use App\Jobs\ConfigureEthernetInterface;
 use App\Jobs\ConfigureLagInterfaceJob;
 use App\Jobs\ConfigureMirrorSessionJob;
 use App\Jobs\ConfigureVlanInterfaceJob;
+use App\Jobs\CreateNetworkAliasJob;
 use App\Jobs\CreateNewCentralCXGroup;
 use App\Jobs\CreateSiteJob;
 use App\Jobs\CreateVSFProfileJob;
@@ -61,6 +62,7 @@ use App\Services\TaskRemediationCheckService;
 use App\Services\VlanInterfaceCentralVerifier;
 use App\Support\ClassicSiteTaskPayload;
 use App\Support\MacAddress;
+use App\Support\NetworkAliasPayload;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -914,14 +916,20 @@ class TaskController extends Controller
             'sites.*.geolocation.latitude' => ['nullable', 'string', 'max:255'],
             'sites.*.geolocation.longitude' => ['nullable', 'string', 'max:255'],
             'only_update_different_names' => ['nullable', 'boolean'],
+            'site_name' => ['nullable', 'string', 'max:255'],
+            'site_scope_id' => ['nullable', 'string', 'max:255'],
+            'network_ipv4_address' => ['nullable', 'string', 'max:64'],
         ]);
 
         $isAddVlans = $validated['task_type'] === 'ADD_VLANS_TO_DEVICE_GROUP';
         $isSiteTask = in_array($validated['task_type'], ['CREATE_SITE', 'UPDATE_SITE'], true);
+        $isCreateNetworkAlias = $validated['task_type'] === 'CREATE_NETWORK_ALIAS';
         $vlanSitePrefix = trim((string) ($validated['vlan_site_prefix'] ?? ''));
 
         if ($isSiteTask) {
             // Site tasks validate selected sites later in normalizeSiteTaskDetails().
+        } elseif ($isCreateNetworkAlias) {
+            // Validated below after shared device checks are skipped.
         } elseif (! $isAddVlans) {
             if (! isset($validated['devices']) || $validated['devices'] === []) {
                 return back()->withErrors(['devices' => 'Select at least one device.']);
@@ -1785,6 +1793,46 @@ class TaskController extends Controller
                 'status' => 'IN_PROGRESS',
                 'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
                 'site_details' => $siteDetails,
+            ]);
+
+            $batchId = $this->dispatchJob($task);
+            if ($batchId !== null) {
+                $task->forceFill(['batch_id' => $batchId])->save();
+            }
+        } elseif ($isCreateNetworkAlias) {
+            $siteName = trim((string) ($validated['site_name'] ?? ''));
+            $siteScopeId = trim((string) ($validated['site_scope_id'] ?? ''));
+            $networkOverride = trim((string) ($validated['network_ipv4_address'] ?? ''));
+
+            if ($siteName === '' || $siteScopeId === '') {
+                return back()->withErrors([
+                    'site_name' => 'Select a Central site for the network alias.',
+                ]);
+            }
+
+            $networkIpv4 = NetworkAliasPayload::resolveNetworkIpv4Address(
+                $siteName,
+                $networkOverride !== '' ? $networkOverride : null,
+            );
+
+            if ($networkIpv4 === null) {
+                return back()->withErrors([
+                    'site_name' => 'Site name must match "nn - …" (two-digit prefix) or provide a network IPv4 address override.',
+                ]);
+            }
+
+            $task = $deployment->tasks()->create([
+                'task_type' => $validated['task_type'],
+                'name' => 'task_for_'.$deployment->name.now(),
+                'deployment_time' => $validated['deployment_time'],
+                'status' => 'IN_PROGRESS',
+                'job_queue' => $this->allocateJobQueue($request, $shardEntropy),
+                'site_details' => [
+                    'site_name' => $siteName,
+                    'site_scope_id' => $siteScopeId,
+                    'network_ipv4_address' => $networkIpv4,
+                    'alias_name' => NetworkAliasPayload::ALIAS_NAME,
+                ],
             ]);
 
             $batchId = $this->dispatchJob($task);
@@ -3529,6 +3577,9 @@ class TaskController extends Controller
                 if ($siteJobs !== []) {
                     $jobs[] = $siteJobs;
                 }
+                break;
+            case 'CREATE_NETWORK_ALIAS':
+                $jobs[] = new CreateNetworkAliasJob($task, $centralAPIHelper);
                 break;
         }
 
