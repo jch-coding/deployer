@@ -313,6 +313,7 @@ export default function Show() {
     const [syncingScopeIds, setSyncingScopeIds] = useState(false);
     const [bulkSite, setBulkSite] = useState(BULK_NO_CHANGE);
     const [bulkGroup, setBulkGroup] = useState(BULK_NO_CHANGE);
+    const [bulkInstalled, setBulkInstalled] = useState(BULK_NO_CHANGE);
     const [bulkTargetDeploymentId, setBulkTargetDeploymentId] = useState('');
     const [applyingMetadata, setApplyingMetadata] = useState(false);
     const [movingDevices, setMovingDevices] = useState(false);
@@ -391,11 +392,6 @@ export default function Show() {
                     (device) =>
                         typeof device.controller_joined_ip === 'string' &&
                         device.controller_joined_ip.trim() !== '',
-                ),
-                showIsInstalled: devices.some(
-                    (device) =>
-                        device.is_installed !== null &&
-                        device.is_installed !== undefined,
                 ),
             }),
         [
@@ -625,8 +621,19 @@ export default function Show() {
         });
     }, [bulkSelectionPayload, deploymentId]);
 
+    const bulkInstalledOptions = useMemo(
+        () => [
+            { value: BULK_NO_CHANGE, label: 'No change' },
+            { value: 'true', label: 'Installed' },
+            { value: 'false', label: 'Not installed' },
+        ],
+        [],
+    );
+
     const canApplyBulkMetadata =
-        bulkSite !== BULK_NO_CHANGE || bulkGroup !== BULK_NO_CHANGE;
+        bulkSite !== BULK_NO_CHANGE ||
+        bulkGroup !== BULK_NO_CHANGE ||
+        bulkInstalled !== BULK_NO_CHANGE;
 
     const stopBulkMetadataLoading = useCallback(() => {
         applyingMetadataRef.current = false;
@@ -644,6 +651,7 @@ export default function Show() {
             device_ids?: number[];
             site?: string | null;
             group?: string | null;
+            is_installed?: boolean;
         } = { ...bulkSelectionPayload };
 
         if (bulkSite !== BULK_NO_CHANGE) {
@@ -651,6 +659,9 @@ export default function Show() {
         }
         if (bulkGroup !== BULK_NO_CHANGE) {
             payload.group = bulkGroup === BULK_NONE ? null : bulkGroup;
+        }
+        if (bulkInstalled !== BULK_NO_CHANGE) {
+            payload.is_installed = bulkInstalled === 'true';
         }
 
         applyingMetadataRef.current = true;
@@ -660,6 +671,7 @@ export default function Show() {
             onSuccess: () => {
                 setBulkSite(BULK_NO_CHANGE);
                 setBulkGroup(BULK_NO_CHANGE);
+                setBulkInstalled(BULK_NO_CHANGE);
                 setRowSelection({});
                 setAllFilteredSelected(false);
             },
@@ -668,6 +680,7 @@ export default function Show() {
         });
     }, [
         bulkGroup,
+        bulkInstalled,
         bulkSelectionPayload,
         bulkSite,
         canApplyBulkMetadata,
@@ -1316,6 +1329,20 @@ export default function Show() {
                                                 </span>
                                             );
                                         }}
+                                    />
+                                    <SearchableSelect
+                                        value={
+                                            bulkInstalled === BULK_NO_CHANGE
+                                                ? undefined
+                                                : bulkInstalled
+                                        }
+                                        onValueChange={setBulkInstalled}
+                                        disabled={applyingMetadata}
+                                        options={bulkInstalledOptions}
+                                        placeholder="Installed status"
+                                        className="w-40"
+                                        aria-label="Bulk assign installed status"
+                                        data-test="bulk-installed-select"
                                     />
                                     <Button
                                         type="button"

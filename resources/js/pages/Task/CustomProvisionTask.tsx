@@ -107,6 +107,7 @@ export default function CustomProvisionTask() {
                 <CustomWorkflowRunPanel
                     workflow={workflow}
                     title={pageTitle}
+                    deploymentId={deployment.id}
                     deploymentName={deployment.name}
                 />
             </div>
