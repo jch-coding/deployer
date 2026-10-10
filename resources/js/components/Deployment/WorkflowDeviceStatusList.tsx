@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { router } from '@inertiajs/react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Collapsible,
     CollapsibleContent,
@@ -19,6 +20,7 @@ import {
 } from '@/lib/workflow-device-install-online';
 import { workflowDeviceMatchesSearch } from '@/lib/workflow-device-search';
 import { cn } from '@/lib/utils';
+import { bulkUpdateMetadata } from '@/routes/deployments';
 import {
     override as overrideWorkflowDeviceStep,
     restart as restartWorkflowDevice,
@@ -26,6 +28,9 @@ import {
 
 const selectClassName =
     'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
+
+const compactSelectClassName =
+    'h-8 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs';
 
 export type WorkflowDeviceRestartableStep = {
     id?: number;
@@ -110,12 +115,17 @@ function WorkflowDeviceRow({
     device,
     forceOpen,
     showRestartControls,
+    selected,
+    onSelectedChange,
 }: {
     device: WorkflowDeviceStatusRow;
     forceOpen: boolean;
     showRestartControls: boolean;
+    selected: boolean;
+    onSelectedChange: (selected: boolean) => void;
 }) {
     const [open, setOpen] = useState(false);
+    const [savingInstalled, setSavingInstalled] = useState(false);
     const isOpen = forceOpen || open;
     const restartableSteps = device.restartable_steps ?? [];
     const defaultRestartOrder =
@@ -133,6 +143,8 @@ function WorkflowDeviceRow({
         device.is_installed,
         device.is_online,
     );
+    const installedSelectValue =
+        device.is_installed === true ? 'true' : 'false';
 
     return (
         <Collapsible
@@ -141,6 +153,15 @@ function WorkflowDeviceRow({
             data-test={`workflow-device-row-${device.device_id}`}
         >
             <div className="flex items-center gap-2 border-b border-border py-2.5 last:border-0">
+                <Checkbox
+                    checked={selected}
+                    onCheckedChange={(checked) =>
+                        onSelectedChange(checked === true)
+                    }
+                    aria-label={`Select ${formatDeviceTitle(device.name, device.serial)}`}
+                    data-test={`workflow-device-select-${device.device_id}`}
+                    className="ml-2 shrink-0"
+                />
                 <CollapsibleTrigger asChild>
                     <Button
                         type="button"
@@ -179,6 +200,33 @@ function WorkflowDeviceRow({
                         />
                     </Button>
                 </CollapsibleTrigger>
+                <select
+                    className={cn(compactSelectClassName, 'mr-2 shrink-0')}
+                    value={installedSelectValue}
+                    disabled={savingInstalled}
+                    aria-label={`Installed status for ${formatDeviceTitle(device.name, device.serial)}`}
+                    data-test={`workflow-device-installed-select-${device.device_id}`}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                        const next = event.target.value === 'true';
+                        if (device.is_installed === next) {
+                            return;
+                        }
+                        setSavingInstalled(true);
+                        router.patch(
+                            `/devices/${device.device_id}`,
+                            { is_installed: next },
+                            {
+                                preserveScroll: true,
+                                only: ['workflow'],
+                                onFinish: () => setSavingInstalled(false),
+                            },
+                        );
+                    }}
+                >
+                    <option value="true">Installed</option>
+                    <option value="false">Not installed</option>
+                </select>
             </div>
             <CollapsibleContent className="pb-3 pl-4 pr-2">
                 <p className="mb-2 text-xs text-muted-foreground sm:hidden">
@@ -306,15 +354,22 @@ function WorkflowDeviceRow({
 
 export default function WorkflowDeviceStatusList({
     devices,
+    deploymentId,
     showRestartControls = false,
 }: {
     devices: WorkflowDeviceStatusRow[];
+    deploymentId: number;
     showRestartControls?: boolean;
 }) {
     const [search, setSearch] = useState('');
     const [installOnlineFilter, setInstallOnlineFilter] = useState<
         '' | InstallOnlineBadgeKey
     >('');
+    const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([]);
+    const [bulkInstalled, setBulkInstalled] = useState<'true' | 'false' | ''>(
+        '',
+    );
+    const [applyingBulk, setApplyingBulk] = useState(false);
 
     const filteredDevices = useMemo(
         () =>
@@ -337,7 +392,68 @@ export default function WorkflowDeviceStatusList({
         [devices, search, installOnlineFilter],
     );
 
+    const filteredDeviceIds = useMemo(
+        () => filteredDevices.map((device) => device.device_id),
+        [filteredDevices],
+    );
+
+    const selectedFilteredCount = useMemo(
+        () =>
+            selectedDeviceIds.filter((id) =>
+                filteredDeviceIds.includes(id),
+            ).length,
+        [filteredDeviceIds, selectedDeviceIds],
+    );
+
+    const allFilteredSelected =
+        filteredDeviceIds.length > 0 &&
+        filteredDeviceIds.every((id) => selectedDeviceIds.includes(id));
+
+    const someFilteredSelected =
+        selectedFilteredCount > 0 && !allFilteredSelected;
+
     const forceOpen = search.trim() !== '';
+
+    const toggleSelectAllFiltered = (checked: boolean) => {
+        if (checked) {
+            setSelectedDeviceIds((prev) =>
+                Array.from(new Set([...prev, ...filteredDeviceIds])),
+            );
+            return;
+        }
+
+        setSelectedDeviceIds((prev) =>
+            prev.filter((id) => !filteredDeviceIds.includes(id)),
+        );
+    };
+
+    const handleBulkApply = () => {
+        if (bulkInstalled === '' || selectedFilteredCount === 0) {
+            return;
+        }
+
+        const deviceIds = selectedDeviceIds.filter((id) =>
+            filteredDeviceIds.includes(id),
+        );
+
+        setApplyingBulk(true);
+        router.post(
+            bulkUpdateMetadata.url(deploymentId),
+            {
+                device_ids: deviceIds,
+                is_installed: bulkInstalled === 'true',
+            },
+            {
+                preserveScroll: true,
+                only: ['workflow'],
+                onSuccess: () => {
+                    setSelectedDeviceIds([]);
+                    setBulkInstalled('');
+                },
+                onFinish: () => setApplyingBulk(false),
+            },
+        );
+    };
 
     return (
         <div className="space-y-3">
@@ -373,6 +489,65 @@ export default function WorkflowDeviceStatusList({
                     ))}
                 </select>
             </div>
+            {filteredDevices.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                    <Checkbox
+                        checked={
+                            allFilteredSelected
+                                ? true
+                                : someFilteredSelected
+                                  ? 'indeterminate'
+                                  : false
+                        }
+                        onCheckedChange={(checked) =>
+                            toggleSelectAllFiltered(checked === true)
+                        }
+                        aria-label="Select all matching devices"
+                        data-test="workflow-device-select-all"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                        {selectedFilteredCount > 0
+                            ? `${selectedFilteredCount} selected`
+                            : 'Select devices'}
+                    </span>
+                    {selectedFilteredCount > 0 ? (
+                        <>
+                            <select
+                                className={selectClassName}
+                                value={bulkInstalled}
+                                onChange={(event) =>
+                                    setBulkInstalled(
+                                        event.target.value as
+                                            | 'true'
+                                            | 'false'
+                                            | '',
+                                    )
+                                }
+                                aria-label="Bulk installed status"
+                                data-test="workflow-bulk-installed-select"
+                            >
+                                <option value="">Installed status…</option>
+                                <option value="true">Installed</option>
+                                <option value="false">Not installed</option>
+                            </select>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={
+                                    bulkInstalled === '' || applyingBulk
+                                }
+                                data-test="workflow-bulk-installed-apply"
+                                onClick={handleBulkApply}
+                            >
+                                {applyingBulk
+                                    ? 'Applying…'
+                                    : `Apply to selected (${selectedFilteredCount})`}
+                            </Button>
+                        </>
+                    ) : null}
+                </div>
+            ) : null}
             {filteredDevices.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                     No devices match your search.
@@ -385,6 +560,22 @@ export default function WorkflowDeviceStatusList({
                             device={device}
                             forceOpen={forceOpen}
                             showRestartControls={showRestartControls}
+                            selected={selectedDeviceIds.includes(
+                                device.device_id,
+                            )}
+                            onSelectedChange={(next) => {
+                                setSelectedDeviceIds((prev) => {
+                                    if (next) {
+                                        if (prev.includes(device.device_id)) {
+                                            return prev;
+                                        }
+                                        return [...prev, device.device_id];
+                                    }
+                                    return prev.filter(
+                                        (id) => id !== device.device_id,
+                                    );
+                                });
+                            }}
                         />
                     ))}
                 </div>

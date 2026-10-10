@@ -60,8 +60,54 @@ type DeploymentShowColumnOptions = {
     centralSitesError: string | null;
     centralDeviceGroupsError: string | null;
     showControllerJoinedIp?: boolean;
-    showIsInstalled?: boolean;
 };
+
+const installedSelectOptions = [
+    { value: 'true', label: 'Installed' },
+    { value: 'false', label: 'Not installed' },
+];
+
+function DeviceInstalledSelectCell({
+    deviceId,
+    isInstalled,
+}: {
+    deviceId: number;
+    isInstalled?: boolean | null;
+}) {
+    const [saving, setSaving] = useState(false);
+    const selectValue = isInstalled === true ? 'true' : 'false';
+
+    const handleChange = (next: string) => {
+        const newValue = next === 'true';
+        if (isInstalled === newValue) {
+            return;
+        }
+
+        setSaving(true);
+        router.patch(
+            `/devices/${deviceId}`,
+            { is_installed: newValue },
+            {
+                preserveScroll: true,
+                only: ['devices'],
+                onFinish: () => setSaving(false),
+            },
+        );
+    };
+
+    return (
+        <SearchableSelect
+            value={selectValue}
+            disabled={saving}
+            onValueChange={handleChange}
+            options={installedSelectOptions}
+            placeholder="Not installed"
+            className="h-8 min-w-[9rem]"
+            aria-label="Installed status"
+            data-test="device-installed-select"
+        />
+    );
+}
 
 function EditableDeviceNameCell({ id, name }: { id: number; name: string }) {
     const [editing, setEditing] = useState(false);
@@ -443,22 +489,17 @@ export function createDeploymentShowColumns(
         });
     }
 
-    if (options.showIsInstalled) {
-        columns.push({
+    columns.push(
+        {
             accessorKey: 'is_installed',
             header: 'Installed',
-            cell: ({ row }) => {
-                const value = row.original.is_installed;
-                if (value === null || value === undefined) {
-                    return '';
-                }
-
-                return value ? 'Yes' : 'No';
-            },
-        });
-    }
-
-    columns.push(
+            cell: ({ row }) => (
+                <DeviceInstalledSelectCell
+                    deviceId={row.original.id}
+                    isInstalled={row.original.is_installed}
+                />
+            ),
+        },
         {
             accessorKey: 'model',
             header: 'Model',

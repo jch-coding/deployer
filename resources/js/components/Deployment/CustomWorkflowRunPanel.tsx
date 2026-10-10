@@ -412,10 +412,12 @@ function AppendStepsDialog({
 export default function CustomWorkflowRunPanel({
     workflow,
     title,
+    deploymentId,
     deploymentName,
 }: {
     workflow: CustomWorkflowRunPayload;
     title?: string;
+    deploymentId: number;
     deploymentName: string;
 }) {
     const [reportOpen, setReportOpen] = useState(false);
@@ -563,6 +565,7 @@ export default function CustomWorkflowRunPanel({
                 <CardContent>
                     <WorkflowDeviceStatusList
                         devices={workflow.devices}
+                        deploymentId={deploymentId}
                         showRestartControls
                     />
                 </CardContent>

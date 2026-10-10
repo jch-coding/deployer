@@ -19,6 +19,7 @@ class UpdateDeviceMetadataRequest extends FormRequest
             'site' => ['sometimes', 'nullable', 'string', 'max:255'],
             'group' => ['sometimes', 'nullable', 'string', 'max:255'],
             'mac_address' => ['sometimes', 'nullable', 'string', 'max:17'],
+            'is_installed' => ['sometimes', 'boolean'],
         ];
     }
 

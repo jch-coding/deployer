@@ -1087,6 +1087,10 @@ class DeviceController extends Controller
             }
         }
 
+        if (array_key_exists('is_installed', $validated)) {
+            $device->update(['is_installed' => (bool) $validated['is_installed']]);
+        }
+
         return back()->with('success', 'Device updated successfully.');
     }
 
@@ -1106,11 +1110,16 @@ class DeviceController extends Controller
             'search' => ['nullable', 'string', 'max:255'],
             'site' => ['sometimes', 'nullable', 'string', 'max:255'],
             'group' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'is_installed' => ['sometimes', 'boolean'],
         ]);
 
-        if (! array_key_exists('site', $data) && ! array_key_exists('group', $data)) {
+        if (
+            ! array_key_exists('site', $data)
+            && ! array_key_exists('group', $data)
+            && ! array_key_exists('is_installed', $data)
+        ) {
             throw ValidationException::withMessages([
-                'site' => 'Select a site or group to apply.',
+                'site' => 'Select a site, group, or installed status to apply.',
             ]);
         }
 
@@ -1150,6 +1159,7 @@ class DeviceController extends Controller
 
         $updateSite = array_key_exists('site', $data);
         $updateGroup = array_key_exists('group', $data);
+        $updateInstalled = array_key_exists('is_installed', $data);
 
         foreach ($devices as $device) {
             if ($updateSite) {
@@ -1157,6 +1167,9 @@ class DeviceController extends Controller
             }
             if ($updateGroup) {
                 $this->applyDeviceGroup($device, $data['group']);
+            }
+            if ($updateInstalled) {
+                $device->update(['is_installed' => (bool) $data['is_installed']]);
             }
         }
 

@@ -191,7 +191,7 @@ test('bulk update metadata rejects when current client does not match deployment
         ->assertSessionHas('error', 'Please set current client to match this deployment before updating device metadata.');
 });
 
-test('bulk update metadata requires site or group', function () {
+test('bulk update metadata requires site, group, or is_installed', function () {
     $device = Device::factory()->create([
         'client_id' => $this->client->id,
         'user_id' => $this->user->id,
@@ -202,4 +202,48 @@ test('bulk update metadata requires site or group', function () {
         'device_ids' => [$device->id],
     ])
         ->assertSessionHasErrors('site');
+});
+
+test('bulk update metadata updates is_installed for selected devices', function () {
+    $deviceA = Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'is_installed' => false,
+    ]);
+    $deviceB = Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'is_installed' => null,
+    ]);
+
+    $this->from(route('deployments.show', $this->deployment))
+        ->post(route('deployments.bulk-update-metadata', $this->deployment), [
+            'device_ids' => [$deviceA->id, $deviceB->id],
+            'is_installed' => true,
+        ])
+        ->assertRedirect(route('deployments.show', $this->deployment))
+        ->assertSessionHas('success', 'Updated metadata for 2 devices.');
+
+    expect($deviceA->fresh()->is_installed)->toBeTrue()
+        ->and($deviceB->fresh()->is_installed)->toBeTrue();
+});
+
+test('bulk update metadata accepts is_installed alone', function () {
+    $device = Device::factory()->create([
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'deployment_id' => $this->deployment->id,
+        'is_installed' => true,
+    ]);
+
+    $this->post(route('deployments.bulk-update-metadata', $this->deployment), [
+        'device_ids' => [$device->id],
+        'is_installed' => false,
+    ])
+        ->assertRedirect()
+        ->assertSessionHas('success', 'Updated metadata for 1 device.');
+
+    expect($device->fresh()->is_installed)->toBeFalse();
 });

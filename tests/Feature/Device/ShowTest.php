@@ -221,6 +221,34 @@ it('rejects invalid mac_address via metadata patch', function () {
         ->assertSessionHasErrors('mac_address');
 });
 
+it('updates device is_installed via metadata patch', function () {
+    $deployment = Deployment::factory()->for($this->client)->create();
+    $device = Device::factory()->create([
+        'deployment_id' => $deployment->id,
+        'client_id' => $this->client->id,
+        'user_id' => $this->user->id,
+        'is_installed' => false,
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('devices.show', $device))
+        ->patch(route('devices.update-metadata', $device), [
+            'is_installed' => true,
+        ])
+        ->assertRedirect(route('devices.show', $device));
+
+    expect($device->fresh()->is_installed)->toBeTrue();
+
+    $this->actingAs($this->user)
+        ->from(route('devices.show', $device))
+        ->patch(route('devices.update-metadata', $device), [
+            'is_installed' => false,
+        ])
+        ->assertRedirect(route('devices.show', $device));
+
+    expect($device->fresh()->is_installed)->toBeFalse();
+});
+
 it('clears device site via metadata patch', function () {
     $deployment = Deployment::factory()->for($this->client)->create();
     $site = Site::factory()->for($this->client)->create(['name' => 'Old Site']);
