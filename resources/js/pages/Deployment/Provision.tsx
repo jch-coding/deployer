@@ -1355,11 +1355,17 @@ function SummaryCard({
 }
 
 function DeviceWorkflowCard({ deviceCard }: { deviceCard: WorkflowDeviceCard }) {
-    const [restartStepOrder, setRestartStepOrder] = useState(
+    const defaultRestartOrder =
         deviceCard.restartable_steps[0]?.order != null
             ? String(deviceCard.restartable_steps[0].order)
-            : '',
-    );
+            : '';
+    const [restartStepOrder, setRestartStepOrder] = useState(defaultRestartOrder);
+    // Polling can populate restartable_steps after mount; keep selection valid.
+    const selectedRestartOrder = deviceCard.restartable_steps.some(
+        (step) => String(step.order) === restartStepOrder,
+    )
+        ? restartStepOrder
+        : defaultRestartOrder;
 
     return (
         <Card data-test={`workflow-device-${deviceCard.device_id}`}>
@@ -1456,7 +1462,7 @@ function DeviceWorkflowCard({ deviceCard }: { deviceCard: WorkflowDeviceCard }) 
                     <div className="flex flex-wrap items-center gap-2 border-t pt-3">
                         <select
                             className={selectClassName + ' max-w-[220px]'}
-                            value={restartStepOrder}
+                            value={selectedRestartOrder}
                             onChange={(e) => setRestartStepOrder(e.target.value)}
                         >
                             {deviceCard.restartable_steps.map((step) => (
@@ -1474,13 +1480,23 @@ function DeviceWorkflowCard({ deviceCard }: { deviceCard: WorkflowDeviceCard }) 
                             ))}
                         </select>
                         <Button
+                            type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() =>
+                            disabled={selectedRestartOrder === ''}
+                            onClick={() => {
+                                const fromStepOrder = Number(selectedRestartOrder);
+                                if (
+                                    !Number.isFinite(fromStepOrder) ||
+                                    fromStepOrder < 1
+                                ) {
+                                    return;
+                                }
+
                                 router.post(restartWorkflowDevice(deviceCard.id).url, {
-                                    from_step_order: Number(restartStepOrder),
-                                })
-                            }
+                                    from_step_order: fromStepOrder,
+                                });
+                            }}
                         >
                             <RotateCcw className="mr-1 size-3" />
                             Restart from step

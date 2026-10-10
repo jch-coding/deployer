@@ -118,9 +118,17 @@ function WorkflowDeviceRow({
     const [open, setOpen] = useState(false);
     const isOpen = forceOpen || open;
     const restartableSteps = device.restartable_steps ?? [];
-    const [restartStepOrder, setRestartStepOrder] = useState(
-        restartableSteps[0]?.order != null ? String(restartableSteps[0].order) : '',
-    );
+    const defaultRestartOrder =
+        restartableSteps[0]?.order != null
+            ? String(restartableSteps[0].order)
+            : '';
+    const [restartStepOrder, setRestartStepOrder] = useState(defaultRestartOrder);
+    // Polling can populate restartable_steps after mount; keep selection valid.
+    const selectedRestartOrder = restartableSteps.some(
+        (step) => String(step.order) === restartStepOrder,
+    )
+        ? restartStepOrder
+        : defaultRestartOrder;
     const badgeKey = installOnlineBadgeKey(
         device.is_installed,
         device.is_online,
@@ -245,7 +253,7 @@ function WorkflowDeviceRow({
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
                         <select
                             className={cn(selectClassName, 'max-w-[220px]')}
-                            value={restartStepOrder}
+                            value={selectedRestartOrder}
                             onChange={(event) =>
                                 setRestartStepOrder(event.target.value)
                             }
@@ -265,16 +273,26 @@ function WorkflowDeviceRow({
                             ))}
                         </select>
                         <Button
+                            type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() =>
+                            disabled={selectedRestartOrder === ''}
+                            onClick={() => {
+                                const fromStepOrder = Number(selectedRestartOrder);
+                                if (
+                                    !Number.isFinite(fromStepOrder) ||
+                                    fromStepOrder < 1
+                                ) {
+                                    return;
+                                }
+
                                 router.post(
                                     restartWorkflowDevice(device.id).url,
                                     {
-                                        from_step_order: Number(restartStepOrder),
+                                        from_step_order: fromStepOrder,
                                     },
-                                )
-                            }
+                                );
+                            }}
                         >
                             <RotateCcw className="mr-1 size-3" />
                             Restart from step

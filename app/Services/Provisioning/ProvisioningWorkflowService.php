@@ -588,7 +588,9 @@ class ProvisioningWorkflowService
         $workflow = $workflowDevice->workflow;
 
         if ($workflow->isTerminal()) {
-            return;
+            throw ValidationException::withMessages([
+                'from_step_order' => 'Cannot restart a step on a completed or cancelled workflow.',
+            ]);
         }
 
         $fromRow = $workflowDevice->steps->firstWhere('step_order', $fromStepOrder);
