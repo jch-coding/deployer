@@ -46,6 +46,7 @@ export type TaskDeadlineProps = {
     status?: string;
     scheduledAt?: string | null;
     className?: string;
+    reloadOnly?: string[];
 };
 
 export default function TaskDeadlineBar({
@@ -55,6 +56,7 @@ export default function TaskDeadlineBar({
     status,
     scheduledAt,
     className,
+    reloadOnly,
 }: TaskDeadlineProps) {
     const [extendHours, setExtendHours] = useState(0);
     const [extendMinutes, setExtendMinutes] = useState(30);
@@ -109,6 +111,7 @@ export default function TaskDeadlineBar({
             },
             {
                 preserveScroll: true,
+                ...(reloadOnly ? { only: reloadOnly } : {}),
                 onFinish: () => setSubmitting(false),
             },
         );
