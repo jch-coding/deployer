@@ -496,6 +496,80 @@ class Task extends Model
     }
 
     /**
+     * Progress counts for deployment-index in-progress cards.
+     *
+     * @return array{completed: int, failed: int, in_progress: int, total: int}
+     */
+    public function indexProgressSummary(): array
+    {
+        if ($this->task_type === 'CUSTOM_PROVISION') {
+            $workflow = $this->relationLoaded('provisioningWorkflow')
+                ? $this->provisioningWorkflow
+                : $this->provisioningWorkflow()->first();
+
+            if ($workflow === null) {
+                return ['completed' => 0, 'failed' => 0, 'in_progress' => 0, 'total' => 0];
+            }
+
+            $summary = $workflow->summaryCounts();
+            $total = $summary['completed'] + $summary['failed'] + $summary['in_progress'];
+
+            return [
+                'completed' => $summary['completed'],
+                'failed' => $summary['failed'],
+                'in_progress' => $summary['in_progress'],
+                'total' => $total,
+            ];
+        }
+
+        $category = $this->getTaskCategory($this->task_type);
+
+        if ($category === 'INTERFACE') {
+            $total = $this->deviceInterfaces()->count();
+            $completed = $this->deviceInterfaces()->wherePivot('status', 'COMPLETED')->count();
+            $failed = $this->deviceInterfaces()->wherePivot('status', 'FAILED')->count();
+            $inProgress = max(0, $total - $completed - $failed);
+
+            return [
+                'completed' => $completed,
+                'failed' => $failed,
+                'in_progress' => $inProgress,
+                'total' => $total,
+            ];
+        }
+
+        if ($this->task_type === 'ADD_DEVICES_TO_GREENLAKE_INVENTORY') {
+            $totals = $this->greenLakeStepTrackedItemTotals();
+            $completed = $totals['completed'];
+            $total = $totals['total'];
+            $inProgress = max(0, $total - $completed);
+
+            return [
+                'completed' => $completed,
+                'failed' => 0,
+                'in_progress' => $inProgress,
+                'total' => $total,
+            ];
+        }
+
+        if ($category === 'DEVICE') {
+            $total = $this->devices()->count();
+            $completed = $this->devices()->wherePivot('status', 'COMPLETED')->count();
+            $failed = $this->devices()->wherePivot('status', 'FAILED')->count();
+            $inProgress = max(0, $total - $completed - $failed);
+
+            return [
+                'completed' => $completed,
+                'failed' => $failed,
+                'in_progress' => $inProgress,
+                'total' => $total,
+            ];
+        }
+
+        return ['completed' => 0, 'failed' => 0, 'in_progress' => 0, 'total' => 0];
+    }
+
+    /**
      * Progress units are per-device steps (inventory, optional tags, optional location).
      *
      * @return array{category: string, completed: int, total: int}

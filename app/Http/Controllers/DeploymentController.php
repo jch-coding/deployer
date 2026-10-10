@@ -15,11 +15,13 @@ use App\Services\DeploymentCriticalCheckService;
 use App\Services\DeviceInterfacePayloadSync;
 use App\Services\FinalizeExpiredTasksService;
 use App\Services\LicensingInventoryService;
+use App\Services\Provisioning\ProvisioningWorkflowService;
 use App\Services\RelaunchFailedCriticalConfigService;
 use App\Services\StartScheduledCustomWorkflowsService;
 use App\TaskType;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -27,8 +29,12 @@ use Inertia\Inertia;
 
 class DeploymentController extends Controller
 {
-    public function index(Request $request, CentralScopeCacheService $centralScopeCacheService)
-    {
+    public function index(
+        Request $request,
+        CentralScopeCacheService $centralScopeCacheService,
+        StartScheduledCustomWorkflowsService $startScheduledCustomWorkflows,
+        ProvisioningWorkflowService $workflowService,
+    ) {
         $currentClient = $request->user()->currentClient();
 
         if (! $currentClient) {
@@ -36,6 +42,8 @@ class DeploymentController extends Controller
 
             return to_route('clients.index');
         }
+
+        $startScheduledCustomWorkflows->run();
 
         $deployments = $currentClient->deployments()
             ->withCount('devices')
@@ -55,10 +63,108 @@ class DeploymentController extends Controller
                 ])->values()->all(),
             ]);
 
+        $inProgressTasks = Task::query()
+            ->with(['deployment', 'provisioningWorkflow'])
+            ->where('status', 'IN_PROGRESS')
+            ->where(function ($query) {
+                $query->whereNull('composite_group_id')
+                    ->orWhere('composite_order', 1);
+            })
+            ->whereHas('deployment', fn ($q) => $q->where('client_id', $currentClient->id))
+            ->latest()
+            ->get();
+
+        $compositeGroupIds = $inProgressTasks
+            ->pluck('composite_group_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $compositeSiblingsByGroup = $compositeGroupIds->isEmpty()
+            ? collect()
+            : Task::query()
+                ->whereIn('composite_group_id', $compositeGroupIds)
+                ->with('provisioningWorkflow')
+                ->get()
+                ->groupBy('composite_group_id');
+
+        $serializedInProgressTasks = $inProgressTasks
+            ->map(fn (Task $task) => $this->serializeInProgressTaskForIndex(
+                $task,
+                $workflowService,
+                $compositeSiblingsByGroup,
+            ))
+            ->values()
+            ->all();
+
         return Inertia::render('Deployment/Index', [
             'deployments' => $deployments,
+            'in_progress_tasks' => $serializedInProgressTasks,
             ...$centralScopeCacheService->getCacheMetadata($currentClient),
         ]);
+    }
+
+    /**
+     * @param  Collection<string|int, Collection<int, Task>>  $compositeSiblingsByGroup
+     * @return array<string, mixed>
+     */
+    private function serializeInProgressTaskForIndex(
+        Task $task,
+        ProvisioningWorkflowService $workflowService,
+        Collection $compositeSiblingsByGroup,
+    ): array {
+        $siblings = $task->composite_group_id !== null
+            ? ($compositeSiblingsByGroup->get($task->composite_group_id) ?? collect([$task]))
+            : collect([$task]);
+
+        if ($task->task_type === 'CUSTOM_PROVISION' || $siblings->count() <= 1) {
+            $progress = $task->indexProgressSummary();
+        } else {
+            $progress = [
+                'completed' => 0,
+                'failed' => 0,
+                'in_progress' => 0,
+                'total' => 0,
+            ];
+            foreach ($siblings as $sibling) {
+                $part = $sibling->indexProgressSummary();
+                $progress['completed'] += $part['completed'];
+                $progress['failed'] += $part['failed'];
+                $progress['in_progress'] += $part['in_progress'];
+                $progress['total'] += $part['total'];
+            }
+        }
+
+        $canExtend = $siblings->contains(fn (Task $member) => $member->canExtendDeadline());
+
+        $workflow = $task->provisioningWorkflow;
+        $workflowPayload = null;
+        if ($task->task_type === 'CUSTOM_PROVISION' && $workflow !== null) {
+            $workflowPayload = [
+                'id' => $workflow->id,
+                'name' => $workflow->name,
+                'status' => $workflow->status,
+                'steps' => $workflow->customStepKeys() ?? [],
+                'can_append_steps' => $workflowService->canAppendSteps($workflow),
+                'appendable_steps' => $workflowService->appendableStepsForUi($workflow),
+                'needs_licensing_for_append' => $workflowService->needsLicensingForAppend($workflow),
+            ];
+        }
+
+        return [
+            'id' => $task->id,
+            'task_name' => Task::getTaskDisplayName($task),
+            'task_type' => $task->task_type,
+            'deployment_id' => $task->deployment_id,
+            'deployment_name' => $task->deployment?->name,
+            'status' => $task->status,
+            'expires_at' => $task->expiresAt()?->toIso8601String(),
+            'can_extend' => $canExtend,
+            'scheduled_at' => $task->scheduled_at?->toIso8601String()
+                ?? $workflow?->scheduled_at?->toIso8601String(),
+            'progress' => $progress,
+            'workflow' => $workflowPayload,
+        ];
     }
 
     public function show(

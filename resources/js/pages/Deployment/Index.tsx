@@ -3,6 +3,9 @@ import { Form, Link, router, usePage } from '@inertiajs/react';
 import { Rocket, Search, TrashIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/DeploymentController';
+import InProgressTaskCards, {
+    type InProgressTaskCard,
+} from '@/components/Deployment/InProgressTaskCards';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -25,6 +28,7 @@ import CentralScopeRefreshButtons, {
     type CentralScopeCacheMeta,
     type CentralScopeGroupsCacheMeta,
 } from '@/components/central/CentralScopeRefreshButtons';
+import { useInertiaPoll } from '@/hooks/use-inertia-poll';
 import AppLayout from '@/layouts/app-layout';
 import { filterDeploymentsByIndexSearch } from '@/lib/deployment-index-search';
 import { index as clientsIndex } from '@/routes/clients';
@@ -49,6 +53,7 @@ type Deployment = {
 
 type DeploymentIndexProps = {
     deployments: Deployment[];
+    in_progress_tasks: InProgressTaskCard[];
     central_sites_cache: CentralScopeCacheMeta;
     central_groups_cache: CentralScopeGroupsCacheMeta;
 } & SharedData;
@@ -56,6 +61,7 @@ type DeploymentIndexProps = {
 export default function Index() {
     const {
         deployments,
+        in_progress_tasks = [],
         current_client,
         central_sites_cache,
         central_groups_cache,
@@ -76,7 +82,14 @@ export default function Index() {
     useEffect(() => {
         if (!success) return;
         dialogCloseRef.current?.click();
-    })
+    });
+
+    useInertiaPoll(
+        ['in_progress_tasks'],
+        2000,
+        in_progress_tasks.length > 0,
+    );
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <div className="min-w-6xl mx-auto flex-1">
@@ -92,6 +105,7 @@ export default function Index() {
                         ]}
                     />
                 </div>
+                <InProgressTaskCards tasks={in_progress_tasks} />
                 {deployments.length > 0 ? (
                     <>
                         <div className="relative mx-auto mt-6 w-full max-w-md">
