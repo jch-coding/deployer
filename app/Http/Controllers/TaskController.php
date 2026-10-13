@@ -2993,8 +2993,11 @@ class TaskController extends Controller
         return to_route('tasks.show', $group->first());
     }
 
-    public function relaunch(Request $request, Task $task)
-    {
+    public function relaunch(
+        Request $request,
+        Task $task,
+        ProvisioningWorkflowService $workflowService,
+    ) {
         $group = $this->tasksInCompositeGroup($task);
 
         foreach ($group as $t) {
@@ -3019,6 +3022,33 @@ class TaskController extends Controller
         }
 
         foreach ($group as $t) {
+            if ($t->task_type === 'CUSTOM_PROVISION') {
+                $t->loadMissing('provisioningWorkflow');
+                $workflow = $t->provisioningWorkflow;
+                if ($workflow === null) {
+                    session()->flash('error', 'Linked provisioning workflow not found.');
+
+                    return back();
+                }
+
+                $workflowUpdates = [];
+                if (array_key_exists('deployment_time', $validated)) {
+                    $workflowUpdates['deployment_time'] = $validated['deployment_time'];
+                }
+                if (array_key_exists('wait_time', $validated)) {
+                    $workflowUpdates['wait_time'] = $validated['wait_time'];
+                }
+                if ($workflowUpdates !== []) {
+                    $workflow->update($workflowUpdates);
+                }
+
+                $t->update($updates);
+                $t->refresh();
+                $workflowService->relaunchIncompleteDevices($workflow->fresh());
+
+                continue;
+            }
+
             $t->resetIncompletePivotRowsToPending();
             $t->update($updates);
             $t->refresh();

@@ -535,6 +535,15 @@ class ProvisioningWorkflowService
             ]);
         }
 
+        $this->relaunchIncompleteDevices($workflow);
+    }
+
+    /**
+     * Reset failed/incomplete workflow devices to in_progress and redispatch their next steps.
+     * Used by resume and by CUSTOM_PROVISION task relaunch.
+     */
+    public function relaunchIncompleteDevices(ProvisioningWorkflow $workflow): void
+    {
         $workflow->loadMissing(['workflowDevices.device', 'workflowDevices.steps']);
 
         $workflow->update([

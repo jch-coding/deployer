@@ -1,14 +1,20 @@
 <?php
 
+use App\Enums\ProvisioningStep;
 use App\InterfaceKind;
+use App\Jobs\RunProvisioningWorkflowStepJob;
 use App\Models\Client;
 use App\Models\Device;
 use App\Models\DeviceInterface;
+use App\Models\ProvisioningWorkflow;
+use App\Models\ProvisioningWorkflowDevice;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\Provisioning\ProvisioningWorkflowTaskSync;
 use App\Services\RelaunchFailedCriticalConfigService;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
@@ -216,4 +222,159 @@ test('relaunching a failed composite remediation group relaunches all siblings',
 
     $batches = Bus::batched(fn (PendingBatch $batch) => count($batch->jobs) === 1);
     expect($batches)->toHaveCount(2);
+});
+
+test('relaunching a failed custom provision task resets failed devices to in progress and redispatches', function () {
+    Queue::fake();
+
+    $failedDevice = Device::factory()->for($this->deployment)->create([
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $completedDevice = Device::factory()->for($this->deployment)->create([
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::AssociateSite->value,
+            ProvisioningStep::ConfigureVlanInterfaces->value,
+        ],
+        'started_at' => now(),
+    ]);
+
+    $failedWorkflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $failedDevice->id,
+        'overall_status' => 'failed',
+        'failed_step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'current_step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'status_message' => 'VLAN configuration failed.',
+    ]);
+    $failedWorkflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'completed_at' => now(),
+    ]);
+    $failedWorkflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'step_order' => 2,
+        'status' => 'failed',
+    ]);
+
+    $completedWorkflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $completedDevice->id,
+        'overall_status' => 'completed',
+        'current_step_key' => null,
+        'failed_step_key' => null,
+        'status_message' => 'Workflow completed successfully.',
+    ]);
+    $completedWorkflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'completed',
+        'completed_at' => now(),
+    ]);
+    $completedWorkflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::ConfigureVlanInterfaces->value,
+        'step_order' => 2,
+        'status' => 'completed',
+        'completed_at' => now(),
+    ]);
+
+    $task = app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+    $task->update(['status' => 'FAILED']);
+    $task->devices()->updateExistingPivot($failedDevice->id, ['status' => 'FAILED']);
+
+    $this->post(route('tasks.relaunch', $task))
+        ->assertRedirect(route('tasks.show', $task));
+
+    $task->refresh()->load('devices');
+    $failedWorkflowDevice->refresh();
+    $completedWorkflowDevice->refresh();
+
+    expect($task->status)->toBe('IN_PROGRESS')
+        ->and($failedWorkflowDevice->overall_status)->toBe('in_progress')
+        ->and($failedWorkflowDevice->failed_step_key)->toBeNull()
+        ->and($completedWorkflowDevice->overall_status)->toBe('completed')
+        ->and($task->devices->firstWhere('id', $failedDevice->id)->pivot->status)->toBe('IN_PROGRESS')
+        ->and($task->devices->firstWhere('id', $completedDevice->id)->pivot->status)->toBe('COMPLETED');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($failedWorkflowDevice) {
+        return $job->workflowDeviceId === $failedWorkflowDevice->id
+            && $job->stepKey === ProvisioningStep::ConfigureVlanInterfaces->value;
+    });
+
+    Queue::assertNotPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($completedWorkflowDevice) {
+        return $job->workflowDeviceId === $completedWorkflowDevice->id;
+    });
+});
+
+test('relaunching a timed out custom provision task resets incomplete devices to in progress and redispatches', function () {
+    Queue::fake();
+
+    $device = Device::factory()->for($this->deployment)->create([
+        'client_id' => $this->client->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+
+    $workflow = ProvisioningWorkflow::query()->create([
+        'deployment_id' => $this->deployment->id,
+        'user_id' => $this->user->id,
+        'status' => 'running',
+        'job_queue' => 'q0',
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [ProvisioningStep::AssociateSite->value],
+        'started_at' => now(),
+    ]);
+
+    $workflowDevice = ProvisioningWorkflowDevice::query()->create([
+        'provisioning_workflow_id' => $workflow->id,
+        'device_id' => $device->id,
+        'overall_status' => 'in_progress',
+        'current_step_key' => ProvisioningStep::AssociateSite->value,
+        'failed_step_key' => null,
+        'status_message' => 'Associating site...',
+    ]);
+    $workflowDevice->steps()->create([
+        'step_key' => ProvisioningStep::AssociateSite->value,
+        'step_order' => 1,
+        'status' => 'in_progress',
+    ]);
+
+    $task = app(ProvisioningWorkflowTaskSync::class)->createForWorkflow(
+        $workflow->fresh(['workflowDevices']),
+        $this->deployment,
+    );
+    $task->update(['status' => 'TIMED_OUT']);
+    $task->devices()->updateExistingPivot($device->id, ['status' => 'TIMED_OUT']);
+
+    $this->post(route('tasks.relaunch', $task))
+        ->assertRedirect(route('tasks.show', $task));
+
+    $task->refresh()->load('devices');
+    $workflowDevice->refresh();
+
+    expect($task->status)->toBe('IN_PROGRESS')
+        ->and($workflowDevice->overall_status)->toBe('in_progress')
+        ->and($workflowDevice->failed_step_key)->toBeNull()
+        ->and($task->devices->first()->pivot->status)->toBe('IN_PROGRESS');
+
+    Queue::assertPushed(RunProvisioningWorkflowStepJob::class, function (RunProvisioningWorkflowStepJob $job) use ($workflowDevice) {
+        return $job->workflowDeviceId === $workflowDevice->id
+            && $job->stepKey === ProvisioningStep::AssociateSite->value;
+    });
 });
