@@ -63,7 +63,7 @@ it('releases the job without marking devices failed when assign POST fails', fun
         ->with(\Mockery::on(fn ($serials) => count($serials) === 1), 'ACCESS_SWITCH')
         ->andReturn(assignDeviceFunctionJobJsonResponse(['message' => 'rate limited'], 429));
 
-    $job = new AssignDeviceFunctionJob([$deviceRows], 'ACCESS_SWITCH', $task->fresh(), $helper);
+    $job = new AssignDeviceFunctionJob($deviceRows, 'ACCESS_SWITCH', $task->fresh(), $helper);
     $job->withFakeQueueInteractions();
     $job->handle();
 
@@ -89,7 +89,7 @@ it('marks devices completed when assign POST succeeds', function () {
         ->with(\Mockery::on(fn ($serials) => count($serials) === 2), 'ACCESS_SWITCH')
         ->andReturn(assignDeviceFunctionJobJsonResponse([], 200));
 
-    $job = new AssignDeviceFunctionJob([$deviceRows], 'ACCESS_SWITCH', $task->fresh(), $helper);
+    $job = new AssignDeviceFunctionJob($deviceRows, 'ACCESS_SWITCH', $task->fresh(), $helper);
     $job->withFakeQueueInteractions();
     $job->handle();
 
@@ -99,61 +99,7 @@ it('marks devices completed when assign POST succeeds', function () {
         ->and($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(2);
 });
 
-it('assigns each chunk sequentially', function () {
-    $user = User::factory()->create();
-    $client = Client::factory()->for($user)->create();
-    $deployment = Deployment::factory()->for($client)->create();
-
-    [$task, $deviceRows] = assignDeviceFunctionJobMakeTaskAndDevices($user, $client, $deployment, 2);
-    $chunkOne = [$deviceRows[0]];
-    $chunkTwo = [$deviceRows[1]];
-
-    $centralClient = mock(Client::class)->makePartial();
-    $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('assignDeviceFunction')
-        ->twice()
-        ->ordered()
-        ->with(\Mockery::type('array'), 'ACCESS_SWITCH')
-        ->andReturn(assignDeviceFunctionJobJsonResponse([], 200));
-
-    $job = new AssignDeviceFunctionJob([$chunkOne, $chunkTwo], 'ACCESS_SWITCH', $task->fresh(), $helper);
-    $job->withFakeQueueInteractions();
-    $job->handle();
-
-    $job->assertNotReleased();
-
-    expect($task->fresh()->status)->toBe('COMPLETED')
-        ->and($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(2);
-});
-
-it('skips chunks whose devices are already completed on retry', function () {
-    $user = User::factory()->create();
-    $client = Client::factory()->for($user)->create();
-    $deployment = Deployment::factory()->for($client)->create();
-
-    [$task, $deviceRows, $devices] = assignDeviceFunctionJobMakeTaskAndDevices($user, $client, $deployment, 2);
-    $chunkOne = [$deviceRows[0]];
-    $chunkTwo = [$deviceRows[1]];
-
-    $task->devices()->updateExistingPivot($devices->first()->id, ['status' => 'COMPLETED']);
-
-    $centralClient = mock(Client::class)->makePartial();
-    $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('assignDeviceFunction')
-        ->once()
-        ->with(\Mockery::on(fn ($serials) => $serials === [$deviceRows[1]['serial']]), 'ACCESS_SWITCH')
-        ->andReturn(assignDeviceFunctionJobJsonResponse([], 200));
-
-    $job = new AssignDeviceFunctionJob([$chunkOne, $chunkTwo], 'ACCESS_SWITCH', $task->fresh(), $helper);
-    $job->withFakeQueueInteractions();
-    $job->handle();
-
-    $job->assertNotReleased();
-
-    expect($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(2);
-});
-
-it('marks all devices failed when the job fails', function () {
+it('marks only this chunk failed when the job fails', function () {
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
@@ -164,17 +110,43 @@ it('marks all devices failed when the job fails', function () {
         26 => $deviceRows[1],
     ];
 
+    $otherDevice = Device::factory()->create([
+        'client_id' => $client->id,
+        'deployment_id' => $deployment->id,
+        'user_id' => $user->id,
+        'device_function' => 'ACCESS_SWITCH',
+    ]);
+    $task->devices()->attach($otherDevice->id, ['status' => 'COMPLETED']);
+
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
 
-    $job = new AssignDeviceFunctionJob([$chunkWithPreservedKeys], 'ACCESS_SWITCH', $task->fresh(), $helper);
+    $job = new AssignDeviceFunctionJob($chunkWithPreservedKeys, 'ACCESS_SWITCH', $task->fresh(), $helper);
+    $job->failed(new RuntimeException('worker timeout'));
+
+    expect($task->devices()->wherePivot('status', 'FAILED')->count())->toBe($devices->count())
+        ->and($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(1)
+        ->and($task->fresh()->status)->toBe('IN_PROGRESS');
+});
+
+it('marks the task failed when all devices fail', function () {
+    $user = User::factory()->create();
+    $client = Client::factory()->for($user)->create();
+    $deployment = Deployment::factory()->for($client)->create();
+
+    [$task, $deviceRows, $devices] = assignDeviceFunctionJobMakeTaskAndDevices($user, $client, $deployment, 2);
+
+    $centralClient = mock(Client::class)->makePartial();
+    $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
+
+    $job = new AssignDeviceFunctionJob($deviceRows, 'ACCESS_SWITCH', $task->fresh(), $helper);
     $job->failed(new RuntimeException('worker timeout'));
 
     expect($task->fresh()->status)->toBe('FAILED')
         ->and($task->devices()->wherePivot('status', 'FAILED')->count())->toBe($devices->count());
 });
 
-it('dispatchJob creates one assign job per device function with all chunks', function () {
+it('dispatchJob creates a sequential chain of one job per chunk', function () {
     Bus::fake();
 
     $user = User::factory()->create();
@@ -194,19 +166,21 @@ it('dispatchJob creates one assign job per device function with all chunks', fun
     ]);
     $task->devices()->attach($devices->pluck('id')->all(), ['status' => 'PENDING']);
 
-    (new TaskController())->dispatchJob($task->fresh());
+    (new TaskController)->dispatchJob($task->fresh());
 
     Bus::assertBatched(function ($batch): bool {
         if ($batch->jobs->count() !== 1) {
             return false;
         }
 
-        $job = $batch->jobs->first();
+        $chain = $batch->jobs->first();
+        if (! is_array($chain) || count($chain) !== 2) {
+            return false;
+        }
 
-        return $job instanceof AssignDeviceFunctionJob
-            && $job->device_function === 'ACCESS_SWITCH'
-            && count($job->device_chunks) === 2
-            && count($job->device_chunks[0]) === 25
-            && count($job->device_chunks[1]) === 1;
+        return collect($chain)->every(fn ($job) => $job instanceof AssignDeviceFunctionJob
+            && $job->device_function === 'ACCESS_SWITCH')
+            && count($chain[0]->devices) === 25
+            && count($chain[1]->devices) === 1;
     });
 });

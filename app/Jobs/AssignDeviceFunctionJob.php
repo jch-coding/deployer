@@ -15,9 +15,9 @@ class AssignDeviceFunctionJob extends BaseTaskJob
     /**
      * Create a new job instance.
      *
-     * @param  array<int, array<int, array{id: int, serial: string, name: string}>>  $device_chunks
+     * @param  array<int, array{id: int, serial: string, name: string}>  $devices
      */
-    public function __construct(public array $device_chunks, public string $device_function, public Task $task, public CentralAPIHelper $centralAPIHelper)
+    public function __construct(public array $devices, public string $device_function, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->initTaskTiming($task, defaultWaitMinutes: 1);
     }
@@ -28,19 +28,13 @@ class AssignDeviceFunctionJob extends BaseTaskJob
     public function handle(): void
     {
         $this->handleSafely(function (): void {
-            foreach ($this->device_chunks as $index => $devices) {
-                if ($index > 0) {
-                    sleep(self::BATCH_DELAY_SECONDS);
-                }
+            $devices = array_values($this->devices);
+            if ($devices === []) {
+                return;
+            }
 
-                $pendingDevices = $this->pendingDevicesInChunk($devices);
-                if ($pendingDevices === []) {
-                    continue;
-                }
-
-                if (! $this->assignChunk($pendingDevices)) {
-                    return;
-                }
+            if (! $this->assignChunk($devices)) {
+                return;
             }
 
             $this->task->load('devices');
@@ -86,24 +80,6 @@ class AssignDeviceFunctionJob extends BaseTaskJob
         return true;
     }
 
-    /**
-     * @param  array<int, array{id: int, serial: string, name: string}>  $devices
-     * @return array<int, array{id: int, serial: string, name: string}>
-     */
-    private function pendingDevicesInChunk(array $devices): array
-    {
-        $this->task->load('devices');
-        $pendingIds = $this->task->devices
-            ->filter(fn ($device) => $device->pivot->status === 'PENDING')
-            ->pluck('id')
-            ->all();
-
-        return array_values(array_filter(
-            $devices,
-            fn (array $device): bool => in_array($device['id'], $pendingIds, true)
-        ));
-    }
-
     private function formatAssignDeviceFunctionError(mixed $response): string
     {
         if (is_array($response)) {
@@ -122,10 +98,25 @@ class AssignDeviceFunctionJob extends BaseTaskJob
         return 'unknown error';
     }
 
+    private function markJobDevicesFailed(): void
+    {
+        foreach ($this->devices as $device) {
+            $this->markDeviceFailed($device['id']);
+        }
+    }
+
     public function failed(?Throwable $exception): void
     {
         $this->logFailedException($exception);
-        $this->markAllDevicesFailed();
+        $this->markJobDevicesFailed();
+
+        if ($this->allTaskDevicesFailed()) {
+            $this->task->update(['status' => 'FAILED']);
+            $this->task->processTaskStatusLog('Failed assigning device function. Task timed out or failed.');
+
+            return;
+        }
+
         $this->failTask('Failed assigning device function. Task timed out or failed.');
     }
 }

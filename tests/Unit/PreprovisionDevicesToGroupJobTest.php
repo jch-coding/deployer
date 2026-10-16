@@ -69,7 +69,7 @@ it('releases the job without marking devices failed when preprovision POST fails
         ->with('TestGroup', \Mockery::on(fn ($serials) => count($serials) === 1))
         ->andReturn(preprovisionJobJsonResponse(['message' => 'rate limited'], 429));
 
-    $job = new PreprovisionDevicesToGroupJob([$deviceRows], 'TestGroup', $task->fresh(), $helper);
+    $job = new PreprovisionDevicesToGroupJob($deviceRows, 'TestGroup', $task->fresh(), $helper);
     $job->withFakeQueueInteractions();
     $job->handle();
 
@@ -96,7 +96,7 @@ it('marks devices completed when preprovision POST succeeds', function () {
         ->with('TestGroup', \Mockery::on(fn ($serials) => count($serials) === 2))
         ->andReturn(preprovisionJobJsonResponse([], 201));
 
-    $job = new PreprovisionDevicesToGroupJob([$deviceRows], 'TestGroup', $task->fresh(), $helper);
+    $job = new PreprovisionDevicesToGroupJob($deviceRows, 'TestGroup', $task->fresh(), $helper);
     $job->withFakeQueueInteractions();
     $job->handle();
 
@@ -106,85 +106,85 @@ it('marks devices completed when preprovision POST succeeds', function () {
         ->and($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(2);
 });
 
-it('marks all devices failed when group is not found in Central', function () {
+it('marks only this chunk failed when group is not found in Central', function () {
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
 
     [$task, $deviceRows, $devices] = preprovisionJobMakeTaskAndDevices($user, $client, $deployment, 2, 'MissingGroup');
 
+    $otherDevice = Device::factory()->create([
+        'client_id' => $client->id,
+        'deployment_id' => $deployment->id,
+        'user_id' => $user->id,
+        'group' => 'OtherGroup',
+    ]);
+    $task->devices()->attach($otherDevice->id, ['status' => 'COMPLETED']);
+
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
     $helper->shouldReceive('classic_collect_all_group_names')->once()->andReturn(preprovisionJobCollectGroupNamesResult('TestGroup'));
     $helper->shouldReceive('preprovision_devices_to_group')->never();
 
-    $job = new PreprovisionDevicesToGroupJob([$deviceRows], 'MissingGroup', $task->fresh(), $helper);
+    $job = new PreprovisionDevicesToGroupJob($deviceRows, 'MissingGroup', $task->fresh(), $helper);
     $job->withFakeQueueInteractions();
     $job->handle();
 
     $job->assertNotReleased();
 
-    expect($task->fresh()->status)->toBe('FAILED')
-        ->and($task->devices()->wherePivot('status', 'FAILED')->count())->toBe($devices->count());
+    expect($task->devices()->wherePivot('status', 'FAILED')->count())->toBe($devices->count())
+        ->and($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(1);
 });
 
-it('preprovisions each chunk sequentially', function () {
-    $user = User::factory()->create();
-    $client = Client::factory()->for($user)->create();
-    $deployment = Deployment::factory()->for($client)->create();
-
-    [$task, $deviceRows] = preprovisionJobMakeTaskAndDevices($user, $client, $deployment, 2);
-    $chunkOne = [$deviceRows[0]];
-    $chunkTwo = [$deviceRows[1]];
-
-    $centralClient = mock(Client::class)->makePartial();
-    $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_collect_all_group_names')->once()->andReturn(preprovisionJobCollectGroupNamesResult('TestGroup'));
-    $helper->shouldReceive('preprovision_devices_to_group')
-        ->twice()
-        ->ordered()
-        ->with('TestGroup', \Mockery::type('array'))
-        ->andReturn(preprovisionJobJsonResponse([], 201));
-
-    $job = new PreprovisionDevicesToGroupJob([$chunkOne, $chunkTwo], 'TestGroup', $task->fresh(), $helper);
-    $job->withFakeQueueInteractions();
-    $job->handle();
-
-    $job->assertNotReleased();
-
-    expect($task->fresh()->status)->toBe('COMPLETED')
-        ->and($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(2);
-});
-
-it('skips chunks whose devices are already completed on retry', function () {
+it('marks only this chunk failed when the job fails', function () {
     $user = User::factory()->create();
     $client = Client::factory()->for($user)->create();
     $deployment = Deployment::factory()->for($client)->create();
 
     [$task, $deviceRows, $devices] = preprovisionJobMakeTaskAndDevices($user, $client, $deployment, 2);
-    $chunkOne = [$deviceRows[0]];
-    $chunkTwo = [$deviceRows[1]];
 
-    $task->devices()->updateExistingPivot($devices->first()->id, ['status' => 'COMPLETED']);
+    $otherDevice = Device::factory()->create([
+        'client_id' => $client->id,
+        'deployment_id' => $deployment->id,
+        'user_id' => $user->id,
+        'group' => 'TestGroup',
+    ]);
+    $task->devices()->attach($otherDevice->id, ['status' => 'COMPLETED']);
+
+    $chunkWithPreservedKeys = [
+        25 => $deviceRows[0],
+        26 => $deviceRows[1],
+    ];
 
     $centralClient = mock(Client::class)->makePartial();
     $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
-    $helper->shouldReceive('classic_collect_all_group_names')->once()->andReturn(preprovisionJobCollectGroupNamesResult('TestGroup'));
-    $helper->shouldReceive('preprovision_devices_to_group')
-        ->once()
-        ->with('TestGroup', \Mockery::on(fn ($serials) => $serials === [$deviceRows[1]['serial']]))
-        ->andReturn(preprovisionJobJsonResponse([], 201));
 
-    $job = new PreprovisionDevicesToGroupJob([$chunkOne, $chunkTwo], 'TestGroup', $task->fresh(), $helper);
-    $job->withFakeQueueInteractions();
-    $job->handle();
+    $job = new PreprovisionDevicesToGroupJob($chunkWithPreservedKeys, 'TestGroup', $task->fresh(), $helper);
+    $job->failed(new RuntimeException('worker timeout'));
 
-    $job->assertNotReleased();
-
-    expect($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(2);
+    expect($task->devices()->wherePivot('status', 'FAILED')->count())->toBe($devices->count())
+        ->and($task->devices()->wherePivot('status', 'COMPLETED')->count())->toBe(1)
+        ->and($task->fresh()->status)->toBe('IN_PROGRESS');
 });
 
-it('dispatchJob creates one preprovision job per group with all chunks', function () {
+it('marks the task failed when all devices fail', function () {
+    $user = User::factory()->create();
+    $client = Client::factory()->for($user)->create();
+    $deployment = Deployment::factory()->for($client)->create();
+
+    [$task, $deviceRows, $devices] = preprovisionJobMakeTaskAndDevices($user, $client, $deployment, 2);
+
+    $centralClient = mock(Client::class)->makePartial();
+    $helper = mock(CentralAPIHelper::class, [$centralClient])->makePartial();
+
+    $job = new PreprovisionDevicesToGroupJob($deviceRows, 'TestGroup', $task->fresh(), $helper);
+    $job->failed(new RuntimeException('worker timeout'));
+
+    expect($task->fresh()->status)->toBe('FAILED')
+        ->and($task->devices()->wherePivot('status', 'FAILED')->count())->toBe($devices->count());
+});
+
+it('dispatchJob creates a sequential chain of one job per chunk', function () {
     Bus::fake();
 
     $user = User::factory()->create();
@@ -204,19 +204,21 @@ it('dispatchJob creates one preprovision job per group with all chunks', functio
     ]);
     $task->devices()->attach($devices->pluck('id')->all(), ['status' => 'PENDING']);
 
-    (new TaskController())->dispatchJob($task->fresh());
+    (new TaskController)->dispatchJob($task->fresh());
 
     Bus::assertBatched(function ($batch): bool {
         if ($batch->jobs->count() !== 1) {
             return false;
         }
 
-        $job = $batch->jobs->first();
+        $chain = $batch->jobs->first();
+        if (! is_array($chain) || count($chain) !== 2) {
+            return false;
+        }
 
-        return $job instanceof PreprovisionDevicesToGroupJob
-            && $job->group_name === 'central-group'
-            && count($job->device_chunks) === 2
-            && count($job->device_chunks[0]) === 25
-            && count($job->device_chunks[1]) === 1;
+        return collect($chain)->every(fn ($job) => $job instanceof PreprovisionDevicesToGroupJob
+            && $job->group_name === 'central-group')
+            && count($chain[0]->devices) === 25
+            && count($chain[1]->devices) === 1;
     });
 });

@@ -29,7 +29,7 @@ beforeEach(function () {
     $this->actingAs($this->user);
 });
 
-test('PREPROVISION_DEVICE_TO_GROUP dispatches a single batch containing one job per group', function () {
+test('PREPROVISION_DEVICE_TO_GROUP dispatches a single batch containing a chain of chunk jobs', function () {
     Bus::fake();
 
     $devices = Device::factory(26)->create([
@@ -56,10 +56,15 @@ test('PREPROVISION_DEVICE_TO_GROUP dispatches a single batch containing one job 
             return false;
         }
 
-        $job = $batch->jobs->first();
+        $chain = $batch->jobs->first();
+        if (! is_array($chain) || count($chain) !== 2) {
+            return false;
+        }
 
-        return $job instanceof PreprovisionDevicesToGroupJob
-            && count($job->device_chunks) === 2;
+        return collect($chain)->every(fn ($job) => $job instanceof PreprovisionDevicesToGroupJob
+            && $job->group_name === 'central-group')
+            && count($chain[0]->devices) === 25
+            && count($chain[1]->devices) === 1;
     });
 });
 
@@ -94,7 +99,7 @@ test('MOVE_DEVICE_TO_GROUP dispatches a single batch containing every chunk job'
     });
 });
 
-test('ASSIGN_DEVICE_FUNCTION dispatches grouped chunks for each device function', function () {
+test('ASSIGN_DEVICE_FUNCTION dispatches a sequential chain of chunk jobs per device function', function () {
     Bus::fake();
 
     $accessDevices = Device::factory(26)->create([
@@ -124,23 +129,27 @@ test('ASSIGN_DEVICE_FUNCTION dispatches grouped chunks for each device function'
 
     Bus::assertBatchCount(1);
     Bus::assertBatched(function ($batch): bool {
-        if ($batch->jobs->count() !== 2) {
+        if ($batch->jobs->count() !== 1) {
             return false;
         }
 
-        if (! $batch->jobs->every(fn ($job) => $job instanceof AssignDeviceFunctionJob)) {
+        $chain = $batch->jobs->first();
+        if (! is_array($chain) || count($chain) !== 3) {
             return false;
         }
 
-        $byFunction = $batch->jobs->keyBy(fn ($job) => $job->device_function);
+        if (! collect($chain)->every(fn ($job) => $job instanceof AssignDeviceFunctionJob)) {
+            return false;
+        }
 
-        return $byFunction->has('ACCESS_SWITCH')
-            && $byFunction->has('CORE_SWITCH')
-            && count($byFunction['ACCESS_SWITCH']->device_chunks) === 2
-            && count($byFunction['ACCESS_SWITCH']->device_chunks[0]) === 25
-            && count($byFunction['ACCESS_SWITCH']->device_chunks[1]) === 1
-            && count($byFunction['CORE_SWITCH']->device_chunks) === 1
-            && count($byFunction['CORE_SWITCH']->device_chunks[0]) === 1;
+        $accessJobs = collect($chain)->filter(fn ($job) => $job->device_function === 'ACCESS_SWITCH')->values();
+        $coreJobs = collect($chain)->filter(fn ($job) => $job->device_function === 'CORE_SWITCH')->values();
+
+        return $accessJobs->count() === 2
+            && $coreJobs->count() === 1
+            && count($accessJobs[0]->devices) === 25
+            && count($accessJobs[1]->devices) === 1
+            && count($coreJobs[0]->devices) === 1;
     });
 });
 

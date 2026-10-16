@@ -15,9 +15,9 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
     /**
      * Create a new job instance.
      *
-     * @param  array<int, array<int, array{id: int, serial: string, name: string}>>  $device_chunks
+     * @param  array<int, array{id: int, serial: string, name: string}>  $devices
      */
-    public function __construct(public array $device_chunks, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
+    public function __construct(public array $devices, public string $group_name, public Task $task, public CentralAPIHelper $centralAPIHelper)
     {
         $this->initTaskTiming($task);
     }
@@ -32,20 +32,14 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
                 return;
             }
 
-            foreach ($this->device_chunks as $index => $devices) {
-                if ($index > 0) {
-                    sleep(self::BATCH_DELAY_SECONDS);
-                }
+            $devices = array_values($this->devices);
+            if ($devices === []) {
+                return;
+            }
 
-                $pendingDevices = $this->pendingDevicesInChunk($devices);
-                if ($pendingDevices === []) {
-                    continue;
-                }
-
-                $deviceSerials = array_map(fn ($device) => $device['serial'], $pendingDevices);
-                if (! $this->preprovisionChunk($pendingDevices, $deviceSerials)) {
-                    return;
-                }
+            $deviceSerials = array_map(fn ($device) => $device['serial'], $devices);
+            if (! $this->preprovisionChunk($devices, $deviceSerials)) {
+                return;
             }
 
             $this->task->load('devices');
@@ -62,7 +56,7 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
             $message = "\nFailed to preprovision devices to group. Could not load groups from Central.";
             Log::error($groups_result['error']);
             $this->task->processTaskStatusLog($message);
-            $this->markAllDevicesFailed();
+            $this->markJobDevicesFailed();
             $this->failTask('Failed preprovisioning devices to group.');
 
             return false;
@@ -72,7 +66,7 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
             $message = "\nGroup not found in Central. Double check the group name.";
             Log::error($message);
             $this->task->processTaskStatusLog($message);
-            $this->markAllDevicesFailed();
+            $this->markJobDevicesFailed();
             $this->failTask('Failed preprovisioning devices to group.');
 
             return false;
@@ -134,28 +128,25 @@ class PreprovisionDevicesToGroupJob extends BaseTaskJob
         return true;
     }
 
-    /**
-     * @param  array<int, array{id: int, serial: string, name: string}>  $devices
-     * @return array<int, array{id: int, serial: string, name: string}>
-     */
-    private function pendingDevicesInChunk(array $devices): array
+    private function markJobDevicesFailed(): void
     {
-        $this->task->load('devices');
-        $pendingIds = $this->task->devices
-            ->filter(fn ($device) => $device->pivot->status === 'PENDING')
-            ->pluck('id')
-            ->all();
-
-        return array_values(array_filter(
-            $devices,
-            fn (array $device): bool => in_array($device['id'], $pendingIds, true)
-        ));
+        foreach ($this->devices as $device) {
+            $this->markDeviceFailed($device['id']);
+        }
     }
 
     public function failed(?Throwable $exception): void
     {
         $this->logFailedException($exception);
-        $this->markAllDevicesFailed();
+        $this->markJobDevicesFailed();
+
+        if ($this->allTaskDevicesFailed()) {
+            $this->task->update(['status' => 'FAILED']);
+            $this->task->processTaskStatusLog('Failed preprovisioning devices to group. Task timed out or failed.');
+
+            return;
+        }
+
         $this->failTask('Failed preprovisioning devices to group. Task timed out or failed.');
     }
 }

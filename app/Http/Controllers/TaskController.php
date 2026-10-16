@@ -3297,12 +3297,22 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $devices_by_group = $in_progress->groupBy('group');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_group);
-                $devices_by_group_jobs = array_map(
-                    fn (array $chunks, string $group) => new PreprovisionDevicesToGroupJob($chunks, $group, $task, $centralAPIHelper),
-                    $chunked_devices_by_group_with_keys['chunked_devices_by_group'],
-                    $chunked_devices_by_group_with_keys['keys']
-                );
-                $jobs[] = $devices_by_group_jobs;
+                $orderedChunkJobs = [];
+                foreach ($chunked_devices_by_group_with_keys['keys'] as $group) {
+                    $chunks = $chunked_devices_by_group_with_keys['chunked_devices_by_group'][$group] ?? [];
+                    foreach ($chunks as $chunk) {
+                        $orderedChunkJobs[] = new PreprovisionDevicesToGroupJob(
+                            array_values($chunk),
+                            $group,
+                            $task,
+                            $centralAPIHelper,
+                        );
+                    }
+                }
+                if ($orderedChunkJobs !== []) {
+                    // Nested array => one Bus batch containing a sequential chain of chunk jobs.
+                    $jobs[] = [$orderedChunkJobs];
+                }
                 break;
             case 'MOVE_DEVICE_TO_GROUP':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
@@ -3315,12 +3325,22 @@ class TaskController extends Controller
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
                 $devices_by_device_function = $in_progress->groupBy('device_function');
                 $chunked_devices_by_group_with_keys = $this->chunk_devices($devices_by_device_function);
-                $devices_by_device_function_jobs = array_map(
-                    fn (array $chunks, string $deviceFunction) => new AssignDeviceFunctionJob($chunks, $deviceFunction, $task, $centralAPIHelper),
-                    $chunked_devices_by_group_with_keys['chunked_devices_by_group'],
-                    $chunked_devices_by_group_with_keys['keys']
-                );
-                $jobs[] = $devices_by_device_function_jobs;
+                $orderedChunkJobs = [];
+                foreach ($chunked_devices_by_group_with_keys['keys'] as $deviceFunction) {
+                    $chunks = $chunked_devices_by_group_with_keys['chunked_devices_by_group'][$deviceFunction] ?? [];
+                    foreach ($chunks as $chunk) {
+                        $orderedChunkJobs[] = new AssignDeviceFunctionJob(
+                            array_values($chunk),
+                            $deviceFunction,
+                            $task,
+                            $centralAPIHelper,
+                        );
+                    }
+                }
+                if ($orderedChunkJobs !== []) {
+                    // Nested array => one Bus batch containing a sequential chain of chunk jobs.
+                    $jobs[] = [$orderedChunkJobs];
+                }
                 break;
             case 'ASSOCIATE_DEVICE_TO_SITE':
                 $in_progress = $task->devices->filter(fn ($device) => $device->pivot->status !== 'COMPLETED');
