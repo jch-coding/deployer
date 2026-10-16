@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Actions\Provisioning\AddDevicesToGreenLakeInventoryAction;
 use App\Actions\Provisioning\AssignDeviceFunctionAction;
 use App\Actions\Provisioning\AssociateDeviceToSiteAction;
 use App\Actions\Provisioning\ClearLocalOverridesAction;
@@ -9,8 +10,10 @@ use App\Actions\Provisioning\ConfigureDeviceEthernetInterfacesAction;
 use App\Actions\Provisioning\ConfigureDeviceLagInterfacesAction;
 use App\Actions\Provisioning\ConfigureDeviceVlanInterfacesAction;
 use App\Actions\Provisioning\ConfigureMirrorSessionAction;
+use App\Actions\Provisioning\CreateNetworkAliasAction;
 use App\Actions\Provisioning\CreateVsfProfileAction;
 use App\Actions\Provisioning\CreateVsxProfilePairAction;
+use App\Actions\Provisioning\ExportMacToCentralNacAction;
 use App\Actions\Provisioning\NameDeviceAction;
 use App\Actions\Provisioning\PreprovisionDeviceToGroupAction;
 use App\Actions\Provisioning\ResolveDeviceScopeIdAction;
@@ -18,6 +21,7 @@ use App\Actions\Provisioning\VerifyAndAssignLicensingAction;
 use App\Actions\Provisioning\WaitForVsfStackScopeAction;
 use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
+use App\Helper\GreenLakeAPIHelper;
 use App\Models\Device;
 use App\Models\ProvisioningWorkflowDevice;
 
@@ -38,6 +42,9 @@ class ProvisioningStepRunner
         private readonly ConfigureDeviceEthernetInterfacesAction $configureDeviceEthernetInterfacesAction,
         private readonly ConfigureMirrorSessionAction $configureMirrorSessionAction,
         private readonly ClearLocalOverridesAction $clearLocalOverridesAction,
+        private readonly AddDevicesToGreenLakeInventoryAction $addDevicesToGreenLakeInventoryAction,
+        private readonly ExportMacToCentralNacAction $exportMacToCentralNacAction,
+        private readonly CreateNetworkAliasAction $createNetworkAliasAction,
         private readonly ClassicDeviceOnlineService $classicDeviceOnlineService,
         private readonly ProvisioningVsxCoordinator $vsxCoordinator,
     ) {}
@@ -85,6 +92,20 @@ class ProvisioningStepRunner
                 $context->mirrorFallbackMode,
             ),
             ProvisioningStep::ClearLocalOverrides => $this->clearLocalOverridesAction->execute($device, $centralAPIHelper),
+            ProvisioningStep::AddToGreenLakeInventory => $this->addDevicesToGreenLakeInventoryAction->execute(
+                $device,
+                new GreenLakeAPIHelper($client),
+                $context->greenlakeConfig,
+            ),
+            ProvisioningStep::ExportMacToCentralNac => $this->exportMacToCentralNacAction->execute(
+                $device,
+                $centralAPIHelper,
+                $context->centralStaticTags,
+            ),
+            ProvisioningStep::CreateNetworkAlias => $this->createNetworkAliasAction->execute(
+                $workflowDevice->workflow,
+                $centralAPIHelper,
+            ),
         };
     }
 

@@ -73,6 +73,9 @@ class ProvisioningWorkflowController extends Controller
             'devices' => ['nullable', 'array'],
             'devices.*.id' => ['nullable', 'integer'],
             'devices.*.name' => ['nullable', 'string', 'max:255'],
+            'site_name' => ['nullable', 'string', 'max:255'],
+            'site_scope_id' => ['nullable', 'string', 'max:255'],
+            'network_ipv4_address' => ['nullable', 'string', 'max:255'],
         ]);
 
         if (isset($validated['steps'])) {
@@ -125,6 +128,20 @@ class ProvisioningWorkflowController extends Controller
             'preflight_results' => ['nullable', 'array'],
             'query_central_for_online' => ['nullable', 'boolean'],
             'only_update_different_names' => ['nullable', 'boolean'],
+            'greenlake_location_id' => ['nullable', 'string', 'max:255'],
+            'greenlake_application_id' => ['nullable', 'string', 'max:255'],
+            'greenlake_application_region' => ['nullable', 'string', 'max:255'],
+            'greenlake_tags' => ['nullable', 'array'],
+            'greenlake_tags.*.key' => ['nullable', 'string', 'max:255'],
+            'greenlake_tags.*.value' => ['nullable', 'string', 'max:255'],
+            'tags' => ['nullable', 'array'],
+            'tags.*.key' => ['nullable', 'string', 'max:255'],
+            'tags.*.value' => ['nullable', 'string', 'max:255'],
+            'static_tags' => ['nullable', 'array'],
+            'static_tags.*' => ['nullable', 'string', 'max:255'],
+            'site_name' => ['nullable', 'string', 'max:255'],
+            'site_scope_id' => ['nullable', 'string', 'max:255'],
+            'network_ipv4_address' => ['nullable', 'string', 'max:255'],
         ]);
 
         if (isset($validated['scheduled_at']) && ! isset($validated['steps'])) {
@@ -288,6 +305,20 @@ class ProvisioningWorkflowController extends Controller
             'devices.*.license_tag' => ['nullable', 'string'],
             'devices.*.license_type' => ['nullable', 'string'],
             'only_update_different_names' => ['nullable', 'boolean'],
+            'greenlake_location_id' => ['nullable', 'string', 'max:255'],
+            'greenlake_application_id' => ['nullable', 'string', 'max:255'],
+            'greenlake_application_region' => ['nullable', 'string', 'max:255'],
+            'greenlake_tags' => ['nullable', 'array'],
+            'greenlake_tags.*.key' => ['nullable', 'string', 'max:255'],
+            'greenlake_tags.*.value' => ['nullable', 'string', 'max:255'],
+            'tags' => ['nullable', 'array'],
+            'tags.*.key' => ['nullable', 'string', 'max:255'],
+            'tags.*.value' => ['nullable', 'string', 'max:255'],
+            'static_tags' => ['nullable', 'array'],
+            'static_tags.*' => ['nullable', 'string', 'max:255'],
+            'site_name' => ['nullable', 'string', 'max:255'],
+            'site_scope_id' => ['nullable', 'string', 'max:255'],
+            'network_ipv4_address' => ['nullable', 'string', 'max:255'],
         ]);
 
         try {
@@ -393,7 +424,9 @@ class ProvisioningWorkflowController extends Controller
                 ])->values(),
             ],
             'workflow' => $workflow ? $workflowService->serializeForUi($workflow) : null,
-            'available_steps' => $workflowService->availableStepsForUi(),
+            'available_steps' => $workflowService->availableStepsForUi(
+                includeCustomCatalogue: $includeTemplates,
+            ),
             'selected_device_ids' => $this->parseSelectedDeviceIds($request),
             'license_tags' => $licensingOptions['license_tags'] ?? [],
             'available_subscriptions' => $licensingOptions['available_subscriptions'] ?? [],
@@ -405,6 +438,13 @@ class ProvisioningWorkflowController extends Controller
             'licensing_error' => $licensingOptions['central_error'] ?? null,
             'has_classic_webhook_secret' => filled($client?->classic_webhook_secret),
             'has_classic_streaming_credentials' => (bool) $client?->hasClassicStreamingCredentials(),
+            'central_sites' => [],
+            'central_sites_error' => null,
+            'central_mac_registrations_cache' => [
+                'refreshed_at' => null,
+                'error' => null,
+                'available_static_tags' => [],
+            ],
         ];
 
         if ($includeTemplates) {
@@ -418,6 +458,20 @@ class ProvisioningWorkflowController extends Controller
                     'steps' => $template->steps,
                 ])
                 ->values();
+
+            if ($client && (int) $client->id === (int) $deployment->client_id) {
+                try {
+                    $centralScopeCacheService = app(\App\Services\CentralScopeCacheService::class);
+                    $sitesPayload = $centralScopeCacheService->getSites($client);
+                    $props['central_sites'] = $sitesPayload['sites'];
+                    $props['central_sites_error'] = $sitesPayload['error'];
+                    $cacheMeta = $centralScopeCacheService->getCacheMetadata($client);
+                    $props['central_mac_registrations_cache'] = $cacheMeta['central_mac_registrations_cache']
+                        ?? $props['central_mac_registrations_cache'];
+                } catch (\Throwable) {
+                    $props['central_sites_error'] = 'Failed to load Central sites.';
+                }
+            }
         }
 
         return Inertia::render($component, $props);

@@ -22,6 +22,9 @@ enum ProvisioningStep: string
     case ConfigureEthernetInterfaces = 'configure_ethernet_interfaces';
     case ConfigureMirrorSessions = 'configure_mirror_sessions';
     case ClearLocalOverrides = 'clear_local_overrides';
+    case AddToGreenLakeInventory = 'add_to_greenlake_inventory';
+    case ExportMacToCentralNac = 'export_mac_to_central_nac';
+    case CreateNetworkAlias = 'create_network_alias';
 
     public function label(): string
     {
@@ -40,6 +43,9 @@ enum ProvisioningStep: string
             self::ConfigureEthernetInterfaces => 'Configure ethernet interfaces',
             self::ConfigureMirrorSessions => 'Configure mirror sessions',
             self::ClearLocalOverrides => 'Clear local overrides',
+            self::AddToGreenLakeInventory => 'Add to GreenLake inventory',
+            self::ExportMacToCentralNac => 'Export MAC to Central NAC',
+            self::CreateNetworkAlias => 'Create network alias',
         };
     }
 
@@ -60,7 +66,39 @@ enum ProvisioningStep: string
             self::ConfigureEthernetInterfaces => 12,
             self::ConfigureMirrorSessions => 13,
             self::ClearLocalOverrides => 14,
+            self::AddToGreenLakeInventory => 15,
+            self::ExportMacToCentralNac => 16,
+            self::CreateNetworkAlias => 17,
         };
+    }
+
+    /**
+     * Steps that still apply to APs even when ordered after name_device.
+     *
+     * @return list<self>
+     */
+    public static function apApplicableAfterNameDevice(): array
+    {
+        return self::customCatalogueOnly();
+    }
+
+    /**
+     * Steps available only in custom workflows (not the full Diva path).
+     *
+     * @return list<self>
+     */
+    public static function customCatalogueOnly(): array
+    {
+        return [
+            self::AddToGreenLakeInventory,
+            self::ExportMacToCentralNac,
+            self::CreateNetworkAlias,
+        ];
+    }
+
+    public function isCustomCatalogueOnly(): bool
+    {
+        return in_array($this, self::customCatalogueOnly(), true);
     }
 
     /**
@@ -76,7 +114,11 @@ enum ProvisioningStep: string
 
     public function shouldSkipForDevice(Device $device, ?ProvisioningStepContext $context = null): bool
     {
-        if (self::isApDevice($device) && $this->order() > self::NameDevice->order()) {
+        if (
+            self::isApDevice($device)
+            && $this->order() > self::NameDevice->order()
+            && ! in_array($this, self::apApplicableAfterNameDevice(), true)
+        ) {
             return true;
         }
 

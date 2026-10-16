@@ -153,6 +153,7 @@ function InProgressTaskCardView({ task }: { task: InProgressTaskCard }) {
                             open={appendOpen}
                             onOpenChange={setAppendOpen}
                             workflow={task.workflow}
+                            deploymentId={task.deployment_id}
                             reloadOnly={['in_progress_tasks']}
                         />
                     </>

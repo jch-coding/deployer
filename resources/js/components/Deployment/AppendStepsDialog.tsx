@@ -2,6 +2,11 @@ import { router } from '@inertiajs/react';
 import { ArrowDown, ArrowUp, Plus, Trash2, Workflow } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import CustomWorkflowCatalogueConfig, {
+    buildCatalogueConfigPayload,
+    type CentralSiteOption,
+    type GreenLakeTagRow,
+} from '@/components/Deployment/CustomWorkflowCatalogueConfig';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -35,14 +40,22 @@ type AppendStepsDialogProps = {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     workflow: AppendStepsWorkflowPayload;
+    deploymentId: number;
     reloadOnly?: string[];
+    centralSites?: CentralSiteOption[];
+    centralSitesError?: string | null;
+    availableStaticTags?: string[];
 };
 
 export default function AppendStepsDialog({
     open,
     onOpenChange,
     workflow,
+    deploymentId,
     reloadOnly,
+    centralSites = [],
+    centralSitesError = null,
+    availableStaticTags = [],
 }: AppendStepsDialogProps) {
     const existingSteps = workflow.steps ?? [];
     const appendable = workflow.appendable_steps ?? [];
@@ -52,6 +65,13 @@ export default function AppendStepsDialog({
     const [licenseType, setLicenseType] = useState('');
     const [onlyUpdateDifferentNames, setOnlyUpdateDifferentNames] =
         useState(false);
+    const [greenLakeLocationId, setGreenLakeLocationId] = useState('');
+    const [greenLakeServiceKey, setGreenLakeServiceKey] = useState('');
+    const [greenLakeTags, setGreenLakeTags] = useState<GreenLakeTagRow[]>([]);
+    const [centralStaticTags, setCentralStaticTags] = useState<string[]>([]);
+    const [networkAliasSiteScopeId, setNetworkAliasSiteScopeId] = useState('');
+    const [networkAliasIpv4Override, setNetworkAliasIpv4Override] =
+        useState('');
 
     const labelsByKey = useMemo(() => {
         const map: Record<string, string> = {};
@@ -79,11 +99,21 @@ export default function AppendStepsDialog({
     const showLicensingFields =
         Boolean(workflow.needs_licensing_for_append) && includesLicensing;
 
+    const selectedNetworkAliasSiteName =
+        centralSites.find((site) => site.scopeId === networkAliasSiteScopeId)
+            ?.name ?? '';
+
     const resetForm = () => {
         setSelectedSteps([]);
         setLicenseTag('');
         setLicenseType('');
         setOnlyUpdateDifferentNames(false);
+        setGreenLakeLocationId('');
+        setGreenLakeServiceKey('');
+        setGreenLakeTags([]);
+        setCentralStaticTags([]);
+        setNetworkAliasSiteScopeId('');
+        setNetworkAliasIpv4Override('');
         setSubmitting(false);
     };
 
@@ -129,14 +159,17 @@ export default function AppendStepsDialog({
             return;
         }
 
-        const payload: {
-            steps: string[];
-            only_update_different_names?: boolean;
-            licensing_mode?: string;
-            license_tag?: string;
-            license_type?: string;
-        } = {
+        const payload: Record<string, unknown> = {
             steps: selectedSteps,
+            ...buildCatalogueConfigPayload(selectedSteps, {
+                greenLakeLocationId,
+                greenLakeServiceKey,
+                greenLakeTags,
+                centralStaticTags,
+                networkAliasSiteScopeId,
+                networkAliasSiteName: selectedNetworkAliasSiteName,
+                networkAliasIpv4Override,
+            }),
         };
         if (includesNameDevice) {
             payload.only_update_different_names = onlyUpdateDifferentNames;
@@ -152,7 +185,7 @@ export default function AppendStepsDialog({
         }
 
         setSubmitting(true);
-        router.post(appendStepsWorkflow(workflow.id).url, payload, {
+        router.post(appendStepsWorkflow(workflow.id).url, payload as never, {
             preserveScroll: true,
             ...(reloadOnly ? { only: reloadOnly } : {}),
             onSuccess: () => {
@@ -173,7 +206,7 @@ export default function AppendStepsDialog({
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent
-                className="max-w-lg"
+                className="max-h-[90vh] max-w-lg overflow-y-auto"
                 data-test="append-custom-workflow-steps-dialog"
             >
                 <DialogTitle>Add steps</DialogTitle>
@@ -286,51 +319,50 @@ export default function AppendStepsDialog({
                                 onChange={(e) =>
                                     setOnlyUpdateDifferentNames(e.target.checked)
                                 }
-                                data-test="only-update-different-names"
                             />
-                            <span>
-                                Only update names that differ from Central
-                                <span className="block text-xs text-muted-foreground">
-                                    Queries Central system info first and skips
-                                    devices whose hostname already matches.
-                                    Devices that are not Up in Classic Central
-                                    are always marked failed.
-                                </span>
-                            </span>
+                            <span>Only update names that differ from Central</span>
                         </label>
                     ) : null}
 
                     {showLicensingFields ? (
-                        <div
-                            className="space-y-3 rounded-md border p-3"
-                            data-test="append-licensing-fields"
-                        >
+                        <div className="space-y-2 rounded-md border p-3">
                             <p className="text-sm font-medium">Licensing</p>
-                            <p className="text-xs text-muted-foreground">
-                                This run did not include licensing. Provide a
-                                license tag and type if devices are missing CSV
-                                licensing fields.
-                            </p>
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <Input
-                                    value={licenseTag}
-                                    onChange={(e) =>
-                                        setLicenseTag(e.target.value)
-                                    }
-                                    placeholder="License tag"
-                                    data-test="append-license-tag"
-                                />
-                                <Input
-                                    value={licenseType}
-                                    onChange={(e) =>
-                                        setLicenseType(e.target.value)
-                                    }
-                                    placeholder="License type"
-                                    data-test="append-license-type"
-                                />
-                            </div>
+                            <Input
+                                placeholder="License tag"
+                                value={licenseTag}
+                                onChange={(e) => setLicenseTag(e.target.value)}
+                            />
+                            <Input
+                                placeholder="License type"
+                                value={licenseType}
+                                onChange={(e) => setLicenseType(e.target.value)}
+                            />
                         </div>
                     ) : null}
+
+                    <CustomWorkflowCatalogueConfig
+                        deploymentId={deploymentId}
+                        selectedSteps={selectedSteps}
+                        centralSites={centralSites}
+                        centralSitesError={centralSitesError}
+                        availableStaticTags={availableStaticTags}
+                        greenLakeLocationId={greenLakeLocationId}
+                        onGreenLakeLocationIdChange={setGreenLakeLocationId}
+                        greenLakeServiceKey={greenLakeServiceKey}
+                        onGreenLakeServiceKeyChange={setGreenLakeServiceKey}
+                        greenLakeTags={greenLakeTags}
+                        onGreenLakeTagsChange={setGreenLakeTags}
+                        centralStaticTags={centralStaticTags}
+                        onCentralStaticTagsChange={setCentralStaticTags}
+                        networkAliasSiteScopeId={networkAliasSiteScopeId}
+                        onNetworkAliasSiteScopeIdChange={
+                            setNetworkAliasSiteScopeId
+                        }
+                        networkAliasIpv4Override={networkAliasIpv4Override}
+                        onNetworkAliasIpv4OverrideChange={
+                            setNetworkAliasIpv4Override
+                        }
+                    />
                 </div>
 
                 <DialogFooter>
@@ -345,12 +377,8 @@ export default function AppendStepsDialog({
                     <Button
                         type="button"
                         onClick={submit}
-                        disabled={
-                            selectedSteps.length === 0 ||
-                            Boolean(stepOrderError) ||
-                            submitting
-                        }
-                        data-test="confirm-append-workflow-steps"
+                        disabled={submitting || selectedSteps.length === 0}
+                        data-test="append-workflow-steps-submit"
                     >
                         <Plus className="mr-1 size-4" />
                         Append steps

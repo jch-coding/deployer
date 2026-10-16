@@ -2,14 +2,13 @@
 
 use App\DeviceFunction;
 use App\Enums\ProvisioningStep;
-use App\Helper\CentralAPIHelper;
 use App\Models\Device;
 use App\Services\Provisioning\ProvisioningStepContext;
 
 it('orders provisioning steps consistently', function () {
     $orders = array_map(fn (ProvisioningStep $step) => $step->order(), ProvisioningStep::ordered());
 
-    expect($orders)->toBe([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect($orders)->toBe([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
 });
 
 it('skips VSF stack wait for non SKU devices', function () {
@@ -47,6 +46,16 @@ it('skips post-naming steps for AP devices', function () {
     expect(ProvisioningStep::ConfigureVlanInterfaces->shouldSkipForDevice($device))->toBeTrue()
         ->and(ProvisioningStep::ConfigureMirrorSessions->shouldSkipForDevice($device))->toBeTrue()
         ->and(ProvisioningStep::NameDevice->shouldSkipForDevice($device))->toBeFalse();
+});
+
+it('does not skip catalogue steps for AP devices', function () {
+    $device = Device::factory()->make([
+        'device_function' => DeviceFunction::CAMPUS_AP->name,
+    ]);
+
+    expect(ProvisioningStep::AddToGreenLakeInventory->shouldSkipForDevice($device))->toBeFalse()
+        ->and(ProvisioningStep::ExportMacToCentralNac->shouldSkipForDevice($device))->toBeFalse()
+        ->and(ProvisioningStep::CreateNetworkAlias->shouldSkipForDevice($device))->toBeFalse();
 });
 
 it('skips name device step for APs with serial-default hostname', function () {

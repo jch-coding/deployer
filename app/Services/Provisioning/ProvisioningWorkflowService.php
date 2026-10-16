@@ -5,6 +5,7 @@ namespace App\Services\Provisioning;
 use App\Enums\OnlineDetectionMode;
 use App\Enums\ProvisioningStep;
 use App\Helper\CentralAPIHelper;
+use App\Helper\GreenLakeAPIHelper;
 use App\JobQueueShard;
 use App\LicenseType;
 use App\Models\Deployment;
@@ -16,6 +17,7 @@ use App\Models\Task;
 use App\Models\User;
 use App\Services\LicensingInventoryService;
 use App\Services\LicensingPoolResolver;
+use App\Support\NetworkAliasPayload;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -79,6 +81,14 @@ class ProvisioningWorkflowService
         if (! $isCustom) {
             $licensingConfig['start_step'] = $startStep->value;
             $licensingConfig['omit_steps'] = $omitSteps;
+        }
+        if ($isCustom) {
+            $licensingConfig = $this->mergeCatalogueStepConfigs(
+                $licensingConfig,
+                $options,
+                $stepKeys ?? [],
+                $deployment,
+            );
         }
 
         $deploymentTime = max(1, (int) ($options['deployment_time'] ?? 10));
@@ -199,6 +209,19 @@ class ProvisioningWorkflowService
                     }
                 } else {
                     foreach (ProvisioningStep::ordered() as $step) {
+                        if ($step->isCustomCatalogueOnly()) {
+                            ProvisioningWorkflowDeviceStep::query()->create([
+                                'provisioning_workflow_device_id' => $workflowDevice->id,
+                                'step_key' => $step->value,
+                                'step_order' => $step->order(),
+                                'status' => 'skipped',
+                                'message' => 'Skipped (custom workflow only).',
+                                'completed_at' => now(),
+                            ]);
+
+                            continue;
+                        }
+
                         [$status, $message] = $this->initialStepStatus(
                             $step,
                             $device,
@@ -445,15 +468,23 @@ class ProvisioningWorkflowService
     /**
      * @return list<array{step_key: string, label: string, order: int}>
      */
-    public function availableStepsForUi(): array
+    /**
+     * @return list<array{step_key: string, label: string, order: int}>
+     */
+    public function availableStepsForUi(bool $includeCustomCatalogue = true): array
     {
+        $steps = array_values(array_filter(
+            ProvisioningStep::ordered(),
+            fn (ProvisioningStep $step): bool => $includeCustomCatalogue || ! $step->isCustomCatalogueOnly(),
+        ));
+
         return array_map(
             fn (ProvisioningStep $step) => [
                 'step_key' => $step->value,
                 'label' => $step->label(),
                 'order' => $step->order(),
             ],
-            ProvisioningStep::ordered(),
+            $steps,
         );
     }
 
@@ -751,6 +782,17 @@ class ProvisioningWorkflowService
             $shouldUpdateLicensingConfig = true;
         }
 
+        $beforeCatalogue = $licensingConfig;
+        $licensingConfig = $this->mergeCatalogueStepConfigs(
+            $licensingConfig,
+            $options,
+            $newKeys,
+            $workflow->deployment,
+        );
+        if ($licensingConfig !== $beforeCatalogue) {
+            $shouldUpdateLicensingConfig = true;
+        }
+
         $originalStatus = $workflow->status;
         $shouldDispatch = in_array($originalStatus, ['running', 'completed'], true);
         $stepContext = ProvisioningStepContext::forWorkflow($workflow);
@@ -972,6 +1014,215 @@ class ProvisioningWorkflowService
         $licensingConfig = is_array($workflow->licensing_config) ? $workflow->licensing_config : [];
 
         return ($licensingConfig['mode'] ?? null) === 'skipped';
+    }
+
+    /**
+     * Merge GreenLake / CNAC / network-alias options into licensing_config when those steps are selected.
+     *
+     * @param  array<string, mixed>  $licensingConfig
+     * @param  array<string, mixed>  $options
+     * @param  list<string>  $stepKeys
+     * @return array<string, mixed>
+     */
+    public function mergeCatalogueStepConfigs(
+        array $licensingConfig,
+        array $options,
+        array $stepKeys,
+        Deployment $deployment,
+    ): array {
+        $deployment->loadMissing('client');
+        $client = $deployment->client;
+
+        if (in_array(ProvisioningStep::AddToGreenLakeInventory->value, $stepKeys, true)) {
+            $licensingConfig['greenlake'] = $this->buildGreenLakeStepConfig($options, $client);
+        }
+
+        if (in_array(ProvisioningStep::ExportMacToCentralNac->value, $stepKeys, true)) {
+            $licensingConfig['central_static_tags'] = $this->normalizeCentralStaticTags(
+                is_array($options['static_tags'] ?? null) ? $options['static_tags'] : []
+            ) ?? [];
+        }
+
+        if (in_array(ProvisioningStep::CreateNetworkAlias->value, $stepKeys, true)) {
+            $licensingConfig['network_alias'] = $this->buildNetworkAliasStepConfig($options);
+        }
+
+        return $licensingConfig;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array{
+     *     location_id: string|null,
+     *     location_name: string|null,
+     *     application_id: string|null,
+     *     application_region: string|null,
+     *     application_name: string|null,
+     *     tags: array<string, string>|null
+     * }
+     */
+    private function buildGreenLakeStepConfig(array $options, mixed $client): array
+    {
+        $tags = $this->normalizeGreenLakeDeviceTags(
+            is_array($options['greenlake_tags'] ?? null)
+                ? $options['greenlake_tags']
+                : (is_array($options['tags'] ?? null) ? $options['tags'] : [])
+        );
+
+        $locationId = trim((string) ($options['greenlake_location_id'] ?? ''));
+        $locationName = null;
+        if ($locationId !== '') {
+            if ($client === null) {
+                throw ValidationException::withMessages([
+                    'greenlake_location_id' => 'Could not resolve client for GreenLake location validation.',
+                ]);
+            }
+            $locations = (new GreenLakeAPIHelper($client))->collectLocations();
+            if (GreenLakeAPIHelper::isCollectError($locations)) {
+                throw ValidationException::withMessages([
+                    'greenlake_location_id' => (string) ($locations['error'] ?? 'Failed to load GreenLake locations.'),
+                ]);
+            }
+            $match = collect($locations)->first(
+                fn (array $location): bool => ($location['id'] ?? '') === $locationId
+            );
+            if ($match === null) {
+                throw ValidationException::withMessages([
+                    'greenlake_location_id' => 'Selected GreenLake location was not found in this workspace.',
+                ]);
+            }
+            $locationName = (string) ($match['name'] ?? $locationId);
+        }
+
+        $applicationId = trim((string) ($options['greenlake_application_id'] ?? ''));
+        $applicationRegion = trim((string) ($options['greenlake_application_region'] ?? ''));
+        $applicationName = null;
+        if ($applicationId !== '' || $applicationRegion !== '') {
+            if ($applicationId === '' || $applicationRegion === '') {
+                throw ValidationException::withMessages([
+                    'greenlake_application_id' => 'GreenLake application id and region are both required when assigning a service.',
+                ]);
+            }
+            if ($client === null) {
+                throw ValidationException::withMessages([
+                    'greenlake_application_id' => 'Could not resolve client for GreenLake service validation.',
+                ]);
+            }
+            $serviceRegions = (new GreenLakeAPIHelper($client))->collectProvisionedServiceRegions();
+            if (GreenLakeAPIHelper::isCollectError($serviceRegions)) {
+                throw ValidationException::withMessages([
+                    'greenlake_application_id' => (string) ($serviceRegions['error'] ?? 'Failed to load GreenLake services.'),
+                ]);
+            }
+            $match = collect($serviceRegions)->first(
+                fn (array $row): bool => ($row['application_id'] ?? '') === $applicationId
+                    && ($row['region'] ?? '') === $applicationRegion
+            );
+            if ($match === null) {
+                throw ValidationException::withMessages([
+                    'greenlake_application_id' => 'Selected GreenLake service was not found in this workspace.',
+                ]);
+            }
+            $applicationName = (string) ($match['name'] ?? "{$applicationId} ({$applicationRegion})");
+        }
+
+        return [
+            'location_id' => $locationId !== '' ? $locationId : null,
+            'location_name' => $locationName,
+            'application_id' => $applicationId !== '' ? $applicationId : null,
+            'application_region' => $applicationRegion !== '' ? $applicationRegion : null,
+            'application_name' => $applicationName,
+            'tags' => $tags,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array{
+     *     site_name: string,
+     *     site_scope_id: string,
+     *     network_ipv4_address: string,
+     *     alias_name: string,
+     *     status: null,
+     *     message: null
+     * }
+     */
+    private function buildNetworkAliasStepConfig(array $options): array
+    {
+        $siteName = trim((string) ($options['site_name'] ?? ''));
+        $scopeId = trim((string) ($options['site_scope_id'] ?? ''));
+        if ($siteName === '' || $scopeId === '') {
+            throw ValidationException::withMessages([
+                'site_scope_id' => 'Select a Central site for network alias creation.',
+            ]);
+        }
+
+        $override = trim((string) ($options['network_ipv4_address'] ?? ''));
+        $networkIpv4 = NetworkAliasPayload::resolveNetworkIpv4Address(
+            $siteName,
+            $override !== '' ? $override : null,
+        );
+        if ($networkIpv4 === null || $networkIpv4 === '') {
+            throw ValidationException::withMessages([
+                'network_ipv4_address' => 'Could not resolve a network IPv4 address from the site name. Provide an override CIDR.',
+            ]);
+        }
+
+        return [
+            'site_name' => $siteName,
+            'site_scope_id' => $scopeId,
+            'network_ipv4_address' => $networkIpv4,
+            'alias_name' => NetworkAliasPayload::ALIAS_NAME,
+            'status' => null,
+            'message' => null,
+        ];
+    }
+
+    /**
+     * @param  list<mixed>  $rows
+     * @return list<string>|null
+     */
+    private function normalizeCentralStaticTags(array $rows): ?array
+    {
+        $tags = [];
+        foreach ($rows as $row) {
+            if (! is_scalar($row)) {
+                continue;
+            }
+            $tag = trim((string) $row);
+            if ($tag === '' || in_array($tag, $tags, true)) {
+                continue;
+            }
+            $tags[] = $tag;
+        }
+
+        return $tags === [] ? null : $tags;
+    }
+
+    /**
+     * @param  list<mixed>  $rows
+     * @return array<string, string>|null
+     */
+    private function normalizeGreenLakeDeviceTags(array $rows): ?array
+    {
+        $tags = [];
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $key = trim((string) ($row['key'] ?? ''));
+            if ($key === '') {
+                continue;
+            }
+            if (array_key_exists($key, $tags)) {
+                throw ValidationException::withMessages([
+                    "greenlake_tags.{$index}.key" => "Duplicate tag key \"{$key}\".",
+                ]);
+            }
+            $tags[$key] = trim((string) ($row['value'] ?? ''));
+        }
+
+        return $tags === [] ? null : $tags;
     }
 
     /**

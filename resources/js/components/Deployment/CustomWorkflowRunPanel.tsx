@@ -238,6 +238,7 @@ export default function CustomWorkflowRunPanel({
                     open={appendOpen}
                     onOpenChange={setAppendOpen}
                     workflow={workflow}
+                    deploymentId={deploymentId}
                 />
             ) : null}
         </div>

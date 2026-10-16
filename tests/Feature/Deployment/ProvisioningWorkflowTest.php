@@ -1003,7 +1003,53 @@ it('keeps the diva path unchanged when steps are omitted', function () {
     $workflow = ProvisioningWorkflow::query()->first();
     expect($workflow->steps)->toBeNull()
         ->and($workflow->name)->toBeNull()
-        ->and($workflow->workflowDevices()->first()->steps)->toHaveCount(14);
+        ->and($workflow->workflowDevices()->first()->steps)->toHaveCount(count(ProvisioningStep::cases()));
+
+    $catalogueStatuses = $workflow->workflowDevices()->first()->steps()
+        ->whereIn('step_key', array_map(
+            fn (ProvisioningStep $step) => $step->value,
+            ProvisioningStep::customCatalogueOnly(),
+        ))
+        ->pluck('status')
+        ->unique()
+        ->values()
+        ->all();
+    expect($catalogueStatuses)->toBe(['skipped']);
+});
+
+it('stores catalogue step config on a custom workflow', function () {
+    Queue::fake();
+    $device = provisionLicensedDevice($this->deployment, $this->client, [
+        'mac_address' => 'aa:bb:cc:dd:ee:10',
+    ]);
+    $this->actingAs($this->user);
+
+    $response = $this->post(route('deployments.provision.store', $this->deployment), [
+        'device_ids' => [$device->id],
+        'deployment_time' => 10,
+        'wait_time' => 1,
+        'steps' => [
+            ProvisioningStep::ExportMacToCentralNac->value,
+            ProvisioningStep::CreateNetworkAlias->value,
+        ],
+        'static_tags' => ['campus', 'lab'],
+        'site_name' => '07 - Boulder',
+        'site_scope_id' => 'scope-boulder',
+        'name' => 'Catalogue steps',
+    ]);
+
+    $task = Task::query()->where('task_type', 'CUSTOM_PROVISION')->latest('id')->first();
+    $response->assertRedirect(route('tasks.show', $task));
+
+    $workflow = ProvisioningWorkflow::query()->first();
+    expect($workflow->steps)->toBe([
+        ProvisioningStep::ExportMacToCentralNac->value,
+        ProvisioningStep::CreateNetworkAlias->value,
+    ])
+        ->and($workflow->licensing_config['central_static_tags'])->toBe(['campus', 'lab'])
+        ->and($workflow->licensing_config['network_alias']['site_name'])->toBe('07 - Boulder')
+        ->and($workflow->licensing_config['network_alias']['site_scope_id'])->toBe('scope-boulder')
+        ->and($workflow->licensing_config['network_alias']['network_ipv4_address'])->toBe('10.7.9.0/24');
 });
 
 it('skips wait_for_online when an accepted webhook exists for the device', function () {

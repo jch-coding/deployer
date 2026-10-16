@@ -7,6 +7,8 @@ use App\Helper\CentralAPIHelper;
 use App\Models\Deployment;
 use App\Models\Device;
 use App\Models\LicensingInventoryDevice;
+use App\Support\MacAddress;
+use App\Support\NetworkAliasPayload;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -54,10 +56,27 @@ class ProvisioningPreflightService
         }
 
         $provisioningNames = $this->provisioningNamesFromOptions($options);
+        $siteName = trim((string) ($options['site_name'] ?? ''));
+        $scopeId = trim((string) ($options['site_scope_id'] ?? ''));
+        $networkOverride = trim((string) ($options['network_ipv4_address'] ?? ''));
+        $resolvedNetwork = $siteName !== ''
+            ? (NetworkAliasPayload::resolveNetworkIpv4Address(
+                $siteName,
+                $networkOverride !== '' ? $networkOverride : null,
+            ) ?? '')
+            : '';
         $stepContext = new ProvisioningStepContext(
             CentralAPIHelper::deploymentUsesVsxFallbackMode($devices),
             CentralAPIHelper::deploymentUsesMirrorFallbackMode($devices),
             $provisioningNames,
+            onlyUpdateDifferentNames: false,
+            greenlakeConfig: [],
+            centralStaticTags: [],
+            networkAliasConfig: [
+                'site_name' => $siteName !== '' ? $siteName : null,
+                'site_scope_id' => $scopeId !== '' ? $scopeId : null,
+                'network_ipv4_address' => $resolvedNetwork !== '' ? $resolvedNetwork : null,
+            ],
         );
 
         $deployment->loadMissing('client');
@@ -178,7 +197,77 @@ class ProvisioningPreflightService
                 'message' => 'No prerequisite check in this version; continuing may fail later.',
                 'remediation' => null,
             ],
+            ProvisioningStep::AddToGreenLakeInventory => $this->checkMacAddress(
+                $device,
+                'ADD_DEVICES_TO_GREENLAKE_INVENTORY',
+                'Add devices to GreenLake inventory',
+                ['greenlake'],
+            ),
+            ProvisioningStep::ExportMacToCentralNac => $this->checkMacAddress(
+                $device,
+                'EXPORT_MAC_ADDRESSES_TO_CENTRAL',
+                'Export MAC addresses to Central',
+                ['cnac'],
+            ),
+            ProvisioningStep::CreateNetworkAlias => $this->checkNetworkAliasConfig($context),
         };
+    }
+
+    /**
+     * @param  list<string>  $remediationOptions
+     * @return array{status: string, message: string, remediation: ?array{task_type: string, label: string, options: list<string>}}
+     */
+    private function checkMacAddress(
+        Device $device,
+        string $taskType,
+        string $label,
+        array $remediationOptions,
+    ): array {
+        if (MacAddress::toCentralCsvFormat((string) ($device->mac_address ?? '')) === null) {
+            return $this->warn(
+                "Device {$device->serial} is missing or has an invalid mac_address.",
+                $taskType,
+                $label,
+                $remediationOptions,
+            );
+        }
+
+        return $this->ok('Device has a valid MAC address.');
+    }
+
+    /**
+     * @return array{status: string, message: string, remediation: ?array{task_type: string, label: string, options: list<string>}}
+     */
+    private function checkNetworkAliasConfig(ProvisioningStepContext $context): array
+    {
+        $config = $context->networkAliasConfig;
+        $siteName = trim((string) ($config['site_name'] ?? ''));
+        $scopeId = trim((string) ($config['site_scope_id'] ?? ''));
+        $networkIpv4 = trim((string) ($config['network_ipv4_address'] ?? ''));
+
+        if ($siteName === '' || $scopeId === '') {
+            return $this->warn(
+                'Select a Central site for network alias creation.',
+                'CREATE_NETWORK_ALIAS',
+                'Create network alias',
+                ['network_alias'],
+            );
+        }
+
+        if ($networkIpv4 === '') {
+            $networkIpv4 = (string) (NetworkAliasPayload::resolveNetworkIpv4Address($siteName) ?? '');
+        }
+
+        if ($networkIpv4 === '') {
+            return $this->warn(
+                'Could not resolve a network IPv4 address. Provide an override CIDR.',
+                'CREATE_NETWORK_ALIAS',
+                'Create network alias',
+                ['network_alias'],
+            );
+        }
+
+        return $this->ok("Network alias will use {$networkIpv4} at {$siteName}.");
     }
 
     /**
