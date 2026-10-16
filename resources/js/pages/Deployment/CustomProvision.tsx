@@ -12,6 +12,10 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { AvailableSubscription } from '@/components/licensing/LicenseSelect';
+import CustomWorkflowCatalogueConfig, {
+    buildCatalogueConfigPayload,
+    type GreenLakeTagRow,
+} from '@/components/Deployment/CustomWorkflowCatalogueConfig';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -66,6 +70,17 @@ type WorkflowTemplate = {
     steps: string[];
 };
 
+type CentralSiteOption = {
+    scopeId: string;
+    name: string;
+};
+
+type CentralMacRegistrationsCache = {
+    refreshed_at?: string | null;
+    error?: string | null;
+    available_static_tags?: string[];
+};
+
 type CustomProvisionPageProps = SharedData & {
     deployment: {
         id: number;
@@ -81,6 +96,9 @@ type CustomProvisionPageProps = SharedData & {
     selected_device_ids?: number[];
     has_classic_webhook_secret?: boolean;
     has_classic_streaming_credentials?: boolean;
+    central_sites?: CentralSiteOption[];
+    central_sites_error?: string | null;
+    central_mac_registrations_cache?: CentralMacRegistrationsCache;
 };
 
 type PreflightStepResult = {
@@ -161,6 +179,11 @@ export default function CustomProvision() {
         selected_device_ids: selectedDeviceIdsProp = [],
         has_classic_webhook_secret: hasClassicWebhookSecret = false,
         has_classic_streaming_credentials: hasClassicStreamingCredentials = false,
+        central_sites: centralSites = [],
+        central_sites_error: centralSitesError = null,
+        central_mac_registrations_cache: centralMacRegistrationsCache = {
+            available_static_tags: [],
+        },
     } = usePage<CustomProvisionPageProps>().props;
 
     const labelsByKey = useMemo(() => {
@@ -210,6 +233,13 @@ export default function CustomProvision() {
         useState<PreflightPayload | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const [greenLakeLocationId, setGreenLakeLocationId] = useState('');
+    const [greenLakeServiceKey, setGreenLakeServiceKey] = useState('');
+    const [greenLakeTags, setGreenLakeTags] = useState<GreenLakeTagRow[]>([]);
+    const [centralStaticTags, setCentralStaticTags] = useState<string[]>([]);
+    const [networkAliasSiteScopeId, setNetworkAliasSiteScopeId] = useState('');
+    const [networkAliasIpv4Override, setNetworkAliasIpv4Override] =
+        useState('');
 
     useEffect(() => {
         if (flash?.success) {
@@ -250,6 +280,14 @@ export default function CustomProvision() {
     const includesLicensing = selectedSteps.includes('verify_licensing');
     const includesNameDevice = selectedSteps.includes('name_device');
     const includesWaitOnline = selectedSteps.includes('wait_for_online');
+
+    const selectedNetworkAliasSiteName = useMemo(
+        () =>
+            centralSites.find(
+                (site) => site.scopeId === networkAliasSiteScopeId,
+            )?.name ?? '',
+        [centralSites, networkAliasSiteScopeId],
+    );
     const isScheduling = scheduledAtLocal.trim() !== '';
     const scheduledEndPreview = useMemo(() => {
         if (!isScheduling) {
@@ -413,6 +451,19 @@ export default function CustomProvision() {
             payload.license_type = uniformLicenseType;
         }
 
+        Object.assign(
+            payload,
+            buildCatalogueConfigPayload(selectedSteps, {
+                greenLakeLocationId,
+                greenLakeServiceKey,
+                greenLakeTags,
+                centralStaticTags,
+                networkAliasSiteScopeId,
+                networkAliasSiteName: selectedNetworkAliasSiteName,
+                networkAliasIpv4Override,
+            }),
+        );
+
         const devicesPayload = buildDevicesPayload();
         if (devicesPayload.length > 0) {
             payload.devices = devicesPayload;
@@ -455,6 +506,15 @@ export default function CustomProvision() {
                     steps: selectedSteps,
                     devices:
                         devicesPayload.length > 0 ? devicesPayload : undefined,
+                    ...buildCatalogueConfigPayload(selectedSteps, {
+                        greenLakeLocationId,
+                        greenLakeServiceKey,
+                        greenLakeTags,
+                        centralStaticTags,
+                        networkAliasSiteScopeId,
+                        networkAliasSiteName: selectedNetworkAliasSiteName,
+                        networkAliasIpv4Override,
+                    }),
                 }),
             });
 
@@ -1081,6 +1141,43 @@ export default function CustomProvision() {
                                         </span>
                                     </label>
                                 ) : null}
+
+                                <CustomWorkflowCatalogueConfig
+                                    deploymentId={deployment.id}
+                                    selectedSteps={selectedSteps}
+                                    centralSites={centralSites}
+                                    centralSitesError={centralSitesError}
+                                    availableStaticTags={
+                                        centralMacRegistrationsCache.available_static_tags ??
+                                        []
+                                    }
+                                    greenLakeLocationId={greenLakeLocationId}
+                                    onGreenLakeLocationIdChange={
+                                        setGreenLakeLocationId
+                                    }
+                                    greenLakeServiceKey={greenLakeServiceKey}
+                                    onGreenLakeServiceKeyChange={
+                                        setGreenLakeServiceKey
+                                    }
+                                    greenLakeTags={greenLakeTags}
+                                    onGreenLakeTagsChange={setGreenLakeTags}
+                                    centralStaticTags={centralStaticTags}
+                                    onCentralStaticTagsChange={
+                                        setCentralStaticTags
+                                    }
+                                    networkAliasSiteScopeId={
+                                        networkAliasSiteScopeId
+                                    }
+                                    onNetworkAliasSiteScopeIdChange={
+                                        setNetworkAliasSiteScopeId
+                                    }
+                                    networkAliasIpv4Override={
+                                        networkAliasIpv4Override
+                                    }
+                                    onNetworkAliasIpv4OverrideChange={
+                                        setNetworkAliasIpv4Override
+                                    }
+                                />
 
                                 {needsLicensingDialog ? (
                                     <div className="space-y-3 rounded-md border p-3">
