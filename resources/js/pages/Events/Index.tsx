@@ -90,6 +90,10 @@ const DEVICE_CONTEXT_TYPES = new Set([
 
 const CLIENT_CONTEXT_TYPES = new Set(['WIRELESS_CLIENT', 'WIRED_CLIENT']);
 
+const SEVERITY_OPTIONS = ['positive', 'negative', 'neutral'] as const;
+
+type SeverityFilter = '' | (typeof SEVERITY_OPTIONS)[number];
+
 const selectClassName =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
 
@@ -206,6 +210,7 @@ export default function Index() {
     const [validationError, setValidationError] = useState<string | null>(null);
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
+    const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('');
 
     useEffect(() => {
         setLocalFilters({
@@ -223,7 +228,7 @@ export default function Index() {
 
     useEffect(() => {
         setPageIndex(0);
-    }, [events, pageSize]);
+    }, [events, pageSize, severityFilter]);
 
     const updateFilter = useCallback((patch: Partial<EventsFilters>) => {
         setLocalFilters((prev) => ({ ...prev, ...patch }));
@@ -576,14 +581,25 @@ export default function Index() {
         },
     ];
 
-    const totalEvents = events.length;
+    const filteredEvents = useMemo(() => {
+        if (!severityFilter) {
+            return events;
+        }
+
+        return events.filter(
+            (event) =>
+                event.severity.trim().toLowerCase() === severityFilter,
+        );
+    }, [events, severityFilter]);
+
+    const totalEvents = filteredEvents.length;
     const totalPages = Math.max(1, Math.ceil(totalEvents / pageSize));
     const safePageIndex = Math.min(pageIndex, totalPages - 1);
     const start = safePageIndex * pageSize;
     const end = Math.min(start + pageSize, totalEvents);
     const pagedEvents = useMemo(
-        () => events.slice(start, end),
-        [events, end, start],
+        () => filteredEvents.slice(start, end),
+        [filteredEvents, end, start],
     );
 
     const isClientContext = CLIENT_CONTEXT_TYPES.has(localFilters.context_type);
@@ -750,18 +766,51 @@ export default function Index() {
                     <div className="mt-8">
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                             <p className="text-sm text-muted-foreground">
-                                {totalEvents === 0
+                                {events.length === 0
                                     ? 'No events found for this query.'
-                                    : `Showing ${start + 1}–${end} of ${totalEvents} loaded event${totalEvents === 1 ? '' : 's'}${
-                                          total !== null
-                                              ? ` (${total} total matching)`
-                                              : ''
-                                      }`}
-                                {count !== null && totalEvents > 0
+                                    : totalEvents === 0
+                                      ? `No ${severityFilter} events in the loaded results.`
+                                      : `Showing ${start + 1}–${end} of ${totalEvents} loaded event${totalEvents === 1 ? '' : 's'}${
+                                            severityFilter
+                                                ? ` (${severityFilter})`
+                                                : ''
+                                        }${
+                                            total !== null
+                                                ? ` (${total} total matching)`
+                                                : ''
+                                        }`}
+                                {count !== null && events.length > 0
                                     ? ` · page count ${count}`
                                     : ''}
                             </p>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <label
+                                    htmlFor="events-severity-filter"
+                                    className="text-sm text-muted-foreground"
+                                >
+                                    Severity
+                                </label>
+                                <select
+                                    id="events-severity-filter"
+                                    value={severityFilter}
+                                    onChange={(e) =>
+                                        setSeverityFilter(
+                                            e.target.value as SeverityFilter,
+                                        )
+                                    }
+                                    className={selectClassName + ' w-auto'}
+                                    data-test="events-filter-severity"
+                                >
+                                    <option value="">All severities</option>
+                                    {SEVERITY_OPTIONS.map((severity) => (
+                                        <option
+                                            key={severity}
+                                            value={severity}
+                                        >
+                                            {severity}
+                                        </option>
+                                    ))}
+                                </select>
                                 <label
                                     htmlFor="events-page-size"
                                     className="text-sm text-muted-foreground"
