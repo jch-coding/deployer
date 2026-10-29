@@ -89,6 +89,7 @@ class CentralAPIHelper
         'ap_reboot' => 'network-troubleshooting/v1/aps',
         'ap_show_commands' => 'network-troubleshooting/v1/aps',
         'cx_show_commands' => 'network-troubleshooting/v1/cx',
+        'events' => 'network-troubleshooting/v1/events',
     ];
 
     private const CX_SHOW_COMMAND_PATTERN = '/^\s*show\b.+/';
@@ -538,6 +539,161 @@ class CentralAPIHelper
             return [
                 'devices' => [],
                 'error' => 'Could not load devices from Central.',
+            ];
+        }
+    }
+
+    /**
+     * Device options for Events context-identifier dropdowns (includes deviceType + siteId).
+     *
+     * @return array{
+     *     devices: array<int, array{serial: string, name: string, device_type: string, device_function: string, site_id: string}>,
+     *     error: string|null
+     * }
+     */
+    public function collectCentralEventContextOptions(): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'devices' => [],
+                'error' => 'Could not authenticate with Central to load devices.',
+            ];
+        }
+
+        try {
+            $result = $this->get_all_devices();
+            if (array_key_exists('error', $result)) {
+                return [
+                    'devices' => [],
+                    'error' => 'Could not load devices from Central.',
+                ];
+            }
+
+            $devices = [];
+            $seenSerials = [];
+
+            foreach ($result as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $serial = trim((string) ($item['serialNumber'] ?? ''));
+                if ($serial === '' || isset($seenSerials[$serial])) {
+                    continue;
+                }
+
+                $seenSerials[$serial] = true;
+                $devices[] = [
+                    'serial' => $serial,
+                    'name' => (string) ($item['deviceName'] ?? ''),
+                    'device_type' => (string) ($item['deviceType'] ?? ''),
+                    'device_function' => (string) ($item['deviceFunction'] ?? ''),
+                    'site_id' => (string) ($item['siteId'] ?? ''),
+                ];
+            }
+
+            usort($devices, function (array $a, array $b): int {
+                $nameComparison = strcasecmp($a['name'], $b['name']);
+                if ($nameComparison !== 0) {
+                    return $nameComparison;
+                }
+
+                return strcasecmp($a['serial'], $b['serial']);
+            });
+
+            return [
+                'devices' => $devices,
+                'error' => null,
+            ];
+        } catch (RequestException|ConnectionException) {
+            return [
+                'devices' => [],
+                'error' => 'Could not load devices from Central.',
+            ];
+        }
+    }
+
+    /**
+     * Client options for Events context-identifier dropdowns.
+     *
+     * @param  array{connection_type?: string, site_id?: string, limit?: int}  $options
+     * @return array{
+     *     clients: array<int, array{mac: string, name: string, connection_type: string, site_id: string}>,
+     *     error: string|null
+     * }
+     */
+    public function collectCentralClientOptions(array $options = []): array
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return [
+                'clients' => [],
+                'error' => 'Could not authenticate with Central to load clients.',
+            ];
+        }
+
+        $query = [];
+        $siteId = trim((string) ($options['site_id'] ?? ''));
+        if ($siteId !== '') {
+            $query['site-id'] = $siteId;
+        }
+
+        $connectionType = trim((string) ($options['connection_type'] ?? ''));
+        if ($connectionType !== '') {
+            $query['filter'] = "clientConnectionType eq '{$connectionType}'";
+        }
+
+        if (isset($options['limit']) && is_numeric($options['limit'])) {
+            $query['limit'] = (int) $options['limit'];
+        }
+
+        try {
+            $result = $this->get_all_clients($query);
+            if (array_key_exists('error', $result)) {
+                return [
+                    'clients' => [],
+                    'error' => 'Could not load clients from Central.',
+                ];
+            }
+
+            $clients = [];
+            $seenMacs = [];
+
+            foreach ($result as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $mac = trim((string) ($item['macAddress'] ?? ''));
+                if ($mac === '' || isset($seenMacs[$mac])) {
+                    continue;
+                }
+
+                $seenMacs[$mac] = true;
+                $clients[] = [
+                    'mac' => $mac,
+                    'name' => (string) ($item['clientName'] ?? ''),
+                    'connection_type' => (string) ($item['clientConnectionType'] ?? ''),
+                    'site_id' => (string) ($item['siteId'] ?? ''),
+                ];
+            }
+
+            usort($clients, function (array $a, array $b): int {
+                $nameComparison = strcasecmp($a['name'], $b['name']);
+                if ($nameComparison !== 0) {
+                    return $nameComparison;
+                }
+
+                return strcasecmp($a['mac'], $b['mac']);
+            });
+
+            return [
+                'clients' => $clients,
+                'error' => null,
+            ];
+        } catch (RequestException|ConnectionException) {
+            return [
+                'clients' => [],
+                'error' => 'Could not load clients from Central.',
             ];
         }
     }
@@ -2918,6 +3074,112 @@ class CentralAPIHelper
 
         if (! $response->ok()) {
             return ['error' => 'failed to get client details from central.'];
+        }
+
+        return $response;
+    }
+
+    /**
+     * Single-page GET for unified clients list.
+     *
+     * @param  array<string, mixed>  $queryParameters
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     *
+     * @throws \Illuminate\Http\Client\ConnectionException
+     */
+    public function get_clients(array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->withQueryParameters($queryParameters)
+            ->get($this->client->base_url.$this->clientMonitoring['clients']);
+
+        if (! $response->ok()) {
+            return ['error' => 'failed to get clients from central.'];
+        }
+
+        return $response;
+    }
+
+    /**
+     * Page through all unified clients using cursor pagination (limit + next).
+     *
+     * @param  array<string, mixed>  $queryParameters  Optional filter/sort/site-id (limit and next are managed internally)
+     * @return array<int, array<string, mixed>>|array{error: string}
+     */
+    public function get_all_clients(array $queryParameters = []): array
+    {
+        $allItems = [];
+        $requestedLimit = $queryParameters['limit'] ?? null;
+        unset($queryParameters['limit']);
+
+        $limit = is_numeric($requestedLimit) ? (int) $requestedLimit : 1000;
+        $next = null;
+
+        while (true) {
+            $params = array_merge($queryParameters, ['limit' => $limit]);
+            if ($next !== null && $next !== '') {
+                $params['next'] = $next;
+            }
+
+            $response = $this->get_clients($params);
+
+            if (is_array($response)) {
+                return ['error' => (string) ($response['error'] ?? 'Failed to fetch clients from Central.')];
+            }
+
+            if (! $response->ok()) {
+                return ['error' => 'failed to get clients from central.'];
+            }
+
+            $pageItems = $response->json('items', []);
+            if (! is_array($pageItems)) {
+                $pageItems = [];
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            $allItems = array_merge($allItems, $pageItems);
+
+            $next = $response->json('next');
+            if ($next === null || $next === '') {
+                break;
+            }
+        }
+
+        return $allItems;
+    }
+
+    /**
+     * GET network events (EventListV1).
+     *
+     * @param  array<string, mixed>  $queryParameters
+     * @return \Illuminate\Http\Client\Response|array{error: string}
+     *
+     * @throws \Illuminate\Http\Client\ConnectionException
+     */
+    public function get_events(array $queryParameters = [])
+    {
+        if (! $this->client->handleBearerTokenAuth()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->bearer_token)
+            ->withQueryParameters($queryParameters)
+            ->get($this->client->base_url.$this->troubleshooting['events']);
+
+        if (! $response->ok()) {
+            $message = $response->json('message');
+            if (is_string($message) && trim($message) !== '') {
+                return ['error' => $message];
+            }
+
+            return ['error' => 'failed to get events from central.'];
         }
 
         return $response;

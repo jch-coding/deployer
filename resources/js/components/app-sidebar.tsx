@@ -1,5 +1,6 @@
 import {
     ActivityIcon,
+    Bell,
     BookOpen,
     Braces,
     BuildingIcon,
@@ -29,6 +30,7 @@ import { index as deployment_index } from '@/routes/deployments'
 import { index as device_details_index } from '@/routes/device-details'
 import { index as central_api_index } from '@/routes/central-api';
 import { index as ekahau_index } from '@/routes/ekahau';
+import { index as events_index } from '@/routes/events';
 import { index as migrations_index } from '@/routes/migrations';
 import { index as streaming_index } from '@/routes/streaming';
 import { index as task_index } from '@/routes/tasks'
@@ -50,6 +52,11 @@ const mainNavItems: NavItem[] = [
         title: 'Device Details',
         href: device_details_index(),
         icon: Network,
+    },
+    {
+        title: 'Events',
+        href: events_index(),
+        icon: Bell,
     },
     {
         title: 'Tasks',
