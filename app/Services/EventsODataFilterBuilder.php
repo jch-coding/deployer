@@ -18,6 +18,29 @@ class EventsODataFilterBuilder
     ];
 
     /**
+     * Known eventId → eventName pairs for Events filter UI.
+     *
+     * @var list<array{id: string, name: string}>
+     */
+    public const EVENT_IDS = [
+        ['id' => '5', 'name' => 'Client 802.11 Disassociation From Client'],
+        ['id' => '9', 'name' => 'Client 802.11 De-authentication To Client'],
+        ['id' => '10', 'name' => 'Client 802.11 De-authentication From Client'],
+        ['id' => '11', 'name' => 'Client Roaming Success'],
+        ['id' => '17', 'name' => 'Client 802.1x Radius Accept'],
+        ['id' => '32', 'name' => 'Client DHCP Acknowledge'],
+        ['id' => '55', 'name' => 'Client DHCP Timeout'],
+        ['id' => '63', 'name' => 'Client Poor SNR'],
+        ['id' => '64', 'name' => 'Client Poor Retry Rate'],
+        ['id' => '10012', 'name' => 'Client PMK/OKC Key Add/Update'],
+        ['id' => '10013', 'name' => 'Client PMK/OKC Key Delete'],
+        ['id' => '10015', 'name' => 'Client Onboarding Success'],
+        ['id' => '10016', 'name' => 'Client Onboarding Failure - Deauthentication/Disassociation'],
+        ['id' => '10017', 'name' => 'Client Onboarding Failure - Authentication/Association'],
+        ['id' => '10020', 'name' => 'Client Onboarding Failure - Key Exchange'],
+    ];
+
+    /**
      * Build an OData filter for EventListV1 (eventId, category, sourceType).
      * Uses `eq` for a single value and `in` for multiple; clauses joined with `and`.
      *

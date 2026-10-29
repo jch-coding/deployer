@@ -82,6 +82,7 @@ type EventsIndexProps = {
     limit_options: number[];
     category_options: string[];
     source_type_options: string[];
+    event_id_options: EventIdOption[];
     central_error: string | null;
     next_cursor: string | null;
     total: number | null;
@@ -228,6 +229,7 @@ export default function Index() {
         limit_options,
         category_options,
         source_type_options,
+        event_id_options,
         central_error,
         next_cursor,
         total,
@@ -680,14 +682,35 @@ export default function Index() {
     );
 
     const eventIdOptions = useMemo(() => {
-        const byId = new Map(
-            discoveredEventIds.map((option) => [option.id, option]),
-        );
+        const byId = new Map<string, EventIdOption>();
+
+        const mergeOption = (option: EventIdOption) => {
+            const id = option.id.trim();
+            if (id === '') {
+                return;
+            }
+
+            const existing = byId.get(id);
+            if (!existing) {
+                byId.set(id, { id, name: option.name.trim() });
+                return;
+            }
+
+            if (existing.name === '' && option.name.trim() !== '') {
+                byId.set(id, { id, name: option.name.trim() });
+            }
+        };
+
+        for (const option of event_id_options) {
+            mergeOption(option);
+        }
+
+        for (const option of discoveredEventIds) {
+            mergeOption(option);
+        }
 
         for (const id of localFilters.filter_event_ids) {
-            if (!byId.has(id)) {
-                byId.set(id, { id, name: '' });
-            }
+            mergeOption({ id, name: '' });
         }
 
         return Array.from(byId.values()).sort((a, b) => {
@@ -698,7 +721,11 @@ export default function Index() {
 
             return a.id.localeCompare(b.id, undefined, { numeric: true });
         });
-    }, [discoveredEventIds, localFilters.filter_event_ids]);
+    }, [
+        discoveredEventIds,
+        event_id_options,
+        localFilters.filter_event_ids,
+    ]);
 
     const columns = useMemo<ColumnDef<EventRow>[]>(
         () => [

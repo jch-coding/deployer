@@ -162,6 +162,7 @@ class EventsController extends Controller
             'limit_options' => self::LIMITS,
             'category_options' => EventsODataFilterBuilder::CATEGORIES,
             'source_type_options' => EventsODataFilterBuilder::SOURCE_TYPES,
+            'event_id_options' => EventsODataFilterBuilder::EVENT_IDS,
             'central_error' => $centralError,
             'next_cursor' => $next,
             'total' => is_numeric($total) ? (int) $total : null,
