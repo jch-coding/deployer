@@ -1,6 +1,6 @@
 import { router, usePage } from '@inertiajs/react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Loader2, Search } from 'lucide-react';
+import { Download, Loader2, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import CentralScopeRefreshButtons, {
     type CentralScopeCacheMeta,
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import AppLayout from '@/layouts/app-layout';
 import { csrfHeaders } from '@/lib/csrf';
+import { downloadEventsCsv } from '@/lib/events-csv';
 import { index as clientsIndex } from '@/routes/clients';
 import { clients as eventsClients, index as eventsIndex } from '@/routes/events';
 import type { BreadcrumbItem, SharedData } from '@/types';
@@ -1156,6 +1157,18 @@ export default function Index() {
                                         </option>
                                     ))}
                                 </select>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={filteredEvents.length === 0}
+                                    onClick={() =>
+                                        downloadEventsCsv(filteredEvents)
+                                    }
+                                    data-test="events-export-csv"
+                                >
+                                    <Download className="size-4" />
+                                    Export CSV
+                                </Button>
                             </div>
                         </div>
 
