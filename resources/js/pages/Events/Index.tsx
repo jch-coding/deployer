@@ -8,13 +8,14 @@ import CentralScopeRefreshButtons, {
 } from '@/components/central/CentralScopeRefreshButtons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import AppLayout from '@/layouts/app-layout';
 import { csrfHeaders } from '@/lib/csrf';
-import { clients as eventsClients, index as eventsIndex } from '@/routes/events';
 import { index as clientsIndex } from '@/routes/clients';
+import { clients as eventsClients, index as eventsIndex } from '@/routes/events';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 type SiteOption = {
@@ -61,6 +62,14 @@ type EventsFilters = {
     end_at: string;
     limit: number;
     next: string;
+    filter_categories: string[];
+    filter_source_types: string[];
+    filter_event_ids: string[];
+};
+
+type EventIdOption = {
+    id: string;
+    name: string;
 };
 
 type EventsIndexProps = {
@@ -70,6 +79,8 @@ type EventsIndexProps = {
     device_options: DeviceOption[];
     context_type_options: string[];
     limit_options: number[];
+    category_options: string[];
+    source_type_options: string[];
     central_error: string | null;
     next_cursor: string | null;
     total: number | null;
@@ -171,6 +182,40 @@ function validateTimeWindow(
     return null;
 }
 
+function normalizeStringList(values: string[] | undefined | null): string[] {
+    if (!Array.isArray(values)) {
+        return [];
+    }
+
+    const normalized: string[] = [];
+    for (const value of values) {
+        const trimmed = value.trim();
+        if (trimmed === '' || normalized.includes(trimmed)) {
+            continue;
+        }
+        normalized.push(trimmed);
+    }
+
+    return normalized;
+}
+
+function toggleListValue(values: string[], value: string): string[] {
+    if (values.includes(value)) {
+        return values.filter((item) => item !== value);
+    }
+
+    return [...values, value];
+}
+
+function parseEventIdInput(raw: string): string[] {
+    return normalizeStringList(
+        raw
+            .split(/[\s,]+/)
+            .map((part) => part.trim())
+            .filter((part) => part !== ''),
+    );
+}
+
 export default function Index() {
     const {
         current_client,
@@ -180,6 +225,8 @@ export default function Index() {
         device_options,
         context_type_options,
         limit_options,
+        category_options,
+        source_type_options,
         central_error,
         next_cursor,
         total,
@@ -196,6 +243,9 @@ export default function Index() {
         start_at: filters.start_at || default_start_at,
         end_at: filters.end_at || default_end_at,
         limit: filters.limit || 100,
+        filter_categories: normalizeStringList(filters.filter_categories),
+        filter_source_types: normalizeStringList(filters.filter_source_types),
+        filter_event_ids: normalizeStringList(filters.filter_event_ids),
     }));
     const [startLocal, setStartLocal] = useState(() =>
         toDatetimeLocalValue(filters.start_at || default_start_at),
@@ -211,6 +261,10 @@ export default function Index() {
     const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(25);
     const [pageIndex, setPageIndex] = useState(0);
     const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('');
+    const [discoveredEventIds, setDiscoveredEventIds] = useState<
+        EventIdOption[]
+    >([]);
+    const [eventIdDraft, setEventIdDraft] = useState('');
 
     useEffect(() => {
         setLocalFilters({
@@ -218,6 +272,11 @@ export default function Index() {
             start_at: filters.start_at || default_start_at,
             end_at: filters.end_at || default_end_at,
             limit: filters.limit || 100,
+            filter_categories: normalizeStringList(filters.filter_categories),
+            filter_source_types: normalizeStringList(
+                filters.filter_source_types,
+            ),
+            filter_event_ids: normalizeStringList(filters.filter_event_ids),
         });
         setStartLocal(
             toDatetimeLocalValue(filters.start_at || default_start_at),
@@ -230,9 +289,101 @@ export default function Index() {
         setPageIndex(0);
     }, [events, pageSize, severityFilter]);
 
+    useEffect(() => {
+        if (events.length === 0) {
+            return;
+        }
+
+        setDiscoveredEventIds((prev) => {
+            const byId = new Map(prev.map((option) => [option.id, option]));
+
+            for (const event of events) {
+                const id = event.eventId.trim();
+                if (id === '') {
+                    continue;
+                }
+
+                const existing = byId.get(id);
+                const name = event.eventName.trim();
+                if (!existing) {
+                    byId.set(id, { id, name });
+                    continue;
+                }
+
+                if (existing.name === '' && name !== '') {
+                    byId.set(id, { id, name });
+                }
+            }
+
+            return Array.from(byId.values()).sort((a, b) => {
+                const nameCompare = a.name.localeCompare(b.name);
+                if (nameCompare !== 0) {
+                    return nameCompare;
+                }
+
+                return a.id.localeCompare(b.id, undefined, { numeric: true });
+            });
+        });
+    }, [events]);
+
     const updateFilter = useCallback((patch: Partial<EventsFilters>) => {
         setLocalFilters((prev) => ({ ...prev, ...patch }));
     }, []);
+
+    const toggleCategory = useCallback(
+        (category: string) => {
+            updateFilter({
+                filter_categories: toggleListValue(
+                    localFilters.filter_categories,
+                    category,
+                ),
+                next: '',
+            });
+        },
+        [localFilters.filter_categories, updateFilter],
+    );
+
+    const toggleSourceType = useCallback(
+        (sourceType: string) => {
+            updateFilter({
+                filter_source_types: toggleListValue(
+                    localFilters.filter_source_types,
+                    sourceType,
+                ),
+                next: '',
+            });
+        },
+        [localFilters.filter_source_types, updateFilter],
+    );
+
+    const toggleEventId = useCallback(
+        (eventId: string) => {
+            updateFilter({
+                filter_event_ids: toggleListValue(
+                    localFilters.filter_event_ids,
+                    eventId,
+                ),
+                next: '',
+            });
+        },
+        [localFilters.filter_event_ids, updateFilter],
+    );
+
+    const addEventIdsFromDraft = useCallback(() => {
+        const parsed = parseEventIdInput(eventIdDraft);
+        if (parsed.length === 0) {
+            return;
+        }
+
+        updateFilter({
+            filter_event_ids: normalizeStringList([
+                ...localFilters.filter_event_ids,
+                ...parsed,
+            ]),
+            next: '',
+        });
+        setEventIdDraft('');
+    }, [eventIdDraft, localFilters.filter_event_ids, updateFilter]);
 
     const loadClients = useCallback(
         async (contextType: string, siteId: string) => {
@@ -484,6 +635,24 @@ export default function Index() {
                         start_at: startAt,
                         end_at: endAt,
                         limit: String(localFilters.limit),
+                        ...(localFilters.filter_categories.length > 0
+                            ? {
+                                  filter_categories:
+                                      localFilters.filter_categories,
+                              }
+                            : {}),
+                        ...(localFilters.filter_source_types.length > 0
+                            ? {
+                                  filter_source_types:
+                                      localFilters.filter_source_types,
+                              }
+                            : {}),
+                        ...(localFilters.filter_event_ids.length > 0
+                            ? {
+                                  filter_event_ids:
+                                      localFilters.filter_event_ids,
+                              }
+                            : {}),
                         ...(nextCursor ? { next: nextCursor } : {}),
                         submitted: '1',
                     },
@@ -508,6 +677,27 @@ export default function Index() {
         },
         [isSearching, localFilters, startLocal, endLocal],
     );
+
+    const eventIdOptions = useMemo(() => {
+        const byId = new Map(
+            discoveredEventIds.map((option) => [option.id, option]),
+        );
+
+        for (const id of localFilters.filter_event_ids) {
+            if (!byId.has(id)) {
+                byId.set(id, { id, name: '' });
+            }
+        }
+
+        return Array.from(byId.values()).sort((a, b) => {
+            const nameCompare = a.name.localeCompare(b.name);
+            if (nameCompare !== 0) {
+                return nameCompare;
+            }
+
+            return a.id.localeCompare(b.id, undefined, { numeric: true });
+        });
+    }, [discoveredEventIds, localFilters.filter_event_ids]);
 
     const columns = useMemo<ColumnDef<EventRow>[]>(
         () => [
@@ -739,6 +929,135 @@ export default function Index() {
                             </option>
                         ))}
                     </select>
+                </div>
+
+                <div className="mt-6 grid gap-4 lg:grid-cols-3">
+                    <fieldset
+                        className="rounded-md border border-border p-3"
+                        data-test="events-filter-categories"
+                    >
+                        <legend className="px-1 text-sm font-medium">
+                            Category
+                        </legend>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                            Optional OData filter (`category`)
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            {category_options.map((category) => (
+                                <label
+                                    key={category}
+                                    className="flex items-center gap-2 text-sm"
+                                >
+                                    <Checkbox
+                                        checked={localFilters.filter_categories.includes(
+                                            category,
+                                        )}
+                                        onCheckedChange={() =>
+                                            toggleCategory(category)
+                                        }
+                                    />
+                                    {category}
+                                </label>
+                            ))}
+                        </div>
+                    </fieldset>
+
+                    <fieldset
+                        className="rounded-md border border-border p-3"
+                        data-test="events-filter-source-types"
+                    >
+                        <legend className="px-1 text-sm font-medium">
+                            Source type
+                        </legend>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                            Optional OData filter (`sourceType`)
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            {source_type_options.map((sourceType) => (
+                                <label
+                                    key={sourceType}
+                                    className="flex items-center gap-2 text-sm"
+                                >
+                                    <Checkbox
+                                        checked={localFilters.filter_source_types.includes(
+                                            sourceType,
+                                        )}
+                                        onCheckedChange={() =>
+                                            toggleSourceType(sourceType)
+                                        }
+                                    />
+                                    {sourceType}
+                                </label>
+                            ))}
+                        </div>
+                    </fieldset>
+
+                    <fieldset
+                        className="rounded-md border border-border p-3"
+                        data-test="events-filter-event-ids"
+                    >
+                        <legend className="px-1 text-sm font-medium">
+                            Event ID
+                        </legend>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                            Optional OData filter (`eventId`). Options are
+                            seeded from loaded results; enter known IDs anytime.
+                        </p>
+                        <div className="mb-3 flex gap-2">
+                            <Input
+                                type="text"
+                                value={eventIdDraft}
+                                onChange={(e) =>
+                                    setEventIdDraft(e.target.value)
+                                }
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        addEventIdsFromDraft();
+                                    }
+                                }}
+                                placeholder="Add IDs (comma-separated)"
+                                aria-label="Add event IDs"
+                                data-test="events-filter-event-id-input"
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={addEventIdsFromDraft}
+                                disabled={eventIdDraft.trim() === ''}
+                            >
+                                Add
+                            </Button>
+                        </div>
+                        {eventIdOptions.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                                No event IDs selected or discovered yet.
+                            </p>
+                        ) : (
+                            <div className="flex max-h-48 flex-col gap-2 overflow-y-auto">
+                                {eventIdOptions.map((option) => (
+                                    <label
+                                        key={option.id}
+                                        className="flex items-center gap-2 text-sm"
+                                    >
+                                        <Checkbox
+                                            checked={localFilters.filter_event_ids.includes(
+                                                option.id,
+                                            )}
+                                            onCheckedChange={() =>
+                                                toggleEventId(option.id)
+                                            }
+                                        />
+                                        <span>
+                                            {option.name
+                                                ? `${option.name} (${option.id})`
+                                                : option.id}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </fieldset>
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-3">

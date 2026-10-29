@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helper\CentralAPIHelper;
 use App\Services\CentralScopeCacheService;
+use App\Services\EventsODataFilterBuilder;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,8 +30,11 @@ class EventsController extends Controller
         'WIRED_CLIENT' => 'Wired',
     ];
 
-    public function index(Request $request, CentralScopeCacheService $centralScopeCacheService)
-    {
+    public function index(
+        Request $request,
+        CentralScopeCacheService $centralScopeCacheService,
+        EventsODataFilterBuilder $filterBuilder,
+    ) {
         $currentClient = $request->user()->currentClient();
 
         if (! $currentClient) {
@@ -48,6 +52,12 @@ class EventsController extends Controller
             'limit' => ['nullable', 'integer', Rule::in(self::LIMITS)],
             'next' => ['nullable', 'string', 'max:128'],
             'submitted' => ['nullable', 'boolean'],
+            'filter_categories' => ['nullable', 'array'],
+            'filter_categories.*' => ['string', 'max:128', Rule::in(EventsODataFilterBuilder::CATEGORIES)],
+            'filter_source_types' => ['nullable', 'array'],
+            'filter_source_types.*' => ['string', 'max:128', Rule::in(EventsODataFilterBuilder::SOURCE_TYPES)],
+            'filter_event_ids' => ['nullable', 'array'],
+            'filter_event_ids.*' => ['string', 'max:128'],
         ]);
 
         $filters = [
@@ -58,6 +68,9 @@ class EventsController extends Controller
             'end_at' => trim((string) ($validated['end_at'] ?? '')),
             'limit' => (int) ($validated['limit'] ?? 100),
             'next' => trim((string) ($validated['next'] ?? '')),
+            'filter_categories' => $this->normalizeStringList($validated['filter_categories'] ?? []),
+            'filter_source_types' => $this->normalizeStringList($validated['filter_source_types'] ?? []),
+            'filter_event_ids' => $this->normalizeStringList($validated['filter_event_ids'] ?? []),
         ];
 
         $submitted = (bool) ($validated['submitted'] ?? false);
@@ -90,38 +103,52 @@ class EventsController extends Controller
             if ($requiredMissing) {
                 $centralError = 'All required fields must be filled before searching events.';
             } elseif ($centralError === null) {
-                $query = [
-                    'context-type' => $filters['context_type'],
-                    'context-identifier' => $filters['context_identifier'],
-                    'site-id' => $filters['site_id'],
-                    'start-at' => $filters['start_at'],
-                    'end-at' => $filters['end_at'],
-                    'limit' => $filters['limit'],
-                ];
+                $odata = $filterBuilder->build([
+                    'eventId' => $filters['filter_event_ids'],
+                    'category' => $filters['filter_categories'],
+                    'sourceType' => $filters['filter_source_types'],
+                ]);
 
-                if ($filters['next'] !== '') {
-                    $query['next'] = $filters['next'];
-                }
-
-                $response = $helper->get_events($query);
-
-                if (is_array($response)) {
-                    $centralError = (string) ($response['error'] ?? 'Failed to fetch events from Central.');
+                if ($odata['error'] !== null) {
+                    $centralError = $odata['error'];
                 } else {
-                    $rawEvents = $response->json('events', []);
-                    if (! is_array($rawEvents)) {
-                        $rawEvents = [];
+                    $query = [
+                        'context-type' => $filters['context_type'],
+                        'context-identifier' => $filters['context_identifier'],
+                        'site-id' => $filters['site_id'],
+                        'start-at' => $filters['start_at'],
+                        'end-at' => $filters['end_at'],
+                        'limit' => $filters['limit'],
+                    ];
+
+                    if ($odata['filter'] !== null) {
+                        $query['filter'] = $odata['filter'];
                     }
 
-                    $events = array_values(array_map(
-                        fn (mixed $item): array => $this->mapEvent(is_array($item) ? $item : []),
-                        $rawEvents,
-                    ));
+                    if ($filters['next'] !== '') {
+                        $query['next'] = $filters['next'];
+                    }
 
-                    $nextValue = $response->json('next');
-                    $next = is_string($nextValue) && $nextValue !== '' ? $nextValue : null;
-                    $total = $response->json('total');
-                    $count = $response->json('count');
+                    $response = $helper->get_events($query);
+
+                    if (is_array($response)) {
+                        $centralError = (string) ($response['error'] ?? 'Failed to fetch events from Central.');
+                    } else {
+                        $rawEvents = $response->json('events', []);
+                        if (! is_array($rawEvents)) {
+                            $rawEvents = [];
+                        }
+
+                        $events = array_values(array_map(
+                            fn (mixed $item): array => $this->mapEvent(is_array($item) ? $item : []),
+                            $rawEvents,
+                        ));
+
+                        $nextValue = $response->json('next');
+                        $next = is_string($nextValue) && $nextValue !== '' ? $nextValue : null;
+                        $total = $response->json('total');
+                        $count = $response->json('count');
+                    }
                 }
             }
         }
@@ -133,6 +160,8 @@ class EventsController extends Controller
             'device_options' => $deviceOptionsPayload['devices'],
             'context_type_options' => self::CONTEXT_TYPES,
             'limit_options' => self::LIMITS,
+            'category_options' => EventsODataFilterBuilder::CATEGORIES,
+            'source_type_options' => EventsODataFilterBuilder::SOURCE_TYPES,
             'central_error' => $centralError,
             'next_cursor' => $next,
             'total' => is_numeric($total) ? (int) $total : null,
@@ -170,6 +199,30 @@ class EventsController extends Controller
             'clients' => $payload['clients'],
             'error' => $payload['error'],
         ]);
+    }
+
+    /**
+     * @param  mixed  $values
+     * @return list<string>
+     */
+    private function normalizeStringList(mixed $values): array
+    {
+        if (! is_array($values)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($values as $value) {
+            $trimmed = trim((string) $value);
+            if ($trimmed === '' || in_array($trimmed, $normalized, true)) {
+                continue;
+            }
+
+            $normalized[] = $trimmed;
+        }
+
+        return array_values($normalized);
     }
 
     /**
