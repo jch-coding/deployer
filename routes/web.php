@@ -12,6 +12,7 @@ use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DeviceDetailsController;
 use App\Http\Controllers\DispatchController;
 use App\Http\Controllers\EkahauController;
+use App\Http\Controllers\EventsController;
 use App\Http\Controllers\LicensingController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\ProvisioningWorkflowController;
@@ -106,6 +107,11 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(SiteController::class)->group(function () {
         Route::get('/sites', 'index')->name('sites.index');
+    });
+
+    Route::controller(EventsController::class)->group(function () {
+        Route::get('/events', 'index')->name('events.index');
+        Route::get('/events/clients', 'clients')->name('events.clients');
     });
 
     Route::controller(DeviceDetailsController::class)->group(function () {
