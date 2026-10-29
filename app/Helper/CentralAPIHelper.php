@@ -3186,6 +3186,89 @@ class CentralAPIHelper
     }
 
     /**
+     * Page through network events using cursor pagination (limit + next).
+     *
+     * @param  array<string, mixed>  $queryParameters  Optional filter/sort (limit managed internally; next ignored as input)
+     * @return array{
+     *     events: array<int, array<string, mixed>>,
+     *     truncated: bool,
+     *     error: string|null
+     * }
+     */
+    public function get_all_events(array $queryParameters = [], int $maxEvents = 10000): array
+    {
+        $allEvents = [];
+        $requestedLimit = $queryParameters['limit'] ?? null;
+        unset($queryParameters['limit'], $queryParameters['next']);
+
+        $pageLimit = is_numeric($requestedLimit) ? (int) $requestedLimit : 1000;
+        if ($pageLimit < 1) {
+            $pageLimit = 1000;
+        }
+        if ($pageLimit > 1000) {
+            $pageLimit = 1000;
+        }
+
+        $maxEvents = max(1, $maxEvents);
+        $next = null;
+        $truncated = false;
+
+        while (true) {
+            $remaining = $maxEvents - count($allEvents);
+            if ($remaining <= 0) {
+                $truncated = true;
+                break;
+            }
+
+            $params = array_merge($queryParameters, [
+                'limit' => min($pageLimit, $remaining),
+            ]);
+            if ($next !== null && $next !== '') {
+                $params['next'] = $next;
+            }
+
+            $response = $this->get_events($params);
+
+            if (is_array($response)) {
+                return [
+                    'events' => [],
+                    'truncated' => false,
+                    'error' => (string) ($response['error'] ?? 'Failed to fetch events from Central.'),
+                ];
+            }
+
+            $pageEvents = $response->json('events', []);
+            if (! is_array($pageEvents)) {
+                $pageEvents = [];
+            }
+
+            if ($pageEvents === []) {
+                break;
+            }
+
+            $allEvents = array_merge($allEvents, $pageEvents);
+
+            if (count($allEvents) >= $maxEvents) {
+                $allEvents = array_slice($allEvents, 0, $maxEvents);
+                $nextValue = $response->json('next');
+                $truncated = is_string($nextValue) && $nextValue !== '';
+                break;
+            }
+
+            $next = $response->json('next');
+            if ($next === null || $next === '') {
+                break;
+            }
+        }
+
+        return [
+            'events' => $allEvents,
+            'truncated' => $truncated,
+            'error' => null,
+        ];
+    }
+
+    /**
      * @return array{ok: true, status: int, body: array<string, mixed>}|array{ok: false, status: int|null, error: string}
      */
     public function reboot_ap(string $serial): array

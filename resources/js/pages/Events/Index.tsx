@@ -2,6 +2,7 @@ import { router, usePage } from '@inertiajs/react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Download, Loader2, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import CentralScopeRefreshButtons, {
     type CentralScopeCacheMeta,
     type CentralScopeGroupsCacheMeta,
@@ -16,7 +17,11 @@ import AppLayout from '@/layouts/app-layout';
 import { csrfHeaders } from '@/lib/csrf';
 import { downloadEventsCsv } from '@/lib/events-csv';
 import { index as clientsIndex } from '@/routes/clients';
-import { clients as eventsClients, index as eventsIndex } from '@/routes/events';
+import {
+    clients as eventsClients,
+    exportMethod as eventsExport,
+    index as eventsIndex,
+} from '@/routes/events';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
 type SiteOption = {
@@ -257,6 +262,7 @@ export default function Index() {
         toDatetimeLocalValue(filters.end_at || default_end_at),
     );
     const [isSearching, setIsSearching] = useState(false);
+    const [isExportingAll, setIsExportingAll] = useState(false);
     const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
     const [clientsLoading, setClientsLoading] = useState(false);
     const [clientsError, setClientsError] = useState<string | null>(null);
@@ -680,6 +686,138 @@ export default function Index() {
         },
         [isSearching, localFilters, startLocal, endLocal],
     );
+
+    const exportAllCsv = useCallback(async () => {
+        if (isExportingAll || isSearching) {
+            return;
+        }
+
+        const startAt = fromDatetimeLocalValue(startLocal);
+        const endAt = fromDatetimeLocalValue(endLocal);
+        const timeError = validateTimeWindow(startAt, endAt);
+        if (timeError) {
+            setValidationError(timeError);
+            toast.error(timeError);
+            return;
+        }
+
+        if (
+            localFilters.context_type.trim() === '' ||
+            localFilters.context_identifier.trim() === '' ||
+            localFilters.site_id.trim() === ''
+        ) {
+            const message =
+                'Context type, context identifier, and site are required.';
+            setValidationError(message);
+            toast.error(message);
+            return;
+        }
+
+        setValidationError(null);
+        setIsExportingAll(true);
+
+        try {
+            const response = await fetch(
+                eventsExport.url({
+                    query: {
+                        context_type: localFilters.context_type,
+                        context_identifier: localFilters.context_identifier,
+                        site_id: localFilters.site_id,
+                        start_at: startAt,
+                        end_at: endAt,
+                        limit: String(localFilters.limit),
+                        ...(severityFilter
+                            ? { severity: severityFilter }
+                            : {}),
+                        ...(localFilters.filter_categories.length > 0
+                            ? {
+                                  filter_categories:
+                                      localFilters.filter_categories,
+                              }
+                            : {}),
+                        ...(localFilters.filter_source_types.length > 0
+                            ? {
+                                  filter_source_types:
+                                      localFilters.filter_source_types,
+                              }
+                            : {}),
+                        ...(localFilters.filter_event_ids.length > 0
+                            ? {
+                                  filter_event_ids:
+                                      localFilters.filter_event_ids,
+                              }
+                            : {}),
+                    },
+                }),
+                {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json',
+                        ...csrfHeaders(),
+                    },
+                    credentials: 'same-origin',
+                },
+            );
+
+            const payload = (await response.json()) as {
+                events?: EventRow[];
+                truncated?: boolean;
+                fetched_count?: number;
+                error?: string | null;
+                message?: string;
+            };
+
+            if (!response.ok) {
+                toast.error(
+                    payload.error ||
+                        payload.message ||
+                        'Failed to export events from Central.',
+                );
+                return;
+            }
+
+            if (payload.error) {
+                toast.error(payload.error);
+                return;
+            }
+
+            const exported = Array.isArray(payload.events)
+                ? payload.events
+                : [];
+
+            if (exported.length === 0) {
+                toast.error(
+                    severityFilter
+                        ? `No ${severityFilter} events found across Central pages.`
+                        : 'No events found across Central pages.',
+                );
+                return;
+            }
+
+            downloadEventsCsv(exported);
+
+            if (payload.truncated) {
+                toast.warning(
+                    `Export capped at ${payload.fetched_count ?? 10000} Central events before severity filtering.`,
+                );
+            } else {
+                toast.success(
+                    `Exported ${exported.length} event${exported.length === 1 ? '' : 's'}.`,
+                );
+            }
+        } catch {
+            toast.error('Failed to export events from Central.');
+        } finally {
+            setIsExportingAll(false);
+        }
+    }, [
+        isExportingAll,
+        isSearching,
+        localFilters,
+        severityFilter,
+        startLocal,
+        endLocal,
+    ]);
 
     const eventIdOptions = useMemo(() => {
         const byId = new Map<string, EventIdOption>();
@@ -1195,6 +1333,31 @@ export default function Index() {
                                 >
                                     <Download className="size-4" />
                                     Export CSV
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={
+                                        !canSearch ||
+                                        isExportingAll ||
+                                        isSearching
+                                    }
+                                    onClick={() => {
+                                        void exportAllCsv();
+                                    }}
+                                    data-test="events-export-all-csv"
+                                >
+                                    {isExportingAll ? (
+                                        <>
+                                            <Loader2 className="size-4 animate-spin" />
+                                            Exporting…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Download className="size-4" />
+                                            Export all CSV
+                                        </>
+                                    )}
                                 </Button>
                             </div>
                         </div>

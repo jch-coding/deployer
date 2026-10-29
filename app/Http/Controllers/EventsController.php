@@ -30,6 +30,10 @@ class EventsController extends Controller
         'WIRED_CLIENT' => 'Wired',
     ];
 
+    private const SEVERITIES = ['positive', 'negative', 'neutral'];
+
+    private const EXPORT_MAX_EVENTS = 10000;
+
     public function index(
         Request $request,
         CentralScopeCacheService $centralScopeCacheService,
@@ -199,6 +203,97 @@ class EventsController extends Controller
         return response()->json([
             'clients' => $payload['clients'],
             'error' => $payload['error'],
+        ]);
+    }
+
+    public function export(Request $request, EventsODataFilterBuilder $filterBuilder): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+
+        if (! $currentClient) {
+            return response()->json(['message' => 'No current client selected.'], 403);
+        }
+
+        $validated = $request->validate([
+            'context_type' => ['required', 'string', Rule::in(self::CONTEXT_TYPES)],
+            'context_identifier' => ['required', 'string', 'max:128'],
+            'site_id' => ['required', 'string', 'max:128'],
+            'start_at' => ['required', 'string', 'max:30'],
+            'end_at' => ['required', 'string', 'max:30'],
+            'limit' => ['nullable', 'integer', Rule::in(self::LIMITS)],
+            'severity' => ['nullable', 'string', Rule::in(self::SEVERITIES)],
+            'filter_categories' => ['nullable', 'array'],
+            'filter_categories.*' => ['string', 'max:128', Rule::in(EventsODataFilterBuilder::CATEGORIES)],
+            'filter_source_types' => ['nullable', 'array'],
+            'filter_source_types.*' => ['string', 'max:128', Rule::in(EventsODataFilterBuilder::SOURCE_TYPES)],
+            'filter_event_ids' => ['nullable', 'array'],
+            'filter_event_ids.*' => ['string', 'max:128'],
+        ]);
+
+        $severity = strtolower(trim((string) ($validated['severity'] ?? '')));
+        $filterCategories = $this->normalizeStringList($validated['filter_categories'] ?? []);
+        $filterSourceTypes = $this->normalizeStringList($validated['filter_source_types'] ?? []);
+        $filterEventIds = $this->normalizeStringList($validated['filter_event_ids'] ?? []);
+
+        $odata = $filterBuilder->build([
+            'eventId' => $filterEventIds,
+            'category' => $filterCategories,
+            'sourceType' => $filterSourceTypes,
+        ]);
+
+        if ($odata['error'] !== null) {
+            return response()->json([
+                'events' => [],
+                'truncated' => false,
+                'fetched_count' => 0,
+                'error' => $odata['error'],
+            ], 422);
+        }
+
+        $query = [
+            'context-type' => trim((string) $validated['context_type']),
+            'context-identifier' => trim((string) $validated['context_identifier']),
+            'site-id' => trim((string) $validated['site_id']),
+            'start-at' => trim((string) $validated['start_at']),
+            'end-at' => trim((string) $validated['end_at']),
+            'limit' => (int) ($validated['limit'] ?? 1000),
+        ];
+
+        if ($odata['filter'] !== null) {
+            $query['filter'] = $odata['filter'];
+        }
+
+        $helper = new CentralAPIHelper($currentClient);
+        $payload = $helper->get_all_events($query, self::EXPORT_MAX_EVENTS);
+
+        if ($payload['error'] !== null) {
+            return response()->json([
+                'events' => [],
+                'truncated' => false,
+                'fetched_count' => 0,
+                'error' => $payload['error'],
+            ], 502);
+        }
+
+        $events = array_values(array_map(
+            fn (mixed $item): array => $this->mapEvent(is_array($item) ? $item : []),
+            $payload['events'],
+        ));
+
+        $fetchedCount = count($events);
+
+        if ($severity !== '') {
+            $events = array_values(array_filter(
+                $events,
+                fn (array $event): bool => strtolower(trim($event['severity'])) === $severity,
+            ));
+        }
+
+        return response()->json([
+            'events' => $events,
+            'truncated' => (bool) $payload['truncated'],
+            'fetched_count' => $fetchedCount,
+            'error' => null,
         ]);
     }
 
