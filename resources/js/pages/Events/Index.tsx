@@ -1,7 +1,7 @@
-import { router, usePage } from '@inertiajs/react';
+import { usePage } from '@inertiajs/react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Download, Loader2, Search } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import CentralScopeRefreshButtons, {
     type CentralScopeCacheMeta,
@@ -21,6 +21,7 @@ import {
     clients as eventsClients,
     exportMethod as eventsExport,
     index as eventsIndex,
+    page as eventsPage,
 } from '@/routes/events';
 import type { BreadcrumbItem, SharedData } from '@/types';
 
@@ -66,8 +67,6 @@ type EventsFilters = {
     site_id: string;
     start_at: string;
     end_at: string;
-    limit: number;
-    next: string;
     filter_categories: string[];
     filter_source_types: string[];
     filter_event_ids: string[];
@@ -78,21 +77,22 @@ type EventIdOption = {
     name: string;
 };
 
+type FetchProgress = {
+    fetched: number;
+    total: number | null;
+};
+
 type EventsIndexProps = {
     events: EventRow[];
     filters: EventsFilters;
     site_options: SiteOption[];
     device_options: DeviceOption[];
     context_type_options: string[];
-    limit_options: number[];
     category_options: string[];
     source_type_options: string[];
     event_id_options: EventIdOption[];
     central_error: string | null;
-    next_cursor: string | null;
-    total: number | null;
-    count: number | null;
-    submitted: boolean;
+    max_events: number;
     default_start_at: string;
     default_end_at: string;
     central_sites_cache: CentralScopeCacheMeta;
@@ -112,8 +112,35 @@ const SEVERITY_OPTIONS = ['positive', 'negative', 'neutral'] as const;
 
 type SeverityFilter = '' | (typeof SEVERITY_OPTIONS)[number];
 
+const DEFAULT_MAX_EVENTS = 10000;
+
 const selectClassName =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
+
+function buildEventsQuery(
+    filters: EventsFilters,
+    startAt: string,
+    endAt: string,
+    nextCursor?: string | null,
+): Record<string, string | string[]> {
+    return {
+        context_type: filters.context_type,
+        context_identifier: filters.context_identifier,
+        site_id: filters.site_id,
+        start_at: startAt,
+        end_at: endAt,
+        ...(filters.filter_categories.length > 0
+            ? { filter_categories: filters.filter_categories }
+            : {}),
+        ...(filters.filter_source_types.length > 0
+            ? { filter_source_types: filters.filter_source_types }
+            : {}),
+        ...(filters.filter_event_ids.length > 0
+            ? { filter_event_ids: filters.filter_event_ids }
+            : {}),
+        ...(nextCursor ? { next: nextCursor } : {}),
+    };
+}
 
 function toDatetimeLocalValue(rfc3339: string): string {
     const date = new Date(rfc3339);
@@ -226,31 +253,27 @@ function parseEventIdInput(raw: string): string[] {
 export default function Index() {
     const {
         current_client,
-        events,
         filters,
         site_options,
         device_options,
         context_type_options,
-        limit_options,
         category_options,
         source_type_options,
         event_id_options,
         central_error,
-        next_cursor,
-        total,
-        count,
-        submitted,
+        max_events,
         default_start_at,
         default_end_at,
         central_sites_cache,
         central_groups_cache,
     } = usePage<EventsIndexProps>().props;
 
+    const maxEvents = max_events || DEFAULT_MAX_EVENTS;
+
     const [localFilters, setLocalFilters] = useState<EventsFilters>(() => ({
         ...filters,
         start_at: filters.start_at || default_start_at,
         end_at: filters.end_at || default_end_at,
-        limit: filters.limit || 100,
         filter_categories: normalizeStringList(filters.filter_categories),
         filter_source_types: normalizeStringList(filters.filter_source_types),
         filter_event_ids: normalizeStringList(filters.filter_event_ids),
@@ -260,6 +283,13 @@ export default function Index() {
     );
     const [endLocal, setEndLocal] = useState(() =>
         toDatetimeLocalValue(filters.end_at || default_end_at),
+    );
+    const [loadedEvents, setLoadedEvents] = useState<EventRow[]>([]);
+    const [hasSearched, setHasSearched] = useState(false);
+    const [truncated, setTruncated] = useState(false);
+    const [centralTotal, setCentralTotal] = useState<number | null>(null);
+    const [fetchProgress, setFetchProgress] = useState<FetchProgress | null>(
+        null,
     );
     const [isSearching, setIsSearching] = useState(false);
     const [isExportingAll, setIsExportingAll] = useState(false);
@@ -274,39 +304,27 @@ export default function Index() {
         EventIdOption[]
     >([]);
     const [eventIdDraft, setEventIdDraft] = useState('');
+    const searchAbortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
-        setLocalFilters({
-            ...filters,
-            start_at: filters.start_at || default_start_at,
-            end_at: filters.end_at || default_end_at,
-            limit: filters.limit || 100,
-            filter_categories: normalizeStringList(filters.filter_categories),
-            filter_source_types: normalizeStringList(
-                filters.filter_source_types,
-            ),
-            filter_event_ids: normalizeStringList(filters.filter_event_ids),
-        });
-        setStartLocal(
-            toDatetimeLocalValue(filters.start_at || default_start_at),
-        );
-        setEndLocal(toDatetimeLocalValue(filters.end_at || default_end_at));
-        setIsSearching(false);
-    }, [filters, default_start_at, default_end_at]);
+        return () => {
+            searchAbortRef.current?.abort();
+        };
+    }, []);
 
     useEffect(() => {
         setPageIndex(0);
-    }, [events, pageSize, severityFilter]);
+    }, [loadedEvents, pageSize, severityFilter]);
 
     useEffect(() => {
-        if (events.length === 0) {
+        if (loadedEvents.length === 0) {
             return;
         }
 
         setDiscoveredEventIds((prev) => {
             const byId = new Map(prev.map((option) => [option.id, option]));
 
-            for (const event of events) {
+            for (const event of loadedEvents) {
                 const id = event.eventId.trim();
                 if (id === '') {
                     continue;
@@ -333,7 +351,7 @@ export default function Index() {
                 return a.id.localeCompare(b.id, undefined, { numeric: true });
             });
         });
-    }, [events]);
+    }, [loadedEvents]);
 
     const updateFilter = useCallback((patch: Partial<EventsFilters>) => {
         setLocalFilters((prev) => ({ ...prev, ...patch }));
@@ -346,7 +364,6 @@ export default function Index() {
                     localFilters.filter_categories,
                     category,
                 ),
-                next: '',
             });
         },
         [localFilters.filter_categories, updateFilter],
@@ -359,7 +376,6 @@ export default function Index() {
                     localFilters.filter_source_types,
                     sourceType,
                 ),
-                next: '',
             });
         },
         [localFilters.filter_source_types, updateFilter],
@@ -372,7 +388,6 @@ export default function Index() {
                     localFilters.filter_event_ids,
                     eventId,
                 ),
-                next: '',
             });
         },
         [localFilters.filter_event_ids, updateFilter],
@@ -389,7 +404,6 @@ export default function Index() {
                 ...localFilters.filter_event_ids,
                 ...parsed,
             ]),
-            next: '',
         });
         setEventIdDraft('');
     }, [eventIdDraft, localFilters.filter_event_ids, updateFilter]);
@@ -469,7 +483,6 @@ export default function Index() {
             updateFilter({
                 context_type: contextType,
                 context_identifier: '',
-                next: '',
             });
         },
         [updateFilter],
@@ -481,7 +494,6 @@ export default function Index() {
                 updateFilter({
                     context_identifier: value,
                     site_id: value,
-                    next: '',
                 });
                 return;
             }
@@ -494,7 +506,6 @@ export default function Index() {
                         device?.site_id?.trim() !== ''
                             ? (device?.site_id ?? localFilters.site_id)
                             : localFilters.site_id,
-                    next: '',
                 });
                 return;
             }
@@ -507,12 +518,11 @@ export default function Index() {
                         client?.site_id?.trim() !== ''
                             ? (client?.site_id ?? localFilters.site_id)
                             : localFilters.site_id,
-                    next: '',
                 });
                 return;
             }
 
-            updateFilter({ context_identifier: value, next: '' });
+            updateFilter({ context_identifier: value });
         },
         [
             clientOptions,
@@ -529,12 +539,11 @@ export default function Index() {
                 updateFilter({
                     site_id: siteId,
                     context_identifier: siteId,
-                    next: '',
                 });
                 return;
             }
 
-            updateFilter({ site_id: siteId, next: '' });
+            updateFilter({ site_id: siteId });
         },
         [localFilters.context_type, updateFilter],
     );
@@ -607,85 +616,158 @@ export default function Index() {
         );
     }, [localFilters, startLocal, endLocal]);
 
-    const submitSearch = useCallback(
-        (nextCursor: string | null = null) => {
-            if (isSearching) {
-                return;
-            }
+    const submitSearch = useCallback(async () => {
+        if (isSearching) {
+            return;
+        }
 
-            const startAt = fromDatetimeLocalValue(startLocal);
-            const endAt = fromDatetimeLocalValue(endLocal);
-            const timeError = validateTimeWindow(startAt, endAt);
-            if (timeError) {
-                setValidationError(timeError);
-                return;
-            }
+        const startAt = fromDatetimeLocalValue(startLocal);
+        const endAt = fromDatetimeLocalValue(endLocal);
+        const timeError = validateTimeWindow(startAt, endAt);
+        if (timeError) {
+            setValidationError(timeError);
+            return;
+        }
 
-            if (
-                localFilters.context_type.trim() === '' ||
-                localFilters.context_identifier.trim() === '' ||
-                localFilters.site_id.trim() === ''
-            ) {
-                setValidationError(
-                    'Context type, context identifier, and site are required.',
-                );
-                return;
-            }
-
-            setValidationError(null);
-            setIsSearching(true);
-
-            router.get(
-                eventsIndex.url({
-                    query: {
-                        context_type: localFilters.context_type,
-                        context_identifier: localFilters.context_identifier,
-                        site_id: localFilters.site_id,
-                        start_at: startAt,
-                        end_at: endAt,
-                        limit: String(localFilters.limit),
-                        ...(localFilters.filter_categories.length > 0
-                            ? {
-                                  filter_categories:
-                                      localFilters.filter_categories,
-                              }
-                            : {}),
-                        ...(localFilters.filter_source_types.length > 0
-                            ? {
-                                  filter_source_types:
-                                      localFilters.filter_source_types,
-                              }
-                            : {}),
-                        ...(localFilters.filter_event_ids.length > 0
-                            ? {
-                                  filter_event_ids:
-                                      localFilters.filter_event_ids,
-                              }
-                            : {}),
-                        ...(nextCursor ? { next: nextCursor } : {}),
-                        submitted: '1',
-                    },
-                }),
-                {},
-                {
-                    preserveState: true,
-                    preserveScroll: true,
-                    replace: true,
-                    only: [
-                        'events',
-                        'filters',
-                        'central_error',
-                        'next_cursor',
-                        'total',
-                        'count',
-                        'submitted',
-                    ],
-                    onFinish: () => setIsSearching(false),
-                },
+        if (
+            localFilters.context_type.trim() === '' ||
+            localFilters.context_identifier.trim() === '' ||
+            localFilters.site_id.trim() === ''
+        ) {
+            setValidationError(
+                'Context type, context identifier, and site are required.',
             );
-        },
-        [isSearching, localFilters, startLocal, endLocal],
-    );
+            return;
+        }
+
+        searchAbortRef.current?.abort();
+        const controller = new AbortController();
+        searchAbortRef.current = controller;
+
+        setValidationError(null);
+        setIsSearching(true);
+        setHasSearched(true);
+        setLoadedEvents([]);
+        setTruncated(false);
+        setCentralTotal(null);
+        setPageIndex(0);
+        setFetchProgress({ fetched: 0, total: null });
+
+        const aggregated: EventRow[] = [];
+        let nextCursor: string | null = null;
+        let hitCap = false;
+
+        try {
+            while (true) {
+                if (controller.signal.aborted) {
+                    return;
+                }
+
+                const response = await fetch(
+                    eventsPage.url({
+                        query: buildEventsQuery(
+                            localFilters,
+                            startAt,
+                            endAt,
+                            nextCursor,
+                        ),
+                    }),
+                    {
+                        method: 'GET',
+                        headers: {
+                            Accept: 'application/json',
+                            ...csrfHeaders(),
+                        },
+                        credentials: 'same-origin',
+                        signal: controller.signal,
+                    },
+                );
+
+                const payload = (await response.json()) as {
+                    events?: EventRow[];
+                    next?: string | null;
+                    total?: number | null;
+                    count?: number;
+                    error?: string | null;
+                    message?: string;
+                };
+
+                if (!response.ok || payload.error) {
+                    setValidationError(
+                        payload.error ||
+                            payload.message ||
+                            'Failed to fetch events from Central.',
+                    );
+                    setLoadedEvents(aggregated);
+                    return;
+                }
+
+                const pageEvents = Array.isArray(payload.events)
+                    ? payload.events
+                    : [];
+
+                if (
+                    typeof payload.total === 'number' &&
+                    Number.isFinite(payload.total)
+                ) {
+                    setCentralTotal(payload.total);
+                }
+
+                for (const event of pageEvents) {
+                    if (aggregated.length >= maxEvents) {
+                        hitCap = true;
+                        break;
+                    }
+                    aggregated.push(event);
+                }
+
+                setLoadedEvents([...aggregated]);
+                setFetchProgress({
+                    fetched: aggregated.length,
+                    total:
+                        typeof payload.total === 'number'
+                            ? payload.total
+                            : null,
+                });
+
+                if (hitCap) {
+                    setTruncated(true);
+                    toast.warning(
+                        `Search capped at ${maxEvents} events for this time window.`,
+                    );
+                    break;
+                }
+
+                nextCursor =
+                    typeof payload.next === 'string' && payload.next !== ''
+                        ? payload.next
+                        : null;
+
+                if (!nextCursor || pageEvents.length === 0) {
+                    break;
+                }
+            }
+
+            if (aggregated.length === 0) {
+                toast.error('No events found for this query.');
+            }
+        } catch (error) {
+            if (
+                error instanceof DOMException &&
+                error.name === 'AbortError'
+            ) {
+                return;
+            }
+            setValidationError('Failed to fetch events from Central.');
+            setLoadedEvents(aggregated);
+        } finally {
+            if (searchAbortRef.current === controller) {
+                searchAbortRef.current = null;
+            }
+            setIsSearching(false);
+            setFetchProgress(null);
+        }
+    }, [isSearching, localFilters, maxEvents, startLocal, endLocal]);
 
     const exportAllCsv = useCallback(async () => {
         if (isExportingAll || isSearching) {
@@ -720,32 +802,10 @@ export default function Index() {
             const response = await fetch(
                 eventsExport.url({
                     query: {
-                        context_type: localFilters.context_type,
-                        context_identifier: localFilters.context_identifier,
-                        site_id: localFilters.site_id,
-                        start_at: startAt,
-                        end_at: endAt,
-                        limit: String(localFilters.limit),
+                        ...buildEventsQuery(localFilters, startAt, endAt),
+                        limit: '1000',
                         ...(severityFilter
                             ? { severity: severityFilter }
-                            : {}),
-                        ...(localFilters.filter_categories.length > 0
-                            ? {
-                                  filter_categories:
-                                      localFilters.filter_categories,
-                              }
-                            : {}),
-                        ...(localFilters.filter_source_types.length > 0
-                            ? {
-                                  filter_source_types:
-                                      localFilters.filter_source_types,
-                              }
-                            : {}),
-                        ...(localFilters.filter_event_ids.length > 0
-                            ? {
-                                  filter_event_ids:
-                                      localFilters.filter_event_ids,
-                              }
                             : {}),
                     },
                 }),
@@ -939,14 +999,37 @@ export default function Index() {
 
     const filteredEvents = useMemo(() => {
         if (!severityFilter) {
-            return events;
+            return loadedEvents;
         }
 
-        return events.filter(
+        return loadedEvents.filter(
             (event) =>
                 event.severity.trim().toLowerCase() === severityFilter,
         );
-    }, [events, severityFilter]);
+    }, [loadedEvents, severityFilter]);
+
+    const progressPercent = useMemo(() => {
+        if (!fetchProgress) {
+            return 0;
+        }
+
+        if (
+            fetchProgress.total !== null &&
+            fetchProgress.total > 0
+        ) {
+            return Math.min(
+                100,
+                Math.round(
+                    (fetchProgress.fetched / fetchProgress.total) * 100,
+                ),
+            );
+        }
+
+        return Math.min(
+            99,
+            Math.round((fetchProgress.fetched / maxEvents) * 100),
+        );
+    }, [fetchProgress, maxEvents]);
 
     const totalEvents = filteredEvents.length;
     const totalPages = Math.max(1, Math.ceil(totalEvents / pageSize));
@@ -1037,7 +1120,6 @@ export default function Index() {
                             onChange={(e) =>
                                 updateFilter({
                                     context_identifier: e.target.value,
-                                    next: '',
                                 })
                             }
                             placeholder="Or enter client MAC"
@@ -1060,7 +1142,6 @@ export default function Index() {
                         value={startLocal}
                         onChange={(e) => {
                             setStartLocal(e.target.value);
-                            updateFilter({ next: '' });
                         }}
                         aria-label="Start at"
                         data-test="events-filter-start-at"
@@ -1071,30 +1152,10 @@ export default function Index() {
                         value={endLocal}
                         onChange={(e) => {
                             setEndLocal(e.target.value);
-                            updateFilter({ next: '' });
                         }}
                         aria-label="End at"
                         data-test="events-filter-end-at"
                     />
-
-                    <select
-                        value={String(localFilters.limit)}
-                        onChange={(e) =>
-                            updateFilter({
-                                limit: Number(e.target.value),
-                                next: '',
-                            })
-                        }
-                        className={selectClassName}
-                        aria-label="Limit"
-                        data-test="events-filter-limit"
-                    >
-                        {limit_options.map((limit) => (
-                            <option key={limit} value={limit}>
-                                {limit} events
-                            </option>
-                        ))}
-                    </select>
                 </div>
 
                 <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -1226,32 +1287,73 @@ export default function Index() {
                     </fieldset>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-                    <Button
-                        type="button"
-                        onClick={() => submitSearch(null)}
-                        disabled={!canSearch || isSearching}
-                        data-test="events-search"
-                    >
-                        {isSearching ? (
-                            <>
-                                <Loader2 className="size-4 animate-spin" />
-                                Searching…
-                            </>
-                        ) : (
-                            <>
-                                <Search className="size-4" />
-                                Search
-                            </>
-                        )}
-                    </Button>
+                <div className="mt-4 flex flex-col items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                        <Button
+                            type="button"
+                            onClick={() => {
+                                void submitSearch();
+                            }}
+                            disabled={!canSearch || isSearching}
+                            data-test="events-search"
+                        >
+                            {isSearching ? (
+                                <>
+                                    <Loader2 className="size-4 animate-spin" />
+                                    Searching…
+                                </>
+                            ) : (
+                                <>
+                                    <Search className="size-4" />
+                                    Search
+                                </>
+                            )}
+                        </Button>
+                    </div>
+
+                    {fetchProgress && (
+                        <div
+                            className="w-full max-w-xl space-y-2"
+                            data-test="events-fetch-progress"
+                        >
+                            <div
+                                className="h-2 overflow-hidden rounded-full bg-muted"
+                                role="progressbar"
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={progressPercent}
+                                aria-label="Events fetch progress"
+                            >
+                                <div
+                                    className="h-full bg-primary transition-[width] duration-300"
+                                    style={{ width: `${progressPercent}%` }}
+                                />
+                            </div>
+                            <p className="text-center text-sm text-muted-foreground">
+                                {fetchProgress.total !== null
+                                    ? `Fetched ${fetchProgress.fetched.toLocaleString()} of ${fetchProgress.total.toLocaleString()} events`
+                                    : `Fetched ${fetchProgress.fetched.toLocaleString()} events…`}
+                                {progressPercent > 0 ? ` (${progressPercent}%)` : ''}
+                            </p>
+                        </div>
+                    )}
                 </div>
 
-                {submitted && (
+                {hasSearched && (
                     <div className="mt-8">
+                        {truncated && (
+                            <div
+                                className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100"
+                                role="status"
+                            >
+                                Results were capped at {maxEvents.toLocaleString()}{' '}
+                                events for this time window. Narrow the time range
+                                or filters to see more.
+                            </div>
+                        )}
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                             <p className="text-sm text-muted-foreground">
-                                {events.length === 0
+                                {loadedEvents.length === 0
                                     ? 'No events found for this query.'
                                     : totalEvents === 0
                                       ? `No ${severityFilter} events in the loaded results.`
@@ -1260,13 +1362,10 @@ export default function Index() {
                                                 ? ` (${severityFilter})`
                                                 : ''
                                         }${
-                                            total !== null
-                                                ? ` (${total} total matching)`
+                                            centralTotal !== null
+                                                ? ` (${centralTotal.toLocaleString()} total matching in Central)`
                                                 : ''
                                         }`}
-                                {count !== null && events.length > 0
-                                    ? ` · page count ${count}`
-                                    : ''}
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
                                 <label
@@ -1401,17 +1500,6 @@ export default function Index() {
                             >
                                 Next
                             </Button>
-                            {next_cursor && (
-                                <Button
-                                    type="button"
-                                    variant="secondary"
-                                    disabled={isSearching}
-                                    onClick={() => submitSearch(next_cursor)}
-                                    data-test="events-load-more"
-                                >
-                                    Load next page from Central
-                                </Button>
-                            )}
                         </div>
                     </div>
                 )}
