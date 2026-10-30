@@ -112,7 +112,7 @@ const SEVERITY_OPTIONS = ['positive', 'negative', 'neutral'] as const;
 
 type SeverityFilter = '' | (typeof SEVERITY_OPTIONS)[number];
 
-const DEFAULT_MAX_EVENTS = 10000;
+const DEFAULT_MAX_EVENTS = 15000;
 
 const selectClassName =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
@@ -858,7 +858,7 @@ export default function Index() {
 
             if (payload.truncated) {
                 toast.warning(
-                    `Export capped at ${payload.fetched_count ?? 10000} Central events before severity filtering.`,
+                    `Export capped at ${payload.fetched_count ?? 15000} Central events before severity filtering.`,
                 );
             } else {
                 toast.success(

@@ -3195,7 +3195,7 @@ class CentralAPIHelper
      *     error: string|null
      * }
      */
-    public function get_all_events(array $queryParameters = [], int $maxEvents = 10000): array
+    public function get_all_events(array $queryParameters = [], int $maxEvents = 15000): array
     {
         $allEvents = [];
         $requestedLimit = $queryParameters['limit'] ?? null;

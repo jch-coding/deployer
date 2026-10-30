@@ -32,7 +32,7 @@ class EventsController extends Controller
 
     private const SEVERITIES = ['positive', 'negative', 'neutral'];
 
-    private const EXPORT_MAX_EVENTS = 10000;
+    private const EXPORT_MAX_EVENTS = 15000;
 
     public function index(
         Request $request,
