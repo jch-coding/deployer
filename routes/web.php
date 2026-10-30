@@ -112,6 +112,7 @@ Route::middleware(['auth'])->group(function () {
     Route::controller(EventsController::class)->group(function () {
         Route::get('/events', 'index')->name('events.index');
         Route::get('/events/clients', 'clients')->name('events.clients');
+        Route::get('/events/page', 'page')->name('events.page');
         Route::get('/events/export', 'export')->name('events.export');
     });
 
