@@ -1,6 +1,6 @@
 import { Head, usePage } from '@inertiajs/react';
 import { Download, Loader2, RadioTower } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import CentralScopeRefreshButtons, {
     type CentralScopeCacheMeta,
@@ -21,6 +21,7 @@ import {
 import AppLayout from '@/layouts/app-layout';
 import { csrfHeaders } from '@/lib/csrf';
 import {
+    classicSites as classicSitesRoute,
     exportAps,
     index as ekahauIndex,
     prefixAp,
@@ -45,9 +46,17 @@ type SiteOption = {
     siteName: string;
 };
 
+type ClassicGroupOption = {
+    scopeName: string;
+    scopeId: string;
+    isClassic?: boolean;
+};
+
 type EkahauIndexProps = {
     site_options: SiteOption[];
+    classic_group_options: ClassicGroupOption[];
     has_current_client: boolean;
+    has_classic_central_credentials: boolean;
     central_sites_cache: CentralScopeCacheMeta;
     central_groups_cache: CentralScopeGroupsCacheMeta;
 } & SharedData;
@@ -220,7 +229,9 @@ function PrefixFields({
 export default function EkahauIndex() {
     const {
         site_options,
+        classic_group_options = [],
         has_current_client,
+        has_classic_central_credentials = false,
         central_sites_cache,
         central_groups_cache,
     } = usePage<EkahauIndexProps>().props;
@@ -239,6 +250,12 @@ export default function EkahauIndex() {
     const [macLowercase, setMacLowercase] = useState(false);
     const [mappingSource, setMappingSource] = useState('bssid');
     const [selectedSiteId, setSelectedSiteId] = useState('');
+    const [classicFilterBy, setClassicFilterBy] = useState<'site' | 'group'>('site');
+    const [selectedClassicSiteName, setSelectedClassicSiteName] = useState('');
+    const [selectedClassicGroup, setSelectedClassicGroup] = useState('');
+    const [classicSiteOptions, setClassicSiteOptions] = useState<SiteOption[]>([]);
+    const [classicSitesLoading, setClassicSitesLoading] = useState(false);
+    const [classicSitesError, setClassicSitesError] = useState<string | null>(null);
     const [exportPrefixMode, setExportPrefixMode] = useState('none');
     const [prefixMode, setPrefixMode] = useState('flat');
 
@@ -249,6 +266,79 @@ export default function EkahauIndex() {
 
     const centralMappingBlocked =
         mappingSource === 'central' && (!has_current_client || site_options.length === 0);
+
+    const classicMappingBlocked =
+        mappingSource === 'classic_central' &&
+        (!has_current_client ||
+            !has_classic_central_credentials ||
+            (classicFilterBy === 'site' &&
+                (classicSitesLoading ||
+                    classicSiteOptions.length === 0 ||
+                    selectedClassicSiteName === '')) ||
+            (classicFilterBy === 'group' &&
+                (classic_group_options.length === 0 || selectedClassicGroup === '')));
+
+    useEffect(() => {
+        if (mappingSource !== 'classic_central' || classicFilterBy !== 'site') {
+            return;
+        }
+
+        if (!has_current_client || !has_classic_central_credentials) {
+            setClassicSiteOptions([]);
+            setClassicSitesError(null);
+            return;
+        }
+
+        let cancelled = false;
+        setClassicSitesLoading(true);
+        setClassicSitesError(null);
+
+        fetch(classicSitesRoute().url, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        })
+            .then(async (response) => {
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(
+                        String(payload.error || payload.message || 'Failed to load Classic sites.'),
+                    );
+                }
+                return payload as { sites?: SiteOption[] };
+            })
+            .then((payload) => {
+                if (cancelled) {
+                    return;
+                }
+                setClassicSiteOptions(payload.sites ?? []);
+            })
+            .catch((error: unknown) => {
+                if (cancelled) {
+                    return;
+                }
+                setClassicSiteOptions([]);
+                setClassicSitesError(
+                    error instanceof Error ? error.message : 'Failed to load Classic sites.',
+                );
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setClassicSitesLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        mappingSource,
+        classicFilterBy,
+        has_current_client,
+        has_classic_central_credentials,
+    ]);
 
     async function handleRename(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -274,6 +364,16 @@ export default function EkahauIndex() {
             toast.error('Select a Central site to pull BSSIDs');
             return;
         }
+        if (mappingSource === 'classic_central') {
+            if (classicFilterBy === 'site' && !selectedClassicSiteName) {
+                toast.error('Select a Classic Central site to pull BSSIDs');
+                return;
+            }
+            if (classicFilterBy === 'group' && !selectedClassicGroup) {
+                toast.error('Select a Classic Central group to pull BSSIDs');
+                return;
+            }
+        }
 
         const form = event.currentTarget;
         const formData = new FormData(form);
@@ -284,6 +384,18 @@ export default function EkahauIndex() {
             formData.set('site_id', selectedSiteId);
             formData.set('site_name', selectedSite?.siteName ?? '');
             formData.delete('mapping_file');
+        }
+
+        if (mappingSource === 'classic_central') {
+            formData.set('classic_filter_by', classicFilterBy);
+            formData.delete('mapping_file');
+            if (classicFilterBy === 'site') {
+                formData.set('site_name', selectedClassicSiteName);
+                formData.delete('group');
+            } else {
+                formData.set('group', selectedClassicGroup);
+                formData.delete('site_name');
+            }
         }
 
         setRenameByMacLoading(true);
@@ -440,7 +552,7 @@ export default function EkahauIndex() {
                             <CardTitle>Rename ESX AP by MAC</CardTitle>
                             <CardDescription>
                                 Match measured AP MAC suffixes to names from a mapping file or
-                                Central site BSSIDs.
+                                New/Classic Central BSSIDs.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -469,7 +581,10 @@ export default function EkahauIndex() {
                                             <SelectItem value="csv">CSV</SelectItem>
                                             <SelectItem value="excel">Installer Excel</SelectItem>
                                             <SelectItem value="central">
-                                                Central site BSSIDs
+                                                New Central site BSSIDs
+                                            </SelectItem>
+                                            <SelectItem value="classic_central">
+                                                Classic Central BSSIDs
                                             </SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -515,6 +630,132 @@ export default function EkahauIndex() {
                                                 </SelectContent>
                                             </Select>
                                         </div>
+                                    </div>
+                                ) : mappingSource === 'classic_central' ? (
+                                    <div className="space-y-3">
+                                        {!has_current_client ? (
+                                            <p className="text-sm text-muted-foreground">
+                                                Set a current client with Classic Central credentials
+                                                to pull BSSIDs.
+                                            </p>
+                                        ) : !has_classic_central_credentials ? (
+                                            <p className="text-sm text-muted-foreground">
+                                                Add Classic Central credentials on the client to pull
+                                                BSSIDs.
+                                            </p>
+                                        ) : null}
+                                        <div className="space-y-2">
+                                            <Label htmlFor="mac-classic-filter">Filter by</Label>
+                                            <Select
+                                                value={classicFilterBy}
+                                                onValueChange={(value) =>
+                                                    setClassicFilterBy(
+                                                        value === 'group' ? 'group' : 'site',
+                                                    )
+                                                }
+                                                disabled={
+                                                    !has_current_client ||
+                                                    !has_classic_central_credentials
+                                                }
+                                            >
+                                                <SelectTrigger id="mac-classic-filter">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="site">Site name</SelectItem>
+                                                    <SelectItem value="group">Group</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        {classicFilterBy === 'site' ? (
+                                            <div className="space-y-2">
+                                                <Label htmlFor="mac-classic-site">
+                                                    Classic Central site
+                                                </Label>
+                                                <Select
+                                                    value={selectedClassicSiteName}
+                                                    onValueChange={setSelectedClassicSiteName}
+                                                    disabled={
+                                                        !has_current_client ||
+                                                        !has_classic_central_credentials ||
+                                                        classicSitesLoading ||
+                                                        classicSiteOptions.length === 0
+                                                    }
+                                                >
+                                                    <SelectTrigger id="mac-classic-site">
+                                                        <SelectValue
+                                                            placeholder={
+                                                                classicSitesLoading
+                                                                    ? 'Loading sites…'
+                                                                    : 'Select a site'
+                                                            }
+                                                        />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {classicSiteOptions.map((site) => (
+                                                            <SelectItem
+                                                                key={site.siteId}
+                                                                value={site.siteName}
+                                                            >
+                                                                {site.siteName}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                {classicSitesError ? (
+                                                    <p className="text-destructive text-xs">
+                                                        {classicSitesError}
+                                                    </p>
+                                                ) : null}
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {has_current_client ? (
+                                                    <CentralScopeRefreshButtons
+                                                        centralSitesCache={central_sites_cache}
+                                                        centralGroupsCache={central_groups_cache}
+                                                        reloadOnly={[
+                                                            'classic_group_options',
+                                                            'central_groups_cache',
+                                                        ]}
+                                                        layout="compact"
+                                                    />
+                                                ) : null}
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="mac-classic-group">
+                                                        Classic Central group
+                                                    </Label>
+                                                    <Select
+                                                        value={selectedClassicGroup}
+                                                        onValueChange={setSelectedClassicGroup}
+                                                        disabled={
+                                                            !has_current_client ||
+                                                            !has_classic_central_credentials ||
+                                                            classic_group_options.length === 0
+                                                        }
+                                                    >
+                                                        <SelectTrigger id="mac-classic-group">
+                                                            <SelectValue placeholder="Select a group" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {classic_group_options.map((group) => (
+                                                                <SelectItem
+                                                                    key={group.scopeId || group.scopeName}
+                                                                    value={group.scopeName}
+                                                                >
+                                                                    {group.scopeName}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    {central_groups_cache.classic_error ? (
+                                                        <p className="text-destructive text-xs">
+                                                            {central_groups_cache.classic_error}
+                                                        </p>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <>
@@ -577,6 +818,7 @@ export default function EkahauIndex() {
                                     disabled={
                                         renameByMacLoading ||
                                         centralMappingBlocked ||
+                                        classicMappingBlocked ||
                                         (mappingSource === 'central' && selectedSiteId === '')
                                     }
                                 >

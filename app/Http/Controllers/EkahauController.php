@@ -28,7 +28,9 @@ class EkahauController extends Controller
         if (! $currentClient) {
             return Inertia::render('Ekahau/Index', [
                 'site_options' => [],
+                'classic_group_options' => [],
                 'has_current_client' => false,
+                'has_classic_central_credentials' => false,
                 'central_sites_cache' => [
                     'refreshed_at' => null,
                     'error' => null,
@@ -41,11 +43,67 @@ class EkahauController extends Controller
             ]);
         }
 
+        $groups = $centralScopeCacheService->getGroups($currentClient);
+        $classicGroupOptions = array_values(array_filter(
+            $groups['device_group_options'],
+            fn (array $option): bool => (bool) ($option['isClassic'] ?? false),
+        ));
+
         return Inertia::render('Ekahau/Index', [
             'site_options' => $centralScopeCacheService->getSiteOptions($currentClient),
+            'classic_group_options' => $classicGroupOptions,
             'has_current_client' => true,
+            'has_classic_central_credentials' => $currentClient->hasClassicCentralCredentials(),
             ...$centralScopeCacheService->getCacheMetadata($currentClient),
         ]);
+    }
+
+    public function classicSites(Request $request): JsonResponse
+    {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient) {
+            return response()->json([
+                'sites' => [],
+                'error' => 'Please set current client to load Classic Central sites.',
+            ], 422);
+        }
+
+        if (! $currentClient->hasClassicCentralCredentials()) {
+            return response()->json([
+                'sites' => [],
+                'error' => 'Classic Central credentials are required to load sites.',
+            ], 422);
+        }
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->classic_collect_all_sites();
+
+        if (array_key_exists('error', $result)) {
+            return response()->json([
+                'sites' => [],
+                'error' => (string) $result['error'],
+            ], 422);
+        }
+
+        $sites = [];
+        foreach ($result['sites'] as $site) {
+            if (! is_array($site)) {
+                continue;
+            }
+
+            $siteName = trim((string) ($site['site_name'] ?? ''));
+            if ($siteName === '') {
+                continue;
+            }
+
+            $siteId = $site['site_id'] ?? null;
+            $sites[] = [
+                'siteId' => $siteId !== null && $siteId !== '' ? (string) $siteId : $siteName,
+                'siteName' => $siteName,
+            ];
+        }
+
+        return response()->json(['sites' => $sites]);
     }
 
     public function renameAp(
@@ -110,10 +168,21 @@ class EkahauController extends Controller
         $validated = $request->validate([
             'esx_files' => ['required', 'array', 'min:1'],
             'esx_files.*' => ['required', 'file', 'max:102400'],
-            'mapping_source' => ['required', Rule::in(['bssid', 'csv', 'excel', 'central'])],
-            'mapping_file' => ['required_unless:mapping_source,central', 'nullable', 'file', 'max:20480'],
+            'mapping_source' => ['required', Rule::in(['bssid', 'csv', 'excel', 'central', 'classic_central'])],
+            'mapping_file' => [
+                'required_unless:mapping_source,central,classic_central',
+                'nullable',
+                'file',
+                'max:20480',
+            ],
             'site_id' => ['required_if:mapping_source,central', 'nullable', 'string', 'max:255'],
             'site_name' => ['nullable', 'string', 'max:255'],
+            'classic_filter_by' => [
+                'required_if:mapping_source,classic_central',
+                'nullable',
+                Rule::in(['site', 'group']),
+            ],
+            'group' => ['nullable', 'string', 'max:255'],
             'sheet_name' => ['nullable', 'string', 'max:255'],
             'ap_mac' => ['nullable', 'string', 'max:255'],
             'ap_name' => ['nullable', 'string', 'max:255'],
@@ -133,6 +202,16 @@ class EkahauController extends Controller
                 $workspace,
                 $service,
                 $filterBuilder,
+                $validated,
+                $lowercase,
+            );
+        }
+
+        if ($mappingSource === 'classic_central') {
+            return $this->renameApByMacFromClassicCentral(
+                $request,
+                $workspace,
+                $service,
                 $validated,
                 $lowercase,
             );
@@ -365,6 +444,79 @@ class EkahauController extends Controller
             return response()->json(['message' => 'No BSSIDs returned for the selected site.'], 422);
         }
 
+        return $this->runRenameFromMacNameRows($workspace, $service, $validated, $rows, $lowercase);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function renameApByMacFromClassicCentral(
+        Request $request,
+        EkahauWorkspace $workspace,
+        RenameEsxApByMacService $service,
+        array $validated,
+        bool $lowercase,
+    ): JsonResponse {
+        $currentClient = $request->user()->currentClient();
+        if (! $currentClient) {
+            return response()->json([
+                'message' => 'Please set current client to pull BSSIDs from Classic Central.',
+            ], 422);
+        }
+
+        if (! $currentClient->hasClassicCentralCredentials()) {
+            return response()->json([
+                'message' => 'Classic Central credentials are required to pull BSSIDs.',
+            ], 422);
+        }
+
+        $filterBy = (string) ($validated['classic_filter_by'] ?? '');
+        $siteName = trim((string) ($validated['site_name'] ?? ''));
+        $group = trim((string) ($validated['group'] ?? ''));
+
+        if ($filterBy === 'site') {
+            if ($siteName === '') {
+                return response()->json(['message' => 'A Classic Central site name is required.'], 422);
+            }
+            $query = ['site' => $siteName];
+        } elseif ($filterBy === 'group') {
+            if ($group === '') {
+                return response()->json(['message' => 'A Classic Central group is required.'], 422);
+            }
+            $query = ['group' => $group];
+        } else {
+            return response()->json(['message' => 'Filter by site or group.'], 422);
+        }
+
+        $helper = new CentralAPIHelper($currentClient);
+        $result = $helper->classic_collect_all_bssids($query);
+
+        if (array_key_exists('error', $result)) {
+            return response()->json(['message' => (string) $result['error']], 422);
+        }
+
+        $rows = $helper->flattenClassicBssidsToMacNameRows($result['aps'] ?? []);
+
+        if ($rows === []) {
+            return response()->json([
+                'message' => 'No BSSIDs returned for the selected Classic Central filter.',
+            ], 422);
+        }
+
+        return $this->runRenameFromMacNameRows($workspace, $service, $validated, $rows, $lowercase);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @param  array<int, array{mac: string, name: string}>  $rows
+     */
+    private function runRenameFromMacNameRows(
+        EkahauWorkspace $workspace,
+        RenameEsxApByMacService $service,
+        array $validated,
+        array $rows,
+        bool $lowercase,
+    ): JsonResponse {
         $dir = $workspace->create();
         try {
             $esxPaths = $workspace->storeUploads($validated['esx_files'], $dir, 'esx');

@@ -3046,3 +3046,130 @@ test('get_cx_poe_bounce_result polls async operation endpoint', function () {
         ->and($result['body']['status'])->toBe('COMPLETED')
         ->and($result['body']['output']['results'][0]['status'])->toBe('Bounced');
 });
+
+test('classic_collect_all_bssids paginates with offset and limit', function () {
+    $client = Client::factory()->create([
+        'classic_base_url' => ClassicBaseUrl::US1->value,
+        'classic_client_id' => 'classic-id',
+        'classic_client_secret' => 'classic-secret',
+        'classic_username' => 'user',
+        'classic_password' => 'pass',
+        'classic_refresh_token' => 'refresh',
+        'classic_expires_in' => now()->addHour(),
+        'classic_access_token' => 'access-token',
+    ]);
+
+    Http::fake(function (Request $request) {
+        expect($request->url())->toContain('monitoring/v2/bssids');
+
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+        expect($query['site'] ?? null)->toBe('Campus-1');
+
+        $offset = (int) ($query['offset'] ?? 0);
+        if ($offset === 0) {
+            return Http::response([
+                'count' => 1,
+                'total' => 2,
+                'aps' => [[
+                    'serial' => 'AP1',
+                    'name' => 'AP-ONE',
+                    'macaddr' => 'aa:bb:cc:dd:ee:01',
+                    'swarm_id' => 'swarm-1',
+                    'radio_bssids' => [[
+                        'index' => 0,
+                        'macaddr' => 'aa:bb:cc:dd:ee:11',
+                        'bssids' => [[
+                            'macaddr' => 'aa:bb:cc:dd:ab:cd',
+                            'essid' => 'corp',
+                        ]],
+                    ]],
+                ]],
+            ], 200);
+        }
+
+        return Http::response([
+            'count' => 1,
+            'total' => 2,
+            'aps' => [[
+                'serial' => 'AP2',
+                'name' => 'AP-TWO',
+                'macaddr' => 'aa:bb:cc:dd:ee:02',
+                'swarm_id' => 'swarm-1',
+                'radio_bssids' => [[
+                    'index' => 0,
+                    'macaddr' => 'aa:bb:cc:dd:ee:22',
+                    'bssids' => [[
+                        'macaddr' => '11:22:33:44:11:22',
+                        'essid' => 'corp',
+                    ]],
+                ]],
+            ]],
+        ], 200);
+    });
+
+    $helper = new CentralAPIHelper($client);
+    $result = $helper->classic_collect_all_bssids(['site' => 'Campus-1', 'limit' => 1]);
+
+    expect($result)->not->toHaveKey('error')
+        ->and($result['aps'])->toHaveCount(2)
+        ->and($result['aps'][0]['name'])->toBe('AP-ONE')
+        ->and($result['aps'][1]['name'])->toBe('AP-TWO');
+
+    Http::assertSentCount(2);
+});
+
+test('classic_get_bssids returns error when classic auth fails', function () {
+    Http::fake();
+
+    $client = mock(Client::class)->makePartial();
+    $client->shouldReceive('handleClassicBearerToken')->once()->andReturnFalse();
+
+    $helper = new CentralAPIHelper($client);
+    $result = $helper->classic_get_bssids(['site' => 'Campus-1']);
+
+    expect($result)->toBe(['error' => 'failed to get access token from central.']);
+    Http::assertNothingSent();
+});
+
+test('flattenClassicBssidsToMacNameRows maps nested radio bssids to ap names', function () {
+    $client = Client::factory()->create();
+    $helper = new CentralAPIHelper($client);
+
+    $rows = $helper->flattenClassicBssidsToMacNameRows([
+        [
+            'name' => 'MATCHED-1',
+            'radio_bssids' => [
+                [
+                    'index' => 0,
+                    'macaddr' => 'aa:bb:cc:dd:ee:11',
+                    'bssids' => [
+                        ['macaddr' => 'aa:bb:cc:dd:ab:cd', 'essid' => 'corp'],
+                        ['macaddr' => '', 'essid' => 'guest'],
+                    ],
+                ],
+                [
+                    'index' => 1,
+                    'macaddr' => 'aa:bb:cc:dd:ee:12',
+                    'bssids' => [
+                        ['macaddr' => 'aa:bb:cc:dd:ab:ce', 'essid' => 'corp'],
+                    ],
+                ],
+            ],
+        ],
+        [
+            'name' => '',
+            'radio_bssids' => [
+                ['bssids' => [['macaddr' => '11:22:33:44:55:66', 'essid' => 'x']]],
+            ],
+        ],
+        [
+            'name' => 'MATCHED-2',
+            'radio_bssids' => 'not-an-array',
+        ],
+    ]);
+
+    expect($rows)->toBe([
+        ['mac' => 'aa:bb:cc:dd:ab:cd', 'name' => 'MATCHED-1'],
+        ['mac' => 'aa:bb:cc:dd:ab:ce', 'name' => 'MATCHED-1'],
+    ]);
+});

@@ -122,6 +122,7 @@ class CentralAPIHelper
         'sites' => 'central/v2/sites',
         'switches' => 'monitoring/v1/switches',
         'aps' => 'monitoring/v2/aps',
+        'bssids' => 'monitoring/v2/bssids',
     ];
 
     public array $classic_configuration = [
@@ -3974,6 +3975,91 @@ class CentralAPIHelper
             fn (array $params) => $this->classic_get_aps($params),
             $queryParameters,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters  One of group, swarm_id, label, site, serial, macaddr; plus cluster_id, offset, limit, sort
+     */
+    public function classic_get_bssids(array $queryParameters = [])
+    {
+        if (! $this->client->handleClassicBearerToken()) {
+            return ['error' => 'failed to get access token from central.'];
+        }
+
+        $response = Http::withToken($this->client->classic_access_token)
+            ->withQueryParameters($queryParameters)
+            ->get($this->classicApiUrl($this->classic_monitoring['bssids']));
+
+        return $response;
+    }
+
+    /**
+     * @param  array<string, mixed>  $queryParameters
+     * @return array{aps: array<int, array<string, mixed>>}|array{error: string}
+     */
+    public function classic_collect_all_bssids(array $queryParameters = []): array
+    {
+        return $this->classicCollectPaginatedMonitoringResource(
+            'aps',
+            fn (array $params) => $this->classic_get_bssids($params),
+            $queryParameters,
+        );
+    }
+
+    /**
+     * Flatten Classic /monitoring/v2/bssids AP entries into MAC→name rows for Ekahau rename.
+     *
+     * @param  array<int, array<string, mixed>>  $aps
+     * @return array<int, array{mac: string, name: string}>
+     */
+    public function flattenClassicBssidsToMacNameRows(array $aps): array
+    {
+        $rows = [];
+
+        foreach ($aps as $ap) {
+            if (! is_array($ap)) {
+                continue;
+            }
+
+            $name = trim((string) ($ap['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $radioBssids = $ap['radio_bssids'] ?? [];
+            if (! is_array($radioBssids)) {
+                continue;
+            }
+
+            foreach ($radioBssids as $radio) {
+                if (! is_array($radio)) {
+                    continue;
+                }
+
+                $bssids = $radio['bssids'] ?? [];
+                if (! is_array($bssids)) {
+                    continue;
+                }
+
+                foreach ($bssids as $bssid) {
+                    if (! is_array($bssid)) {
+                        continue;
+                    }
+
+                    $mac = trim((string) ($bssid['macaddr'] ?? ''));
+                    if ($mac === '') {
+                        continue;
+                    }
+
+                    $rows[] = [
+                        'mac' => $mac,
+                        'name' => $name,
+                    ];
+                }
+            }
+        }
+
+        return $rows;
     }
 
     /**

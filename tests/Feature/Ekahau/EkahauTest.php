@@ -73,7 +73,9 @@ test('authenticated users can view ekahau index without a current client', funct
         ->assertInertia(fn (Assert $page) => $page
             ->component('Ekahau/Index')
             ->where('has_current_client', false)
-            ->where('site_options', []));
+            ->where('has_classic_central_credentials', false)
+            ->where('site_options', [])
+            ->where('classic_group_options', []));
 });
 
 test('ekahau index includes site options when current client is set', function () {
@@ -195,6 +197,246 @@ test('rename ap by mac from central returns downloadable result', function () {
         ->assertJsonStructure(['results', 'download_url']);
 
     $this->get($response->json('download_url'))->assertOk();
+});
+
+test('rename ap by mac from classic central requires classic credentials', function () {
+    Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $this->postJson(route('ekahau.rename-ap-by-mac'), [
+        'esx_files' => [makeUploadedEsx()],
+        'mapping_source' => 'classic_central',
+        'classic_filter_by' => 'site',
+        'site_name' => 'Campus-1',
+    ])
+        ->assertStatus(422)
+        ->assertJson([
+            'message' => 'Classic Central credentials are required to pull BSSIDs.',
+        ]);
+});
+
+test('rename ap by mac from classic central requires site or group filter value', function () {
+    $client = Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    withClassicCentralCredentials($client);
+
+    $this->postJson(route('ekahau.rename-ap-by-mac'), [
+        'esx_files' => [makeUploadedEsx()],
+        'mapping_source' => 'classic_central',
+        'classic_filter_by' => 'site',
+        'site_name' => '',
+    ])
+        ->assertStatus(422)
+        ->assertJson([
+            'message' => 'A Classic Central site name is required.',
+        ]);
+});
+
+test('rename ap by mac from classic central by site returns downloadable result', function () {
+    $client = Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    withClassicCentralCredentials($client);
+
+    Http::fake([
+        '*monitoring/v2/bssids*' => Http::response([
+            'count' => 2,
+            'aps' => [
+                [
+                    'serial' => 'AP1',
+                    'name' => 'MATCHED-1',
+                    'macaddr' => 'aa:bb:cc:dd:ee:01',
+                    'swarm_id' => 'swarm-1',
+                    'radio_bssids' => [[
+                        'index' => 0,
+                        'macaddr' => 'aa:bb:cc:dd:ee:11',
+                        'bssids' => [[
+                            'macaddr' => 'aa:bb:cc:dd:ab:cd',
+                            'essid' => 'corp',
+                        ]],
+                    ]],
+                ],
+                [
+                    'serial' => 'AP2',
+                    'name' => 'MATCHED-2',
+                    'macaddr' => 'aa:bb:cc:dd:ee:02',
+                    'swarm_id' => 'swarm-1',
+                    'radio_bssids' => [[
+                        'index' => 0,
+                        'macaddr' => 'aa:bb:cc:dd:ee:22',
+                        'bssids' => [[
+                            'macaddr' => '11:22:33:44:11:22',
+                            'essid' => 'corp',
+                        ]],
+                    ]],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $response = $this->post(route('ekahau.rename-ap-by-mac'), [
+        'esx_files' => [makeUploadedEsx()],
+        'mapping_source' => 'classic_central',
+        'classic_filter_by' => 'site',
+        'site_name' => 'Campus-1',
+        'lowercase_ap_names' => false,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonStructure(['results', 'download_url']);
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request): bool {
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return str_contains($request->url(), 'monitoring/v2/bssids')
+            && ($query['site'] ?? null) === 'Campus-1'
+            && ! array_key_exists('group', $query);
+    });
+
+    $this->get($response->json('download_url'))->assertOk();
+});
+
+test('rename ap by mac from classic central by group returns downloadable result', function () {
+    $client = Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    withClassicCentralCredentials($client);
+
+    Http::fake([
+        '*monitoring/v2/bssids*' => Http::response([
+            'count' => 1,
+            'aps' => [[
+                'serial' => 'AP1',
+                'name' => 'MATCHED-1',
+                'macaddr' => 'aa:bb:cc:dd:ee:01',
+                'swarm_id' => 'swarm-1',
+                'radio_bssids' => [[
+                    'index' => 0,
+                    'macaddr' => 'aa:bb:cc:dd:ee:11',
+                    'bssids' => [[
+                        'macaddr' => 'aa:bb:cc:dd:ab:cd',
+                        'essid' => 'corp',
+                    ]],
+                ]],
+            ]],
+        ], 200),
+    ]);
+
+    $response = $this->post(route('ekahau.rename-ap-by-mac'), [
+        'esx_files' => [makeUploadedEsx()],
+        'mapping_source' => 'classic_central',
+        'classic_filter_by' => 'group',
+        'group' => 'default',
+        'lowercase_ap_names' => false,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonStructure(['results', 'download_url']);
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request): bool {
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return str_contains($request->url(), 'monitoring/v2/bssids')
+            && ($query['group'] ?? null) === 'default'
+            && ! array_key_exists('site', $query);
+    });
+});
+
+test('ekahau classic sites endpoint returns classic site options', function () {
+    $client = Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    withClassicCentralCredentials($client);
+
+    Http::fake(function (\Illuminate\Http\Client\Request $request) {
+        expect($request->url())->toContain('central/v2/sites');
+
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+        $offset = (int) ($query['offset'] ?? 0);
+
+        if ($offset > 0) {
+            return Http::response(['sites' => []], 200);
+        }
+
+        return Http::response([
+            'sites' => [
+                ['site_id' => 10, 'site_name' => 'Campus-1'],
+                ['site_id' => 11, 'site_name' => 'Campus-2'],
+            ],
+        ], 200);
+    });
+
+    $this->getJson(route('ekahau.classic-sites'))
+        ->assertOk()
+        ->assertJson([
+            'sites' => [
+                ['siteId' => '10', 'siteName' => 'Campus-1'],
+                ['siteId' => '11', 'siteName' => 'Campus-2'],
+            ],
+        ]);
+});
+
+test('ekahau index includes classic group options and credential flag', function () {
+    $client = Client::factory()->for($this->user)->create([
+        'current' => true,
+        'base_url' => BaseURL::US1,
+        'bearer_token' => 'test-bearer-token',
+        'expires_at' => now()->addHour(),
+    ]);
+    withClassicCentralCredentials($client);
+    seedCentralScopeCache($client);
+
+    \App\Models\CentralScopeCache::query()->updateOrCreate(
+        [
+            'client_id' => $client->id,
+            'type' => \App\CentralScopeCacheType::Groups,
+        ],
+        [
+            'items' => [
+                'central_device_groups' => [],
+                'device_group_options' => [
+                    [
+                        'scopeName' => 'classic-group',
+                        'scopeId' => 'classic-group',
+                        'isClassic' => true,
+                    ],
+                    [
+                        'scopeName' => 'new-group',
+                        'scopeId' => 'new-group-id',
+                        'isClassic' => false,
+                    ],
+                ],
+                'classic_device_groups_error' => null,
+            ],
+            'refreshed_at' => now(),
+            'last_error' => null,
+        ],
+    );
+
+    $this->get(route('ekahau.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Ekahau/Index')
+            ->where('has_classic_central_credentials', true)
+            ->has('classic_group_options', 1)
+            ->where('classic_group_options.0.scopeName', 'classic-group'));
 });
 
 test('export aps returns downloadable xlsx', function () {
