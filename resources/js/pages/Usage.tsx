@@ -1006,9 +1006,10 @@ sudo cloudflared service start`}</code>
                             rollout.
                         </p>
                         <p className={cn(body, 'mt-4')}>
-                            File-only tools work without a current client. Pulling BSSIDs from Central for
-                            MAC-based rename requires a current client with valid Central credentials and a
-                            refreshed site list.
+                            File-only tools work without a current client. Pulling BSSIDs from New Central
+                            for MAC-based rename requires a current client with valid New Central credentials
+                            and a refreshed site list. Classic Central BSSIDs require Classic credentials and
+                            a site name or group filter.
                         </p>
                         <ul className={cn(body, 'mt-4 list-disc space-y-3 pl-5')}>
                             <li>
@@ -1035,10 +1036,17 @@ sudo cloudflared service start`}</code>
                                         MAC and name column headers (and sheet name for Excel)
                                     </li>
                                     <li>
-                                        <strong>Central site BSSIDs</strong> — select a Central site; Deployer
-                                        fetches site BSSIDs for the current client and uses{' '}
-                                        <code>deviceName</code> / <code>bssid</code> as the mapping. Refresh
-                                        sites from the card if the list is empty or stale.
+                                        <strong>New Central site BSSIDs</strong> — select a New Central site;
+                                        Deployer fetches site BSSIDs and uses <code>deviceName</code> /{' '}
+                                        <code>bssid</code> as the mapping. Refresh sites from the card if the
+                                        list is empty or stale.
+                                    </li>
+                                    <li>
+                                        <strong>Classic Central BSSIDs</strong> — filter by site name or group
+                                        (one at a time) via Classic <code>/monitoring/v2/bssids</code>. Nested
+                                        radio BSSIDs are flattened to AP <code>name</code> for the same MAC
+                                        suffix matching. Refresh Classic groups from the card when filtering by
+                                        group.
                                     </li>
                                 </ul>
                                 Ambiguous MAC suffixes (or duplicate measured suffixes in the ESX) are skipped

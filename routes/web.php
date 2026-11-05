@@ -187,6 +187,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::controller(EkahauController::class)->group(function () {
         Route::get('/ekahau', 'index')->name('ekahau.index');
+        Route::get('/ekahau/classic-sites', 'classicSites')->name('ekahau.classic-sites');
         Route::post('/ekahau/rename-ap', 'renameAp')->name('ekahau.rename-ap');
         Route::post('/ekahau/rename-ap-by-mac', 'renameApByMac')->name('ekahau.rename-ap-by-mac');
         Route::post('/ekahau/export-aps', 'exportAps')->name('ekahau.export-aps');
